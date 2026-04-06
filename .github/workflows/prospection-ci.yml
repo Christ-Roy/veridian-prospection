@@ -110,7 +110,7 @@ jobs:
   docker-staging:
     needs: build
     if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, veridian]
     permissions:
       contents: read
       packages: write
@@ -136,34 +136,31 @@ jobs:
   deploy-staging:
     needs: docker-staging
     if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, veridian]
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
 
-      - name: Pull image on dev server and redeploy
+      - name: Pull image locally and redeploy staging
         env:
-          SSH_KEY_DEV: ${{ secrets.DEPLOY_SSH_KEY_DEV }}
           SSH_KEY_PROD: ${{ secrets.DEPLOY_SSH_KEY }}
-          DEV_HOST: ${{ vars.DEV_HOST }}
-          DEV_USER: ${{ vars.DEV_USER }}
           VPS_HOST: ${{ vars.VPS_HOST }}
           VPS_USER: ${{ vars.VPS_USER }}
           COMPOSE_ID: ${{ vars.COMPOSE_ID_STAGING }}
           DOKPLOY_KEY: ${{ secrets.DOKPLOY_API_KEY }}
         run: |
-          mkdir -p ~/.ssh
-          echo "$SSH_KEY_DEV" > ~/.ssh/dev_key
-          echo "$SSH_KEY_PROD" > ~/.ssh/prod_key
-          chmod 600 ~/.ssh/dev_key ~/.ssh/prod_key
-          ssh-keyscan -H $DEV_HOST >> ~/.ssh/known_hosts 2>/dev/null
-          ssh-keyscan -H $VPS_HOST >> ~/.ssh/known_hosts 2>/dev/null
+          # Self-hosted = we ARE on dev server, pull locally (no SSH needed)
+          docker pull ghcr.io/christ-roy/prospection:staging && echo "Image pulled locally"
 
           # Sync compose file to Dokploy if it changed
           if git diff --name-only HEAD~1 HEAD | grep -q "infra/docker-compose.staging.yml"; then
             echo "Compose file changed — syncing to Dokploy..."
             COMPOSE_CONTENT=$(python3 -c "import json,sys; print(json.dumps(open('infra/docker-compose.staging.yml').read()))")
+            mkdir -p ~/.ssh
+            echo "$SSH_KEY_PROD" > ~/.ssh/prod_key
+            chmod 600 ~/.ssh/prod_key
+            ssh-keyscan -H $VPS_HOST >> ~/.ssh/known_hosts 2>/dev/null
             ssh -i ~/.ssh/prod_key -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST \
               "curl -sf -X POST \
                 -H 'x-api-key: $DOKPLOY_KEY' \
@@ -172,11 +169,11 @@ jobs:
                 http://localhost:3000/api/trpc/compose.update && echo 'Compose synced to Dokploy'"
           fi
 
-          # Pull new image on dev server
-          ssh -i ~/.ssh/dev_key -o StrictHostKeyChecking=no $DEV_USER@$DEV_HOST \
-            "docker pull ghcr.io/christ-roy/prospection:staging && echo 'Image pulled'"
-
-          # Trigger redeploy via Dokploy API on prod VPS
+          # Trigger redeploy via Dokploy on prod VPS (Dokploy controls dev server remotely)
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY_PROD" > ~/.ssh/prod_key
+          chmod 600 ~/.ssh/prod_key
+          ssh-keyscan -H $VPS_HOST >> ~/.ssh/known_hosts 2>/dev/null
           ssh -i ~/.ssh/prod_key -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST \
             "curl -sf -X POST \
               -H 'x-api-key: $DOKPLOY_KEY' \
@@ -184,7 +181,7 @@ jobs:
               -d '{\"json\":{\"composeId\":\"$COMPOSE_ID\"}}' \
               http://localhost:3000/api/trpc/compose.deploy && echo 'Staging deploy triggered'"
 
-          # Health check post-deploy (wait up to 90s)
+          # Health check (wait up to 90s)
           echo "Waiting for staging health..."
           for i in $(seq 1 9); do
             if curl -sf https://saas-prospection.staging.veridian.site/api/health | grep -q healthy; then
@@ -198,7 +195,7 @@ jobs:
   e2e-staging:
     needs: deploy-staging
     if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, veridian]
     defaults:
       run:
         working-directory: prospection
@@ -312,7 +309,7 @@ jobs:
   docker:
     needs: [build, integration]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, veridian]
     permissions:
       contents: read
       packages: write
@@ -502,39 +499,3 @@ jobs:
           done
           echo "WARNING: rollback health check timed out"
 
-  # ── Telegram notifications ─────────────────────────────────────────
-  notify-success:
-    needs: e2e-prod
-    if: success() && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Notify Telegram — prod deployed
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          SHA="${GITHUB_SHA:0:7}"
-          MSG="✅ *Prospection PROD deployed*%0A%0ACommit: \`${SHA}\`%0ABranch: \`${GITHUB_REF_NAME}\`%0ABy: ${GITHUB_ACTOR}%0A%0A[View run](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
-          curl -sf -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -d "chat_id=${TELEGRAM_CHAT_ID}" \
-            -d "text=${MSG}" \
-            -d "parse_mode=Markdown" \
-            -d "disable_web_page_preview=true"
-
-  notify-rollback:
-    needs: rollback-prod
-    if: always() && needs.rollback-prod.result != 'skipped' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Notify Telegram — rollback triggered
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          SHA="${GITHUB_SHA:0:7}"
-          MSG="❌ *Prospection PROD ROLLBACK*%0A%0ACommit: \`${SHA}\` failed E2E%0ABranch: \`${GITHUB_REF_NAME}\`%0ABy: ${GITHUB_ACTOR}%0ARolled back to previous image%0A%0A[View run](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
-          curl -sf -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -d "chat_id=${TELEGRAM_CHAT_ID}" \
-            -d "text=${MSG}" \
-            -d "parse_mode=Markdown" \
-            -d "disable_web_page_preview=true"
