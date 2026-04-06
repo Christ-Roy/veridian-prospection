@@ -21,7 +21,7 @@
  * le vrai test admin se fait via robert dans admin-pages-smoke.spec.ts.
  */
 import { test, expect, type ConsoleMessage, type Page } from "@playwright/test";
-import { loginAsE2EUser } from '../helpers/auth";
+import { loginAsE2EUser } from "../helpers/auth";
 
 const PROSPECTION_URL =
   process.env.PROSPECTION_URL || "https://saas-prospection.staging.veridian.site";

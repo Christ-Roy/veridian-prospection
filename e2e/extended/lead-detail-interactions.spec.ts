@@ -19,7 +19,7 @@
  *   npx playwright test e2e/lead-detail-interactions.spec.ts
  */
 import { test, expect, type ConsoleMessage } from "@playwright/test";
-import { loginAsE2EUser } from '../helpers/auth";
+import { loginAsE2EUser } from "../helpers/auth";
 
 const PROSPECTION_URL =
   process.env.PROSPECTION_URL || "https://saas-prospection.staging.veridian.site";
