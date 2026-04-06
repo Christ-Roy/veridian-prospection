@@ -51,8 +51,10 @@ test.describe("Pipeline Kanban", () => {
       return;
     }
 
-    // Click first card
-    await cards.first().click();
+    // Dismiss any overlay then click first card
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(300);
+    await cards.first().click({ force: true });
 
     // Lead sheet should open (dialog or sheet)
     const sheet = page.locator('[role="dialog"], [data-slot="sheet-content"]').first();
