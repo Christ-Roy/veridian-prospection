@@ -113,11 +113,14 @@ test.describe("prospects full flow — Robert daily journey", () => {
     console.log("[full-flow] pipeline column visible");
 
     // --- 7. Pipeline card click if exists ---
+    // Dismiss any open modals/overlays first (previous lead sheet may still be open)
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(500);
     const pipelineCards = page.locator('[draggable="true"]');
     const cardCount = await pipelineCards.count();
     console.log(`[full-flow] pipeline has ${cardCount} draggable cards`);
     if (cardCount > 0) {
-      await pipelineCards.first().click();
+      await pipelineCards.first().click({ force: true });
       const pipelineSheet = page.locator('[role="dialog"], [data-slot="sheet-content"]').first();
       const opened = await pipelineSheet.isVisible({ timeout: 8_000 }).catch(() => false);
       if (opened) {

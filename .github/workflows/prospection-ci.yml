@@ -230,7 +230,7 @@ jobs:
           SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
           TENANT_API_SECRET: ${{ secrets.STAGING_TENANT_API_SECRET }}
-          ROBERT_EMAIL: robert.brunon@veridian.site
+          ROBERT_EMAIL: robert@veridian.site
           ROBERT_PASSWORD: ${{ secrets.STAGING_ROBERT_PASSWORD }}
           CI: true
         run: |
@@ -286,7 +286,7 @@ jobs:
           SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
           TENANT_API_SECRET: ${{ secrets.STAGING_TENANT_API_SECRET }}
-          ROBERT_EMAIL: robert.brunon@veridian.site
+          ROBERT_EMAIL: robert@veridian.site
           ROBERT_PASSWORD: ${{ secrets.STAGING_ROBERT_PASSWORD }}
           CI: true
         run: |

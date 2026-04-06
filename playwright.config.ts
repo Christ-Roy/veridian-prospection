@@ -21,7 +21,7 @@ export default defineConfig({
   timeout: 30_000,
   retries: 1,
   use: {
-    baseURL: process.env.BASE_URL || "http://localhost:3000",
+    baseURL: process.env.PROSPECTION_URL || process.env.BASE_URL || "http://localhost:3000",
   },
   projects,
   webServer: process.env.CI
