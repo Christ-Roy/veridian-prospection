@@ -192,7 +192,11 @@ jobs:
           done
           echo "WARNING: staging health check timed out"
 
-  e2e-staging:
+  # ── E2E Core — BLOQUANT, self-hosted, ~2min ──────────────────────
+  # Tests intouchables. Si un seul fail, le deploy est bloqué.
+  # Pas de signup, pas de waitForTimeout, login comptes existants.
+  # Voir .claude/rules/core-tests.md pour les règles.
+  e2e-core:
     needs: deploy-staging
     if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
     runs-on: [self-hosted, veridian]
@@ -207,9 +211,9 @@ jobs:
           cache: npm
           cache-dependency-path: prospection/package-lock.json
       - run: npm ci
-      - name: Install Playwright browsers
+      - name: Install Playwright chromium
         run: npx playwright install --with-deps chromium
-      - name: Wait for staging deploy to be ready
+      - name: Wait for staging health
         run: |
           for i in $(seq 1 12); do
             STATUS=$(curl -sf https://saas-prospection.staging.veridian.site/api/health | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "")
@@ -218,7 +222,7 @@ jobs:
             sleep 10
           done
           echo "Staging not healthy after 2 min" && exit 1
-      - name: Run E2E tests against staging (single batch — faster than per-file)
+      - name: "Core E2E — BLOQUANT (6 specs)"
         env:
           HUB_URL: https://saas-hub.staging.veridian.site
           PROSPECTION_URL: https://saas-prospection.staging.veridian.site
@@ -229,55 +233,71 @@ jobs:
           ROBERT_EMAIL: robert.brunon@veridian.site
           ROBERT_PASSWORD: ${{ secrets.STAGING_ROBERT_PASSWORD }}
           CI: true
-          BROWSER: chromium
         run: |
-          # Go-no-go blocking specs — MUST use existing accounts only (loginRobert).
-          # NEVER include specs that do signup/provision (causes Supabase 429 rate limit).
-          npx playwright test \
-            e2e/ui-siren-smoke.spec.ts \
-            e2e/status-endpoint.spec.ts \
-            e2e/lead-detail-interactions.spec.ts \
-            --project=chromium --reporter=list --workers=2
-
-          # Non-blocking specs (all others — including signup-based specs)
-          npx playwright test \
-            e2e/saas-flow.spec.ts \
-            e2e/existing-accounts.spec.ts \
-            e2e/regression.spec.ts \
-            e2e/search-prospects.spec.ts \
-            e2e/admin-pages-smoke.spec.ts \
-            e2e/client-error-boundary.spec.ts \
-            e2e/segments-filter.spec.ts \
-            e2e/keyboard-shortcuts-help.spec.ts \
-            e2e/historique-page.spec.ts \
-            e2e/filters-persistence.spec.ts \
-            e2e/settings-page.spec.ts \
-            e2e/mobile-viewport.spec.ts \
-            e2e/admin-pages-v1.spec.ts \
-            e2e/invite-flow.spec.ts \
-            e2e/pipeline-kanban.spec.ts \
-            e2e/auth-flows.spec.ts \
-            e2e/empty-states.spec.ts \
-            e2e/error-boundaries.spec.ts \
-            e2e/global-full-flow.spec.ts \
-            e2e/admin-members.spec.ts \
-            --project=chromium --reporter=list --workers=2 || echo "WARN: non-blocking specs had failures"
-      - name: API smoke tests (staging)
-        env:
-          APP_URL: https://saas-prospection.staging.veridian.site
-          SUPABASE_URL: https://saas-api.staging.veridian.site
-          NEXT_PUBLIC_SUPABASE_URL: https://saas-api.staging.veridian.site
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
-        run: |
-          npx tsx scripts/test-dashboard-api.ts || echo "WARN: API smoke failures"
-          npx tsx scripts/test-invite-api.ts || echo "WARN: invite API failures"
-          npx vitest run e2e/integration/admin-routes.test.ts --reporter=verbose || echo "WARN: admin tests failures"
+          npx playwright test e2e/core/ \
+            --project=chromium --reporter=list --workers=1
       - name: Upload screenshots on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-screenshots
+          name: e2e-core-screenshots
+          path: prospection/e2e/screenshots/
+          retention-days: 7
+
+  # ── E2E Extended — NON-BLOQUANT, cloud, 3 browsers en parallèle ─
+  # Tests importants mais pas bloquants. Failures = warning, pas gate.
+  # Shardé sur 3 browsers (chromium/firefox/webkit) en parallèle.
+  e2e-extended:
+    needs: deploy-staging
+    if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    defaults:
+      run:
+        working-directory: prospection
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: prospection/package-lock.json
+      - run: npm ci
+      - name: Install Playwright ${{ matrix.browser }}
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Wait for staging health
+        run: |
+          for i in $(seq 1 6); do
+            if curl -sf https://saas-prospection.staging.veridian.site/api/health | grep -q healthy; then
+              echo "Staging healthy"; exit 0
+            fi
+            sleep 10
+          done
+          echo "Staging not ready — running anyway"
+      - name: "Extended E2E — ${{ matrix.browser }} (non-blocking)"
+        env:
+          HUB_URL: https://saas-hub.staging.veridian.site
+          PROSPECTION_URL: https://saas-prospection.staging.veridian.site
+          SUPABASE_URL: https://saas-api.staging.veridian.site
+          SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          TENANT_API_SECRET: ${{ secrets.STAGING_TENANT_API_SECRET }}
+          ROBERT_EMAIL: robert.brunon@veridian.site
+          ROBERT_PASSWORD: ${{ secrets.STAGING_ROBERT_PASSWORD }}
+          CI: true
+        run: |
+          npx playwright test e2e/extended/ \
+            --project=${{ matrix.browser }} --reporter=list --workers=2 \
+            || echo "WARN: extended specs had failures on ${{ matrix.browser }}"
+      - name: Upload screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-extended-${{ matrix.browser }}-screenshots
           path: prospection/e2e/screenshots/
           retention-days: 7
 
@@ -285,7 +305,7 @@ jobs:
   # When staging e2e passes, fast-forward merge staging → main.
   # The push to main triggers docker/deploy-prod pipeline.
   promote-to-main:
-    needs: [integration, e2e-staging]
+    needs: [integration, e2e-core]
     if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
