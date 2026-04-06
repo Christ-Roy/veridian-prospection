@@ -26,6 +26,7 @@ function attachErrorListeners(page: Page, sink: string[]) {
     const t = msg.text();
     if (t.includes("GTM") || t.includes("dataLayer") || t.includes("favicon")) return;
     if (t.includes("Failed to load resource")) return;
+    if (t.includes("Failed to fetch RSC payload")) return; // Next.js prefetch noise
     if (t.includes("chrome-extension://")) return;
     if (t.includes("401") || t.includes("403")) return;
     if (t.includes("net::ERR_")) return;
