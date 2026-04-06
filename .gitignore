@@ -32,3 +32,6 @@ next-env.d.ts
 
 # task files (ephemeral)
 TASK-*.md
+
+# Playwright screenshots (change every run)
+e2e/screenshots/
