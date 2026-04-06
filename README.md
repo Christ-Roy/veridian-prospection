@@ -181,3 +181,4 @@ Types usuels : `feat`, `fix`, `refactor`, `test`, `docs`, `ci`, `chore`.
 ## Contact
 
 Projet Veridian — Robert Brunon.
+
