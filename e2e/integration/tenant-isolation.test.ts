@@ -60,39 +60,34 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  // Cleanup: remove any rows we created for TENANT_A and TENANT_B
-  await prisma.$executeRawUnsafe(
-    `DELETE FROM outreach WHERE tenant_id IN ($1::uuid, $2::uuid)`,
-    TENANT_A,
-    TENANT_B,
-  );
-  await prisma.$executeRawUnsafe(
-    `DELETE FROM claude_activity WHERE tenant_id IN ($1::uuid, $2::uuid)`,
-    TENANT_A,
-    TENANT_B,
-  );
-  await prisma.$executeRawUnsafe(
-    `DELETE FROM followups WHERE tenant_id IN ($1::uuid, $2::uuid)`,
-    TENANT_A,
-    TENANT_B,
-  );
-  await prisma.$executeRawUnsafe(
-    `DELETE FROM lead_segments WHERE tenant_id IN ($1::uuid, $2::uuid)`,
-    TENANT_A,
-    TENANT_B,
-  );
-  if (createdSirens.length > 0) {
-    // Delete ALL outreach/call_log/claude_activity referencing these SIRENs
-    // (not just by tenant_id — FK is on siren, any tenant's rows block deletion)
-    for (const table of ['outreach_email', 'outreach', 'call_log', 'claude_activity', 'followups', 'lead_segments']) {
+  try {
+    // Cleanup: remove any rows we created for TENANT_A and TENANT_B
+    // Use raw SQL with CASCADE-aware order to avoid FK violations
+    const testTenants = [TENANT_A, TENANT_B];
+    const testSirens = createdSirens.length > 0 ? createdSirens : [SIREN_A, SIREN_B, SIREN_SHARED];
+
+    // Delete in FK-safe order: children first, parents last
+    for (const table of ['outreach_email', 'call_log', 'claude_activity', 'followups', 'lead_segments', 'outreach']) {
       await prisma.$executeRawUnsafe(
-        `DELETE FROM ${table} WHERE siren IN (${createdSirens.map((_, i) => `$${i + 1}`).join(',')})`,
-        ...createdSirens,
-      );
+        `DELETE FROM ${table} WHERE tenant_id IN ($1::uuid, $2::uuid)`,
+        ...testTenants,
+      ).catch(() => {});
+      // Also by siren (some FKs are on siren, not tenant_id)
+      if (testSirens.length > 0) {
+        await prisma.$executeRawUnsafe(
+          `DELETE FROM ${table} WHERE siren IN (${testSirens.map((_, i) => `$${i + 1}`).join(',')})`,
+          ...testSirens,
+        ).catch(() => {});
+      }
     }
-    await prisma.entreprise.deleteMany({
-      where: { siren: { in: createdSirens } },
-    });
+
+    if (createdSirens.length > 0) {
+      await prisma.entreprise.deleteMany({
+        where: { siren: { in: createdSirens } },
+      }).catch(() => {});
+    }
+  } catch (err) {
+    console.warn("[tenant-isolation] Cleanup error (non-fatal):", err);
   }
   await prisma.$disconnect();
 });
