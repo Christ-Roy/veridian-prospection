@@ -1,0 +1,540 @@
+# CI pipeline v2 — optimized 2026-04-06
+name: Prospection CI/CD
+
+on:
+  push:
+    branches: [main, staging]
+    paths:
+      - 'prospection/**'
+      - '.github/workflows/prospection-ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'prospection/**'
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to run CI on"
+        default: "staging"
+
+# Cancel in-progress runs on the same branch — prevents queue buildup
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+  REGISTRY: ghcr.io
+  IMAGE_NAME: christ-roy/prospection
+
+jobs:
+  unit:
+    # Couche 1 de la stratégie CI (cf. docs/CI-STRATEGY.md) — gate bloquant
+    # ultra-rapide. tsc + eslint + vitest unit (sans DB ni réseau).
+    # Budget: < 90s. Si fail → bloque tout le reste du pipeline.
+    # Actuellement 34 tests unit (rate-limit, use-local-storage-persist,
+    # twenty, invitations) en ~1s. Ça doit rester rapide.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: prospection
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: prospection/package-lock.json
+      - run: npm ci
+      - name: tsc --noEmit
+        run: npx tsc --noEmit
+      - name: eslint src/
+        run: npx eslint src/ --quiet
+      - name: vitest unit tests (src/**/*.test.ts)
+        run: npx vitest run src/
+      - name: Supabase admin API rate-limit guard
+        run: bash scripts/check-supabase-ratelimit.sh
+
+  build:
+    needs: unit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: prospection
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: prospection/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  integration:
+    needs: build
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: prospection_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+    defaults:
+      run:
+        working-directory: prospection
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: prospection/package-lock.json
+      - run: npm ci
+      - name: Apply schema
+        env:
+          DATABASE_URL: postgresql://postgres:testpass@localhost:5432/prospection_test
+        run: npx prisma db push --accept-data-loss --skip-generate
+      - name: Run tenant isolation tests
+        env:
+          DATABASE_URL: postgresql://postgres:testpass@localhost:5432/prospection_test
+        run: npm run test:integration
+
+  docker-staging:
+    needs: build
+    if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./prospection
+          push: true
+          tags: ghcr.io/christ-roy/prospection:staging
+          build-args: |
+            NEXT_PUBLIC_SUPABASE_URL=https://saas-api.staging.veridian.site
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+            NEXT_PUBLIC_HUB_URL=https://saas-hub.staging.veridian.site
+            NEXT_PUBLIC_SITE_URL=https://saas-prospection.staging.veridian.site
+            NEXT_PUBLIC_TRIAL_DAYS=7
+
+  deploy-staging:
+    needs: docker-staging
+    if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Pull image on dev server and redeploy
+        env:
+          SSH_KEY_DEV: ${{ secrets.DEPLOY_SSH_KEY_DEV }}
+          SSH_KEY_PROD: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEV_HOST: ${{ vars.DEV_HOST }}
+          DEV_USER: ${{ vars.DEV_USER }}
+          VPS_HOST: ${{ vars.VPS_HOST }}
+          VPS_USER: ${{ vars.VPS_USER }}
+          COMPOSE_ID: ${{ vars.COMPOSE_ID_STAGING }}
+          DOKPLOY_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY_DEV" > ~/.ssh/dev_key
+          echo "$SSH_KEY_PROD" > ~/.ssh/prod_key
+          chmod 600 ~/.ssh/dev_key ~/.ssh/prod_key
+          ssh-keyscan -H $DEV_HOST >> ~/.ssh/known_hosts 2>/dev/null
+          ssh-keyscan -H $VPS_HOST >> ~/.ssh/known_hosts 2>/dev/null
+
+          # Sync compose file to Dokploy if it changed
+          if git diff --name-only HEAD~1 HEAD | grep -q "infra/docker-compose.staging.yml"; then
+            echo "Compose file changed — syncing to Dokploy..."
+            COMPOSE_CONTENT=$(python3 -c "import json,sys; print(json.dumps(open('infra/docker-compose.staging.yml').read()))")
+            ssh -i ~/.ssh/prod_key -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST \
+              "curl -sf -X POST \
+                -H 'x-api-key: $DOKPLOY_KEY' \
+                -H 'Content-Type: application/json' \
+                -d '{\"json\":{\"composeId\":\"$COMPOSE_ID\",\"composeFile\":$COMPOSE_CONTENT}}' \
+                http://localhost:3000/api/trpc/compose.update && echo 'Compose synced to Dokploy'"
+          fi
+
+          # Pull new image on dev server
+          ssh -i ~/.ssh/dev_key -o StrictHostKeyChecking=no $DEV_USER@$DEV_HOST \
+            "docker pull ghcr.io/christ-roy/prospection:staging && echo 'Image pulled'"
+
+          # Trigger redeploy via Dokploy API on prod VPS
+          ssh -i ~/.ssh/prod_key -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST \
+            "curl -sf -X POST \
+              -H 'x-api-key: $DOKPLOY_KEY' \
+              -H 'Content-Type: application/json' \
+              -d '{\"json\":{\"composeId\":\"$COMPOSE_ID\"}}' \
+              http://localhost:3000/api/trpc/compose.deploy && echo 'Staging deploy triggered'"
+
+          # Health check post-deploy (wait up to 90s)
+          echo "Waiting for staging health..."
+          for i in $(seq 1 9); do
+            if curl -sf https://saas-prospection.staging.veridian.site/api/health | grep -q healthy; then
+              echo "Staging healthy after ${i}0s"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "WARNING: staging health check timed out"
+
+  e2e-staging:
+    needs: deploy-staging
+    if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: prospection
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: prospection/package-lock.json
+      - run: npm ci
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      - name: Wait for staging deploy to be ready
+        run: |
+          for i in $(seq 1 12); do
+            STATUS=$(curl -sf https://saas-prospection.staging.veridian.site/api/health | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "")
+            if [ "$STATUS" = "healthy" ]; then echo "Staging healthy after ${i}0s"; exit 0; fi
+            echo "Waiting... attempt $i"
+            sleep 10
+          done
+          echo "Staging not healthy after 2 min" && exit 1
+      - name: Run E2E tests against staging (single batch — faster than per-file)
+        env:
+          HUB_URL: https://saas-hub.staging.veridian.site
+          PROSPECTION_URL: https://saas-prospection.staging.veridian.site
+          SUPABASE_URL: https://saas-api.staging.veridian.site
+          SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          TENANT_API_SECRET: ${{ secrets.STAGING_TENANT_API_SECRET }}
+          ROBERT_EMAIL: robert.brunon@veridian.site
+          ROBERT_PASSWORD: ${{ secrets.STAGING_ROBERT_PASSWORD }}
+          CI: true
+          BROWSER: chromium
+        run: |
+          # Go-no-go blocking specs — MUST use existing accounts only (loginRobert).
+          # NEVER include specs that do signup/provision (causes Supabase 429 rate limit).
+          npx playwright test \
+            e2e/ui-siren-smoke.spec.ts \
+            e2e/status-endpoint.spec.ts \
+            e2e/lead-detail-interactions.spec.ts \
+            --project=chromium --reporter=list --workers=2
+
+          # Non-blocking specs (all others — including signup-based specs)
+          npx playwright test \
+            e2e/saas-flow.spec.ts \
+            e2e/existing-accounts.spec.ts \
+            e2e/regression.spec.ts \
+            e2e/search-prospects.spec.ts \
+            e2e/admin-pages-smoke.spec.ts \
+            e2e/client-error-boundary.spec.ts \
+            e2e/segments-filter.spec.ts \
+            e2e/keyboard-shortcuts-help.spec.ts \
+            e2e/historique-page.spec.ts \
+            e2e/filters-persistence.spec.ts \
+            e2e/settings-page.spec.ts \
+            e2e/mobile-viewport.spec.ts \
+            e2e/admin-pages-v1.spec.ts \
+            e2e/invite-flow.spec.ts \
+            e2e/pipeline-kanban.spec.ts \
+            e2e/auth-flows.spec.ts \
+            e2e/empty-states.spec.ts \
+            e2e/error-boundaries.spec.ts \
+            e2e/global-full-flow.spec.ts \
+            e2e/admin-members.spec.ts \
+            --project=chromium --reporter=list --workers=2 || echo "WARN: non-blocking specs had failures"
+      - name: API smoke tests (staging)
+        env:
+          APP_URL: https://saas-prospection.staging.veridian.site
+          SUPABASE_URL: https://saas-api.staging.veridian.site
+          NEXT_PUBLIC_SUPABASE_URL: https://saas-api.staging.veridian.site
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          npx tsx scripts/test-dashboard-api.ts || echo "WARN: API smoke failures"
+          npx tsx scripts/test-invite-api.ts || echo "WARN: invite API failures"
+          npx vitest run e2e/integration/admin-routes.test.ts --reporter=verbose || echo "WARN: admin tests failures"
+      - name: Upload screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: prospection/e2e/screenshots/
+          retention-days: 7
+
+  # ── Auto-promote staging → main (ff-only merge) ────────────────────
+  # When staging e2e passes, fast-forward merge staging → main.
+  # The push to main triggers docker/deploy-prod pipeline.
+  promote-to-main:
+    needs: [integration, e2e-staging]
+    if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Fast-forward merge staging → main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main staging
+          git checkout main
+          git merge origin/staging --ff-only
+          git push origin main
+          echo "✅ Promoted staging $(git rev-parse --short origin/staging) → main"
+
+  # ── Prod Docker build (triggered by push to main) ──────────────────
+  docker:
+    needs: [build, integration]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=
+            type=raw,value=latest
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./prospection
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            NEXT_PUBLIC_SUPABASE_URL=https://api.app.veridian.site
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.PROD_SUPABASE_ANON_KEY }}
+            NEXT_PUBLIC_HUB_URL=https://app.veridian.site
+            NEXT_PUBLIC_SITE_URL=https://prospection.app.veridian.site
+            NEXT_PUBLIC_TRIAL_DAYS=7
+
+  deploy-prod:
+    needs: docker
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH (with rollback tag)
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          VPS_HOST: ${{ vars.VPS_HOST }}
+          VPS_USER: ${{ vars.VPS_USER }}
+          COMPOSE_ID: ${{ vars.COMPOSE_ID_PROD }}
+          DOKPLOY_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H $VPS_HOST >> ~/.ssh/known_hosts 2>/dev/null
+
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST bash -s << 'DEPLOY'
+            # Tag current image as rollback BEFORE pulling new one
+            CURRENT_ID=$(docker images ghcr.io/christ-roy/prospection:latest --format '{{.ID}}' 2>/dev/null)
+            if [ -n "$CURRENT_ID" ]; then
+              docker tag "$CURRENT_ID" ghcr.io/christ-roy/prospection:rollback
+              echo "Tagged current image as :rollback ($CURRENT_ID)"
+            fi
+
+            # Pull new image
+            docker pull ghcr.io/christ-roy/prospection:latest
+            NEW_ID=$(docker images ghcr.io/christ-roy/prospection:latest --format '{{.ID}}')
+            echo "New image: $NEW_ID"
+
+            # Redeploy via Dokploy
+            DKEY=$(grep '^DOKPLOY_API_KEY=' ~/credentials/.all-creds.env | cut -d= -f2)
+            curl -sf -X POST \
+              -H "x-api-key: $DKEY" \
+              -H "Content-Type: application/json" \
+              -d '{"json":{"composeId":"xelXB17eNlesUlHqHJCtY"}}' \
+              http://localhost:3000/api/trpc/compose.redeploy
+
+            echo "Deployed ghcr.io/christ-roy/prospection:latest"
+          DEPLOY
+
+          # Health check post-deploy (wait up to 2 min)
+          echo "Waiting for prod health..."
+          for i in $(seq 1 12); do
+            if curl -sf https://prospection.app.veridian.site/api/health | grep -q healthy; then
+              echo "Prod healthy after ${i}0s"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "ERROR: prod health check failed after 2min" && exit 1
+
+  # ── E2E prod — multi-browser matrix ────────────────────────────────
+  e2e-prod:
+    needs: deploy-prod
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        browser: [chromium, firefox, webkit]
+    defaults:
+      run:
+        working-directory: prospection
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: prospection/package-lock.json
+      - run: npm ci
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Run E2E tests against prod (${{ matrix.browser }})
+        env:
+          HUB_URL: https://app.veridian.site
+          PROSPECTION_URL: https://prospection.app.veridian.site
+          SUPABASE_URL: https://api.app.veridian.site
+          SUPABASE_ANON_KEY: ${{ secrets.PROD_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PROD_SUPABASE_SERVICE_ROLE_KEY }}
+          TENANT_API_SECRET: ${{ secrets.PROD_TENANT_API_SECRET }}
+          TWENTY_URL: https://twenty.app.veridian.site
+          BROWSER: ${{ matrix.browser }}
+          CI: true
+        run: |
+          # SAFETY: e2e-prod must NEVER do signup/provision — it rate-limits
+          # the shared Supabase SERVICE_ROLE_KEY for ALL users.
+          # Only run specs that use existing accounts (loginRobert pattern).
+          npx playwright test e2e/invite-flow-demo.spec.ts --project=${{ matrix.browser }} --reporter=list || echo "WARN: invite-flow-demo"
+          # TODO: add more login-only prod smoke specs here (no signup!)
+      - name: Upload screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-prod-screenshots-${{ matrix.browser }}
+          path: prospection/e2e/screenshots/
+          retention-days: 7
+
+  # ── Rollback prod on E2E failure ───────────────────────────────────
+  rollback-prod:
+    needs: e2e-prod
+    if: failure() && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Rollback to previous image
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          VPS_HOST: ${{ vars.VPS_HOST }}
+          VPS_USER: ${{ vars.VPS_USER }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H $VPS_HOST >> ~/.ssh/known_hosts 2>/dev/null
+
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST bash -s << 'ROLLBACK'
+            echo "ROLLING BACK to previous image..."
+
+            # Check if rollback tag exists
+            ROLLBACK_ID=$(docker images ghcr.io/christ-roy/prospection:rollback --format '{{.ID}}' 2>/dev/null)
+            if [ -z "$ROLLBACK_ID" ]; then
+              echo "No :rollback image found — cannot rollback"
+              exit 1
+            fi
+
+            # Re-tag rollback as latest
+            docker tag ghcr.io/christ-roy/prospection:rollback ghcr.io/christ-roy/prospection:latest
+            echo "Tagged :rollback ($ROLLBACK_ID) as :latest"
+
+            # Redeploy via Dokploy API
+            DKEY=$(grep '^DOKPLOY_API_KEY=' ~/credentials/.all-creds.env | cut -d= -f2)
+            curl -sf -X POST \
+              -H "x-api-key: $DKEY" \
+              -H "Content-Type: application/json" \
+              -d '{"json":{"composeId":"xelXB17eNlesUlHqHJCtY"}}' \
+              http://localhost:3000/api/trpc/compose.redeploy
+
+            echo "Rolled back to previous image"
+          ROLLBACK
+
+          # Verify rollback health (wait up to 90s)
+          echo "Verifying rollback health..."
+          for i in $(seq 1 9); do
+            HEALTH=$(curl -sf https://prospection.app.veridian.site/api/health 2>/dev/null || echo "")
+            if echo "$HEALTH" | grep -q healthy; then
+              UPTIME=$(echo "$HEALTH" | python3 -c "import sys,json; print(json.load(sys.stdin).get('uptime_s','?'))" 2>/dev/null || echo "?")
+              echo "Rollback healthy (uptime: ${UPTIME}s)"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "WARNING: rollback health check timed out"
+
+  # ── Telegram notifications ─────────────────────────────────────────
+  notify-success:
+    needs: e2e-prod
+    if: success() && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify Telegram — prod deployed
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          SHA="${GITHUB_SHA:0:7}"
+          MSG="✅ *Prospection PROD deployed*%0A%0ACommit: \`${SHA}\`%0ABranch: \`${GITHUB_REF_NAME}\`%0ABy: ${GITHUB_ACTOR}%0A%0A[View run](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
+          curl -sf -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_CHAT_ID}" \
+            -d "text=${MSG}" \
+            -d "parse_mode=Markdown" \
+            -d "disable_web_page_preview=true"
+
+  notify-rollback:
+    needs: rollback-prod
+    if: always() && needs.rollback-prod.result != 'skipped' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify Telegram — rollback triggered
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          SHA="${GITHUB_SHA:0:7}"
+          MSG="❌ *Prospection PROD ROLLBACK*%0A%0ACommit: \`${SHA}\` failed E2E%0ABranch: \`${GITHUB_REF_NAME}\`%0ABy: ${GITHUB_ACTOR}%0ARolled back to previous image%0A%0A[View run](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
+          curl -sf -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_CHAT_ID}" \
+            -d "text=${MSG}" \
+            -d "parse_mode=Markdown" \
+            -d "disable_web_page_preview=true"

@@ -1,0 +1,35 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Veridian Prospection API",
+    "version": "1.0.0",
+    "description": "API de prospection commerciale B2B"
+  },
+  "paths": {
+    "/api/health": { "get": { "summary": "Health check", "responses": { "200": { "description": "Healthy" } } } },
+    "/api/status": { "get": { "summary": "Detailed status with counts", "responses": { "200": { "description": "Status object" } } } },
+    "/api/prospects": { "get": { "summary": "List prospects (paginated, filtered)", "parameters": [
+      { "name": "page", "in": "query", "schema": { "type": "integer" } },
+      { "name": "pageSize", "in": "query", "schema": { "type": "integer" } },
+      { "name": "sort", "in": "query", "schema": { "type": "string" } },
+      { "name": "dept", "in": "query", "schema": { "type": "string" } },
+      { "name": "preset", "in": "query", "schema": { "type": "string" } },
+      { "name": "hasWebsite", "in": "query", "schema": { "type": "string", "enum": ["0", "1"] } },
+      { "name": "q", "in": "query", "schema": { "type": "string" } }
+    ], "responses": { "200": { "description": "Paginated prospects" }, "401": { "description": "Unauthorized" } } } },
+    "/api/pipeline": { "get": { "summary": "Pipeline grouped by status", "responses": { "200": { "description": "Pipeline object" } } } },
+    "/api/leads/{siren}": { "get": { "summary": "Lead detail", "parameters": [{ "name": "siren", "in": "path", "required": true, "schema": { "type": "string" } }] } },
+    "/api/admin/invitations": { "get": { "summary": "List invitations" }, "post": { "summary": "Create invitation", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "email": { "type": "string" }, "role": { "type": "string" } } } } } } } },
+    "/api/admin/members": { "get": { "summary": "List workspace members" } },
+    "/api/admin/workspaces": { "get": { "summary": "List workspaces" }, "post": { "summary": "Create workspace" } },
+    "/api/stats/overview": { "get": { "summary": "KPI overview stats" } },
+    "/api/stats/by-department": { "get": { "summary": "Prospect count per department" } },
+    "/api/stats/segments": { "get": { "summary": "Segment catalog with volumes" } },
+    "/api/trial": { "get": { "summary": "Trial status (plan + daysLeft)" } },
+    "/api/me": { "get": { "summary": "Current user context" } },
+    "/api/checkout": { "post": { "summary": "Create Stripe checkout session", "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "plan": { "type": "string", "enum": ["geo", "full"] } } } } } } } },
+    "/api/changelog": { "get": { "summary": "Last 30 git commits" } },
+    "/api/sans-site-filters": { "get": { "summary": "Sans-site sidebar bucket counts" } },
+    "/api/errors": { "post": { "summary": "Client-side error reporting" } }
+  }
+}

@@ -1,0 +1,374 @@
+// Prisma schema — Prospection Dashboard (SIREN-centric SaaS)
+// 2026-04-05: Radical refactor. `results`, `email_verification`, `phone_verification`,
+// `pj_leads`, `ovh_monthly_destinations` are NO LONGER in the Prisma schema.
+// They still exist in DB as legacy tables (filet de sécurité) but are not used.
+//
+// The source of truth is now `entreprises` (996K SIREN from open-data-hub v3.8).
+// All metier tables (outreach, call_log, followups, claude_activity, outreach_emails,
+// lead_segments) now reference `siren` instead of `domain`.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// ENTREPRISES — SIREN-centric master table (source: open-data-hub v3.8)
+// ============================================================================
+//
+// Convention for dashboard queries:
+//   - Always filter `is_registrar = false`
+//   - Always filter `NOT COALESCE(ca_suspect, false)` (activates composite indexes)
+//   - Use `best_phone_e164` (not `best_phone`)
+//   - Sort by `prospect_score DESC` (0-100)
+
+model Entreprise {
+  // --- Identité SIRENE ---
+  siren                String    @id
+  siretSiege           String?   @map("siret_siege")
+  denomination         String?
+  sigle                String?
+  formeJuridique       String?   @map("forme_juridique")
+  codeNaf              String?   @map("code_naf")
+  nafLibelle           String?   @map("naf_libelle")
+  categorieEntreprise  String?   @map("categorie_entreprise")
+  trancheEffectifs     String?   @map("tranche_effectifs")
+  dateCreation         DateTime? @map("date_creation") @db.Date
+
+  // --- Adresse ---
+  adresse       String?
+  codePostal    String?  @map("code_postal")
+  commune       String?
+  departement   String?
+  codeCommune   String?  @map("code_commune")
+
+  // --- Contact (version brute + normalisée) ---
+  bestPhone            String?  @map("best_phone")
+  bestPhoneType        String?  @map("best_phone_type")
+  bestEmail            String?  @map("best_email")
+  socialLinkedin       String?  @map("social_linkedin")
+  socialFacebook       String?  @map("social_facebook")
+  socialInstagram      String?  @map("social_instagram")
+  socialTwitter        String?  @map("social_twitter")
+
+  // Versions normalisées à utiliser par défaut
+  bestPhoneE164        String?  @map("best_phone_e164")
+  bestEmailNormalized  String?  @map("best_email_normalized")
+  bestEmailType        String?  @map("best_email_type")
+  webDomainNormalized  String?  @map("web_domain_normalized")
+
+  // --- Dirigeant ---
+  dirigeantNom     String?  @map("dirigeant_nom")
+  dirigeantPrenom  String?  @map("dirigeant_prenom")
+  dirigeantQualite String?  @map("dirigeant_qualite")
+
+  // --- Web ---
+  webDomain              String?  @map("web_domain")
+  webDomainsAll          Json?    @map("web_domains_all")
+  webDomainCount         Int?     @map("web_domain_count") @db.SmallInt
+  webCms                 String?  @map("web_cms")
+  webPlatform            String?  @map("web_platform")
+  webTechScore           Int?     @map("web_tech_score") @db.SmallInt
+  webObsolescenceScore   Int?     @map("web_obsolescence_score") @db.SmallInt
+  webEclateScore         Int?     @map("web_eclate_score") @db.SmallInt
+  webCopyrightYear       Int?     @map("web_copyright_year") @db.SmallInt
+  webHasHttps            Boolean? @map("web_has_https")
+  webHasResponsive       Boolean? @map("web_has_responsive")
+  webHasEcommerce        Boolean? @map("web_has_ecommerce")
+  webHasContactForm      Boolean? @map("web_has_contact_form")
+  webHasMentionsLegales  Boolean? @map("web_has_mentions_legales")
+  webHasFlash            Boolean? @map("web_has_flash")
+  webHasLayoutTables     Boolean? @map("web_has_layout_tables")
+  webHasIePolyfills      Boolean? @map("web_has_ie_polyfills")
+  webHasLoremIpsum       Boolean? @map("web_has_lorem_ipsum")
+  webHasPhpsessid        Boolean? @map("web_has_phpsessid")
+  webHasViewportNoScale  Boolean? @map("web_has_viewport_no_scale")
+  webHasMetaKeywords     Boolean? @map("web_has_meta_keywords")
+  webHasMixedContent     Boolean? @map("web_has_mixed_content")
+  webHasOldHtml          Boolean? @map("web_has_old_html")
+  webHasOldImages        Boolean? @map("web_has_old_images")
+  webHasModernImages     Boolean? @map("web_has_modern_images")
+  webHasFavicon          Boolean? @map("web_has_favicon")
+  webHasMinifiedAssets   Boolean? @map("web_has_minified_assets")
+  webHasCompression      Boolean? @map("web_has_compression")
+  webHasRecruitingPage   Boolean? @map("web_has_recruiting_page")
+  webHasBlog             Boolean? @map("web_has_blog")
+  webHasChatWidget       Boolean? @map("web_has_chat_widget")
+  webHasBookingSystem    Boolean? @map("web_has_booking_system")
+  webHasHoraires         Boolean? @map("web_has_horaires")
+  webHasGoogleMaps       Boolean? @map("web_has_google_maps")
+
+  // --- Finances ---
+  chiffreAffaires BigInt?   @map("chiffre_affaires")
+  resultatNet     BigInt?   @map("resultat_net")
+  margeEbe        Float?    @map("marge_ebe")
+  bilanDate       DateTime? @map("bilan_date") @db.Date
+
+  // --- Certifications & labels ---
+  estRge              Boolean? @map("est_rge")
+  estQualiopi         Boolean? @map("est_qualiopi")
+  qualiopiSpecialite  String?  @map("qualiopi_specialite")
+  estBio              Boolean? @map("est_bio")
+  estEpv              Boolean? @map("est_epv")
+  estFiness           Boolean? @map("est_finess")
+  estEss              Boolean? @map("est_ess")
+  estSurLbc           Boolean? @map("est_sur_lbc")
+  estBni              Boolean? @map("est_bni")
+
+  // --- Signaux business ---
+  nbMarchesPublics      Int?      @map("nb_marches_publics")
+  montantMarchesPublics BigInt?   @map("montant_marches_publics")
+  decp2024Plus          Int?      @map("decp_2024_plus") @db.SmallInt
+  decpLastDate          DateTime? @map("decp_last_date") @db.Date
+
+  // --- Classification & scoring ---
+  secteurFinal      String?   @map("secteur_final")
+  domaineFinal      String?   @map("domaine_final")
+  prospectTier      String?   @map("prospect_tier")
+  prospectScore     Int?      @map("prospect_score") @db.SmallInt
+  isProspectable    Boolean?  @map("is_prospectable")
+  dataCompleteness  Int?      @map("data_completeness") @db.SmallInt
+  sourceCount       Int?      @map("source_count") @db.SmallInt
+  signalCount       Int?      @map("signal_count") @db.SmallInt
+  masterUpdatedAt   DateTime? @map("master_updated_at") @db.Timestamp
+
+  // --- BODACC ---
+  bodaccStatus        String?  @map("bodacc_status")
+  bodaccNbProcedures  Int?     @map("bodacc_nb_procedures") @db.SmallInt
+
+  // --- Flags techniques (filtres par défaut !) ---
+  isRegistrar           Boolean? @map("is_registrar")
+  caSuspect             Boolean? @map("ca_suspect")
+  isAutoEntrepreneur    Boolean? @map("is_auto_entrepreneur")
+  wasInStagingResults   Boolean? @map("was_in_staging_results")
+
+  // --- Relations (metier tables, FK on siren) ---
+  outreaches       Outreach[]
+  callLogs         CallLog[]
+  followups        Followup[]
+  claudeActivities ClaudeActivity[]
+  outreachEmails   OutreachEmail[]
+
+  @@map("entreprises")
+  // Indexes are created by open-data-hub/migration_pg_entreprises.sql
+  // (23 indexes including 3 critical composites for segment queries).
+}
+
+// ============================================================================
+// OPERATIONAL TABLES — Referenced by SIREN
+// ============================================================================
+
+model Outreach {
+  siren         String
+  tenantId      String  @default("00000000-0000-0000-0000-000000000000") @map("tenant_id") @db.Uuid
+  workspaceId   String? @map("workspace_id") @db.Uuid
+  userId        String? @map("user_id") @db.Uuid
+  status        String  @default("a_contacter")
+  contactedDate String? @map("contacted_date")
+  contactMethod String? @map("contact_method")
+  notes         String?
+  qualification Float?
+  lastVisited   String? @map("last_visited")
+  updatedAt     String? @map("updated_at")
+  position      Int     @default(0)
+
+  entreprise Entreprise @relation(fields: [siren], references: [siren])
+
+  @@id([siren, tenantId])
+  @@index([tenantId, workspaceId])
+  @@index([tenantId, userId])
+  @@map("outreach")
+}
+
+model ClaudeActivity {
+  id           Int     @id @default(autoincrement())
+  tenantId     String? @map("tenant_id") @db.Uuid
+  workspaceId  String? @map("workspace_id") @db.Uuid
+  userId       String? @map("user_id") @db.Uuid
+  siren        String
+  activityType String  @map("activity_type")
+  title        String?
+  content      String
+  metadata     String?
+  createdAt    String  @default(dbgenerated("NOW()")) @map("created_at")
+
+  entreprise Entreprise @relation(fields: [siren], references: [siren])
+
+  @@index([tenantId])
+  @@index([tenantId, workspaceId])
+  @@index([tenantId, userId])
+  @@index([siren])
+  @@index([activityType])
+  @@index([createdAt(sort: Desc)])
+  @@map("claude_activity")
+}
+
+model Followup {
+  id          Int     @id @default(autoincrement())
+  tenantId    String? @map("tenant_id") @db.Uuid
+  workspaceId String? @map("workspace_id") @db.Uuid
+  siren       String
+  scheduledAt String  @map("scheduled_at")
+  status      String  @default("pending")
+  note        String?
+  createdAt   String? @default(dbgenerated("NOW()")) @map("created_at")
+
+  entreprise Entreprise @relation(fields: [siren], references: [siren])
+
+  @@index([tenantId])
+  @@index([tenantId, workspaceId])
+  @@index([siren])
+  @@index([status])
+  @@index([scheduledAt])
+  @@map("followups")
+}
+
+model OutreachEmail {
+  id        Int     @id @default(autoincrement())
+  tenantId  String? @map("tenant_id") @db.Uuid
+  siren     String
+  toEmail   String  @map("to_email")
+  fromEmail String  @default("robert.brunon@veridian.site") @map("from_email")
+  subject   String
+  bodyText  String  @map("body_text")
+  sentAt    String  @map("sent_at")
+  messageId String? @map("message_id")
+  status    String  @default("sent")
+
+  entreprise Entreprise @relation(fields: [siren], references: [siren])
+
+  @@index([tenantId])
+  @@index([siren])
+  @@index([sentAt])
+  @@map("outreach_emails")
+}
+
+model CallLog {
+  id                  Int     @id @default(autoincrement())
+  tenantId            String? @map("tenant_id") @db.Uuid
+  workspaceId         String? @map("workspace_id") @db.Uuid
+  userId              String? @map("user_id") @db.Uuid
+  direction           String
+  provider            String
+  fromNumber          String? @map("from_number")
+  toNumber            String? @map("to_number")
+  siren               String?
+  status              String  @default("initiated")
+  startedAt           String  @map("started_at")
+  endedAt             String? @map("ended_at")
+  durationSeconds     Int?    @map("duration_seconds")
+  recordingPath       String? @map("recording_path")
+  notes               String?
+  telnyxCallControlId String? @map("telnyx_call_control_id")
+
+  entreprise Entreprise? @relation(fields: [siren], references: [siren])
+
+  @@index([tenantId])
+  @@index([tenantId, workspaceId])
+  @@index([tenantId, userId])
+  @@index([siren])
+  @@index([startedAt(sort: Desc)])
+  @@map("call_log")
+}
+
+model LeadSegment {
+  siren    String
+  segment  String  @default("audit")
+  tenantId String  @default("00000000-0000-0000-0000-000000000000") @map("tenant_id") @db.Uuid
+  addedAt  String  @map("added_at")
+  notes    String?
+
+  @@id([siren, segment, tenantId])
+  @@map("lead_segments")
+}
+
+model PipelineConfig {
+  key      String
+  tenantId String  @default("00000000-0000-0000-0000-000000000000") @map("tenant_id") @db.Uuid
+  value    String
+
+  @@id([key, tenantId])
+  @@map("pipeline_config")
+}
+
+// ============================================================================
+// WORKSPACES — Sous-découpage d'un tenant pour cloisonner les commerciaux
+// ============================================================================
+
+model Workspace {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  name        String
+  slug        String
+  leadsLimit  Int?     @map("leads_limit")
+  createdBy   String?  @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  members WorkspaceMember[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  workspaceId     String   @map("workspace_id") @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  role            String   @default("member") // "admin" | "member"
+  visibilityScope String   @default("all") @map("visibility_scope") // "all" | "own"
+  joinedAt        DateTime @default(now()) @map("joined_at") @db.Timestamptz
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@id([workspaceId, userId])
+  @@index([userId])
+  @@map("workspace_members")
+}
+
+model MagicLink {
+  token       String    @id
+  email       String
+  tenantId    String    @map("tenant_id") @db.Uuid
+  workspaceId String?   @map("workspace_id") @db.Uuid
+  role        String    @default("member")
+  invitedBy   String?   @map("invited_by") @db.Uuid
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz
+  usedAt      DateTime? @map("used_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([tenantId])
+  @@index([email])
+  @@map("magic_links")
+}
+
+// Invitation to join a tenant/workspace (persistent, revocable, role-bearing).
+// See scripts/2026-04-05_add-invitations-table.sql for the SQL migration.
+model Invitation {
+  id          Int       @id @default(autoincrement())
+  email       String
+  invitedBy   String    @map("invited_by") @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  workspaceId String?   @map("workspace_id") @db.Uuid
+  role        String    @default("member") // "admin" | "member"
+  token       String    @unique
+  expiresAt   DateTime  @default(dbgenerated("(now() + interval '7 days')")) @map("expires_at") @db.Timestamptz
+  acceptedAt  DateTime? @map("accepted_at") @db.Timestamptz
+  revokedAt   DateTime? @map("revoked_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([tenantId])
+  @@index([token])
+  @@index([email])
+  @@map("invitations")
+}
+
+// ============================================================================
+// SAAS TABLES — NOT in this database.
+// Tenants, profiles, subscriptions live in Supabase Postgres (hub).
+// Prospection reads them via Supabase API (see src/lib/supabase/tenant.ts).
+// ============================================================================
