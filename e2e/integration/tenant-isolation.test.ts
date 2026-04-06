@@ -84,7 +84,7 @@ afterAll(async () => {
   if (createdSirens.length > 0) {
     // Delete ALL outreach/call_log/claude_activity referencing these SIRENs
     // (not just by tenant_id — FK is on siren, any tenant's rows block deletion)
-    for (const table of ['outreach', 'call_log', 'claude_activity', 'followups', 'lead_segments']) {
+    for (const table of ['outreach_email', 'outreach', 'call_log', 'claude_activity', 'followups', 'lead_segments']) {
       await prisma.$executeRawUnsafe(
         `DELETE FROM ${table} WHERE siren IN (${createdSirens.map((_, i) => `$${i + 1}`).join(',')})`,
         ...createdSirens,
