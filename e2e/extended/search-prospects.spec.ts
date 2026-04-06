@@ -17,7 +17,7 @@
  * autres specs de la session 2026-04-05).
  */
 import { test, expect, type ConsoleMessage, type Request } from "@playwright/test";
-import { loginAsE2EUser } from "./helpers/auth";
+import { loginAsE2EUser } from '../helpers/auth";
 
 const PROSPECTION_URL =
   process.env.PROSPECTION_URL || "https://saas-prospection.staging.veridian.site";

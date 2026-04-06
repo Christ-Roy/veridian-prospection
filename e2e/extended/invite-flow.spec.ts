@@ -17,7 +17,7 @@
  * Zero console error sur les 2 contexts.
  */
 import { test, expect, type ConsoleMessage, type Page } from "@playwright/test";
-import { loginAsE2EUser } from "./helpers/auth";
+import { loginAsE2EUser } from '../helpers/auth";
 
 const PROSPECTION_URL =
   process.env.PROSPECTION_URL || "https://saas-prospection.staging.veridian.site";
