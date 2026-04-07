@@ -20,42 +20,27 @@ const USER_ADMIN = "11111111-1111-1111-1111-111111111111";
 const USER_MEMBER_PARIS = "22222222-2222-2222-2222-222222222222";
 const USER_MEMBER_LYON = "33333333-3333-3333-3333-333333333333";
 
-// Real SIREN from entreprises (diamond prospects)
-const SIREN_1 = "439076563"; // POLLEN SCOP
-const SIREN_2 = "410829477"; // OXALIS
+// Dynamic fictitious SIRENs — prefix 999 never exists in real SIRENE data.
+// Unique per run so parallel test files never conflict.
+const RUN_ID = Date.now().toString().slice(-6);
+const SIREN_1 = `999${RUN_ID}1`.slice(0, 9);
+const SIREN_2 = `999${RUN_ID}2`.slice(0, 9);
 
 let skip = false;
-let createdSirens: string[] = [];
 
 beforeAll(async () => {
-  // Seed test SIREN into entreprises so FK constraints on outreach/call_log/
-  // followups/claude_activity can resolve. In CI the Postgres is ephemeral and
-  // entreprises is empty. Locally (against a real DB) the rows already exist,
-  // so we only create the missing ones and only cleanup what we created.
-  const existing = await prisma.entreprise.findMany({
-    where: { siren: { in: [SIREN_1, SIREN_2] } },
-    select: { siren: true },
-  });
-  const existingSet = new Set(existing.map((e) => e.siren));
-  const toCreate: { siren: string; denomination: string }[] = [];
-  if (!existingSet.has(SIREN_1)) toCreate.push({ siren: SIREN_1, denomination: "POLLEN SCOP (test)" });
-  if (!existingSet.has(SIREN_2)) toCreate.push({ siren: SIREN_2, denomination: "OXALIS (test)" });
-  if (toCreate.length > 0) {
-    try {
-      await prisma.entreprise.createMany({ data: toCreate, skipDuplicates: true });
-      createdSirens = toCreate.map((e) => e.siren);
-    } catch (err) {
-      console.warn("[workspace-isolation] Failed to seed test SIREN:", err);
-    }
-  }
-
-  const rows = await prisma.entreprise.findMany({
-    where: { siren: { in: [SIREN_1, SIREN_2] } },
-    select: { siren: true },
-  });
-  if (rows.length < 2) {
+  // Create fictitious entreprises for FK constraints — unique per run, no conflict.
+  try {
+    await prisma.entreprise.createMany({
+      data: [
+        { siren: SIREN_1, denomination: `WS-TEST-A-${RUN_ID}` },
+        { siren: SIREN_2, denomination: `WS-TEST-B-${RUN_ID}` },
+      ],
+      skipDuplicates: true,
+    });
+  } catch (err) {
     skip = true;
-    console.warn("[workspace-isolation] Test SIREN not found in entreprises, skipping");
+    console.warn("[workspace-isolation] Failed to seed test entreprises:", err);
     return;
   }
 
@@ -112,11 +97,9 @@ afterAll(async () => {
   await prisma.workspace.deleteMany({
     where: { id: { in: [WS_PARIS, WS_LYON, WS_OTHER_TENANT] } },
   });
-  if (createdSirens.length > 0) {
-    await prisma.entreprise.deleteMany({
-      where: { siren: { in: createdSirens } },
-    });
-  }
+  await prisma.entreprise.deleteMany({
+    where: { siren: { in: [SIREN_1, SIREN_2] } },
+  });
   await prisma.$disconnect();
 });
 

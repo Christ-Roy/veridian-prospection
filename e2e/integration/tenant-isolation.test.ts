@@ -15,47 +15,29 @@ const prisma = new PrismaClient();
 const TENANT_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 const TENANT_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
 
-// Three real SIREN from the entreprises table (all known diamond prospects)
-// We assume these exist in staging. If the test runs against a fresh DB,
-// it will be skipped gracefully.
-const SIREN_A = "439076563"; // POLLEN SCOP
-const SIREN_B = "410829477"; // OXALIS
-const SIREN_SHARED = "495204125"; // A DEUX ET PLUS
+// Dynamic fictitious SIRENs — prefix 998 (different from workspace-isolation's 999).
+// Unique per run so parallel test files never conflict.
+const RUN_ID = Date.now().toString().slice(-6);
+const SIREN_A = `998${RUN_ID}1`.slice(0, 9);
+const SIREN_B = `998${RUN_ID}2`.slice(0, 9);
+const SIREN_SHARED = `998${RUN_ID}3`.slice(0, 9);
 
 let skip = false;
-let createdSirens: string[] = [];
 
 beforeAll(async () => {
-  // Seed test SIREN into entreprises so FK constraints on outreach/followups/
-  // claude_activity/lead_segments can resolve. In CI the Postgres is ephemeral
-  // and entreprises is empty. Locally (against a real DB) the rows already
-  // exist, so we only create the missing ones and only cleanup what we created.
-  const existing = await prisma.entreprise.findMany({
-    where: { siren: { in: [SIREN_A, SIREN_B, SIREN_SHARED] } },
-    select: { siren: true },
-  });
-  const existingSet = new Set(existing.map((e) => e.siren));
-  const toCreate: { siren: string; denomination: string }[] = [];
-  if (!existingSet.has(SIREN_A)) toCreate.push({ siren: SIREN_A, denomination: "POLLEN SCOP (test)" });
-  if (!existingSet.has(SIREN_B)) toCreate.push({ siren: SIREN_B, denomination: "OXALIS (test)" });
-  if (!existingSet.has(SIREN_SHARED))
-    toCreate.push({ siren: SIREN_SHARED, denomination: "A DEUX ET PLUS (test)" });
-  if (toCreate.length > 0) {
-    try {
-      await prisma.entreprise.createMany({ data: toCreate, skipDuplicates: true });
-      createdSirens = toCreate.map((e) => e.siren);
-    } catch (err) {
-      console.warn("[tenant-isolation] Failed to seed test SIREN:", err);
-    }
-  }
-
-  const rows = await prisma.entreprise.findMany({
-    where: { siren: { in: [SIREN_A, SIREN_B, SIREN_SHARED] } },
-    select: { siren: true },
-  });
-  if (rows.length < 3) {
+  // Create fictitious entreprises for FK constraints — unique per run, no conflict.
+  try {
+    await prisma.entreprise.createMany({
+      data: [
+        { siren: SIREN_A, denomination: `TI-TEST-A-${RUN_ID}` },
+        { siren: SIREN_B, denomination: `TI-TEST-B-${RUN_ID}` },
+        { siren: SIREN_SHARED, denomination: `TI-TEST-SHARED-${RUN_ID}` },
+      ],
+      skipDuplicates: true,
+    });
+  } catch (err) {
     skip = true;
-    console.warn("[tenant-isolation] Not all test SIREN exist in entreprises, skipping");
+    console.warn("[tenant-isolation] Failed to seed test entreprises:", err);
   }
 });
 
@@ -64,7 +46,7 @@ afterAll(async () => {
     // Cleanup: remove any rows we created for TENANT_A and TENANT_B
     // Use raw SQL with CASCADE-aware order to avoid FK violations
     const testTenants = [TENANT_A, TENANT_B];
-    const testSirens = createdSirens.length > 0 ? createdSirens : [SIREN_A, SIREN_B, SIREN_SHARED];
+    const testSirens = [SIREN_A, SIREN_B, SIREN_SHARED];
 
     // Delete in FK-safe order: children first, parents last
     for (const table of ['outreach_email', 'call_log', 'claude_activity', 'followups', 'lead_segments', 'outreach']) {
@@ -81,11 +63,9 @@ afterAll(async () => {
       }
     }
 
-    if (createdSirens.length > 0) {
-      await prisma.entreprise.deleteMany({
-        where: { siren: { in: createdSirens } },
-      }).catch(() => {});
-    }
+    await prisma.entreprise.deleteMany({
+      where: { siren: { in: testSirens } },
+    }).catch(() => {});
   } catch (err) {
     console.warn("[tenant-isolation] Cleanup error (non-fatal):", err);
   }
