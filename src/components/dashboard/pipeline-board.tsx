@@ -205,11 +205,11 @@ export function PipelineBoard() {
 
     // Persist atomically — single batch request for both columns
     try {
-      const columns: { status: string; domains: string[] }[] = [
-        { status: targetColumn, domains: next[targetColumn].map(l => l.domain) },
+      const columns: { status: string; sirens: string[] }[] = [
+        { status: targetColumn, sirens: next[targetColumn].map(l => l.siren).filter((s): s is string => !!s) },
       ];
       if (sourceColumn !== targetColumn && next[sourceColumn]?.length) {
-        columns.push({ status: sourceColumn, domains: next[sourceColumn].map(l => l.domain) });
+        columns.push({ status: sourceColumn, sirens: next[sourceColumn].map(l => l.siren).filter((s): s is string => !!s) });
       }
 
       const res = await fetch("/api/pipeline", {

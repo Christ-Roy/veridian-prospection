@@ -159,8 +159,8 @@ export async function getLeadDetail(siren: string, tenantId: string | null = nul
   return {
     ...safeLead,
     // LeadDetail extra fields
-    phones: (fullSafe.best_phone as string) ?? null,
-    emails: (fullSafe.best_email as string) ?? null,
+    phones: (fullSafe.best_phone_e164 as string) ?? null,
+    emails: (fullSafe.best_email_normalized as string) ?? null,
     siret: (fullSafe.siret_siege as string) ?? null,
     siren: (fullSafe.siren as string) ?? siren,
     tva_intracom: null,
