@@ -159,8 +159,10 @@ export async function getLeadDetail(siren: string, tenantId: string | null = nul
   return {
     ...safeLead,
     // LeadDetail extra fields
-    phones: (fullSafe.best_phone_e164 as string) ?? null,
-    emails: (fullSafe.best_email_normalized as string) ?? null,
+    // phones/emails: null → UI falls back to lead.phone / lead.email (single value from buildLeadsSelect)
+    // These would be JSON arrays if we had multiple phones/emails per entreprise (future)
+    phones: null,
+    emails: null,
     siret: (fullSafe.siret_siege as string) ?? null,
     siren: (fullSafe.siren as string) ?? siren,
     tva_intracom: null,
