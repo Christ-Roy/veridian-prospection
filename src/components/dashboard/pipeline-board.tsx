@@ -251,7 +251,7 @@ export function PipelineBoard() {
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Pipeline</h2>
           <Badge variant="outline" className="text-xs">
-            {Object.values(pipeline).reduce((a, b) => a + b.length, 0)} leads
+            {Object.values(pipeline).reduce((a, b) => a + (b?.length || 0), 0)} leads
           </Badge>
         </div>
         <Button size="sm" variant="outline" onClick={fetchPipeline} className="gap-1.5 h-8">

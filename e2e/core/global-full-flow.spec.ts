@@ -22,7 +22,7 @@ test.describe("Global full flow — Robert daily journey", () => {
     await page.locator("#email").fill(ROBERT_EMAIL);
     await page.locator("#password").fill(ROBERT_PASSWORD);
     await page.locator('button[type="submit"]').click();
-    await page.waitForURL(/\/(prospects|$)/, { timeout: 20000 });
+    await page.waitForURL(/\/(prospects|$)/, { timeout: 30000 });
     expect(page.url()).not.toContain("/login");
     console.log(`[global] 1. logged in → ${page.url()}`);
 

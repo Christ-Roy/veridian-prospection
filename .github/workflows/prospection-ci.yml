@@ -103,10 +103,12 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:testpass@localhost:5432/prospection_test
         run: npx prisma db push --accept-data-loss --skip-generate
-      - name: Run tenant isolation tests
+      - name: Run integration tests (sequential — shared DB)
         env:
           DATABASE_URL: postgresql://postgres:testpass@localhost:5432/prospection_test
-        run: npx vitest run e2e/integration/ --fileParallelism=false
+        run: |
+          npx vitest run e2e/integration/tenant-isolation.test.ts
+          npx vitest run e2e/integration/workspace-isolation.test.ts
 
   docker-staging:
     needs: build
@@ -214,15 +216,22 @@ jobs:
       - run: npm ci
       - name: Install Playwright chromium
         run: npx playwright install --with-deps chromium
-      - name: Wait for staging health
+      - name: Wait for staging health + warm-up
         run: |
           for i in $(seq 1 12); do
             STATUS=$(curl -sf https://saas-prospection.staging.veridian.site/api/health | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "")
-            if [ "$STATUS" = "healthy" ]; then echo "Staging healthy after ${i}0s"; exit 0; fi
+            if [ "$STATUS" = "healthy" ]; then echo "Staging healthy after ${i}0s"; break; fi
             echo "Waiting... attempt $i"
             sleep 10
           done
-          echo "Staging not healthy after 2 min" && exit 1
+          if [ "$STATUS" != "healthy" ]; then echo "Staging not healthy after 2 min" && exit 1; fi
+          # Warm-up: hit key pages so Next.js compiles them before Playwright starts
+          echo "Warming up pages..."
+          curl -sf https://saas-prospection.staging.veridian.site/login -o /dev/null && echo "  /login OK"
+          curl -sf https://saas-prospection.staging.veridian.site/api/status -o /dev/null && echo "  /api/status OK"
+          curl -sf https://saas-hub.staging.veridian.site/ -o /dev/null && echo "  hub OK"
+          curl -sf https://saas-api.staging.veridian.site/auth/v1/health -H "apikey: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}" -o /dev/null && echo "  supabase OK"
+          echo "Warm-up done"
       - name: "Core E2E — BLOQUANT (6 specs)"
         env:
           HUB_URL: https://saas-hub.staging.veridian.site
