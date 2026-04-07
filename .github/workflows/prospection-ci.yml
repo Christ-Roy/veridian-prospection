@@ -303,18 +303,17 @@ jobs:
 
   # ── Auto-promote staging → main (ff-only merge) ────────────────────
   # When staging e2e passes, fast-forward merge staging → main.
-  # The push to main triggers docker/deploy-prod pipeline.
+  # Uses PROMOTE_PAT (not GITHUB_TOKEN) so the push triggers the prod pipeline.
+  # GITHUB_TOKEN pushes don't trigger workflows (GitHub anti-loop protection).
   promote-to-main:
     needs: [integration, e2e-core]
     if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PROMOTE_PAT }}
       - name: Fast-forward merge staging → main
         run: |
           git config user.name "github-actions[bot]"
