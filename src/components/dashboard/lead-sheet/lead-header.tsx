@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { webHref } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -155,7 +156,7 @@ export function LeadHeader({ lead, domain, onUpdated, onDismiss }: LeadHeaderPro
             </a>
           ) : !lead.is_pj_lead && lead.web_domain ? (
             <a
-              href={`https://${lead.web_domain}`}
+              href={webHref(lead.web_domain, lead.web_domains_all)}
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm text-blue-600 hover:underline flex items-center gap-1"

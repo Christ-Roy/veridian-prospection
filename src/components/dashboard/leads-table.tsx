@@ -18,6 +18,7 @@ import { StatusBadge } from "./status-badge";
 import { LeadSheet } from "./lead-sheet";
 import { AdvancedFilters } from "./advanced-filters";
 import { formatCA, formatEffectifs, formatTimeAgo } from "@/lib/types";
+import { webHref } from "@/lib/utils";
 import { NAF_LABELS } from "@/lib/naf";
 import { toast } from "sonner";
 import type { Lead } from "@/lib/types";
@@ -462,7 +463,7 @@ export function LeadsTable() {
                     <div className="flex items-center gap-1.5">
                       {lead.web_domain ? (
                         <a
-                          href={`https://${lead.web_domain}`}
+                          href={webHref(lead.web_domain!, lead.web_domains_all)}
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={(e) => e.stopPropagation()}

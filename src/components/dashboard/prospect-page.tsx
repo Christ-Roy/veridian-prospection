@@ -22,6 +22,7 @@ import { GeoFilterSidebar } from "./geo-filter-sidebar";
 import { SizeFilterSidebar, DEFAULT_SIZE_FILTER, type SizeFilterState } from "./size-filter-sidebar";
 import { QualityFilterSidebar, DEFAULT_QUALITY_FILTER, type QualityFilterState } from "./quality-filter-sidebar";
 import { formatCA, formatEffectifs } from "@/lib/types";
+import { webHref } from "@/lib/utils";
 import { toast } from "sonner";
 import type { ProspectPreset } from "@/lib/domains";
 import {
@@ -643,7 +644,7 @@ function ProspectRow({ lead, isSelected, dismissPhase, todayCount, onSelect, onC
         <div className="flex items-center gap-1.5 truncate">
           {(l.web_domain as string) ? (
             <a
-              href={`https://${l.web_domain as string}`}
+              href={webHref(l.web_domain as string)}
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { webHref } from "@/lib/utils";
 
 /** Safely parse a JSON array string. Returns [] on invalid JSON (e.g. obfuscated data). */
 function safeParseArray(val: string | null | undefined): string[] {
@@ -742,7 +743,7 @@ export function SitesSection({ lead }: { lead: LeadDetail }) {
     return (
       <div className="space-y-2" data-testid="sites-section">
         <a
-          href={`https://${lead.web_domain}`}
+          href={webHref(lead.web_domain, lead.web_domains_all)}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline break-all"
