@@ -300,34 +300,66 @@ model PipelineConfig {
 // ============================================================================
 
 model Workspace {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId    String   @map("tenant_id") @db.Uuid
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
   name        String
   slug        String
-  leadsLimit  Int?     @map("leads_limit")
-  createdBy   String?  @map("created_by") @db.Uuid
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  leadsLimit  Int?      @map("leads_limit")
+  createdBy   String?   @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  // SaaS standard — soft delete (P1.1). Purge définitive cron 30j (P1.6).
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
 
   members WorkspaceMember[]
 
   @@unique([tenantId, slug])
   @@index([tenantId])
+  @@index([tenantId, deletedAt])
   @@map("workspaces")
 }
 
 model WorkspaceMember {
-  workspaceId     String   @map("workspace_id") @db.Uuid
-  userId          String   @map("user_id") @db.Uuid
-  role            String   @default("member") // "admin" | "member"
-  visibilityScope String   @default("all") @map("visibility_scope") // "all" | "own"
-  joinedAt        DateTime @default(now()) @map("joined_at") @db.Timestamptz
+  workspaceId     String    @map("workspace_id") @db.Uuid
+  userId          String    @map("user_id") @db.Uuid
+  // Roles: "owner" | "admin" | "member" | "viewer" (voir src/lib/auth/roles.ts)
+  // Legacy values "admin" / "member" existent déjà, compat OK.
+  role            String    @default("member")
+  visibilityScope String    @default("all") @map("visibility_scope") // "all" | "own"
+  joinedAt        DateTime  @default(now()) @map("joined_at") @db.Timestamptz
+  // SaaS standard — soft delete (P1.1)
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@id([workspaceId, userId])
   @@index([userId])
+  @@index([workspaceId, deletedAt])
   @@map("workspace_members")
+}
+
+// ============================================================================
+// AUDIT LOG — SaaS standard (docs/saas-standards.md §7)
+// ============================================================================
+// Table immutable, read-only, rétention minimum 365 jours.
+// Pas de migration encore jouée — P1.7 main agent only. Le helper src/lib/audit.ts
+// tolère l'absence de la table (warn + skip) en attendant.
+
+model AuditLog {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String?  @map("tenant_id") @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  actorType  String   @map("actor_type") // 'user' | 'hub' | 'stripe' | 'system'
+  action     String   // 'workspace.deleted', 'plan.changed', ...
+  targetType String?  @map("target_type")
+  targetId   String?  @map("target_id")
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([actorId])
+  @@index([action])
+  @@map("audit_log")
 }
 
 model MagicLink {
