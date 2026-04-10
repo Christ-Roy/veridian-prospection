@@ -74,7 +74,6 @@ jobs:
   integration:
     needs: build
     runs-on: ubuntu-latest
-    continue-on-error: true  # TEMPORARY: flaky in CI, fix pending (see TODO P0.9)
     services:
       postgres:
         image: postgres:15-alpine
@@ -103,12 +102,14 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:testpass@localhost:5432/prospection_test
         run: npx prisma db push --accept-data-loss --skip-generate
-      - name: Run integration tests (sequential — shared DB)
+      - name: Run integration tests (parallel — disjoint tenant_id + SIREN prefixes)
         env:
           DATABASE_URL: postgresql://postgres:testpass@localhost:5432/prospection_test
         run: |
-          npx vitest run e2e/integration/tenant-isolation.test.ts
-          npx vitest run e2e/integration/workspace-isolation.test.ts
+          # tenant-isolation uses tenants aaaa/bbbb + SIREN prefix 998.
+          # workspace-isolation uses tenants cccc/dddd + SIREN prefix 999.
+          # No overlap → safe to run in parallel (vitest default).
+          npx vitest run e2e/integration/tenant-isolation.test.ts e2e/integration/workspace-isolation.test.ts
 
   docker-staging:
     needs: build
@@ -316,7 +317,7 @@ jobs:
   # Uses PROMOTE_PAT (not GITHUB_TOKEN) so the push triggers the prod pipeline.
   # GITHUB_TOKEN pushes don't trigger workflows (GitHub anti-loop protection).
   promote-to-main:
-    needs: [e2e-core]
+    needs: [integration, e2e-core]
     if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:

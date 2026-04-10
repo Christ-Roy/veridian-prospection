@@ -17,9 +17,10 @@ const USER_MEMBER_PARIS = "22222222-2222-2222-2222-222222222222";
 const USER_MEMBER_LYON = "33333333-3333-3333-3333-333333333333";
 
 // Dynamic fictitious SIRENs — prefix 999 never exists in real SIRENE data.
-const RUN_ID = Date.now().toString().slice(-6);
-const SIREN_1 = `999${RUN_ID}1`.slice(0, 9);
-const SIREN_2 = `999${RUN_ID}2`.slice(0, 9);
+// SIREN format = 9 digits exactly. Layout: 999 (3) + RUN_ID (5) + suffix (1) = 9.
+const RUN_ID = Date.now().toString().slice(-5);
+const SIREN_1 = `999${RUN_ID}1`;
+const SIREN_2 = `999${RUN_ID}2`;
 
 let WS_PARIS: string;
 let WS_LYON: string;

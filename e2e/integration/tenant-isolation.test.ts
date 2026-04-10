@@ -17,10 +17,11 @@ const TENANT_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
 
 // Dynamic fictitious SIRENs — prefix 998 (different from workspace-isolation's 999).
 // Unique per run so parallel test files never conflict.
-const RUN_ID = Date.now().toString().slice(-6);
-const SIREN_A = `998${RUN_ID}1`.slice(0, 9);
-const SIREN_B = `998${RUN_ID}2`.slice(0, 9);
-const SIREN_SHARED = `998${RUN_ID}3`.slice(0, 9);
+// SIREN format = 9 digits exactly. Layout: 998 (3) + RUN_ID (5) + suffix (1) = 9.
+const RUN_ID = Date.now().toString().slice(-5);
+const SIREN_A = `998${RUN_ID}1`;
+const SIREN_B = `998${RUN_ID}2`;
+const SIREN_SHARED = `998${RUN_ID}3`;
 
 let skip = false;
 

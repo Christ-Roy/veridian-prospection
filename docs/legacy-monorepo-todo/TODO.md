@@ -37,11 +37,11 @@ prospection/
 ## Sprint en cours
 
 ### P0 — Urgences
-- [ ] **P0.1** checkTrialExpired recable proprement (lookup tenant via workspace_members, cache 5min)
-  - **Audit 2026-04-10** : toujours hack `return false` dans `src/lib/trial.ts:10-11`, useTrial hook et paywall UI deja wires mais le gating effectif est desactive
+- [x] **P0.1** checkTrialExpired recable proprement (lookup tenant via workspace_members, cache 5min)
+  - **2026-04-10 10h30** : lookup user_id direct → fallback workspace_members, cache 5min dans `src/lib/trial.ts`, plans `pro`/`enterprise` jamais expires (Stripe = source de verite), 6 tests unit vitest (`trial.test.ts`) + guard admin-API toujours vert
 - [x] **P0.2** Audit hot paths : cache 5min confirme dans `src/lib/supabase/tenant.ts:109-160` (getTenantProspectLimit via `planCache`)
-- [ ] **P0.4** Integration tests flaky : fix propre (createdb par test file OU transactions rollback)
-  - **Audit 2026-04-10** : toujours `continue-on-error: true` dans `.github/workflows/prospection-ci.yml:77` + `--workers=1` en core. Pas de fix propre tente
+- [x] **P0.4** Integration tests flaky : fix propre
+  - **2026-04-10 10h30** : root cause = collision SIREN (9 chars dispo, `998${RUN_ID(6)}X` puis `.slice(0,9)` coupait le suffixe donc SIREN_A === SIREN_B === SIREN_SHARED). Fix : RUN_ID=5 chars, slice enleve, SIRENs garantis uniques. Tests re-actives en parallele en CI (prefixes tenant_id + SIREN disjoints entre fichiers). `continue-on-error` retire, `integration` remis dans `needs` du promote. 3 runs locaux consecutifs verts avec DB fraiche
 - [x] **P0.5** Build CI OK avec `next@^15.5.14` (package.json:33, derniers runs verts)
 - [ ] **P0.6** Finir pricing : payant geo 20EUR, payant full 50EUR, achat par lot, UI onboarding
   - **Audit 2026-04-10** : paywall modal existe (`src/components/layout/paywall.tsx`) mais affiche Pro 29EUR / Enterprise 49EUR (plans hub genericos), pas les SKUs geo/full specifiques. Checkout wire via env (`src/app/api/checkout/route.ts`). Onboarding freemium zones/secteur existe (`src/components/layout/onboarding.tsx`). **Manque** : SKUs geo/full, flow achat par lot 100 leads=10EUR, UI selection zone/secteur post-paiement
@@ -94,7 +94,7 @@ prospection/
 
 ## Bugs connus
 
-- [ ] Integration tests flaky en CI (workaround `continue-on-error`)
+- [x] ~~Integration tests flaky en CI (workaround `continue-on-error`)~~ — fix 2026-04-10 (P0.4)
 - [ ] Pas de confirmation email au signup (geré par Supabase, cassera a la migration)
 
 ## Decisions techniques
@@ -111,6 +111,8 @@ _(vide — pas de sprint lance)_
 
 ## Recently shipped
 
+- **2026-04-10 10h30** — P0.1 : `checkTrialExpired` recable (lookup tenants direct + fallback workspace_members, cache 5min, plans payants exemptes), 6 tests unit + guard admin-API (`src/lib/trial.ts`, `src/lib/trial.test.ts`)
+- **2026-04-10 10h30** — P0.4 : integration tests fixes (collision SIREN root cause — `slice(0,9)` coupait le suffixe sur un prefixe 3+6=9 chars). 3 runs verts en parallele, `continue-on-error` retire, integration re-ajoute dans `needs` du promote
 - **2026-04-10** — P0.2 verifie : `getTenantProspectLimit` cache 5min en place (tenant.ts:109-160)
 - **2026-04-10** — P0.5 verifie : next@15.5.14 en place, build CI vert
 - **2026-04-07** — Pipeline-board JS crash fix (`b?.length || 0`)
