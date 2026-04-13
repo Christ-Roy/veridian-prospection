@@ -192,7 +192,12 @@ export async function patchOutreach(
     // Standard Prisma fields
     const updateData: Record<string, unknown> = { updatedAt: now };
     if (data.status !== undefined) updateData.status = data.status;
-    if (data.notes !== undefined) updateData.notes = data.notes;
+    // Notes: prepend new note to existing (historical log, not replace)
+    if (data.notes !== undefined) {
+      const existingNotes = existing.notes || "";
+      const separator = existingNotes ? "\n---\n" : "";
+      updateData.notes = data.notes + separator + existingNotes;
+    }
     if (data.contact_method !== undefined) updateData.contactMethod = data.contact_method;
     if (data.contacted_date !== undefined) updateData.contactedDate = data.contacted_date;
     if (data.qualification !== undefined) updateData.qualification = data.qualification;

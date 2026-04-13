@@ -100,6 +100,7 @@ export function PipelineBoard() {
   const [transitionOpen, setTransitionOpen] = useState(false);
   const [transitionLead, setTransitionLead] = useState<PipelineLead | null>(null);
   const [transitionTarget, setTransitionTarget] = useState<string>("");
+  const [showArchives, setShowArchives] = useState(false);
 
   // Drag state
   const [dragType, setDragType] = useState<"card" | null>(null);
@@ -325,9 +326,16 @@ export function PipelineBoard() {
             </div>
           )}
         </div>
-        <Button size="sm" variant="outline" onClick={fetchPipeline} className="gap-1.5 h-8">
-          <RefreshCw className="h-3.5 w-3.5" /> Rafraichir
-        </Button>
+        <div className="flex items-center gap-2">
+          {(pipeline["archive"]?.length || 0) > 0 && (
+            <Button size="sm" variant={showArchives ? "default" : "outline"} onClick={() => setShowArchives(!showArchives)} className="gap-1.5 h-8">
+              Archives ({pipeline["archive"]?.length || 0})
+            </Button>
+          )}
+          <Button size="sm" variant="outline" onClick={fetchPipeline} className="gap-1.5 h-8">
+            <RefreshCw className="h-3.5 w-3.5" /> Rafraichir
+          </Button>
+        </div>
       </div>
 
       {/* Kanban — fills remaining height, columns scroll internally */}
@@ -380,6 +388,25 @@ export function PipelineBoard() {
           );
         })}
       </div>
+
+      {/* Archives panel */}
+      {showArchives && pipeline["archive"] && pipeline["archive"].length > 0 && (
+        <div className="border-t p-3 max-h-[250px] overflow-y-auto shrink-0">
+          <h3 className="text-xs font-semibold text-muted-foreground mb-2">Archives ({pipeline["archive"].length})</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-1.5">
+            {pipeline["archive"].map(lead => (
+              <button
+                key={lead.domain}
+                onClick={() => setSelectedDomain(lead.domain)}
+                className="text-left bg-slate-50 border rounded px-2.5 py-1.5 hover:bg-slate-100 transition-colors"
+              >
+                <span className="text-xs font-medium truncate block">{lead.nom_entreprise || lead.domain}</span>
+                {lead.ville && <span className="text-[9px] text-muted-foreground">{lead.ville}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Lead sheet */}
       <LeadSheet
