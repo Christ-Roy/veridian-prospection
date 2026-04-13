@@ -245,17 +245,52 @@ export function PipelineBoard() {
     }
   }
 
+  // Archive a lead — optimistic, no modal
+  async function handleArchive(lead: PipelineLead) {
+    const stage = lead.pipeline_stage || lead.outreach_status || "fiche_ouverte";
+    const next = { ...pipeline };
+    for (const k of Object.keys(next)) next[k] = [...next[k]];
+    next[stage] = (next[stage] || []).filter(l => l.domain !== lead.domain);
+    if (next[stage].length === 0) delete next[stage];
+    setPipeline(next);
+    toast.success(`${lead.nom_entreprise || lead.domain} archive`);
+
+    try {
+      await fetch(`/api/outreach/${encodeURIComponent(lead.domain)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "archive", pipeline_stage: "archive" }),
+      });
+    } catch {
+      fetchPipeline();
+      toast.error("Erreur — rechargement");
+    }
+  }
+
   function resetDrag() {
     setDragType(null);
     setDragCardSource(null);
     setDropCardTarget(null);
   }
 
-  // Pipeline value
+  // Pipeline value calculations
   const allLeads = Object.values(pipeline).flat();
-  const pipelineValue = allLeads.reduce((sum, l) => sum + (l.estimated_value || l.real_value || 0), 0);
-  const realValue = allLeads.filter(l => ["acompte", "client"].includes(l.pipeline_stage || "")).reduce((sum, l) => sum + (l.real_value || l.acompte_amount || 0), 0);
-  const monthlyRecurring = allLeads.filter(l => l.monthly_recurring).reduce((sum, l) => sum + (l.monthly_recurring || 0), 0);
+  // Estimated = sum of estimated_value across active pipeline (site_demo + acompte + finition)
+  const pipelineEstimated = allLeads
+    .filter(l => ["site_demo", "acompte", "finition"].includes(l.pipeline_stage || ""))
+    .reduce((sum, l) => sum + (l.estimated_value || l.site_price || 0), 0);
+  // Encaissé = acomptes already collected
+  const encaisse = allLeads
+    .filter(l => ["acompte", "finition", "client"].includes(l.pipeline_stage || ""))
+    .reduce((sum, l) => sum + (l.acompte_amount || 0), 0);
+  // CA signé = total devis for client stage (fully delivered)
+  const caSigne = allLeads
+    .filter(l => l.pipeline_stage === "client")
+    .reduce((sum, l) => sum + (l.site_price || l.real_value || l.estimated_value || 0), 0);
+  // Recurring monthly
+  const monthlyRecurring = allLeads
+    .filter(l => ["client", "acompte", "finition"].includes(l.pipeline_stage || "") && l.monthly_recurring)
+    .reduce((sum, l) => sum + (l.monthly_recurring || 0), 0);
 
   if (loading) {
     return (
@@ -272,13 +307,22 @@ export function PipelineBoard() {
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Pipeline</h2>
           <Badge variant="outline" className="text-xs">{allLeads.length} leads</Badge>
-          {pipelineValue > 0 && (
-            <span className="text-xs text-muted-foreground flex items-center gap-1">
-              <TrendingUp className="h-3 w-3" />
-              <span className="font-mono font-semibold text-foreground">{formatCA(pipelineValue)}</span>
-              {realValue > 0 && <> | <span className="font-mono font-semibold text-green-600">{formatCA(realValue)}</span> reel</>}
-              {monthlyRecurring > 0 && <> | <span className="font-mono text-blue-600">{formatCA(monthlyRecurring)}/mois</span></>}
-            </span>
+          {(pipelineEstimated > 0 || encaisse > 0 || caSigne > 0) && (
+            <div className="flex items-center gap-3 text-xs">
+              <TrendingUp className="h-3 w-3 text-muted-foreground" />
+              {pipelineEstimated > 0 && (
+                <span className="text-muted-foreground">Pipe: <span className="font-mono font-semibold text-foreground">{formatCA(pipelineEstimated)}</span></span>
+              )}
+              {encaisse > 0 && (
+                <span className="text-muted-foreground">Encaisse: <span className="font-mono font-semibold text-emerald-600">{formatCA(encaisse)}</span></span>
+              )}
+              {caSigne > 0 && (
+                <span className="text-muted-foreground">Signe: <span className="font-mono font-semibold text-green-600">{formatCA(caSigne)}</span></span>
+              )}
+              {monthlyRecurring > 0 && (
+                <span className="text-muted-foreground">Recurrent: <span className="font-mono font-semibold text-blue-600">{formatCA(monthlyRecurring)}/mois</span></span>
+              )}
+            </div>
           )}
         </div>
         <Button size="sm" variant="outline" onClick={fetchPipeline} className="gap-1.5 h-8">
@@ -321,6 +365,7 @@ export function PipelineBoard() {
                     isDragging={dragCardSource?.domain === lead.domain}
                     isDropBefore={dropCardTarget?.column === stage.id && dropCardTarget?.index === i}
                     onClick={() => setSelectedDomain(lead.domain)}
+                    onArchive={() => handleArchive(lead)}
                     onDragStart={(e) => handleCardDragStart(e, lead.domain, stage.id)}
                     onDragOver={(e) => handleCardDragOverCard(e, stage.id, i)}
                     onDragEnd={resetDrag}
@@ -376,6 +421,7 @@ function PipelineCard({
   isDragging,
   isDropBefore,
   onClick,
+  onArchive,
   onDragStart,
   onDragOver,
   onDragEnd,
@@ -386,6 +432,7 @@ function PipelineCard({
   isDragging: boolean;
   isDropBefore: boolean;
   onClick: () => void;
+  onArchive: () => void;
   onDragStart: (e: React.DragEvent) => void;
   onDragOver: (e: React.DragEvent) => void;
   onDragEnd: () => void;
@@ -420,7 +467,7 @@ function PipelineCard({
         onClick={onClick}
         style={interestStyle}
         className={`
-          relative overflow-hidden border rounded-lg px-3 py-2.5 cursor-pointer
+          group relative overflow-hidden border rounded-lg px-3 py-2.5 cursor-pointer
           hover:shadow-md hover:border-primary/30 transition-all
           active:cursor-grabbing bg-white
           ${isDragging ? "opacity-40 scale-95" : ""}
@@ -436,7 +483,7 @@ function PipelineCard({
           />
         )}
 
-        {/* Row 1: Name + Value */}
+        {/* Row 1: Name + Value + Archive */}
         <div className="flex items-start gap-1 min-w-0">
           <span className="text-sm font-semibold truncate flex-1 leading-tight">{name}</span>
           {(lead.estimated_value || lead.real_value || lead.acompte_amount) && (
@@ -444,6 +491,13 @@ function PipelineCard({
               {formatCA(lead.real_value || lead.acompte_amount || lead.estimated_value || 0)}
             </span>
           )}
+          <button
+            onClick={(e) => { e.stopPropagation(); onArchive(); }}
+            className="shrink-0 opacity-0 group-hover:opacity-100 hover:text-red-500 text-muted-foreground/30 transition-all p-0.5 -mr-1 -mt-0.5"
+            title="Archiver"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
 
         {/* Row 2: Dirigeant */}
