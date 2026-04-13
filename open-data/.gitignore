@@ -1,0 +1,13 @@
+# Data files — never commit, too large
+*.duckdb
+*.duckdb.tmp
+*.duckdb.wal
+*.db
+*.db-wal
+*.db-shm
+*.parquet
+*.csv
+*.jsonl
+*.sql.gz
+*.dump
+data/
