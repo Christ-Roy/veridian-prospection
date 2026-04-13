@@ -20,7 +20,7 @@ interface QuickNotesProps {
 
 const NOTE_PRESETS = [
   { label: "A rappeler", text: (d: string | null) => `A rappeler${d ? ` (${d})` : ""} — ${new Date().toLocaleDateString("fr-FR")}` },
-  { label: "Interesse", text: (d: string | null) => `Interesse par une refonte — ${new Date().toLocaleDateString("fr-FR")}` },
+  { label: "Interesse", text: () => `Interesse par une refonte — ${new Date().toLocaleDateString("fr-FR")}` },
   { label: "Pas interesse", text: () => `Pas interesse pour le moment` },
   { label: "Pas joignable", text: () => `Pas joignable — ${new Date().toLocaleDateString("fr-FR")}` },
   { label: "Devis envoye", text: (d: string | null) => `Devis envoye${d ? ` a ${d}` : ""} — ${new Date().toLocaleDateString("fr-FR")}` },

@@ -668,6 +668,7 @@ interface HistoryRow {
   creances: number | null;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function computeTresorerie(h: HistoryRow): number | null {
   if (h.total_actif != null && h.immobilisations != null && h.creances != null) {
     return h.total_actif - h.immobilisations - h.creances;

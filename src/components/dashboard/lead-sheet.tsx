@@ -20,9 +20,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
-import { TrendingUp, MessageSquare, Bell, FileText, Globe, ExternalLink, ShieldAlert, Smartphone, Copyright, Linkedin, Facebook, Instagram } from "lucide-react";
+import { TrendingUp, MessageSquare, Bell, FileText, ExternalLink, ShieldAlert, Smartphone, Copyright, Linkedin, Facebook, Instagram } from "lucide-react";
 import { toast } from "sonner";
-import type { LeadDetail, ClaudeActivity, Followup } from "@/lib/types";
+import type { LeadDetail, Followup } from "@/lib/types";
 import { formatEffectifs, formatCA } from "@/lib/types";
 import { webHref } from "@/lib/utils";
 import { LeadHeader } from "./lead-sheet/lead-header";
@@ -71,7 +71,7 @@ interface LeadSheetProps {
 export function LeadSheet({ domain, onClose, onUpdated }: LeadSheetProps) {
   const [lead, setLead] = useState<LeadDetail | null>(null);
   const [loading, setLoading] = useState(false);
-  const [claudeActivities, setClaudeActivities] = useState<ClaudeActivity[]>([]);
+  const [, setClaudeActivities] = useState<unknown[]>([]);
   const [followups, setFollowups] = useState<Followup[]>([]);
 
   useEffect(() => {
@@ -98,14 +98,7 @@ export function LeadSheet({ domain, onClose, onUpdated }: LeadSheetProps) {
       .catch(() => {});
   }, [domain]);
 
-  function refreshClaude() {
-    if (!domain) return;
-    fetch(`/api/claude/${encodeURIComponent(domain)}`)
-      .then((r) => r.json())
-      .then((d) => setClaudeActivities(Array.isArray(d) ? d : []))
-      .catch(() => {});
-    onUpdated();
-  }
+  // Claude activities fetched for future use but not displayed in current UI
 
   async function handleAddFollowup(scheduled_at: string, note: string) {
     if (!domain) return;

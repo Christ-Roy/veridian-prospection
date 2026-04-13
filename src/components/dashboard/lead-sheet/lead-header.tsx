@@ -118,16 +118,6 @@ export function LeadHeader({ lead, domain, onUpdated, onDismiss }: LeadHeaderPro
     }
   }
 
-  const calendarLead = {
-    domain: lead.domain,
-    nom_entreprise: lead.nom_entreprise,
-    dirigeant: lead.dirigeant,
-    phone: lead.phone,
-    email: lead.email,
-    dirigeant_email: lead.dirigeant_email,
-    ville: lead.ville,
-  };
-
   return (
     <div className="space-y-3 pt-3">
       {/* Title + domain */}
