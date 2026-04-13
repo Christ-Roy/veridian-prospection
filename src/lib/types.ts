@@ -192,6 +192,15 @@ export interface LeadDetail extends Lead {
   // INPI history (fetched separately via /api/leads/[siren]/history)
   inpi_history?: InpiHistoryEntry[] | null;
   is_pj_lead: boolean;
+  // API enrichment
+  dirigeant_annee_naissance?: string | null;
+  dirigeant_date_naissance?: string | null;
+  etat_administratif?: string | null;
+  date_fermeture?: string | null;
+  nombre_etablissements?: number | null;
+  nombre_etablissements_ouverts?: number | null;
+  convention_collective?: string | null;
+  web_agency?: string | null;
 }
 
 export interface InpiHistoryEntry {

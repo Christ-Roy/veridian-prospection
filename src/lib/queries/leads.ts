@@ -202,6 +202,15 @@ export async function getLeadDetail(siren: string, tenantId: string | null = nul
     honeypot_flag: null,
     honeypot_reasons: null,
     is_pj_lead: false,
+    // API enrichment fields
+    dirigeant_annee_naissance: (fullSafe.dirigeant_annee_naissance as string) ?? null,
+    dirigeant_date_naissance: (fullSafe.dirigeant_date_naissance as string) ?? null,
+    etat_administratif: (fullSafe.etat_administratif as string) ?? null,
+    date_fermeture: (fullSafe.date_fermeture as string) ?? null,
+    nombre_etablissements: (fullSafe.nombre_etablissements as number) ?? null,
+    nombre_etablissements_ouverts: (fullSafe.nombre_etablissements_ouverts as number) ?? null,
+    convention_collective: (fullSafe.convention_collective as string) ?? null,
+    web_agency: (fullSafe.web_agency as string) ?? null,
   };
 }
 

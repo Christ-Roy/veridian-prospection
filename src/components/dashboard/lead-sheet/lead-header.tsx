@@ -33,7 +33,7 @@ import {
 } from "lucide-react";
 import { formatTimeAgo } from "@/lib/types";
 import { GoogleMapsDropdown } from "./google-maps-dropdown";
-import { CalendarDialog } from "../calendar-dialog";
+import { QuickNotes } from "./quick-notes";
 import { Phone as PhoneIcon } from "lucide-react";
 
 interface LeadHeaderProps {
@@ -129,7 +129,7 @@ export function LeadHeader({ lead, domain, onUpdated, onDismiss }: LeadHeaderPro
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 pt-3">
       {/* Title + domain */}
       <div>
         <div className="flex items-center gap-2">
@@ -226,25 +226,50 @@ export function LeadHeader({ lead, domain, onUpdated, onDismiss }: LeadHeaderPro
           </SelectContent>
         </Select>
 
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex items-center gap-1.5">
           {lead.phone && (
             <a href={`tel:${lead.phone}`} title={lead.phone}>
-              <Button variant="outline" size="icon" className="h-8 w-8">
-                <PhoneIcon className="h-4 w-4" />
+              <Button variant="outline" size="icon" className="h-10 w-10">
+                <PhoneIcon className="h-5 w-5" />
               </Button>
             </a>
           )}
           {(lead.email || lead.dirigeant_email) && (
             <a href={`mailto:${lead.dirigeant_email || lead.email}`}>
-              <Button variant="outline" size="icon" className="h-8 w-8" title="Email">
-                <Mail className="h-4 w-4" />
+              <Button variant="outline" size="icon" className="h-10 w-10" title="Email">
+                <Mail className="h-5 w-5" />
               </Button>
             </a>
           )}
-          <CalendarDialog
-            defaultType="rappel"
-            lead={calendarLead}
+          {/* Quick Notes */}
+          <QuickNotes
+            domain={domain}
+            initialNotes={lead.outreach_notes || ""}
+            dirigeant={lead.dirigeant}
+            onSaved={onUpdated}
           />
+          {/* Google Calendar — Rappel/RDV */}
+          <a
+            href={`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent("Rappel " + (lead.nom_entreprise || domain))}&details=${encodeURIComponent((lead.dirigeant ? lead.dirigeant + "\n" : "") + (lead.phone || "") + "\n" + (lead.email || lead.dirigeant_email || ""))}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Planifier dans Google Calendar"
+          >
+            <Button variant="outline" className="h-10 px-3 gap-1.5 text-xs font-medium">
+              <svg className="h-5 w-5" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+                <rect x="40" y="40" width="120" height="120" rx="12" fill="#fff" stroke="#4285f4" strokeWidth="8"/>
+                <rect x="40" y="40" width="120" height="30" rx="12" fill="#4285f4"/>
+                <circle cx="80" cy="100" r="6" fill="#ea4335"/>
+                <circle cx="120" cy="100" r="6" fill="#34a853"/>
+                <circle cx="80" cy="130" r="6" fill="#fbbc04"/>
+                <circle cx="120" cy="130" r="6" fill="#4285f4"/>
+                <rect x="72" y="24" width="8" height="24" rx="4" fill="#4285f4"/>
+                <rect x="120" y="24" width="8" height="24" rx="4" fill="#4285f4"/>
+              </svg>
+              Agenda
+            </Button>
+          </a>
+          {/* Google Maps */}
           <GoogleMapsDropdown
             domain={domain}
             nomEntreprise={lead.nom_entreprise}
@@ -254,11 +279,11 @@ export function LeadHeader({ lead, domain, onUpdated, onDismiss }: LeadHeaderPro
           <Button
             variant="outline"
             size="icon"
-            className="h-8 w-8 text-red-600 hover:bg-red-50 hover:text-red-700"
+            className="h-10 w-10 text-red-600 hover:bg-red-50 hover:text-red-700"
             title="Degager (hors cible)"
             onClick={handleDismiss}
           >
-            <Trash2 className="h-4 w-4" />
+            <Trash2 className="h-5 w-5" />
           </Button>
         </div>
       </div>

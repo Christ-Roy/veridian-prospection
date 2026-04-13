@@ -173,21 +173,28 @@ export function PagesJaunesSection({ lead }: { lead: LeadDetail }) {
 
 export function EntrepriseSection({ lead }: { lead: LeadDetail }) {
   return (
-    <div className="grid gap-0">
-      <InfoRow label="Forme juridique" value={lead.forme_juridique} />
-      <InfoRow label="SIRET" value={lead.siret} />
-      <InfoRow label="SIREN" value={lead.siren} />
-      <InfoRow label="TVA" value={lead.tva_intracom} />
-      <InfoRow label="Secteur" value={formatNaf(lead.code_naf)} />
-      <InfoRow label="Categorie" value={lead.categorie} />
-      <InfoRow label="Effectifs" value={formatEffectifs(lead.effectifs)} />
-      <InfoRow label="CA" value={formatCA(lead.ca)} />
-      <InfoRow label="Dirigeant" value={lead.dirigeant} icon={<Building2 className="h-3.5 w-3.5" />} />
-      <InfoRow label="Qualite" value={lead.qualite_dirigeant} />
-      {/* Location */}
-      <InfoRow label="Adresse" value={lead.api_adresse || lead.address} icon={<MapPin className="h-3.5 w-3.5" />} />
-      <InfoRow label="Ville" value={[lead.ville, lead.code_postal].filter(Boolean).join(" ")} />
-      <InfoRow label="Departement" value={lead.departement} />
+    <div className="grid grid-cols-2 gap-x-6 gap-y-0">
+      {/* Colonne gauche — Identité */}
+      <div>
+        <InfoRow label="Secteur" value={formatNaf(lead.code_naf)} />
+        <InfoRow label="Categorie" value={lead.categorie} />
+        <InfoRow label="Effectifs" value={formatEffectifs(lead.effectifs)} />
+        <InfoRow label="CA" value={formatCA(lead.ca)} />
+        <InfoRow label="Forme juridique" value={lead.forme_juridique} />
+      </div>
+      {/* Colonne droite — Dirigeant + Localisation */}
+      <div>
+        <InfoRow label="Dirigeant" value={lead.dirigeant} icon={<Building2 className="h-3.5 w-3.5" />} />
+        <InfoRow label="Qualite" value={lead.qualite_dirigeant} />
+        <InfoRow label="Adresse" value={lead.api_adresse || lead.address} icon={<MapPin className="h-3.5 w-3.5" />} />
+        <InfoRow label="Ville" value={[lead.ville, lead.code_postal].filter(Boolean).join(" ")} />
+      </div>
+      {/* Identifiants légaux — ligne complète, discret */}
+      <div className="col-span-2 flex gap-4 pt-2 border-t mt-2">
+        <span className="text-[10px] text-muted-foreground font-mono">SIREN {lead.siren}</span>
+        {lead.siret && <span className="text-[10px] text-muted-foreground font-mono">SIRET {lead.siret}</span>}
+        {lead.tva_intracom && <span className="text-[10px] text-muted-foreground font-mono">TVA {lead.tva_intracom}</span>}
+      </div>
     </div>
   );
 }
@@ -196,115 +203,111 @@ export function EntrepriseSection({ lead }: { lead: LeadDetail }) {
 
 export function ContactSection({ lead }: { lead: LeadDetail }) {
   return (
-    <div className="grid gap-0">
-      <InfoRow label="Dirigeant" value={lead.dirigeant} icon={<Building2 className="h-3.5 w-3.5" />} />
-      <InfoRow label="Qualite" value={lead.qualite_dirigeant} />
+    <div className="grid grid-cols-2 gap-x-6 gap-y-0">
+      {/* Colonne gauche — Emails */}
+      <div>
+        <InfoRow label="Dirigeant" value={lead.dirigeant} icon={<Building2 className="h-3.5 w-3.5" />} />
+        <InfoRow label="Qualite" value={lead.qualite_dirigeant} />
 
-      {/* Dirigeant emails */}
-      {lead.dirigeant_emails_all && lead.dirigeant_emails_all !== "" && lead.dirigeant_emails_all !== "[]" ? (
-        <InfoRow
-          label="Emails dirigeant"
-          value={
-            <div className="flex flex-wrap gap-1">
-              {(safeParseArray(lead.dirigeant_emails_all)).map((email: string) => (
-                <a key={email} href={`mailto:${email}`} className="text-xs bg-green-50 text-green-700 px-1.5 py-0.5 rounded hover:underline font-medium">{email}</a>
-              ))}
-            </div>
-          }
-          icon={<Mail className="h-3.5 w-3.5" />}
-        />
-      ) : lead.dirigeant_email ? (
-        <InfoRow
-          label="Email dirigeant"
-          value={<a href={`mailto:${lead.dirigeant_email}`} className="text-blue-600 hover:underline">{lead.dirigeant_email}</a>}
-          icon={<Mail className="h-3.5 w-3.5" />}
-        />
-      ) : null}
+        {lead.dirigeant_emails_all && lead.dirigeant_emails_all !== "" && lead.dirigeant_emails_all !== "[]" ? (
+          <InfoRow
+            label="Emails dirigeant"
+            value={
+              <div className="flex flex-wrap gap-1">
+                {(safeParseArray(lead.dirigeant_emails_all)).map((email: string) => (
+                  <a key={email} href={`mailto:${email}`} className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded-md hover:bg-green-100 font-medium transition-colors">{email}</a>
+                ))}
+              </div>
+            }
+            icon={<Mail className="h-3.5 w-3.5" />}
+          />
+        ) : lead.dirigeant_email ? (
+          <InfoRow
+            label="Email dirigeant"
+            value={<a href={`mailto:${lead.dirigeant_email}`} className="text-sm bg-green-50 text-green-700 px-2 py-1 rounded-md hover:bg-green-100 font-medium inline-block transition-colors">{lead.dirigeant_email}</a>}
+            icon={<Mail className="h-3.5 w-3.5" />}
+          />
+        ) : null}
 
-      {/* Company emails */}
-      {lead.emails && lead.emails !== "" && lead.emails !== "[]" ? (
-        <InfoRow
-          label="Emails entreprise"
-          value={
-            <div className="flex flex-wrap gap-1">
-              {(safeParseArray(lead.emails)).map((email: string) => (
-                <a key={email} href={`mailto:${email}`} className="text-xs bg-slate-50 text-slate-700 px-1.5 py-0.5 rounded hover:underline">{email}</a>
-              ))}
-            </div>
-          }
-          icon={<Mail className="h-3.5 w-3.5" />}
-        />
-      ) : lead.email ? (
-        <InfoRow
-          label="Email"
-          value={<a href={`mailto:${lead.email}`} className="text-blue-600 hover:underline">{lead.email}</a>}
-          icon={<Mail className="h-3.5 w-3.5" />}
-        />
-      ) : null}
+        {lead.emails && lead.emails !== "" && lead.emails !== "[]" ? (
+          <InfoRow
+            label="Emails entreprise"
+            value={
+              <div className="flex flex-wrap gap-1">
+                {(safeParseArray(lead.emails)).map((email: string) => (
+                  <a key={email} href={`mailto:${email}`} className="text-xs bg-slate-50 text-slate-700 px-2 py-1 rounded-md hover:bg-slate-100 transition-colors">{email}</a>
+                ))}
+              </div>
+            }
+            icon={<Mail className="h-3.5 w-3.5" />}
+          />
+        ) : lead.email ? (
+          <InfoRow
+            label="Email"
+            value={<a href={`mailto:${lead.email}`} className="text-sm bg-slate-50 text-slate-700 px-2 py-1 rounded-md hover:bg-slate-100 inline-block transition-colors">{lead.email}</a>}
+            icon={<Mail className="h-3.5 w-3.5" />}
+          />
+        ) : null}
 
-      {/* SMTP aliases */}
-      {lead.aliases_found && lead.aliases_found !== "" && lead.aliases_found !== "[]" && (
-        <InfoRow
-          label="Aliases SMTP"
-          value={
-            <div className="flex flex-wrap gap-1">
-              {(safeParseArray(lead.aliases_found)).map((alias: string) => (
-                <a key={alias} href={`mailto:${alias}`} className="text-xs bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded hover:underline">{alias}</a>
-              ))}
-            </div>
-          }
-          icon={<Mail className="h-3.5 w-3.5" />}
-        />
-      )}
+        {lead.aliases_found && lead.aliases_found !== "" && lead.aliases_found !== "[]" && (
+          <InfoRow
+            label="Aliases SMTP"
+            value={
+              <div className="flex flex-wrap gap-1">
+                {(safeParseArray(lead.aliases_found)).map((alias: string) => (
+                  <a key={alias} href={`mailto:${alias}`} className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-md hover:bg-blue-100 transition-colors">{alias}</a>
+                ))}
+              </div>
+            }
+            icon={<Mail className="h-3.5 w-3.5" />}
+          />
+        )}
 
-      {lead.mail_provider && lead.mail_provider !== "" && (
-        <InfoRow
-          label="Provider mail"
-          value={<span className="text-xs bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded">{lead.mail_provider}</span>}
-        />
-      )}
-      {lead.is_catch_all === 1 && (
-        <InfoRow
-          label="Catch-all"
-          value={<span className="text-xs text-orange-600 font-medium">Serveur accepte tout (non verifiable)</span>}
-        />
-      )}
+        {lead.mail_provider && lead.mail_provider !== "" && (
+          <InfoRow label="Provider" value={<span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{lead.mail_provider}</span>} />
+        )}
+        {lead.is_catch_all === 1 && (
+          <InfoRow label="" value={<span className="text-[10px] text-orange-600">Catch-all (non verifiable)</span>} />
+        )}
+      </div>
 
-      {/* Phones */}
-      {lead.phones && lead.phones !== "" && lead.phones !== "[]" ? (
-        <InfoRow
-          label="Telephones"
-          value={
-            <div className="flex flex-wrap gap-1">
-              {(safeParseArray(lead.phones)).map((tel: string, i: number) => (
-                <a key={tel} href={`tel:${tel}`} className={`text-xs px-1.5 py-0.5 rounded hover:underline ${i === 0 ? "bg-green-50 text-green-700 font-medium" : "bg-slate-50 text-slate-700"}`}>{tel}</a>
-              ))}
-            </div>
-          }
-          icon={<Phone className="h-3.5 w-3.5" />}
-        />
-      ) : lead.phone ? (
-        <InfoRow
-          label="Telephone"
-          value={<a href={`tel:${lead.phone}`} className="text-blue-600 hover:underline">{lead.phone}</a>}
-          icon={<Phone className="h-3.5 w-3.5" />}
-        />
-      ) : null}
+      {/* Colonne droite — Téléphones + Social */}
+      <div>
+        {lead.phones && lead.phones !== "" && lead.phones !== "[]" ? (
+          <InfoRow
+            label="Telephones"
+            value={
+              <div className="flex flex-col gap-1">
+                {(safeParseArray(lead.phones)).map((tel: string, i: number) => (
+                  <a key={tel} href={`tel:${tel}`} className={`text-sm px-2 py-1 rounded-md hover:bg-green-100 transition-colors inline-block w-fit ${i === 0 ? "bg-green-50 text-green-700 font-semibold" : "bg-slate-50 text-slate-700"}`}>{tel}</a>
+                ))}
+              </div>
+            }
+            icon={<Phone className="h-3.5 w-3.5" />}
+          />
+        ) : lead.phone ? (
+          <InfoRow
+            label="Telephone"
+            value={<a href={`tel:${lead.phone}`} className="text-sm bg-green-50 text-green-700 px-2 py-1 rounded-md hover:bg-green-100 font-semibold inline-block transition-colors">{lead.phone}</a>}
+            icon={<Phone className="h-3.5 w-3.5" />}
+          />
+        ) : null}
 
-      {lead.phone_type && (
-        <InfoRow label="Type tel" value={`${lead.phone_type}${lead.phone_carrier ? ` (${lead.phone_carrier})` : ""}`} />
-      )}
-      {lead.phone_test === 1 && <InfoRow label="Attention" value={<span className="text-red-600 font-bold">Numero test/fake</span>} />}
-      {lead.phone_shared === 1 && <InfoRow label="Attention" value={<span className="text-orange-600">Numero partage (agence?)</span>} />}
+        {lead.phone_type && (
+          <InfoRow label="Type" value={<span className="text-xs text-muted-foreground">{lead.phone_type}{lead.phone_carrier ? ` (${lead.phone_carrier})` : ""}</span>} />
+        )}
+        {lead.phone_test === 1 && <InfoRow label="" value={<span className="text-xs text-red-600 font-bold">Numero test/fake</span>} />}
+        {lead.phone_shared === 1 && <InfoRow label="" value={<span className="text-xs text-orange-600">Numero partage (agence?)</span>} />}
 
-      {/* Social */}
-      {(lead.social_linkedin || lead.social_facebook || lead.social_instagram) && (
-        <div className="flex gap-3 py-2">
-          <SocialLink url={lead.social_linkedin} icon={<Linkedin className="h-5 w-5" />} />
-          <SocialLink url={lead.social_facebook} icon={<Facebook className="h-5 w-5" />} />
-          <SocialLink url={lead.social_instagram} icon={<Instagram className="h-5 w-5" />} />
-        </div>
-      )}
+        {/* Social — icônes plus grosses, plus visibles */}
+        {(lead.social_linkedin || lead.social_facebook || lead.social_instagram) && (
+          <div className="flex gap-2 pt-3 mt-2 border-t">
+            <SocialLink url={lead.social_linkedin} icon={<Linkedin className="h-5 w-5" />} />
+            <SocialLink url={lead.social_facebook} icon={<Facebook className="h-5 w-5" />} />
+            <SocialLink url={lead.social_instagram} icon={<Instagram className="h-5 w-5" />} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -313,15 +316,19 @@ export function ContactSection({ lead }: { lead: LeadDetail }) {
 
 export function TechniqueSection({ lead }: { lead: LeadDetail }) {
   return (
-    <div className="grid gap-0">
-      <InfoRow label="CMS" value={lead.cms} icon={<Wrench className="h-3.5 w-3.5" />} />
-      <InfoRow label="Plateforme" value={lead.platform_name} />
-      <InfoRow label="Copyright" value={lead.copyright_year?.toString()} />
-      <InfoRow label="Responsive" value={lead.has_responsive ? "Oui" : "Non"} />
-      <InfoRow label="HTTPS" value={lead.has_https ? "Oui" : "Non"} icon={<Globe className="h-3.5 w-3.5" />} />
-      <InfoRow label="Generator" value={lead.generator} />
-      <InfoRow label="PHP" value={lead.php_version} />
-      <InfoRow label="jQuery" value={lead.jquery_version} />
+    <div className="grid grid-cols-2 gap-x-6 gap-y-0">
+      <div>
+        <InfoRow label="CMS" value={lead.cms} icon={<Wrench className="h-3.5 w-3.5" />} />
+        <InfoRow label="Plateforme" value={lead.platform_name} />
+        <InfoRow label="Generator" value={lead.generator} />
+        <InfoRow label="Copyright" value={lead.copyright_year?.toString()} />
+      </div>
+      <div>
+        <InfoRow label="HTTPS" value={lead.has_https ? "Oui" : "Non"} icon={<Globe className="h-3.5 w-3.5" />} />
+        <InfoRow label="Responsive" value={lead.has_responsive ? "Oui" : "Non"} />
+        <InfoRow label="PHP" value={lead.php_version} />
+        <InfoRow label="jQuery" value={lead.jquery_version} />
+      </div>
     </div>
   );
 }
@@ -540,87 +547,89 @@ export function hasFinancesData(lead: LeadDetail): boolean {
     lead.bilan_date != null ||
     lead.secteur_final != null ||
     lead.ca_trend_3y ||
-    lead.profitability_tag
+    lead.profitability_tag ||
+    (lead.inpi_nb_exercices != null && lead.inpi_nb_exercices > 0)
   );
 }
 
 export function FinancesSection({ lead }: { lead: LeadDetail }) {
-  const rows: { label: string; value: string }[] = [];
-
-  // Prefer INPI ca_last over chiffre_affaires (more recent / reliable)
-  if (lead.ca_last != null) {
-    rows.push({ label: "CA (INPI)", value: `${formatCA(Number(lead.ca_last))}${lead.ca_last_year ? ` (${lead.ca_last_year})` : ""}` });
-  } else if (lead.chiffre_affaires != null) {
-    rows.push({ label: "Chiffre d'affaires", value: formatCA(Number(lead.chiffre_affaires)) });
-  }
-  if (lead.ca_growth_pct_3y != null) {
-    const pct = lead.ca_growth_pct_3y;
-    rows.push({ label: "Variation CA 3 ans", value: `${pct > 0 ? "+" : ""}${pct}%` });
-  }
-  if (lead.resultat_net != null) rows.push({ label: "Resultat net", value: formatCA(Number(lead.resultat_net)) });
-  if (lead.ebe != null) rows.push({ label: "EBE", value: formatCA(Number(lead.ebe)) });
-  if (lead.marge_ebe_pct != null) {
-    rows.push({ label: "Marge EBE", value: `${lead.marge_ebe_pct.toFixed(1)}%` });
-  } else if (lead.marge_ebe != null) {
-    rows.push({ label: "Marge EBE", value: `${(lead.marge_ebe * 100).toFixed(1)}%` });
-  }
-  if (lead.charges_personnel != null) rows.push({ label: "Charges personnel", value: formatCA(Number(lead.charges_personnel)) });
-  if (lead.bilan_last_year != null) {
-    rows.push({ label: "Dernier bilan", value: String(lead.bilan_last_year) });
-  } else if (lead.bilan_date) {
-    try {
-      const d = new Date(lead.bilan_date);
-      rows.push({ label: "Date du bilan", value: d.toLocaleDateString("fr-FR", { month: "short", year: "numeric" }) });
-    } catch { /* ignore */ }
-  } else if (lead.annee_comptes != null) {
-    rows.push({ label: "Annee des comptes", value: String(lead.annee_comptes) });
-  }
-  if (lead.inpi_nb_exercices != null && lead.inpi_nb_exercices > 0) {
-    rows.push({ label: "Exercices INPI", value: `${lead.inpi_nb_exercices} bilan${lead.inpi_nb_exercices > 1 ? "s" : ""}` });
-  }
-
-  // Trend + profitability + signals badges
+  // --- Signal badges ---
   const trend = lead.ca_trend_3y ? CA_TREND_LABELS[lead.ca_trend_3y] : null;
   const profit = lead.profitability_tag ? PROFITABILITY_LABELS[lead.profitability_tag] : null;
+  const hasBadges = !!(trend || profit || lead.deficit_2y || lead.scaling_rh || lead.bilan_confidentiality);
+
+  // --- Key metrics (adaptive: use whatever data is available) ---
+  const ca = lead.ca_last != null ? Number(lead.ca_last) : (lead.chiffre_affaires != null ? Number(lead.chiffre_affaires) : null);
+  const caLabel = lead.ca_last != null ? `CA${lead.ca_last_year ? ` (${lead.ca_last_year})` : ""}` : "Chiffre d'affaires";
+  const rn = lead.resultat_net != null ? Number(lead.resultat_net) : null;
+  const ebe = lead.ebe != null ? Number(lead.ebe) : null;
+  const marge = lead.marge_ebe_pct ?? (lead.marge_ebe != null ? lead.marge_ebe * 100 : null);
+  const charges = lead.charges_personnel != null ? Number(lead.charges_personnel) : null;
+  const bilanYear = lead.bilan_last_year ?? (lead.bilan_date ? new Date(lead.bilan_date).getFullYear() : lead.annee_comptes ?? null);
 
   return (
     <div className="space-y-3" data-testid="finances-section">
-      {/* Financial metrics grid */}
-      {rows.length > 0 && (
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-          {rows.map(({ label, value }) => (
-            <div key={label} className="flex justify-between text-xs">
-              <span className="text-muted-foreground">{label}</span>
-              <span className="font-medium font-mono">{value}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* INPI signal badges */}
-      {(trend || profit || lead.deficit_2y || lead.scaling_rh || lead.bilan_confidentiality) && (
-        <div className="flex flex-wrap gap-1.5 pt-1">
-          {trend && (
-            <Badge className={`text-[10px] ${trend.color}`}>{trend.label}</Badge>
-          )}
-          {profit && (
-            <Badge className={`text-[10px] ${profit.color}`}>{profit.label}</Badge>
-          )}
-          {lead.deficit_2y && (
-            <Badge className="text-[10px] bg-red-100 text-red-800 border-red-300">Deficit 2 ans</Badge>
-          )}
-          {lead.scaling_rh && (
-            <Badge className="text-[10px] bg-teal-100 text-teal-800 border-teal-200">Scaling RH</Badge>
-          )}
+      {/* Signal badges — top, most visible */}
+      {hasBadges && (
+        <div className="flex flex-wrap gap-1.5">
+          {trend && <Badge className={`text-[10px] ${trend.color}`}>{trend.label}</Badge>}
+          {profit && <Badge className={`text-[10px] ${profit.color}`}>{profit.label}</Badge>}
+          {lead.deficit_2y && <Badge className="text-[10px] bg-red-100 text-red-800 border-red-300">Deficit 2 ans</Badge>}
+          {lead.scaling_rh && <Badge className="text-[10px] bg-teal-100 text-teal-800 border-teal-200">Scaling RH</Badge>}
           {lead.bilan_confidentiality && lead.bilan_confidentiality.toLowerCase() !== "public" && (
             <Badge variant="outline" className="text-[10px] text-gray-500 border-gray-300">Bilan {lead.bilan_confidentiality.toLowerCase()}</Badge>
           )}
         </div>
       )}
 
-      {/* INPI history mini-table */}
+      {/* Key metrics — 2 or 3 columns, big numbers */}
+      <div className="grid grid-cols-3 gap-3">
+        {ca != null && (
+          <div className="bg-slate-50 rounded-lg px-3 py-2">
+            <span className="text-[10px] text-muted-foreground">{caLabel}</span>
+            <p className="text-sm font-bold font-mono">{formatCA(ca)}</p>
+            {lead.ca_growth_pct_3y != null && (
+              <span className={`text-[10px] font-medium ${lead.ca_growth_pct_3y > 0 ? "text-green-600" : lead.ca_growth_pct_3y < 0 ? "text-red-600" : "text-muted-foreground"}`}>
+                {lead.ca_growth_pct_3y > 0 ? "+" : ""}{lead.ca_growth_pct_3y}% / 3 ans
+              </span>
+            )}
+          </div>
+        )}
+        {rn != null && (
+          <div className="bg-slate-50 rounded-lg px-3 py-2">
+            <span className="text-[10px] text-muted-foreground">Resultat net</span>
+            <p className={`text-sm font-bold font-mono ${rn < 0 ? "text-red-600" : rn > 0 ? "text-green-700" : ""}`}>{formatCA(rn)}</p>
+          </div>
+        )}
+        {marge != null && (
+          <div className="bg-slate-50 rounded-lg px-3 py-2">
+            <span className="text-[10px] text-muted-foreground">Marge EBE</span>
+            <p className={`text-sm font-bold font-mono ${marge < 5 ? "text-orange-600" : marge > 15 ? "text-green-700" : ""}`}>{marge.toFixed(1)}%</p>
+          </div>
+        )}
+        {ebe != null && marge == null && (
+          <div className="bg-slate-50 rounded-lg px-3 py-2">
+            <span className="text-[10px] text-muted-foreground">EBE</span>
+            <p className={`text-sm font-bold font-mono ${ebe < 0 ? "text-red-600" : ""}`}>{formatCA(ebe)}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Secondary metrics — smaller, inline */}
+      {(charges != null || bilanYear != null) && (
+        <div className="flex gap-4 text-xs">
+          {charges != null && (
+            <span className="text-muted-foreground">Charges personnel: <span className="font-mono font-medium text-foreground">{formatCA(charges)}</span></span>
+          )}
+          {bilanYear != null && (
+            <span className="text-muted-foreground">Bilan: <span className="font-medium text-foreground">{bilanYear}</span></span>
+          )}
+        </div>
+      )}
+
+      {/* INPI history chart — the big feature */}
       {lead.inpi_nb_exercices != null && lead.inpi_nb_exercices > 1 && lead.siren && (
-        <InpiHistoryMini siren={lead.siren} />
+        <InpiHistoryChart siren={lead.siren} />
       )}
 
       {/* Secteur */}
@@ -646,10 +655,28 @@ export function FinancesSection({ lead }: { lead: LeadDetail }) {
   );
 }
 
-// --- INPI History mini-table (lazy loaded per lead) ---
+// --- INPI History Chart (lazy loaded, bar chart CA + dot résultat) ---
 
-function InpiHistoryMini({ siren }: { siren: string }) {
-  const [history, setHistory] = useState<{ annee: number; ca_net: number | null; resultat_net: number | null }[]>([]);
+interface HistoryRow {
+  annee: number;
+  ca_net: number | null;
+  resultat_net: number | null;
+  ebe: number | null;
+  charges_personnel: number | null;
+  total_actif: number | null;
+  immobilisations: number | null;
+  creances: number | null;
+}
+
+function computeTresorerie(h: HistoryRow): number | null {
+  if (h.total_actif != null && h.immobilisations != null && h.creances != null) {
+    return h.total_actif - h.immobilisations - h.creances;
+  }
+  return null;
+}
+
+function InpiHistoryChart({ siren }: { siren: string }) {
+  const [history, setHistory] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -665,40 +692,122 @@ function InpiHistoryMini({ siren }: { siren: string }) {
   if (loading) return <div className="text-[10px] text-muted-foreground pt-1">Chargement historique...</div>;
   if (history.length === 0) return null;
 
-  // Show last 5 years, chronological order
+  // Last 5 years, chronological
   const recent = history.slice(0, 5).reverse();
-  const maxCa = Math.max(...recent.map(h => Math.abs(h.ca_net ?? 0)), 1);
+  const hasCa = recent.some(h => h.ca_net != null);
+  const hasRn = recent.some(h => h.resultat_net != null);
+
+  // Use CA if available, otherwise résultat net as primary metric
+  const primaryKey: "ca_net" | "resultat_net" = hasCa ? "ca_net" : "resultat_net";
+  const primaryLabel = hasCa ? "CA" : "Resultat net";
+
+  const values = recent.map(h => h[primaryKey] ?? 0);
+  const maxVal = Math.max(...values.map(Math.abs), 1);
+  const chartHeight = 80;
 
   return (
-    <div className="pt-2 space-y-1">
-      <span className="text-[10px] text-muted-foreground font-medium">Historique CA ({recent.length} ans)</span>
-      <div className="flex items-end gap-1 h-12">
-        {recent.map((h) => {
-          const ca = h.ca_net ?? 0;
-          const pct = Math.max(4, (Math.abs(ca) / maxCa) * 100);
-          const isNeg = ca < 0;
-          return (
-            <div key={h.annee} className="flex flex-col items-center gap-0.5 flex-1 min-w-0" title={`${h.annee}: ${formatCA(ca)}`}>
-              <div
-                className={`w-full rounded-t ${isNeg ? "bg-red-400" : "bg-indigo-400"}`}
-                style={{ height: `${pct}%` }}
-              />
-              <span className="text-[8px] text-muted-foreground">{String(h.annee).slice(2)}</span>
-            </div>
-          );
-        })}
+    <div className="pt-1 space-y-2">
+      {/* Legend */}
+      <div className="flex items-center gap-3">
+        <span className="text-[10px] text-muted-foreground font-medium">Evolution {recent.length} ans</span>
+        <span className="flex items-center gap-1 text-[9px] text-muted-foreground">
+          <span className="w-3 h-2 rounded-sm bg-indigo-400 inline-block" /> {primaryLabel}
+        </span>
+        {hasCa && hasRn && (
+          <span className="flex items-center gap-1 text-[9px] text-muted-foreground">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Resultat
+          </span>
+        )}
       </div>
-      {/* Mini table under the bars */}
-      <div className="grid gap-0.5">
-        {recent.map((h) => (
-          <div key={h.annee} className="flex justify-between text-[10px]">
-            <span className="text-muted-foreground">{h.annee}</span>
-            <span className="font-mono">{h.ca_net != null ? formatCA(h.ca_net) : "-"}</span>
-            <span className={`font-mono ${(h.resultat_net ?? 0) < 0 ? "text-red-600" : "text-green-600"}`}>
-              {h.resultat_net != null ? formatCA(h.resultat_net) : "-"}
-            </span>
-          </div>
-        ))}
+
+      {/* Bar chart */}
+      <div className="relative" style={{ height: chartHeight + 20 }}>
+        <div className="flex items-end gap-1.5" style={{ height: chartHeight }}>
+          {recent.map((h) => {
+            const val = h[primaryKey] ?? 0;
+            const pct = Math.max(6, (Math.abs(val) / maxVal) * 100);
+            const isNeg = val < 0;
+
+            // Résultat net dot position (if both CA and RN available)
+            const rnVal = h.resultat_net ?? 0;
+            const rnPct = hasCa && hasRn ? Math.max(2, (Math.abs(rnVal) / maxVal) * 100) : 0;
+
+            return (
+              <div key={h.annee} className="flex flex-col items-center flex-1 min-w-0 relative" style={{ height: "100%" }}>
+                {/* Bar */}
+                <div className="w-full flex flex-col justify-end" style={{ height: "100%" }}>
+                  <div
+                    className={`w-full rounded-t-sm transition-all ${isNeg ? "bg-red-300" : "bg-indigo-400"}`}
+                    style={{ height: `${pct}%`, minHeight: 4 }}
+                    title={`${h.annee}: ${formatCA(val)}`}
+                  />
+                </div>
+                {/* RN dot overlay */}
+                {hasCa && hasRn && h.resultat_net != null && (
+                  <div
+                    className={`absolute w-2.5 h-2.5 rounded-full border-2 border-white ${rnVal < 0 ? "bg-red-500" : "bg-emerald-500"}`}
+                    style={{ bottom: `${rnPct}%` }}
+                    title={`Resultat ${h.annee}: ${formatCA(rnVal)}`}
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
+        {/* Year labels */}
+        <div className="flex gap-1.5 mt-1">
+          {recent.map(h => (
+            <span key={h.annee} className="flex-1 text-center text-[9px] text-muted-foreground">{h.annee}</span>
+          ))}
+        </div>
+      </div>
+
+      {/* Data table */}
+      <div className="border rounded-md overflow-hidden">
+        <table className="w-full text-[10px]">
+          <thead>
+            <tr className="bg-slate-50">
+              <th className="text-left px-2 py-1 text-muted-foreground font-medium">Annee</th>
+              {hasCa && <th className="text-right px-2 py-1 text-muted-foreground font-medium">CA</th>}
+              {hasRn && <th className="text-right px-2 py-1 text-muted-foreground font-medium">Resultat</th>}
+              {recent.some(h => h.ebe != null) && <th className="text-right px-2 py-1 text-muted-foreground font-medium">EBE</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {recent.map((h, i) => {
+              // Compute YoY variation for CA
+              const prevCa = i > 0 ? (recent[i - 1].ca_net ?? null) : null;
+              const curCa = h.ca_net;
+              const yoy = prevCa && curCa && prevCa !== 0 ? ((curCa - prevCa) / Math.abs(prevCa) * 100) : null;
+
+              return (
+                <tr key={h.annee} className="border-t border-slate-100">
+                  <td className="px-2 py-1 text-muted-foreground">{h.annee}</td>
+                  {hasCa && (
+                    <td className="text-right px-2 py-1 font-mono font-medium">
+                      {h.ca_net != null ? formatCA(h.ca_net) : "-"}
+                      {yoy != null && (
+                        <span className={`ml-1 text-[8px] ${yoy > 0 ? "text-green-600" : yoy < 0 ? "text-red-600" : "text-muted-foreground"}`}>
+                          {yoy > 0 ? "+" : ""}{yoy.toFixed(0)}%
+                        </span>
+                      )}
+                    </td>
+                  )}
+                  {hasRn && (
+                    <td className={`text-right px-2 py-1 font-mono font-medium ${(h.resultat_net ?? 0) < 0 ? "text-red-600" : "text-green-700"}`}>
+                      {h.resultat_net != null ? formatCA(h.resultat_net) : "-"}
+                    </td>
+                  )}
+                  {recent.some(r => r.ebe != null) && (
+                    <td className="text-right px-2 py-1 font-mono text-muted-foreground">
+                      {h.ebe != null ? formatCA(h.ebe) : "-"}
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );

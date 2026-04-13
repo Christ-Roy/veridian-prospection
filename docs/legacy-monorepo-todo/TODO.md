@@ -2,6 +2,7 @@
 
 > Source de verite strategique : [`../../TODO-LIVE.md`](../../TODO-LIVE.md)
 > UI polish solo : [`UI-REVIEW.md`](./UI-REVIEW.md)
+> **Pipeline data** : [`open-data/TODO.md`](./open-data/TODO.md) — acquisition, enrichissement, backups
 >
 > App principale : dashboard B2B de prospection. 996K entreprises, leads, outreach, pipeline.
 > Next.js 15, Prisma, Postgres dediee, Playwright e2e, Stripe paywall.
@@ -79,6 +80,20 @@ prospection/
 - [ ] Script `sync.ts` dans scraping qui appelle l'API au lieu de COPY FROM
 - [ ] Tester flow complet : scraping enrichit → API sync → DB mise a jour
 
+### Setup dev rapide (à implémenter)
+> **URGENT** — Actuellement monter un env dev prend 45min+ à cause de : pas de SSH dev→prod,
+> tunnel local nécessaire, pg_dump/restore lent, Prisma db push qui casse le schema.
+- [ ] Exposer la DB prod sur Tailscale (pg_hba.conf + port 15433 bindé à 100.88.202.29) — accès direct depuis dev server
+- [ ] Script `make dev-env` : tunnel + rsync + next dev en une commande
+- [ ] Alternative : réplication logique Postgres prod→dev (streaming, toujours à jour)
+- [ ] **REGLE** : JAMAIS de `prisma db push` sur une copie de la DB prod — ça drop des colonnes
+
+### Regroupement multi-SIRET par dirigeant
+> Un gérant avec 3 boîtes = 3x le potentiel commercial. Afficher les entreprises liées dans la fiche prospect.
+- [ ] Requête : trouver les entreprises qui partagent le même dirigeant_nom+dirigeant_prenom
+- [ ] UI : section "Autres entreprises de ce dirigeant" dans la fiche prospect
+- [ ] Enrichissement : l'API recherche-entreprises retourne `nombre_etablissements` — utiliser ça comme indicateur
+
 ## Backlog Prospection-specific
 
 - [ ] twenty.ts getQualifications : verifier SIREN→web_domain en staging
@@ -107,7 +122,16 @@ prospection/
 
 ## Notes agents (chantiers en cours)
 
-_(vide — pas de sprint lance)_
+**2026-04-13 — Session UI polish**
+- Worktree cree sur commit prod `be92d8a` (2026-04-08) pour avoir un env de dev stable
+- 3 commits post-prod stashes dans main, PAS encore deployes :
+  - `3781e6d` feat(prospection): align avec saas-standards (audit log, roles, health) — **P1.1 en cours**
+  - `8926173` fix(prospection): recable checkTrialExpired proprement — **P0.1 done**
+  - `77eb27a` fix(test): isolation integration tests, re-activate as blocking — **P0.4 done**
+- Ces commits ajoutent `deleted_at` sur workspace_members/workspaces, table `audit_log`, etc.
+  → incompatible avec la DB prod actuelle (pas encore migrée)
+- Dev server (dev-pub) : Next dev sur http://100.92.215.42:3333, DB staging = copie identique prod
+- Quand le polish UI est fini : merger les modifs UI dans main, puis deployer P1.1 schema migration en prod séparément
 
 ## Recently shipped
 

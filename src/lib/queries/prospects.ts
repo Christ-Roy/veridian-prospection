@@ -214,9 +214,25 @@ function buildFilterWhere(filters: ProspectFilters): { sql: string; params: (str
   const params: (string | number)[] = [];
 
   if (filters.search) {
-    const term = `%${filters.search}%`;
-    clauses.push(`(e.siren ILIKE ? OR e.denomination ILIKE ? OR e.dirigeant_nom ILIKE ? OR e.best_phone_e164 ILIKE ? OR e.best_email_normalized ILIKE ?)`);
-    params.push(term, term, term, term, term);
+    const q = filters.search.trim();
+    // SIREN exact ou prefix (btree index)
+    if (/^\d{3,9}$/.test(q)) {
+      clauses.push(`e.siren LIKE ?`);
+      params.push(`${q}%`);
+    }
+    // Phone (prefix match, btree index)
+    else if (/^[\d+\s]{4,}$/.test(q)) {
+      const digits = q.replace(/\s/g, "");
+      clauses.push(`e.best_phone_e164 LIKE ?`);
+      params.push(`%${digits}%`);
+    }
+    // Text search: use trigram similarity on indexed columns (GIN trgm)
+    else {
+      // pg_trgm: similarity + ILIKE combo — GIN index kicks in for ILIKE on trgm-indexed cols
+      const term = `%${q}%`;
+      clauses.push(`(e.denomination ILIKE ? OR e.dirigeant_nom ILIKE ? OR e.best_email_normalized ILIKE ?)`);
+      params.push(term, term, term);
+    }
   }
 
   if (filters.secteurs && filters.secteurs.length > 0) {
@@ -384,8 +400,14 @@ export async function getProspects(params: ProspectParams, tenantId: string | nu
 
   const defaultUnseenSql = (presets.length === 1 && presets[0] === "top_prospects" && !filters.unseenOnly) ? " AND o.last_visited IS NULL" : "";
 
-  const whereSql = `${nafSql} AND ${presetSql} AND ${filterSql}${defaultUnseenSql}`;
-  const allParams = [...nafParams, ...filterParams];
+  // When searching, bypass sector/preset/unseen filters — the user wants to FIND something specific
+  const isSearching = !!filters.search && filters.search.trim().length > 0;
+  const whereSql = isSearching
+    ? `${filterSql}`
+    : `${nafSql} AND ${presetSql} AND ${filterSql}${defaultUnseenSql}`;
+  const allParams = isSearching
+    ? [...filterParams]
+    : [...nafParams, ...filterParams];
 
   const sortCol = SORT_MAP[sort] ?? "e.prospect_score";
   const dir = sortDir === "desc" ? "DESC" : "ASC";
