@@ -74,6 +74,19 @@ export interface Lead {
   contact_method: string | null;
   qualification: number | null;
   last_visited: string | null;
+  // New pipeline fields
+  pipeline_stage: string | null;
+  interest_pct: number | null;
+  deadline: string | null;
+  site_price: number | null;
+  acompte_pct: number | null;
+  acompte_amount: number | null;
+  monthly_recurring: number | null;
+  annual_deal: boolean | null;
+  estimated_value: number | null;
+  real_value: number | null;
+  upsell_estimated: number | null;
+  last_interaction_at: string | null;
   // Segment extra fields (optional, only in segment views)
   best_adresse?: string | null;
   cnb_barreau?: string | null;
@@ -292,6 +305,7 @@ export const EFFECTIFS_LABELS: Record<string, string> = {
   "53": "10000+",
 };
 
+// Legacy statuses (kept for backward compat with existing outreach.status)
 export const STATUS_OPTIONS = [
   { value: "a_contacter", label: "A contacter", color: "bg-gray-100 text-gray-700" },
   { value: "fiche_ouverte", label: "Fiche ouverte", color: "bg-indigo-100 text-indigo-700" },
@@ -307,6 +321,33 @@ export const STATUS_OPTIONS = [
 export function getStatusInfo(status: string) {
   return STATUS_OPTIONS.find((s) => s.value === status) ?? STATUS_OPTIONS[0];
 }
+
+// New pipeline stages — commercial funnel
+export const PIPELINE_STAGES = [
+  { id: "fiche_ouverte", label: "Fiche ouverte", color: "bg-indigo-500", textColor: "text-indigo-700", bgLight: "bg-indigo-50", autoArchiveDays: 7 },
+  { id: "repondeur", label: "Repondeur", color: "bg-sky-500", textColor: "text-sky-700", bgLight: "bg-sky-50", autoArchiveDays: 7 },
+  { id: "a_rappeler", label: "A rappeler", color: "bg-orange-500", textColor: "text-orange-700", bgLight: "bg-orange-50", autoArchiveDays: 7 },
+  { id: "site_demo", label: "Site demo", color: "bg-purple-500", textColor: "text-purple-700", bgLight: "bg-purple-50", autoArchiveDays: null },
+  { id: "acompte", label: "Acompte", color: "bg-emerald-500", textColor: "text-emerald-700", bgLight: "bg-emerald-50", autoArchiveDays: null },
+  { id: "finition", label: "Finition", color: "bg-teal-500", textColor: "text-teal-700", bgLight: "bg-teal-50", autoArchiveDays: null },
+  { id: "client", label: "Client", color: "bg-yellow-500", textColor: "text-yellow-800", bgLight: "bg-yellow-50", autoArchiveDays: null },
+  { id: "upsell", label: "Upsell SaaS", color: "bg-rose-500", textColor: "text-rose-700", bgLight: "bg-rose-50", autoArchiveDays: null },
+] as const;
+
+export const ARCHIVE_STAGES = ["archive", "pas_interesse", "hors_cible"] as const;
+
+export function getPipelineStage(id: string) {
+  return PIPELINE_STAGES.find((s) => s.id === id) ?? PIPELINE_STAGES[0];
+}
+
+// Interest scale for site_demo stage
+export const INTEREST_SCALE = [
+  { pct: 0, label: "A dit oui mais va probablement refuser", color: "bg-red-200" },
+  { pct: 30, label: "A repondu vite, a voir", color: "bg-orange-200" },
+  { pct: 50, label: "Curieux, ouvert a une demo", color: "bg-yellow-200" },
+  { pct: 70, label: "Bonnes chances d'accepter", color: "bg-lime-200" },
+  { pct: 100, label: "Veut un site, pret a acheter", color: "bg-green-300" },
+] as const;
 
 export function formatCA(n: number | null): string {
   if (n == null) return "-";

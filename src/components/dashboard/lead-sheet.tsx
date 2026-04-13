@@ -141,7 +141,6 @@ export function LeadSheet({ domain, onClose, onUpdated }: LeadSheetProps) {
   }
 
   function handleDismiss() {
-    onUpdated();
     onClose();
   }
 

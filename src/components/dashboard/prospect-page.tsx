@@ -553,7 +553,7 @@ export function ProspectPage() {
                 startDismiss(visited);
               }
             }}
-            onUpdated={() => { setSelectedDomain(null); fetchData(); }}
+            onUpdated={() => { /* no reload — background save, sheet stays open */ }}
           />
         </main>
       </div>

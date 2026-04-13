@@ -11,15 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
-import { STATUS_OPTIONS } from "@/lib/types";
+import { PIPELINE_STAGES } from "@/lib/types";
 import type { LeadDetail } from "@/lib/types";
 import { toast } from "sonner";
 import {
@@ -34,6 +26,7 @@ import {
 import { formatTimeAgo } from "@/lib/types";
 import { GoogleMapsDropdown } from "./google-maps-dropdown";
 import { QuickNotes } from "./quick-notes";
+import { StageTransitionModal, type StageData } from "./stage-transition";
 import { Phone as PhoneIcon } from "lucide-react";
 
 interface LeadHeaderProps {
@@ -44,23 +37,36 @@ interface LeadHeaderProps {
 }
 
 export function LeadHeader({ lead, domain, onUpdated, onDismiss }: LeadHeaderProps) {
-  const [status, setStatus] = useState(lead.outreach_status || "a_contacter");
-  const [noteModalOpen, setNoteModalOpen] = useState(false);
-  const [pendingStatus, setPendingStatus] = useState<string | null>(null);
-  const [noteText, setNoteText] = useState("");
+  const [status, setStatus] = useState(lead.pipeline_stage || lead.outreach_status || "a_contacter");
+  const [transitionOpen, setTransitionOpen] = useState(false);
+  const [pendingStage, setPendingStage] = useState<string | null>(null);
 
-  async function updateStatus(val: string) {
+
+  function handleStatusChange(val: string) {
+    // Always open the transition modal
+    setPendingStage(val);
+    setTransitionOpen(true);
+  }
+
+  async function handleTransitionConfirm(data: StageData) {
     const prev = status;
-    setStatus(val);
+    setStatus(data.pipeline_stage);
+    setTransitionOpen(false);
+    setPendingStage(null);
+
     try {
       const res = await fetch(`/api/outreach/${encodeURIComponent(domain)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: val }),
+        body: JSON.stringify({
+          status: data.pipeline_stage,
+          ...data,
+          // Append note to existing notes instead of replacing
+          notes: data.notes || undefined,
+        }),
       });
       if (res.ok) {
         toast.success("Statut mis a jour");
-        onUpdated();
       } else {
         setStatus(prev);
         toast.error("Erreur mise a jour statut");
@@ -71,33 +77,9 @@ export function LeadHeader({ lead, domain, onUpdated, onDismiss }: LeadHeaderPro
     }
   }
 
-  function handleStatusChange(val: string) {
-    if (val === "interesse") {
-      setPendingStatus(val);
-      setNoteModalOpen(true);
-    } else {
-      updateStatus(val);
-    }
-  }
-
-  async function handleNoteConfirm() {
-    if (!noteText.trim()) {
-      toast.error("Note obligatoire pour le statut Interesse");
-      return;
-    }
-    // Save note first
-    await fetch(`/api/outreach/${encodeURIComponent(domain)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ notes: noteText }),
-    });
-    // Then update status
-    if (pendingStatus) {
-      await updateStatus(pendingStatus);
-    }
-    setNoteModalOpen(false);
-    setNoteText("");
-    setPendingStatus(null);
+  function handleTransitionCancel() {
+    setTransitionOpen(false);
+    setPendingStage(null);
   }
 
   async function handleDismiss() {
@@ -207,12 +189,16 @@ export function LeadHeader({ lead, domain, onUpdated, onDismiss }: LeadHeaderPro
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {STATUS_OPTIONS.map((s) => (
-              <SelectItem key={s.value} value={s.value}>
-                <span className={`inline-block w-2 h-2 rounded-full mr-2 ${s.color.split(" ")[0]}`} />
+            {PIPELINE_STAGES.map((s) => (
+              <SelectItem key={s.id} value={s.id}>
+                <span className={`inline-block w-2 h-2 rounded-full mr-2 ${s.color}`} />
                 {s.label}
               </SelectItem>
             ))}
+            <SelectItem value="archive">
+              <span className="inline-block w-2 h-2 rounded-full mr-2 bg-gray-400" />
+              Archive
+            </SelectItem>
           </SelectContent>
         </Select>
 
@@ -278,31 +264,15 @@ export function LeadHeader({ lead, domain, onUpdated, onDismiss }: LeadHeaderPro
         </div>
       </div>
 
-      {/* Note obligatoire modal pour "Interesse" */}
-      <Dialog open={noteModalOpen} onOpenChange={(open) => { if (!open) { setNoteModalOpen(false); setPendingStatus(null); setNoteText(""); } }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Note obligatoire</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            Pourquoi ce prospect est interesse ? (obligatoire)
-          </p>
-          <Textarea
-            value={noteText}
-            onChange={(e) => setNoteText(e.target.value)}
-            placeholder="Ex: interesse par une refonte, budget confirme..."
-            className="min-h-[80px]"
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setNoteModalOpen(false); setPendingStatus(null); setNoteText(""); }}>
-              Annuler
-            </Button>
-            <Button onClick={handleNoteConfirm}>
-              Confirmer
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Stage transition modal — opens on every stage change */}
+      <StageTransitionModal
+        open={transitionOpen}
+        targetStage={pendingStage || ""}
+        domain={domain}
+        dirigeant={lead.dirigeant}
+        onConfirm={handleTransitionConfirm}
+        onCancel={handleTransitionCancel}
+      />
     </div>
   );
 }
