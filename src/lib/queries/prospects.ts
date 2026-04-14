@@ -215,20 +215,25 @@ function buildFilterWhere(filters: ProspectFilters): { sql: string; params: (str
 
   if (filters.search) {
     const q = filters.search.trim();
-    // SIREN exact ou prefix (btree index)
-    if (/^\d{3,9}$/.test(q)) {
-      clauses.push(`e.siren LIKE ?`);
-      params.push(`${q}%`);
+    const digits = q.replace(/[\s\-\.]/g, "");
+    // SIREN (9 digits) or SIRET (14 digits) — search by SIREN prefix
+    if (/^\d{9,14}$/.test(digits)) {
+      const siren = digits.slice(0, 9);
+      clauses.push(`e.siren = ?`);
+      params.push(siren);
     }
-    // Phone (prefix match, btree index)
-    else if (/^[\d+\s]{4,}$/.test(q)) {
-      const digits = q.replace(/\s/g, "");
+    // Partial SIREN (3-8 digits) — prefix match
+    else if (/^\d{3,8}$/.test(digits)) {
+      clauses.push(`e.siren LIKE ?`);
+      params.push(`${digits}%`);
+    }
+    // Phone (starts with + or 0, or 10+ digits)
+    else if (/^[\d+][\d\s]{6,}$/.test(q) || /^0\d/.test(digits)) {
       clauses.push(`e.best_phone_e164 LIKE ?`);
       params.push(`%${digits}%`);
     }
     // Text search: use trigram similarity on indexed columns (GIN trgm)
     else {
-      // pg_trgm: similarity + ILIKE combo — GIN index kicks in for ILIKE on trgm-indexed cols
       const term = `%${q}%`;
       clauses.push(`(e.denomination ILIKE ? OR e.dirigeant_nom ILIKE ? OR e.best_email_normalized ILIKE ?)`);
       params.push(term, term, term);
