@@ -23,7 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { TrendingUp, MessageSquare, Bell, FileText, ExternalLink, ShieldAlert, Smartphone, Copyright, Linkedin, Facebook, Instagram } from "lucide-react";
 import { toast } from "sonner";
 import type { LeadDetail, Followup } from "@/lib/types";
-import { formatEffectifs, formatCA } from "@/lib/types";
+import { formatEffectifs, formatCA, PIPELINE_STAGES } from "@/lib/types";
 import { webHref } from "@/lib/utils";
 import { LeadHeader } from "./lead-sheet/lead-header";
 import { AutoSaveNotes } from "./lead-sheet/auto-save-notes";
@@ -187,6 +187,35 @@ export function LeadSheet({ domain, onClose, onUpdated }: LeadSheetProps) {
                 {lead.bodacc_status.toLowerCase() === "sauvegarde" && "Societe en procedure de sauvegarde"}
               </div>
             )}
+
+            {/* ========== ETAT PIPELINE + DERNIERE NOTE ========== */}
+            {lead.pipeline_stage && lead.pipeline_stage !== "a_contacter" && (() => {
+              const stageInfo = PIPELINE_STAGES.find(s => s.id === lead.pipeline_stage) || { label: lead.pipeline_stage, color: "bg-slate-500", bgLight: "bg-slate-50", textColor: "text-slate-700" };
+              // Extract the latest note (first line before ---)
+              const latestNote = lead.outreach_notes?.split("\n---\n")[0]?.trim();
+              return (
+                <div className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border ${stageInfo.bgLight}`}>
+                  <div className={`h-3 w-3 rounded-full ${stageInfo.color} shrink-0 mt-0.5`} />
+                  <div className="min-w-0 flex-1">
+                    <span className={`text-xs font-semibold ${stageInfo.textColor}`}>{stageInfo.label}</span>
+                    {lead.deadline && (
+                      <span className={`text-[10px] ml-2 ${new Date(lead.deadline) < new Date() ? "text-red-600 font-bold" : "text-muted-foreground"}`}>
+                        {new Date(lead.deadline).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })}
+                      </span>
+                    )}
+                    {lead.interest_pct != null && lead.pipeline_stage === "site_demo" && (
+                      <span className="text-[10px] ml-2 font-mono text-purple-600">{lead.interest_pct}%</span>
+                    )}
+                    {lead.estimated_value != null && (
+                      <span className="text-[10px] ml-2 font-mono text-emerald-600">{formatCA(lead.estimated_value)}</span>
+                    )}
+                    {latestNote && (
+                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{latestNote}</p>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* ========== VUE D'ENSEMBLE — Cards ========== */}
             <TooltipProvider delayDuration={200}>
