@@ -122,18 +122,42 @@ prospection/
 
 ## Notes agents (chantiers en cours)
 
-**2026-04-13 — Session UI polish**
-- Worktree cree sur commit prod `be92d8a` (2026-04-08) pour avoir un env de dev stable
-- 3 commits post-prod stashes dans main, PAS encore deployes :
-  - `3781e6d` feat(prospection): align avec saas-standards (audit log, roles, health) — **P1.1 en cours**
-  - `8926173` fix(prospection): recable checkTrialExpired proprement — **P0.1 done**
-  - `77eb27a` fix(test): isolation integration tests, re-activate as blocking — **P0.4 done**
-- Ces commits ajoutent `deleted_at` sur workspace_members/workspaces, table `audit_log`, etc.
-  → incompatible avec la DB prod actuelle (pas encore migrée)
-- Dev server (dev-pub) : Next dev sur http://100.92.215.42:3333, DB staging = copie identique prod
-- Quand le polish UI est fini : merger les modifs UI dans main, puis deployer P1.1 schema migration en prod séparément
+**2026-04-14 — En cours**
+- Enrichissement API gouv : 2 workers (local + dev), ~27K/997K enrichis, ETA ~110h
+- P1.1 commits (deleted_at, audit_log) toujours en main mais DB prod pas migree pour ces colonnes
+  → ces features sont inactives en prod, le code tourne sans elles
 
 ## Recently shipped
+
+- **2026-04-14** — fix(ci): health check accepte "ok" ET "healthy" — root cause des deploy failures
+- **2026-04-14** — feat: bandeau etat pipeline + derniere note sur la fiche prospect
+- **2026-04-14** — feat: historique notes (prepend avec separateur, pas d'ecrasement)
+- **2026-04-14** — feat: bouton archives dans le pipeline header
+- **2026-04-14** — feat: pipeline commercial 8 stages + modals de transition par stage
+  - Stages : fiche_ouverte → repondeur → a_rappeler → site_demo → acompte → finition → client → upsell
+  - Modals contextuels : repondeur (message oui/non), rappel (date/heure), site demo (interet 0-100%, date, prix), acompte (devis, %, recurrent)
+  - Jauge interet graduee + animation glow/pulse >80%
+  - Barre urgence 7j sur stages auto-archive
+  - Valeur pipeline : Pipe estime | Encaisse | Signe | Recurrent/mois
+  - Bouton X archiver optimiste sur chaque card
+  - Drag & drop entre stages → ouvre modal transition
+  - DB : 12 colonnes ajoutees sur outreach + migration data existante
+- **2026-04-14** — feat: refonte lead-sheet complete
+  - 2 cards (Contact + Entreprise), secteur en bandeau
+  - Tel formate gros, emails, dirigeant + age + date creation
+  - Sites multi-domaines avec score dette tech + prestataire concurrent (Solocal badge)
+  - Indicateurs HTTPS/responsive/copyright avec tooltips commerciaux
+  - Boutons Google Maps + Google Calendar avec logos SVG + labels
+  - QuickNotes (popover auto-save, presets, surbrillance si note existante)
+  - Reseaux sociaux (LinkedIn/Facebook/Instagram)
+  - Alerte BODACC (liquidation/redressement)
+  - Fallback CA → resultat net quand pas de CA
+  - Section Finances refaite : cards metriques, graphique barres 5 ans, tableau YoY
+- **2026-04-14** — feat: recherche trigram (indexes GIN, bypass filtres en mode recherche)
+- **2026-04-14** — chore: web_agency migre (33K leads, Solocal 11K)
+- **2026-04-14** — chore: enrichissement API gouv lance (naissance, etat admin, etablissements, CC)
+- **2026-04-14** — chore: open-data/ dans le monorepo + TODO/VISION formalises
+- **2026-04-14** — chore: backup prod 373M envoye sur dev server
 
 - **2026-04-10 10h30** — P0.1 : `checkTrialExpired` recable (lookup tenants direct + fallback workspace_members, cache 5min, plans payants exemptes), 6 tests unit + guard admin-API (`src/lib/trial.ts`, `src/lib/trial.test.ts`)
 - **2026-04-10 10h30** — P0.4 : integration tests fixes (collision SIREN root cause — `slice(0,9)` coupait le suffixe sur un prefixe 3+6=9 chars). 3 runs verts en parallele, `continue-on-error` retire, integration re-ajoute dans `needs` du promote
