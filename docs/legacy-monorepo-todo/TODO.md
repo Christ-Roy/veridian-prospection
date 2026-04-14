@@ -122,13 +122,29 @@ prospection/
 
 ## Notes agents (chantiers en cours)
 
-**2026-04-14 — En cours**
-- Enrichissement API gouv : 2 workers (local + dev), ~27K/997K enrichis, ETA ~110h
-- P1.1 commits (deleted_at, audit_log) toujours en main mais DB prod pas migree pour ces colonnes
-  → ces features sont inactives en prod, le code tourne sans elles
+**2026-04-14 — Etat fin de session**
+- Enrichissement API gouv : 2 workers morts (tunnel SSH down), ~29K/997K enrichis
+  → relancer : `ssh -fN -L 100.103.69.21:15433:127.0.0.1:15433 prod-pub` puis `nohup python3 /tmp/enrich-birth-dates.py > /tmp/enrich-worker-0.log 2>&1 &`
+- P1.1 commits (deleted_at, audit_log) : `deleted_at` maintenant en prod (fixé en urgence), `audit_log` table pas encore creee
+- Worktree `/home/brunon5/Bureau/veridian-platform-prodsnap/` a nettoyer (`git worktree remove`)
+- Dev server Next dev probablement down (a relancer si besoin)
+
+**A faire prochaine session :**
+- Vue calendrier pipeline (quand deadlines seront renseignees par les commerciaux)
+- Bouton toggle calendrier dans le pipeline header
+- Tresorerie INPI (enrichissement — data dispo dans l'API INPI)
+- Relancer enrichissement workers
+- Backup cron automatique Dokploy (pg_dump quotidien)
+- DB prod read-only pour dev (user PG ro + Tailscale)
+- Nettoyer worktree git
 
 ## Recently shipped
 
+- **2026-04-14** — feat: bouton Modifier sur bandeau pipeline (reouvre modal du stage actuel)
+- **2026-04-14** — fix: recherche SIRET 14 chiffres → extrait SIREN 9 premiers
+- **2026-04-14** — fix: pipeline values Number() au lieu de string concatenation
+- **2026-04-14** — fix: DB prod deleted_at manquant → ajout colonnes + restart container
+- **2026-04-14** — fix(test): e2e core — nouveaux stages pipeline + health status "ok"/"healthy"
 - **2026-04-14** — fix(ci): health check accepte "ok" ET "healthy" — root cause des deploy failures
 - **2026-04-14** — feat: bandeau etat pipeline + derniere note sur la fiche prospect
 - **2026-04-14** — feat: historique notes (prepend avec separateur, pas d'ecrasement)
