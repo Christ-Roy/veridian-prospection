@@ -130,6 +130,19 @@ prospection/
 - Dev server Next dev probablement down (a relancer si besoin)
 
 **A faire prochaine session :**
+- **PWA + Push Notifications** (priorité Robert 2026-04-14) :
+  - PWA installable sur mobile (manifest.json, service worker, icônes)
+  - Push notifications pour rappels pipeline (stage `a_rappeler` → notif à la date/heure)
+  - Push notifications pour démos planifiées (stage `site_demo` → notif veille + jour J)
+  - Push notifications quand un nouveau lead est assigné
+  - Calendrier interne intégré (déjà un CalendarDialog, à connecter au push)
+  - Objectif : Robert reçoit une notif sur son iPhone quand il doit rappeler un prospect
+  - Infra push : VAPID keys partagées avec Analytics (même pattern), Web Push API
+  - Table `PushSubscription` dans le schema Prisma prospection
+  - Endpoint `/api/push/subscribe` + `/api/push/send`
+  - Service worker `public/sw.js` avec cache offline + push listener
+  - Script `/api/cron/check-reminders` (appelé par Dokploy schedule) qui envoie
+    les notifs pour les rappels due dans les prochaines 15 min
 - Vue calendrier pipeline (quand deadlines seront renseignees par les commerciaux)
 - Bouton toggle calendrier dans le pipeline header
 - Tresorerie INPI (enrichissement — data dispo dans l'API INPI)
