@@ -37,11 +37,12 @@ export async function sendPushNotification(
       { TTL: 60 * 60 * 24 },
     );
     return { ok: true, gone: false };
-  } catch (err: any) {
-    if (err.statusCode === 410 || err.statusCode === 404) {
+  } catch (err: unknown) {
+    const e = err as { statusCode?: number; message?: string };
+    if (e.statusCode === 410 || e.statusCode === 404) {
       return { ok: false, gone: true };
     }
-    console.error('[push] failed:', err.message || err);
+    console.error('[push] failed:', e.message || err);
     return { ok: false, gone: false };
   }
 }

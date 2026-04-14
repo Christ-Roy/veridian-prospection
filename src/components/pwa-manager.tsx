@@ -5,6 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Download, Bell, X } from "lucide-react";
 import { toast } from "sonner";
 
+interface BeforeInstallPromptEvent extends Event {
+  prompt(): Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+}
+
 /**
  * PwaManager handles:
  * 1. Service worker registration
@@ -12,7 +17,7 @@ import { toast } from "sonner";
  * 3. PWA install prompt (beforeinstallprompt)
  */
 export function PwaManager() {
-  const [installPrompt, setInstallPrompt] = useState<any>(null);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [pushPermission, setPushPermission] = useState<NotificationPermission | null>(null);
 
@@ -36,7 +41,7 @@ export function PwaManager() {
 
     const handler = (e: Event) => {
       e.preventDefault();
-      setInstallPrompt(e);
+      setInstallPrompt(e as BeforeInstallPromptEvent);
       // Show install banner after 3 seconds if not already installed
       setTimeout(() => setShowInstallBanner(true), 3000);
     };
