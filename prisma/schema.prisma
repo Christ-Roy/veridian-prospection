@@ -400,6 +400,31 @@ model Invitation {
 }
 
 // ============================================================================
+// PUSH SUBSCRIPTIONS — Web Push API (PWA notifications)
+// ============================================================================
+// Stores browser push endpoints for sending notifications (rappels pipeline,
+// demos, nouveaux leads). VAPID keys shared with Analytics app.
+// Cleanup: expired endpoints (410 Gone) are deleted on send failure.
+
+model PushSubscription {
+  id        Int      @id @default(autoincrement())
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // Device metadata (for debugging / segmentation)
+  userAgent String? @map("user_agent") @db.Text
+  platform  String? // "ios" | "android" | "desktop"
+
+  @@index([tenantId])
+  @@index([userId])
+  @@map("push_subscriptions")
+}
+
+// ============================================================================
 // SAAS TABLES — NOT in this database.
 // Tenants, profiles, subscriptions live in Supabase Postgres (hub).
 // Prospection reads them via Supabase API (see src/lib/supabase/tenant.ts).
