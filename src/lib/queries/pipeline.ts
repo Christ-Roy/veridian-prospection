@@ -109,6 +109,14 @@ export async function getPipelineLeads(
     ca: row.ca !== null ? Number(row.ca) : null,
     email_count: bigIntToNumber(row.email_count),
     pending_followups: bigIntToNumber(row.pending_followups),
+    // Pipeline numeric fields come as strings from raw SQL — force Number
+    estimated_value: row.estimated_value != null ? Number(row.estimated_value) : null,
+    real_value: row.real_value != null ? Number(row.real_value) : null,
+    site_price: row.site_price != null ? Number(row.site_price) : null,
+    acompte_amount: row.acompte_amount != null ? Number(row.acompte_amount) : null,
+    monthly_recurring: row.monthly_recurring != null ? Number(row.monthly_recurring) : null,
+    upsell_estimated: row.upsell_estimated != null ? Number(row.upsell_estimated) : null,
+    interest_pct: row.interest_pct != null ? Number(row.interest_pct) : null,
   }));
 
   // Group: use pipeline_stage if it's a real new stage, otherwise fall back to outreach_status (legacy)
