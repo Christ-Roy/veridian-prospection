@@ -27,6 +27,7 @@ import { formatEffectifs, formatCA, PIPELINE_STAGES } from "@/lib/types";
 import { webHref } from "@/lib/utils";
 import { LeadHeader } from "./lead-sheet/lead-header";
 import { AutoSaveNotes } from "./lead-sheet/auto-save-notes";
+import { StageTransitionModal, type StageData } from "./lead-sheet/stage-transition";
 import {
   EntrepriseSection,
   ContactSection,
@@ -73,6 +74,7 @@ export function LeadSheet({ domain, onClose, onUpdated }: LeadSheetProps) {
   const [loading, setLoading] = useState(false);
   const [, setClaudeActivities] = useState<unknown[]>([]);
   const [followups, setFollowups] = useState<Followup[]>([]);
+  const [stageEditOpen, setStageEditOpen] = useState(false);
 
   useEffect(() => {
     if (!domain) {
@@ -188,27 +190,34 @@ export function LeadSheet({ domain, onClose, onUpdated }: LeadSheetProps) {
               </div>
             )}
 
-            {/* ========== ETAT PIPELINE + DERNIERE NOTE ========== */}
+            {/* ========== ETAT PIPELINE + BOUTON MODIFIER ========== */}
             {lead.pipeline_stage && lead.pipeline_stage !== "a_contacter" && (() => {
               const stageInfo = PIPELINE_STAGES.find(s => s.id === lead.pipeline_stage) || { label: lead.pipeline_stage, color: "bg-slate-500", bgLight: "bg-slate-50", textColor: "text-slate-700" };
-              // Extract the latest note (first line before ---)
               const latestNote = lead.outreach_notes?.split("\n---\n")[0]?.trim();
               return (
                 <div className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border ${stageInfo.bgLight}`}>
                   <div className={`h-3 w-3 rounded-full ${stageInfo.color} shrink-0 mt-0.5`} />
                   <div className="min-w-0 flex-1">
-                    <span className={`text-xs font-semibold ${stageInfo.textColor}`}>{stageInfo.label}</span>
-                    {lead.deadline && (
-                      <span className={`text-[10px] ml-2 ${new Date(lead.deadline) < new Date() ? "text-red-600 font-bold" : "text-muted-foreground"}`}>
-                        {new Date(lead.deadline).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })}
-                      </span>
-                    )}
-                    {lead.interest_pct != null && lead.pipeline_stage === "site_demo" && (
-                      <span className="text-[10px] ml-2 font-mono text-purple-600">{lead.interest_pct}%</span>
-                    )}
-                    {lead.estimated_value != null && (
-                      <span className="text-[10px] ml-2 font-mono text-emerald-600">{formatCA(lead.estimated_value)}</span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-semibold ${stageInfo.textColor}`}>{stageInfo.label}</span>
+                      {lead.deadline && (
+                        <span className={`text-[10px] ${new Date(lead.deadline) < new Date() ? "text-red-600 font-bold" : "text-muted-foreground"}`}>
+                          {new Date(lead.deadline).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })}
+                        </span>
+                      )}
+                      {lead.interest_pct != null && lead.pipeline_stage === "site_demo" && (
+                        <span className="text-[10px] font-mono text-purple-600">{lead.interest_pct}%</span>
+                      )}
+                      {lead.estimated_value != null && (
+                        <span className="text-[10px] font-mono text-emerald-600">{formatCA(lead.estimated_value)}</span>
+                      )}
+                      <button
+                        onClick={() => setStageEditOpen(true)}
+                        className="ml-auto text-[10px] text-muted-foreground hover:text-foreground transition-colors underline"
+                      >
+                        Modifier
+                      </button>
+                    </div>
                     {latestNote && (
                       <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{latestNote}</p>
                     )}
@@ -664,6 +673,43 @@ export function LeadSheet({ domain, onClose, onUpdated }: LeadSheetProps) {
           </div>
         )}
       </SheetContent>
+
+      {/* Stage edit modal — reopen transition modal for current stage */}
+      {lead && domain && (
+        <StageTransitionModal
+          open={stageEditOpen}
+          targetStage={lead.pipeline_stage || "fiche_ouverte"}
+          domain={domain}
+          dirigeant={lead.dirigeant}
+          onConfirm={async (data: StageData) => {
+            setStageEditOpen(false);
+            try {
+              const res = await fetch(`/api/outreach/${encodeURIComponent(domain)}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ...data, status: data.pipeline_stage }),
+              });
+              if (res.ok) {
+                // Update lead locally
+                setLead(prev => prev ? {
+                  ...prev,
+                  interest_pct: data.interest_pct ?? prev.interest_pct,
+                  deadline: data.deadline ?? prev.deadline,
+                  estimated_value: data.estimated_value ?? prev.estimated_value,
+                  site_price: data.site_price ?? prev.site_price,
+                  acompte_amount: data.acompte_amount ?? prev.acompte_amount,
+                  monthly_recurring: data.monthly_recurring ?? prev.monthly_recurring,
+                  outreach_notes: data.notes ? data.notes + (prev.outreach_notes ? "\n---\n" + prev.outreach_notes : "") : prev.outreach_notes,
+                } : null);
+                toast.success("Mis a jour");
+              }
+            } catch {
+              toast.error("Erreur");
+            }
+          }}
+          onCancel={() => setStageEditOpen(false)}
+        />
+      )}
     </Sheet>
   );
 }
