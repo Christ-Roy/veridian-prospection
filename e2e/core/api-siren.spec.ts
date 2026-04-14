@@ -14,8 +14,10 @@ test.describe("API health", () => {
     expect(res.ok()).toBeTruthy();
     const data = await res.json();
     expect(data).toHaveProperty("status");
-    expect(data.status).toBe("healthy");
-    if ("db" in data) expect(data.db).toBe("connected");
+    expect(["ok", "healthy"]).toContain(data.status);
+    if ("db" in data) expect(["ok", "connected"]).toContain(data.db);
+    expect(data).toHaveProperty("leadCount");
+    expect(data.leadCount).toBeGreaterThan(100000);
   });
 });
 

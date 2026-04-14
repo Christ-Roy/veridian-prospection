@@ -106,12 +106,12 @@ test.describe("prospects full flow — Robert daily journey", () => {
       console.log("[full-flow] WARN: lead sheet did not open (trial expired or old image)");
     }
 
-    // --- 6. Pipeline page ---
+    // --- 6. Pipeline page (new stages) ---
     await page.goto(`${PROSPECTION_URL}/pipeline`);
     await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
-    const columnLabelRegex = /fiche ouverte|appele|interesse|rappeler|rdv|client|hors cible/i;
+    const columnLabelRegex = /fiche ouverte|repondeur|a rappeler|site demo|acompte|finition|client|upsell/i;
     await expect(page.getByText(columnLabelRegex).first()).toBeVisible({ timeout: 15_000 });
-    console.log("[full-flow] pipeline column visible");
+    console.log("[full-flow] pipeline column visible (new stages)");
 
     // --- 7. Pipeline card click if exists ---
     // Dismiss any open modals/overlays first (previous lead sheet may still be open)
