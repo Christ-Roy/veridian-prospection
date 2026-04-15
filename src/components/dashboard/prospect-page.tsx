@@ -83,12 +83,17 @@ export function ProspectPage() {
     requirePhone: true,
   });
 
-  // Check onboarding status
+  // Check onboarding status — skip if already has data (admin/returning user)
   useEffect(() => {
-    fetch("/api/settings")
-      .then(r => r.ok ? r.json() : {})
-      .then((data: Record<string, string>) => {
-        if (!data["settings.onboarding_done"]) setShowOnboarding(true);
+    Promise.all([
+      fetch("/api/settings").then(r => r.ok ? r.json() : {}),
+      fetch("/api/status").then(r => r.ok ? r.json() : null),
+    ])
+      .then(([settings, status]: [Record<string, string>, { leadCount?: number } | null]) => {
+        const onboardingDone = settings["settings.onboarding_done"];
+        const hasLeads = status && (status.leadCount ?? 0) > 100;
+        // Show onboarding only for fresh tenants without data and not yet completed
+        if (!onboardingDone && !hasLeads) setShowOnboarding(true);
         setOnboardingChecked(true);
       })
       .catch(() => setOnboardingChecked(true));
