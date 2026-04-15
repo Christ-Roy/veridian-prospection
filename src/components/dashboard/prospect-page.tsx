@@ -83,18 +83,27 @@ export function ProspectPage() {
     requirePhone: true,
   });
 
-  // Check onboarding status — skip if already has data (admin/returning user)
+  // Check onboarding status — skip if already has data or settings say done.
+  // If settings API fails (401 race after login, network error), skip onboarding
+  // to avoid blocking the UI. A real new user will see it on reload.
   useEffect(() => {
-    Promise.all([
-      fetch("/api/settings").then(r => r.ok ? r.json() : {}),
-      fetch("/api/health").then(r => r.ok ? r.json() : null),
-    ])
-      .then(([settings, health]: [Record<string, string>, { leadCount?: number } | null]) => {
-        const onboardingDone = settings["settings.onboarding_done"];
-        const hasLeads = health && (health.leadCount ?? 0) > 100;
-        // Show onboarding only for fresh tenants without data and not yet completed
-        if (!onboardingDone && !hasLeads) setShowOnboarding(true);
-        setOnboardingChecked(true);
+    fetch("/api/settings")
+      .then(r => {
+        if (!r.ok) return null; // 401 = session not ready yet, skip onboarding
+        return r.json();
+      })
+      .then((settings: Record<string, string> | null) => {
+        if (!settings) { setOnboardingChecked(true); return; }
+        if (settings["settings.onboarding_done"]) { setOnboardingChecked(true); return; }
+        // No onboarding_done → check if tenant has data (admin/returning user)
+        fetch("/api/health")
+          .then(r => r.ok ? r.json() : null)
+          .then((health: { leadCount?: number } | null) => {
+            const hasLeads = health && (health.leadCount ?? 0) > 100;
+            if (!hasLeads) setShowOnboarding(true);
+            setOnboardingChecked(true);
+          })
+          .catch(() => setOnboardingChecked(true));
       })
       .catch(() => setOnboardingChecked(true));
 
