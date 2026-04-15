@@ -28,79 +28,79 @@ datasource db {
 
 model Entreprise {
   // --- Identité SIRENE ---
-  siren                String    @id
-  siretSiege           String?   @map("siret_siege")
-  denomination         String?
-  sigle                String?
-  formeJuridique       String?   @map("forme_juridique")
-  codeNaf              String?   @map("code_naf")
-  nafLibelle           String?   @map("naf_libelle")
-  categorieEntreprise  String?   @map("categorie_entreprise")
-  trancheEffectifs     String?   @map("tranche_effectifs")
-  dateCreation         DateTime? @map("date_creation") @db.Date
+  siren               String    @id
+  siretSiege          String?   @map("siret_siege")
+  denomination        String?
+  sigle               String?
+  formeJuridique      String?   @map("forme_juridique")
+  codeNaf             String?   @map("code_naf")
+  nafLibelle          String?   @map("naf_libelle")
+  categorieEntreprise String?   @map("categorie_entreprise")
+  trancheEffectifs    String?   @map("tranche_effectifs")
+  dateCreation        DateTime? @map("date_creation") @db.Date
 
   // --- Adresse ---
-  adresse       String?
-  codePostal    String?  @map("code_postal")
-  commune       String?
-  departement   String?
-  codeCommune   String?  @map("code_commune")
+  adresse     String?
+  codePostal  String? @map("code_postal")
+  commune     String?
+  departement String?
+  codeCommune String? @map("code_commune")
 
   // --- Contact (version brute + normalisée) ---
-  bestPhone            String?  @map("best_phone")
-  bestPhoneType        String?  @map("best_phone_type")
-  bestEmail            String?  @map("best_email")
-  socialLinkedin       String?  @map("social_linkedin")
-  socialFacebook       String?  @map("social_facebook")
-  socialInstagram      String?  @map("social_instagram")
-  socialTwitter        String?  @map("social_twitter")
+  bestPhone       String? @map("best_phone")
+  bestPhoneType   String? @map("best_phone_type")
+  bestEmail       String? @map("best_email")
+  socialLinkedin  String? @map("social_linkedin")
+  socialFacebook  String? @map("social_facebook")
+  socialInstagram String? @map("social_instagram")
+  socialTwitter   String? @map("social_twitter")
 
   // Versions normalisées à utiliser par défaut
-  bestPhoneE164        String?  @map("best_phone_e164")
-  bestEmailNormalized  String?  @map("best_email_normalized")
-  bestEmailType        String?  @map("best_email_type")
-  webDomainNormalized  String?  @map("web_domain_normalized")
+  bestPhoneE164       String? @map("best_phone_e164")
+  bestEmailNormalized String? @map("best_email_normalized")
+  bestEmailType       String? @map("best_email_type")
+  webDomainNormalized String? @map("web_domain_normalized")
 
   // --- Dirigeant ---
-  dirigeantNom     String?  @map("dirigeant_nom")
-  dirigeantPrenom  String?  @map("dirigeant_prenom")
-  dirigeantQualite String?  @map("dirigeant_qualite")
+  dirigeantNom     String? @map("dirigeant_nom")
+  dirigeantPrenom  String? @map("dirigeant_prenom")
+  dirigeantQualite String? @map("dirigeant_qualite")
 
   // --- Web ---
-  webDomain              String?  @map("web_domain")
-  webDomainsAll          Json?    @map("web_domains_all")
-  webDomainCount         Int?     @map("web_domain_count") @db.SmallInt
-  webCms                 String?  @map("web_cms")
-  webPlatform            String?  @map("web_platform")
-  webTechScore           Int?     @map("web_tech_score") @db.SmallInt
-  webObsolescenceScore   Int?     @map("web_obsolescence_score") @db.SmallInt
-  webEclateScore         Int?     @map("web_eclate_score") @db.SmallInt
-  webCopyrightYear       Int?     @map("web_copyright_year") @db.SmallInt
-  webHasHttps            Boolean? @map("web_has_https")
-  webHasResponsive       Boolean? @map("web_has_responsive")
-  webHasEcommerce        Boolean? @map("web_has_ecommerce")
-  webHasContactForm      Boolean? @map("web_has_contact_form")
-  webHasMentionsLegales  Boolean? @map("web_has_mentions_legales")
-  webHasFlash            Boolean? @map("web_has_flash")
-  webHasLayoutTables     Boolean? @map("web_has_layout_tables")
-  webHasIePolyfills      Boolean? @map("web_has_ie_polyfills")
-  webHasLoremIpsum       Boolean? @map("web_has_lorem_ipsum")
-  webHasPhpsessid        Boolean? @map("web_has_phpsessid")
-  webHasViewportNoScale  Boolean? @map("web_has_viewport_no_scale")
-  webHasMetaKeywords     Boolean? @map("web_has_meta_keywords")
-  webHasMixedContent     Boolean? @map("web_has_mixed_content")
-  webHasOldHtml          Boolean? @map("web_has_old_html")
-  webHasOldImages        Boolean? @map("web_has_old_images")
-  webHasModernImages     Boolean? @map("web_has_modern_images")
-  webHasFavicon          Boolean? @map("web_has_favicon")
-  webHasMinifiedAssets   Boolean? @map("web_has_minified_assets")
-  webHasCompression      Boolean? @map("web_has_compression")
-  webHasRecruitingPage   Boolean? @map("web_has_recruiting_page")
-  webHasBlog             Boolean? @map("web_has_blog")
-  webHasChatWidget       Boolean? @map("web_has_chat_widget")
-  webHasBookingSystem    Boolean? @map("web_has_booking_system")
-  webHasHoraires         Boolean? @map("web_has_horaires")
-  webHasGoogleMaps       Boolean? @map("web_has_google_maps")
+  webDomain             String?  @map("web_domain")
+  webDomainsAll         Json?    @map("web_domains_all")
+  webDomainCount        Int?     @map("web_domain_count") @db.SmallInt
+  webCms                String?  @map("web_cms")
+  webPlatform           String?  @map("web_platform")
+  webTechScore          Int?     @map("web_tech_score") @db.SmallInt
+  webObsolescenceScore  Int?     @map("web_obsolescence_score") @db.SmallInt
+  webEclateScore        Int?     @map("web_eclate_score") @db.SmallInt
+  webCopyrightYear      Int?     @map("web_copyright_year") @db.SmallInt
+  webHasHttps           Boolean? @map("web_has_https")
+  webHasResponsive      Boolean? @map("web_has_responsive")
+  webHasEcommerce       Boolean? @map("web_has_ecommerce")
+  webHasContactForm     Boolean? @map("web_has_contact_form")
+  webHasMentionsLegales Boolean? @map("web_has_mentions_legales")
+  webHasFlash           Boolean? @map("web_has_flash")
+  webHasLayoutTables    Boolean? @map("web_has_layout_tables")
+  webHasIePolyfills     Boolean? @map("web_has_ie_polyfills")
+  webHasLoremIpsum      Boolean? @map("web_has_lorem_ipsum")
+  webHasPhpsessid       Boolean? @map("web_has_phpsessid")
+  webHasViewportNoScale Boolean? @map("web_has_viewport_no_scale")
+  webHasMetaKeywords    Boolean? @map("web_has_meta_keywords")
+  webHasMixedContent    Boolean? @map("web_has_mixed_content")
+  webHasOldHtml         Boolean? @map("web_has_old_html")
+  webHasOldImages       Boolean? @map("web_has_old_images")
+  webHasModernImages    Boolean? @map("web_has_modern_images")
+  webHasFavicon         Boolean? @map("web_has_favicon")
+  webHasMinifiedAssets  Boolean? @map("web_has_minified_assets")
+  webHasCompression     Boolean? @map("web_has_compression")
+  webHasRecruitingPage  Boolean? @map("web_has_recruiting_page")
+  webHasBlog            Boolean? @map("web_has_blog")
+  webHasChatWidget      Boolean? @map("web_has_chat_widget")
+  webHasBookingSystem   Boolean? @map("web_has_booking_system")
+  webHasHoraires        Boolean? @map("web_has_horaires")
+  webHasGoogleMaps      Boolean? @map("web_has_google_maps")
 
   // --- Finances ---
   chiffreAffaires BigInt?   @map("chiffre_affaires")
@@ -109,15 +109,15 @@ model Entreprise {
   bilanDate       DateTime? @map("bilan_date") @db.Date
 
   // --- Certifications & labels ---
-  estRge              Boolean? @map("est_rge")
-  estQualiopi         Boolean? @map("est_qualiopi")
-  qualiopiSpecialite  String?  @map("qualiopi_specialite")
-  estBio              Boolean? @map("est_bio")
-  estEpv              Boolean? @map("est_epv")
-  estFiness           Boolean? @map("est_finess")
-  estEss              Boolean? @map("est_ess")
-  estSurLbc           Boolean? @map("est_sur_lbc")
-  estBni              Boolean? @map("est_bni")
+  estRge             Boolean? @map("est_rge")
+  estQualiopi        Boolean? @map("est_qualiopi")
+  qualiopiSpecialite String?  @map("qualiopi_specialite")
+  estBio             Boolean? @map("est_bio")
+  estEpv             Boolean? @map("est_epv")
+  estFiness          Boolean? @map("est_finess")
+  estEss             Boolean? @map("est_ess")
+  estSurLbc          Boolean? @map("est_sur_lbc")
+  estBni             Boolean? @map("est_bni")
 
   // --- Signaux business ---
   nbMarchesPublics      Int?      @map("nb_marches_publics")
@@ -126,25 +126,25 @@ model Entreprise {
   decpLastDate          DateTime? @map("decp_last_date") @db.Date
 
   // --- Classification & scoring ---
-  secteurFinal      String?   @map("secteur_final")
-  domaineFinal      String?   @map("domaine_final")
-  prospectTier      String?   @map("prospect_tier")
-  prospectScore     Int?      @map("prospect_score") @db.SmallInt
-  isProspectable    Boolean?  @map("is_prospectable")
-  dataCompleteness  Int?      @map("data_completeness") @db.SmallInt
-  sourceCount       Int?      @map("source_count") @db.SmallInt
-  signalCount       Int?      @map("signal_count") @db.SmallInt
-  masterUpdatedAt   DateTime? @map("master_updated_at") @db.Timestamp
+  secteurFinal     String?   @map("secteur_final")
+  domaineFinal     String?   @map("domaine_final")
+  prospectTier     String?   @map("prospect_tier")
+  prospectScore    Int?      @map("prospect_score") @db.SmallInt
+  isProspectable   Boolean?  @map("is_prospectable")
+  dataCompleteness Int?      @map("data_completeness") @db.SmallInt
+  sourceCount      Int?      @map("source_count") @db.SmallInt
+  signalCount      Int?      @map("signal_count") @db.SmallInt
+  masterUpdatedAt  DateTime? @map("master_updated_at") @db.Timestamp
 
   // --- BODACC ---
-  bodaccStatus        String?  @map("bodacc_status")
-  bodaccNbProcedures  Int?     @map("bodacc_nb_procedures") @db.SmallInt
+  bodaccStatus       String? @map("bodacc_status")
+  bodaccNbProcedures Int?    @map("bodacc_nb_procedures") @db.SmallInt
 
   // --- Flags techniques (filtres par défaut !) ---
-  isRegistrar           Boolean? @map("is_registrar")
-  caSuspect             Boolean? @map("ca_suspect")
-  isAutoEntrepreneur    Boolean? @map("is_auto_entrepreneur")
-  wasInStagingResults   Boolean? @map("was_in_staging_results")
+  isRegistrar         Boolean? @map("is_registrar")
+  caSuspect           Boolean? @map("ca_suspect")
+  isAutoEntrepreneur  Boolean? @map("is_auto_entrepreneur")
+  wasInStagingResults Boolean? @map("was_in_staging_results")
 
   // --- Relations (metier tables, FK on siren) ---
   outreaches       Outreach[]
@@ -152,10 +152,10 @@ model Entreprise {
   followups        Followup[]
   claudeActivities ClaudeActivity[]
   outreachEmails   OutreachEmail[]
-
-  @@map("entreprises")
   // Indexes are created by open-data-hub/migration_pg_entreprises.sql
   // (23 indexes including 3 critical composites for segment queries).
+
+  @@map("entreprises")
 }
 
 // ============================================================================
@@ -176,11 +176,23 @@ model Outreach {
   updatedAt     String? @map("updated_at")
   position      Int     @default(0)
 
+  // Pipeline commercial (2026-04-15: acte colonnes raw utilisees par le code)
+  pipelineStage    String?   @map("pipeline_stage")
+  deadline         DateTime? @db.Timestamptz
+  interestPct      Int?      @map("interest_pct") @db.SmallInt
+  sitePrice        Decimal?  @map("site_price") @db.Decimal(10, 2)
+  acomptePct       Int?      @map("acompte_pct") @db.SmallInt
+  acompteAmount    Decimal?  @map("acompte_amount") @db.Decimal(10, 2)
+  monthlyRecurring Decimal?  @map("monthly_recurring") @db.Decimal(10, 2)
+  annualDeal       Boolean?  @default(false) @map("annual_deal")
+  estimatedValue   Decimal?  @map("estimated_value") @db.Decimal(10, 2)
+
   entreprise Entreprise @relation(fields: [siren], references: [siren])
 
   @@id([siren, tenantId])
   @@index([tenantId, workspaceId])
   @@index([tenantId, userId])
+  @@index([tenantId, pipelineStage, deadline])
   @@map("outreach")
 }
 
@@ -288,7 +300,7 @@ model LeadSegment {
 
 model PipelineConfig {
   key      String
-  tenantId String  @default("00000000-0000-0000-0000-000000000000") @map("tenant_id") @db.Uuid
+  tenantId String @default("00000000-0000-0000-0000-000000000000") @map("tenant_id") @db.Uuid
   value    String
 
   @@id([key, tenantId])
@@ -300,16 +312,16 @@ model PipelineConfig {
 // ============================================================================
 
 model Workspace {
-  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId    String    @map("tenant_id") @db.Uuid
-  name        String
-  slug        String
-  leadsLimit  Int?      @map("leads_limit")
-  createdBy   String?   @map("created_by") @db.Uuid
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  name       String
+  slug       String
+  leadsLimit Int?      @map("leads_limit")
+  createdBy  String?   @map("created_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   // SaaS standard — soft delete (P1.1). Purge définitive cron 30j (P1.6).
-  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+  deletedAt  DateTime? @map("deleted_at") @db.Timestamptz
 
   members WorkspaceMember[]
 
@@ -350,7 +362,7 @@ model AuditLog {
   tenantId   String?  @map("tenant_id") @db.Uuid
   actorId    String?  @map("actor_id") @db.Uuid
   actorType  String   @map("actor_type") // 'user' | 'hub' | 'stripe' | 'system'
-  action     String   // 'workspace.deleted', 'plan.changed', ...
+  action     String // 'workspace.deleted', 'plan.changed', ...
   targetType String?  @map("target_type")
   targetId   String?  @map("target_id")
   metadata   Json?
@@ -422,6 +434,66 @@ model PushSubscription {
   @@index([tenantId])
   @@index([userId])
   @@map("push_subscriptions")
+}
+
+// ============================================================================
+// APPOINTMENTS — RDV dedies par tenant (source de verite calendrier + push)
+// ============================================================================
+// Ajoute 2026-04-15. Remplace progressivement outreach.deadline pour le
+// tracking des RDV. Le cron check-reminders scanne les deux pendant la
+// transition. Voir scripts/2026-04-15_appointments-and-prefs.sql.
+
+model Appointment {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String  @map("tenant_id") @db.Uuid
+  workspaceId String? @map("workspace_id") @db.Uuid
+  userId      String? @map("user_id") @db.Uuid
+  siren       String
+
+  startAt  DateTime @map("start_at") @db.Timestamptz
+  endAt    DateTime @map("end_at") @db.Timestamptz
+  title    String
+  location String?
+  notes    String?
+
+  // scheduled | done | cancelled | rescheduled
+  status String @default("scheduled")
+
+  // URL Google Calendar prerempli (fallback, pas OAuth)
+  googleEventUrl String? @map("google_event_url")
+  googleEventId  String? @map("google_event_id")
+
+  // Dedup cron push
+  notifiedAt DateTime? @map("notified_at") @db.Timestamptz
+
+  // Lien optionnel avec le stage pipeline a l'origine du RDV
+  sourceStage String? @map("source_stage")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([tenantId, startAt])
+  @@index([tenantId, userId, startAt])
+  @@index([siren])
+  @@map("appointments")
+}
+
+// ============================================================================
+// NOTIFICATION PREFERENCES — Per-user toggles pour les push
+// ============================================================================
+
+model NotificationPreferences {
+  userId                String  @id @map("user_id") @db.Uuid
+  tenantId              String  @map("tenant_id") @db.Uuid
+  reminderPush          Boolean @default(true) @map("reminder_push")
+  reminderMinutesBefore Int     @default(30) @map("reminder_minutes_before") @db.SmallInt
+  dailyDigest           Boolean @default(false) @map("daily_digest")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([tenantId])
+  @@map("notification_preferences")
 }
 
 // ============================================================================
