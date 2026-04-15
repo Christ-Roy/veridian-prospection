@@ -133,7 +133,7 @@ jobs:
           build-args: |
             NEXT_PUBLIC_SUPABASE_URL=https://saas-api.staging.veridian.site
             NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.STAGING_SUPABASE_ANON_KEY }}
-            NEXT_PUBLIC_HUB_URL=https://saas-hub.staging.veridian.site
+            NEXT_PUBLIC_HUB_URL=https://app.veridian.site
             NEXT_PUBLIC_SITE_URL=https://saas-prospection.staging.veridian.site
             NEXT_PUBLIC_TRIAL_DAYS=7
 
@@ -230,12 +230,12 @@ jobs:
           echo "Warming up pages..."
           curl -sf https://saas-prospection.staging.veridian.site/login -o /dev/null && echo "  /login OK"
           curl -sf https://saas-prospection.staging.veridian.site/api/status -o /dev/null && echo "  /api/status OK"
-          curl -sf https://saas-hub.staging.veridian.site/ -o /dev/null && echo "  hub OK"
+          curl -sf https://app.veridian.site/ -o /dev/null && echo "  hub OK"
           curl -sf https://saas-api.staging.veridian.site/auth/v1/health -H "apikey: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}" -o /dev/null && echo "  supabase OK"
           echo "Warm-up done"
       - name: "Core E2E — BLOQUANT (6 specs)"
         env:
-          HUB_URL: https://saas-hub.staging.veridian.site
+          HUB_URL: https://app.veridian.site
           PROSPECTION_URL: https://saas-prospection.staging.veridian.site
           SUPABASE_URL: https://saas-api.staging.veridian.site
           SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
@@ -291,7 +291,7 @@ jobs:
           echo "Staging not ready — running anyway"
       - name: "Extended E2E — ${{ matrix.browser }} (non-blocking)"
         env:
-          HUB_URL: https://saas-hub.staging.veridian.site
+          HUB_URL: https://app.veridian.site
           PROSPECTION_URL: https://saas-prospection.staging.veridian.site
           SUPABASE_URL: https://saas-api.staging.veridian.site
           SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
