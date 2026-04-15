@@ -61,15 +61,58 @@ export function LeadHeader({ lead, domain, onUpdated, onDismiss }: LeadHeaderPro
         body: JSON.stringify({
           status: data.pipeline_stage,
           ...data,
-          // Append note to existing notes instead of replacing
           notes: data.notes || undefined,
         }),
       });
-      if (res.ok) {
-        toast.success("Statut mis a jour");
-      } else {
+      if (!res.ok) {
         setStatus(prev);
         toast.error("Erreur mise a jour statut");
+        return;
+      }
+      toast.success("Statut mis a jour");
+
+      // Creer un Appointment pour les stages avec RDV + ouvrir Google Calendar
+      const createsAppointment =
+        (data.pipeline_stage === "a_rappeler" || data.pipeline_stage === "site_demo") &&
+        data.deadline;
+
+      if (createsAppointment && lead.siren) {
+        const start = new Date(data.deadline!);
+        const end = new Date(start.getTime() + 30 * 60 * 1000);
+        const entreprise = lead.nom_entreprise || domain;
+        const title =
+          data.pipeline_stage === "a_rappeler"
+            ? `Rappel ${entreprise}`
+            : `Demo site — ${entreprise}`;
+        const details = [
+          lead.dirigeant ? `Dirigeant: ${lead.dirigeant}` : null,
+          lead.phone ? `Tel: ${lead.phone}` : null,
+          lead.email || lead.dirigeant_email ? `Email: ${lead.dirigeant_email || lead.email}` : null,
+          data.notes ? `Notes: ${data.notes}` : null,
+        ].filter(Boolean).join("\n");
+
+        try {
+          const apptRes = await fetch("/api/appointments", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              siren: lead.siren,
+              startAt: start.toISOString(),
+              endAt: end.toISOString(),
+              title,
+              notes: details,
+              sourceStage: data.pipeline_stage,
+            }),
+          });
+          if (apptRes.ok) {
+            const json = await apptRes.json();
+            if (json.appointment?.googleEventUrl) {
+              window.open(json.appointment.googleEventUrl, "_blank", "noopener,noreferrer");
+            }
+          }
+        } catch {
+          // RDV cree en DB meme si l'URL Google echoue — on ne bloque pas
+        }
       }
     } catch {
       setStatus(prev);
