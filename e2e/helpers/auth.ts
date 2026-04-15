@@ -164,11 +164,10 @@ export async function loginAsE2EUser(
     }).catch(() => {});
   });
 
-  // Dismiss the onboarding modal if it appeared before the settings call
-  const onboardingOverlay = page.locator(".fixed.inset-0.z-50.bg-black\\/60");
-  if (await onboardingOverlay.isVisible({ timeout: 1000 }).catch(() => false)) {
-    // Press Escape or click outside to dismiss
-    await page.keyboard.press("Escape");
+  // Dismiss the onboarding modal if it appeared (click the skip button)
+  const skipBtn = page.locator('[data-testid="onboarding-skip"]');
+  if (await skipBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+    await skipBtn.click();
     await page.waitForTimeout(500);
   }
 }

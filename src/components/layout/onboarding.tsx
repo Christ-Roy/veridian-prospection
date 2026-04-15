@@ -145,9 +145,27 @@ export function Onboarding({ open, onComplete }: OnboardingProps) {
     );
   }
 
+  function handleSkip() {
+    // Mark onboarding as done and close
+    fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ onboarding_done: "skipped" }),
+    }).catch(() => {});
+    onComplete({ plan: "freemium", departments: [], sectors: [] });
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" data-testid="onboarding-overlay">
       <div className="relative w-full max-w-4xl mx-4 animate-in slide-in-from-bottom-4 duration-300">
+        <button
+          onClick={handleSkip}
+          className="absolute top-2 right-2 z-10 rounded-full p-2 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          data-testid="onboarding-skip"
+          aria-label="Passer"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
         <Card className="p-8 shadow-2xl max-h-[90vh] overflow-y-auto">
 
           {step === "plan" && (

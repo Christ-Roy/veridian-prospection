@@ -87,11 +87,11 @@ export function ProspectPage() {
   useEffect(() => {
     Promise.all([
       fetch("/api/settings").then(r => r.ok ? r.json() : {}),
-      fetch("/api/status").then(r => r.ok ? r.json() : null),
+      fetch("/api/health").then(r => r.ok ? r.json() : null),
     ])
-      .then(([settings, status]: [Record<string, string>, { leadCount?: number } | null]) => {
+      .then(([settings, health]: [Record<string, string>, { leadCount?: number } | null]) => {
         const onboardingDone = settings["settings.onboarding_done"];
-        const hasLeads = status && (status.leadCount ?? 0) > 100;
+        const hasLeads = health && (health.leadCount ?? 0) > 100;
         // Show onboarding only for fresh tenants without data and not yet completed
         if (!onboardingDone && !hasLeads) setShowOnboarding(true);
         setOnboardingChecked(true);
