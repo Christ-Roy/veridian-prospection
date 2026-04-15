@@ -38,7 +38,7 @@ export default function RootLayout({
     <html lang="fr">
       <head>
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="mobile-web-app-capable" content="yes" />
       </head>
       <body className={`${geistSans.variable} font-sans antialiased bg-gray-50 dark:bg-gray-950`}>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
