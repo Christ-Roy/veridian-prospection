@@ -28,6 +28,7 @@ import { webHref } from "@/lib/utils";
 import { LeadHeader } from "./lead-sheet/lead-header";
 import { AutoSaveNotes } from "./lead-sheet/auto-save-notes";
 import { StageTransitionModal, type StageData } from "./lead-sheet/stage-transition";
+import { AppointmentsSection } from "./lead-sheet/appointments-section";
 import {
   EntrepriseSection,
   ContactSection,
@@ -563,6 +564,23 @@ export function LeadSheet({ domain, onClose, onUpdated }: LeadSheetProps) {
                         </div>
                       )}
                     </div>
+                  </AccordionContent>
+                </AccordionItem>
+              )}
+
+              {/* RDV planifiés */}
+              {lead.siren && (
+                <AccordionItem value="appointments">
+                  <AccordionTrigger className="py-3 text-sm">
+                    <span className="flex items-center gap-2 text-blue-600">
+                      <Bell className="h-4 w-4" /> RDV &amp; Rappels
+                    </span>
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    <AppointmentsSection
+                      siren={lead.siren}
+                      entreprise={lead.nom_entreprise || domain!}
+                    />
                   </AccordionContent>
                 </AccordionItem>
               )}
