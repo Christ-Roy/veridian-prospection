@@ -77,3 +77,4 @@ npx playwright test e2e/extended/ --project=chromium  # Extended e2e
 - JAMAIS de signup en e2e (login comptes existants uniquement)
 - `checkTrialExpired` = return false (hack temporaire, a recabler)
 # retrigger
+
