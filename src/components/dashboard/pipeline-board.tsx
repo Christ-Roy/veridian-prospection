@@ -238,6 +238,34 @@ export function PipelineBoard() {
         body: JSON.stringify({ status: data.pipeline_stage, ...data }),
       });
       if (!res.ok) throw new Error();
+
+      // Auto-create Appointment if stage has a deadline (a_rappeler or site_demo)
+      // so it appears in the calendar + triggers push reminder via cron
+      if (data.deadline && lead.siren && (data.pipeline_stage === "a_rappeler" || data.pipeline_stage === "site_demo")) {
+        const startAt = new Date(data.deadline);
+        const durationMin = data.pipeline_stage === "a_rappeler" ? 15 : 60;
+        const endAt = new Date(startAt.getTime() + durationMin * 60_000);
+        const title = data.pipeline_stage === "a_rappeler"
+          ? `Rappel ${lead.nom_entreprise || lead.domain}`
+          : `Demo ${lead.nom_entreprise || lead.domain}`;
+
+        fetch("/api/appointments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            siren: lead.siren,
+            startAt: startAt.toISOString(),
+            endAt: endAt.toISOString(),
+            title,
+            notes: data.notes || null,
+            sourceStage: data.pipeline_stage,
+          }),
+        }).catch(() => {
+          // Appointment creation failure shouldn't block the pipeline update
+          console.warn("[pipeline] Appointment creation failed (non-blocking)");
+        });
+      }
+
       toast.success("Pipeline mis a jour");
     } catch {
       // Rollback would be complex — just refetch

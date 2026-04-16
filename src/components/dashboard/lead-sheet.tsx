@@ -719,6 +719,31 @@ export function LeadSheet({ domain, onClose, onUpdated }: LeadSheetProps) {
                   monthly_recurring: data.monthly_recurring ?? prev.monthly_recurring,
                   outreach_notes: data.notes ? data.notes + (prev.outreach_notes ? "\n---\n" + prev.outreach_notes : "") : prev.outreach_notes,
                 } : null);
+
+                // Auto-create Appointment if stage has a deadline (a_rappeler or site_demo)
+                if (data.deadline && lead?.siren && (data.pipeline_stage === "a_rappeler" || data.pipeline_stage === "site_demo")) {
+                  const startAt = new Date(data.deadline);
+                  const durationMin = data.pipeline_stage === "a_rappeler" ? 15 : 60;
+                  const endAt = new Date(startAt.getTime() + durationMin * 60_000);
+                  const title = data.pipeline_stage === "a_rappeler"
+                    ? `Rappel ${lead.nom_entreprise || domain}`
+                    : `Demo ${lead.nom_entreprise || domain}`;
+                  fetch("/api/appointments", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      siren: lead.siren,
+                      startAt: startAt.toISOString(),
+                      endAt: endAt.toISOString(),
+                      title,
+                      notes: data.notes || null,
+                      sourceStage: data.pipeline_stage,
+                    }),
+                  }).catch(() => {
+                    console.warn("[lead-sheet] Appointment creation failed (non-blocking)");
+                  });
+                }
+
                 toast.success("Mis a jour");
               }
             } catch {
