@@ -1,7 +1,7 @@
 import { vi } from "vitest";
 vi.mock("@/lib/prisma", () => ({ prisma: {} }));
 import { describe, it, expect } from "vitest";
-import { buildLeadsSelect, buildLeadsFrom, DEFAULT_ENTREPRISES_WHERE } from "./shared";
+import { buildLeadsSelect, buildLeadsFrom, DEFAULT_ENTREPRISES_WHERE, COLUMN_MAP } from "./shared";
 
 describe("shared query helpers", () => {
   describe("buildLeadsSelect", () => {
@@ -45,6 +45,17 @@ describe("shared query helpers", () => {
     it("returns FROM clause with entreprises", () => {
       const sql = buildLeadsFrom(null);
       expect(sql).toContain("FROM entreprises e");
+    });
+  });
+
+  describe("COLUMN_MAP.age_dirigeant", () => {
+    it("is registered as a numeric expression safe for range filtering", () => {
+      const expr = COLUMN_MAP.age_dirigeant;
+      expect(expr).toBeDefined();
+      expect(expr).toContain("dirigeant_annee_naissance");
+      expect(expr).toContain("EXTRACT(YEAR FROM CURRENT_DATE)");
+      // Must guard against non-numeric values like "[NON-DIFFUSIBLE]"
+      expect(expr).toContain("~ '^[0-9]{4}$'");
     });
   });
 

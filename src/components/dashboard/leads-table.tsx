@@ -311,7 +311,7 @@ export function LeadsTable() {
                 dirigeant_email: "Email dir.", enriched_via: "Enrichi", has_responsive: "Responsive",
                 has_https: "HTTPS", has_old_html: "Vieux HTML", cms: "CMS", platform_name: "Plateforme",
                 outreach_status: "Statut", categorie: "Categorie", forme_juridique: "Forme jur.",
-                departement: "Dept", ca_range: "CA", copyright_max: "Copyright", api_etat: "Etat",
+                departement: "Dept", ca_range: "CA", copyright_max: "Copyright", api_etat: "Etat", age_dirigeant: "Âge dir.",
                 code_naf: "Secteur", siret: "SIRET", siren: "SIREN", tva_intracom: "TVA",
                 rcs: "RCS", email_principal: "Email", social_linkedin: "LinkedIn",
                 social_facebook: "Facebook", social_instagram: "Instagram", social_twitter: "Twitter",

@@ -270,6 +270,7 @@ export const COLUMN_MAP: Record<string, string> = {
   dirigeant_nom: "e.dirigeant_nom",
   dirigeant_prenom: "e.dirigeant_prenom",
   dirigeant_qualite: "e.dirigeant_qualite",
+  age_dirigeant: "CASE WHEN e.dirigeant_annee_naissance ~ '^[0-9]{4}$' THEN (EXTRACT(YEAR FROM CURRENT_DATE)::int - e.dirigeant_annee_naissance::int) ELSE NULL END",
   // Contact
   email: "e.best_email_normalized",
   email_principal: "e.best_email_normalized",
