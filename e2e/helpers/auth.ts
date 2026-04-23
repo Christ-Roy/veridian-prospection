@@ -136,10 +136,43 @@ export async function loginAsE2EUser(
     );
   }
 
-  // Step 4: mark onboarding as done so the modal doesn't block e2e tests.
-  // Uses the session cookie from the provision step — the settings API
-  // requires auth but the login hasn't happened yet in the browser.
-  // We'll do it after login via page.evaluate instead.
+  // Step 4: extend the tenant trial so the paywall modal doesn't block e2e.
+  // Hub-side provisioning sets trial_ends_at to a short window (or NULL →
+  // treated as expired by the dashboard paywall). Best-effort: resolve the
+  // tenant by user_id and PATCH trial_ends_at = now + 90d. Non-blocking —
+  // a failure here just means the paywall may appear; the dismiss logic in
+  // step 6 handles it as a fallback.
+  try {
+    const usersRes = await request.get(
+      `${SUPABASE_URL}/auth/v1/admin/users?per_page=200`,
+      {
+        headers: { apikey: ANON_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
+      }
+    );
+    if (usersRes.ok()) {
+      const body = (await usersRes.json()) as { users?: { id: string; email?: string }[] };
+      const user = body.users?.find(
+        (u) => (u.email ?? "").toLowerCase() === E2E_USER_EMAIL.toLowerCase()
+      );
+      if (user?.id) {
+        const futureIso = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+        await request.patch(
+          `${SUPABASE_URL}/rest/v1/tenants?user_id=eq.${user.id}`,
+          {
+            headers: {
+              apikey: SERVICE_KEY,
+              Authorization: `Bearer ${SERVICE_KEY}`,
+              "Content-Type": "application/json",
+              Prefer: "return=minimal",
+            },
+            data: { trial_ends_at: futureIso, prospection_plan: "freemium" },
+          }
+        );
+      }
+    }
+  } catch (err) {
+    console.warn(`[e2e auth] trial extension skipped: ${(err as Error).message}`);
+  }
 
   // Step 5: fill the /login form and wait for redirect.
   await page.goto(`${PROSPECTION_URL}/login`);
@@ -169,6 +202,17 @@ export async function loginAsE2EUser(
   if (await skipBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
     await skipBtn.click();
     await page.waitForTimeout(500);
+  }
+
+  // Step 7: dismiss the paywall modal if step 4's trial extension did not
+  // cover this tenant (e.g. service role patch failed, tenant row not yet
+  // materialized). The paywall close button is the top-right X.
+  const paywallClose = page
+    .locator('div.fixed.inset-0.z-50 button:has(svg.lucide-x)')
+    .first();
+  if (await paywallClose.isVisible({ timeout: 1500 }).catch(() => false)) {
+    await paywallClose.click().catch(() => {});
+    await page.waitForTimeout(300);
   }
 }
 
