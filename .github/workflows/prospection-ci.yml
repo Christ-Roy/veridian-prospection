@@ -438,16 +438,27 @@ jobs:
             echo "Deployed ghcr.io/christ-roy/prospection:latest"
           DEPLOY
 
-          # Health check post-deploy (wait up to 2 min)
+          # Health check post-deploy (wait up to 2 min).
+          # Accepts both "ok" (current saas-standards) and "healthy" (legacy).
+          # Also verifies the running version matches package.json by reading
+          # /api/health?version which exposes pkg.version — catches silent
+          # "queued but no-op" Dokploy deploys.
           echo "Waiting for prod health..."
+          EXPECTED_VERSION=$(node -p "require('./prospection/package.json').version" 2>/dev/null || echo "unknown")
+          echo "Expected version: $EXPECTED_VERSION"
           for i in $(seq 1 12); do
-            if curl -sf https://prospection.app.veridian.site/api/health | grep -qE '"status":"(ok|healthy)"'; then
-              echo "Prod healthy after ${i}0s"
-              exit 0
+            HEALTH=$(curl -sf https://prospection.app.veridian.site/api/health 2>/dev/null || echo "")
+            if echo "$HEALTH" | grep -qE '"status":"(ok|healthy)"'; then
+              RUNNING_VERSION=$(echo "$HEALTH" | python3 -c "import sys,json; print(json.load(sys.stdin).get('version','?'))" 2>/dev/null || echo "?")
+              if [ "$RUNNING_VERSION" = "$EXPECTED_VERSION" ] || [ "$EXPECTED_VERSION" = "unknown" ]; then
+                echo "Prod healthy after ${i}0s (version=$RUNNING_VERSION)"
+                exit 0
+              fi
+              echo "Healthy but running stale version: $RUNNING_VERSION (expected $EXPECTED_VERSION)"
             fi
             sleep 10
           done
-          echo "ERROR: prod health check failed after 2min" && exit 1
+          echo "ERROR: prod health check failed or stuck on stale version after 2min" && exit 1
 
   # ── E2E prod — multi-browser matrix ────────────────────────────────
   e2e-prod:
