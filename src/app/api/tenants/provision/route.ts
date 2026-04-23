@@ -29,21 +29,28 @@ async function ensureOwnerAdmin(email: string): Promise<void> {
     return;
   }
 
-  // 1) Résoudre user_id Supabase par email
+  // 1) Résoudre user_id Supabase par email.
+  // Supabase JS n'expose pas getUserByEmail → on pagine listUsers.
+  // perPage=1000 (max), jusqu'à 10 pages = 10k users max scanné.
   let userId: string | null = null;
   try {
-    // Supabase JS n'expose pas getUserByEmail → on liste et on filtre (OK pour petits tenants)
-    const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
-    const user = data?.users?.find(
-      (u) => (u.email ?? "").toLowerCase() === email.toLowerCase()
-    );
-    if (user) userId = user.id;
+    const target = email.toLowerCase();
+    for (let page = 1; page <= 10; page++) {
+      const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
+      if (error) throw error;
+      const user = data?.users?.find((u) => (u.email ?? "").toLowerCase() === target);
+      if (user) {
+        userId = user.id;
+        break;
+      }
+      if (!data?.users || data.users.length < 1000) break; // last page
+    }
   } catch (err) {
     console.warn(`[provision] listUsers failed: ${(err as Error).message}`);
     return;
   }
   if (!userId) {
-    console.warn(`[provision] No Supabase user yet for ${email} — skipping auto-admin`);
+    console.warn(`[provision] No Supabase user found for ${email} after pagination — skipping auto-admin`);
     return;
   }
 
