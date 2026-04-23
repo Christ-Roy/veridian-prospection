@@ -7,6 +7,20 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 const prisma = globalForPrisma.prisma ?? new PrismaClient();
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
+// In-memory cache: email → userId. Cleared at process restart, which is
+// desirable so a deleted user isn't cached stale. Caps the size at 100
+// entries (LRU-ish: drops the oldest when full) — we only ever provision
+// a handful of distinct emails per deploy, so this is ample.
+const userIdCache = new Map<string, string>();
+const USER_CACHE_MAX = 100;
+function cacheUserId(email: string, userId: string): void {
+  if (userIdCache.size >= USER_CACHE_MAX) {
+    const firstKey = userIdCache.keys().next().value;
+    if (firstKey) userIdCache.delete(firstKey);
+  }
+  userIdCache.set(email.toLowerCase(), userId);
+}
+
 function getSupabaseAdminClient() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -30,17 +44,27 @@ async function ensureOwnerAdmin(email: string): Promise<void> {
   }
 
   // 1) Résoudre user_id Supabase par email.
-  // Supabase JS n'expose pas getUserByEmail → on pagine listUsers.
-  // perPage=1000 (max), jusqu'à 10 pages = 10k users max scanné.
+  //
+  // Fast path: in-memory cache (cleared at process restart). Covers the
+  // repeated calls that happen during a single e2e run (~5 specs × 3
+  // browsers = 15 provisions of the same user in a few minutes).
+  //
+  // Slow path: paginate listUsers (up to 10 pages × 1000 = 10k users
+  // scanned). The e2e-cleanup cron keeps staging's auth.users lean so
+  // this stays fast; the cache makes the second+ call free anyway.
   let userId: string | null = null;
-  try {
-    const target = email.toLowerCase();
+  const target = email.toLowerCase();
+  const cached = userIdCache.get(target);
+  if (cached) {
+    userId = cached;
+  } else try {
     for (let page = 1; page <= 10; page++) {
       const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
       if (error) throw error;
       const user = data?.users?.find((u) => (u.email ?? "").toLowerCase() === target);
       if (user) {
         userId = user.id;
+        cacheUserId(target, user.id);
         break;
       }
       if (!data?.users || data.users.length < 1000) break; // last page
