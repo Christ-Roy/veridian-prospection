@@ -47,7 +47,11 @@ async function ensureOwnerAdmin(email: string): Promise<void> {
     return;
   }
 
-  // 2) Résoudre tenant_id via public.tenants.user_id
+  // 2) Résoudre tenant_id via public.tenants.user_id — crée la ligne si
+  //    absente (cas e2e: user créé via admin API sans passer par Hub/Stripe).
+  //    Le tenant provisionné ici reçoit trial_ends_at = now + 30d et
+  //    prospection_plan = 'freemium' — le Hub override ces champs s'il
+  //    prend la main plus tard via webhook Stripe.
   let tenantId: string | null = null;
   try {
     const { data: tenant } = await admin
@@ -61,9 +65,30 @@ async function ensureOwnerAdmin(email: string): Promise<void> {
     return;
   }
   if (!tenantId) {
-    console.warn(`[provision] No tenant row yet for user ${userId} — auto-admin skipped`);
-    return;
+    try {
+      const trialEndsAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      const slug = email.split("@")[0].toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40) || "tenant";
+      const { data: created, error: insertErr } = await admin
+        .from("tenants")
+        .insert({
+          user_id: userId,
+          name: `${email.split("@")[0]}'s Workspace`,
+          slug: `${slug}-${Date.now().toString(36)}`,
+          status: "active",
+          prospection_plan: "freemium",
+          trial_ends_at: trialEndsAt,
+        })
+        .select("id")
+        .single();
+      if (insertErr) throw insertErr;
+      tenantId = created?.id ?? null;
+      console.log(`[provision] Created tenant row for ${email} → ${tenantId}`);
+    } catch (err) {
+      console.warn(`[provision] tenant insert failed for ${email}: ${(err as Error).message}`);
+      return;
+    }
   }
+  if (!tenantId) return;
 
   // 3) Workspace "default" upsert
   try {

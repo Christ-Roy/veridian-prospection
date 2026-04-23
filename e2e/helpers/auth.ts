@@ -136,43 +136,9 @@ export async function loginAsE2EUser(
     );
   }
 
-  // Step 4: extend the tenant trial so the paywall modal doesn't block e2e.
-  // Hub-side provisioning sets trial_ends_at to a short window (or NULL →
-  // treated as expired by the dashboard paywall). Best-effort: resolve the
-  // tenant by user_id and PATCH trial_ends_at = now + 90d. Non-blocking —
-  // a failure here just means the paywall may appear; the dismiss logic in
-  // step 6 handles it as a fallback.
-  try {
-    const usersRes = await request.get(
-      `${SUPABASE_URL}/auth/v1/admin/users?per_page=200`,
-      {
-        headers: { apikey: ANON_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
-      }
-    );
-    if (usersRes.ok()) {
-      const body = (await usersRes.json()) as { users?: { id: string; email?: string }[] };
-      const user = body.users?.find(
-        (u) => (u.email ?? "").toLowerCase() === E2E_USER_EMAIL.toLowerCase()
-      );
-      if (user?.id) {
-        const futureIso = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
-        await request.patch(
-          `${SUPABASE_URL}/rest/v1/tenants?user_id=eq.${user.id}`,
-          {
-            headers: {
-              apikey: SERVICE_KEY,
-              Authorization: `Bearer ${SERVICE_KEY}`,
-              "Content-Type": "application/json",
-              Prefer: "return=minimal",
-            },
-            data: { trial_ends_at: futureIso, prospection_plan: "freemium" },
-          }
-        );
-      }
-    }
-  } catch (err) {
-    console.warn(`[e2e auth] trial extension skipped: ${(err as Error).message}`);
-  }
+  // Step 4: the /api/tenants/provision call in step 3 is responsible for
+  // creating the tenant row if missing (freemium + trial_ends_at = now+30d)
+  // and for attaching the owner admin. No extra DB writes needed here.
 
   // Step 5: fill the /login form and wait for redirect.
   await page.goto(`${PROSPECTION_URL}/login`);
