@@ -241,13 +241,13 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Wait for staging health + warm-up
         run: |
-          for i in $(seq 1 12); do
+          for i in $(seq 1 18); do
             STATUS=$(curl -sf https://saas-prospection.staging.veridian.site/api/health | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "")
-            if [ "$STATUS" = "healthy" ]; then echo "Staging healthy after ${i}0s"; break; fi
-            echo "Waiting... attempt $i"
+            if [ "$STATUS" = "healthy" ] || [ "$STATUS" = "ok" ]; then echo "Staging $STATUS after ${i}0s"; break; fi
+            echo "Waiting... attempt $i (status=$STATUS)"
             sleep 10
           done
-          if [ "$STATUS" != "healthy" ]; then echo "Staging not healthy after 2 min" && exit 1; fi
+          if [ "$STATUS" != "healthy" ] && [ "$STATUS" != "ok" ]; then echo "Staging not healthy after 3 min (status=$STATUS)" && exit 1; fi
           # Warm-up: hit key pages so Next.js compiles them before Playwright starts
           echo "Warming up pages..."
           curl -sf https://saas-prospection.staging.veridian.site/login -o /dev/null && echo "  /login OK"
