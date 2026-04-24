@@ -84,6 +84,14 @@ const CA_RANGES = [
   { label: "> 10M", value: ">=10000000" },
 ];
 
+const AGE_DIRIGEANT_RANGES = [
+  { label: "< 35", value: "0-34" },
+  { label: "35-44", value: "35-44" },
+  { label: "45-54", value: "45-54" },
+  { label: "55-64", value: "55-64" },
+  { label: "65+", value: ">=65" },
+];
+
 const COPYRIGHT_RANGES = [
   { label: "\u2264 2015", value: "<=2015" },
   { label: "\u2264 2018", value: "<=2018" },
@@ -301,7 +309,7 @@ type SectionId =
 // All filter keys per section (for counting)
 const SECTION_KEYS: Record<SectionId, string[]> = {
   display: [],
-  entreprise: ["effectifs", "categorie", "forme_juridique", "departement", "api_etat", "code_naf"],
+  entreprise: ["effectifs", "categorie", "forme_juridique", "departement", "api_etat", "code_naf", "age_dirigeant"],
   ca: ["ca_range"],
   contact: ["phone", "phone_type", "dirigeant_email", "enriched_via", "email_principal", "has_contact_form", "has_chat_widget", "has_whatsapp", "social_linkedin", "social_facebook", "social_instagram", "social_twitter", "social_youtube"],
   identity: ["siret", "siren", "tva_intracom", "rcs", "has_mentions_legales"],
@@ -684,6 +692,10 @@ export function AdvancedFilters({
                   <Input placeholder="75, 69, 33..." value={filters.departement || ""} onChange={(e) => setSingleFilter("departement", e.target.value || null)} className="h-7 text-xs" />
                 </div>
                 <NafFilter value={filters.code_naf || ""} onChange={(v) => setSingleFilter("code_naf", v || null)} />
+                <div>
+                  <label className="text-xs font-medium mb-1 block">Âge du dirigeant</label>
+                  <RangeChips filterKey="age_dirigeant" ranges={AGE_DIRIGEANT_RANGES} color="bg-sky-50 border-sky-500 text-sky-700 font-semibold" />
+                </div>
               </div>
             )}
           </div>

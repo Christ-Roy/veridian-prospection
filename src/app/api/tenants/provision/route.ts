@@ -7,6 +7,20 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 const prisma = globalForPrisma.prisma ?? new PrismaClient();
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
+// In-memory cache: email → userId. Cleared at process restart, which is
+// desirable so a deleted user isn't cached stale. Caps the size at 100
+// entries (LRU-ish: drops the oldest when full) — we only ever provision
+// a handful of distinct emails per deploy, so this is ample.
+const userIdCache = new Map<string, string>();
+const USER_CACHE_MAX = 100;
+function cacheUserId(email: string, userId: string): void {
+  if (userIdCache.size >= USER_CACHE_MAX) {
+    const firstKey = userIdCache.keys().next().value;
+    if (firstKey) userIdCache.delete(firstKey);
+  }
+  userIdCache.set(email.toLowerCase(), userId);
+}
+
 function getSupabaseAdminClient() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -29,25 +43,46 @@ async function ensureOwnerAdmin(email: string): Promise<void> {
     return;
   }
 
-  // 1) Résoudre user_id Supabase par email
+  // 1) Résoudre user_id Supabase par email.
+  //
+  // Fast path: in-memory cache (cleared at process restart). Covers the
+  // repeated calls that happen during a single e2e run (~5 specs × 3
+  // browsers = 15 provisions of the same user in a few minutes).
+  //
+  // Slow path: paginate listUsers (up to 10 pages × 1000 = 10k users
+  // scanned). The e2e-cleanup cron keeps staging's auth.users lean so
+  // this stays fast; the cache makes the second+ call free anyway.
   let userId: string | null = null;
-  try {
-    // Supabase JS n'expose pas getUserByEmail → on liste et on filtre (OK pour petits tenants)
-    const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
-    const user = data?.users?.find(
-      (u) => (u.email ?? "").toLowerCase() === email.toLowerCase()
-    );
-    if (user) userId = user.id;
+  const target = email.toLowerCase();
+  const cached = userIdCache.get(target);
+  if (cached) {
+    userId = cached;
+  } else try {
+    for (let page = 1; page <= 10; page++) {
+      const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
+      if (error) throw error;
+      const user = data?.users?.find((u) => (u.email ?? "").toLowerCase() === target);
+      if (user) {
+        userId = user.id;
+        cacheUserId(target, user.id);
+        break;
+      }
+      if (!data?.users || data.users.length < 1000) break; // last page
+    }
   } catch (err) {
     console.warn(`[provision] listUsers failed: ${(err as Error).message}`);
     return;
   }
   if (!userId) {
-    console.warn(`[provision] No Supabase user yet for ${email} — skipping auto-admin`);
+    console.warn(`[provision] No Supabase user found for ${email} after pagination — skipping auto-admin`);
     return;
   }
 
-  // 2) Résoudre tenant_id via public.tenants.user_id
+  // 2) Résoudre tenant_id via public.tenants.user_id — crée la ligne si
+  //    absente (cas e2e: user créé via admin API sans passer par Hub/Stripe).
+  //    Le tenant provisionné ici reçoit trial_ends_at = now + 30d et
+  //    prospection_plan = 'freemium' — le Hub override ces champs s'il
+  //    prend la main plus tard via webhook Stripe.
   let tenantId: string | null = null;
   try {
     const { data: tenant } = await admin
@@ -61,9 +96,30 @@ async function ensureOwnerAdmin(email: string): Promise<void> {
     return;
   }
   if (!tenantId) {
-    console.warn(`[provision] No tenant row yet for user ${userId} — auto-admin skipped`);
-    return;
+    try {
+      const trialEndsAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      const slug = email.split("@")[0].toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40) || "tenant";
+      const { data: created, error: insertErr } = await admin
+        .from("tenants")
+        .insert({
+          user_id: userId,
+          name: `${email.split("@")[0]}'s Workspace`,
+          slug: `${slug}-${Date.now().toString(36)}`,
+          status: "active",
+          prospection_plan: "freemium",
+          trial_ends_at: trialEndsAt,
+        })
+        .select("id")
+        .single();
+      if (insertErr) throw insertErr;
+      tenantId = created?.id ?? null;
+      console.log(`[provision] Created tenant row for ${email} → ${tenantId}`);
+    } catch (err) {
+      console.warn(`[provision] tenant insert failed for ${email}: ${(err as Error).message}`);
+      return;
+    }
   }
+  if (!tenantId) return;
 
   // 3) Workspace "default" upsert
   try {

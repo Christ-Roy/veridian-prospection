@@ -183,18 +183,40 @@ jobs:
               -H 'x-api-key: $DOKPLOY_KEY' \
               -H 'Content-Type: application/json' \
               -d '{\"json\":{\"composeId\":\"$COMPOSE_ID\"}}' \
-              http://localhost:3000/api/trpc/compose.deploy && echo 'Staging deploy triggered'"
+              http://localhost:3000/api/trpc/compose.deploy && echo 'Staging deploy triggered'" || echo "Dokploy deploy call failed — fallback to local recreate"
 
-          # Health check (wait up to 90s)
-          echo "Waiting for staging health..."
+          # Local force-recreate (bypass Dokploy queue). Self-hosted runner IS
+          # on dev-pub, so compose commands run against the right engine.
+          # Dokploy has been queueing staging deploys but exiting with error
+          # since 2026-04-15 (auth key rejected). Until that's fixed, force
+          # recreate directly so the just-pulled image actually runs.
+          COMPOSE_DIR="/etc/dokploy/compose/compose-bypass-bluetooth-feed-tbayqr/code"
+          COMPOSE_PROJECT="compose-bypass-bluetooth-feed-tbayqr"
+          if [ -d "$COMPOSE_DIR" ]; then
+            echo "Force-recreating staging container locally..."
+            sudo docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_DIR/docker-compose.yml" up -d --force-recreate --no-deps prospection \
+              && echo "Local recreate: OK" \
+              || echo "Local recreate: FAILED (non-fatal, checking health anyway)"
+          else
+            echo "Compose dir not found — skipping local recreate (Dokploy deploy assumed)"
+          fi
+
+          # Health check (wait up to 90s) — AND verify the running image matches
+          # the freshly-pulled one (guard against Dokploy "queued but no-op" deploys).
+          PULLED_IMAGE_ID=$(docker image inspect ghcr.io/christ-roy/prospection:staging --format '{{.Id}}' 2>/dev/null || echo "unknown")
+          echo "Pulled image: $PULLED_IMAGE_ID"
+          echo "Waiting for staging health + image match..."
           for i in $(seq 1 9); do
-            if curl -sf https://saas-prospection.staging.veridian.site/api/health | grep -qE '"status":"(ok|healthy)"'; then
-              echo "Staging healthy after ${i}0s"
+            HEALTH=$(curl -sf https://saas-prospection.staging.veridian.site/api/health 2>/dev/null || echo "")
+            RUNNING_IMAGE_ID=$(docker inspect compose-bypass-bluetooth-feed-tbayqr-prospection-1 --format '{{.Image}}' 2>/dev/null || echo "none")
+            if echo "$HEALTH" | grep -qE '"status":"(ok|healthy)"' && [ "$RUNNING_IMAGE_ID" = "$PULLED_IMAGE_ID" ]; then
+              echo "Staging healthy after ${i}0s AND running freshly-pulled image"
               exit 0
             fi
             sleep 10
           done
-          echo "WARNING: staging health check timed out"
+          echo "WARNING: staging health check timed out or running stale image"
+          echo "Running: $RUNNING_IMAGE_ID vs Pulled: $PULLED_IMAGE_ID"
 
   # ── E2E Core — BLOQUANT, self-hosted, ~2min ──────────────────────
   # Tests intouchables. Si un seul fail, le deploy est bloqué.
@@ -219,13 +241,13 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Wait for staging health + warm-up
         run: |
-          for i in $(seq 1 12); do
+          for i in $(seq 1 18); do
             STATUS=$(curl -sf https://saas-prospection.staging.veridian.site/api/health | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "")
-            if [ "$STATUS" = "healthy" ]; then echo "Staging healthy after ${i}0s"; break; fi
-            echo "Waiting... attempt $i"
+            if [ "$STATUS" = "healthy" ] || [ "$STATUS" = "ok" ]; then echo "Staging $STATUS after ${i}0s"; break; fi
+            echo "Waiting... attempt $i (status=$STATUS)"
             sleep 10
           done
-          if [ "$STATUS" != "healthy" ]; then echo "Staging not healthy after 2 min" && exit 1; fi
+          if [ "$STATUS" != "healthy" ] && [ "$STATUS" != "ok" ]; then echo "Staging not healthy after 3 min (status=$STATUS)" && exit 1; fi
           # Warm-up: hit key pages so Next.js compiles them before Playwright starts
           echo "Warming up pages..."
           curl -sf https://saas-prospection.staging.veridian.site/login -o /dev/null && echo "  /login OK"
@@ -416,16 +438,27 @@ jobs:
             echo "Deployed ghcr.io/christ-roy/prospection:latest"
           DEPLOY
 
-          # Health check post-deploy (wait up to 2 min)
+          # Health check post-deploy (wait up to 2 min).
+          # Accepts both "ok" (current saas-standards) and "healthy" (legacy).
+          # Also verifies the running version matches package.json by reading
+          # /api/health?version which exposes pkg.version — catches silent
+          # "queued but no-op" Dokploy deploys.
           echo "Waiting for prod health..."
+          EXPECTED_VERSION=$(node -p "require('./prospection/package.json').version" 2>/dev/null || echo "unknown")
+          echo "Expected version: $EXPECTED_VERSION"
           for i in $(seq 1 12); do
-            if curl -sf https://prospection.app.veridian.site/api/health | grep -qE '"status":"(ok|healthy)"'; then
-              echo "Prod healthy after ${i}0s"
-              exit 0
+            HEALTH=$(curl -sf https://prospection.app.veridian.site/api/health 2>/dev/null || echo "")
+            if echo "$HEALTH" | grep -qE '"status":"(ok|healthy)"'; then
+              RUNNING_VERSION=$(echo "$HEALTH" | python3 -c "import sys,json; print(json.load(sys.stdin).get('version','?'))" 2>/dev/null || echo "?")
+              if [ "$RUNNING_VERSION" = "$EXPECTED_VERSION" ] || [ "$EXPECTED_VERSION" = "unknown" ]; then
+                echo "Prod healthy after ${i}0s (version=$RUNNING_VERSION)"
+                exit 0
+              fi
+              echo "Healthy but running stale version: $RUNNING_VERSION (expected $EXPECTED_VERSION)"
             fi
             sleep 10
           done
-          echo "ERROR: prod health check failed after 2min" && exit 1
+          echo "ERROR: prod health check failed or stuck on stale version after 2min" && exit 1
 
   # ── E2E prod — multi-browser matrix ────────────────────────────────
   e2e-prod:

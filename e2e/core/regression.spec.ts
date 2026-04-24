@@ -25,8 +25,10 @@ test.describe("Service health", () => {
     const data = await res.json();
     console.log(`[health] Prospection: status=${data.status}, db=${data.db}, timestamp=${data.timestamp}`);
     expect(res.ok(), `Health returned ${res.status()}`).toBeTruthy();
-    expect(data.status).toBe("healthy");
-    expect(data.db).toBe("connected");
+    // saas-standards.md §8: /api/health returns status ∈ {"ok","degraded","down"}
+    // Legacy wording "healthy" accepted for back-compat with other apps.
+    expect(["ok", "healthy"]).toContain(data.status);
+    expect(["ok", "connected"]).toContain(data.db);
   });
 
   test("Hub responds", async ({ request }) => {

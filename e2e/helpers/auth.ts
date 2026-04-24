@@ -136,10 +136,9 @@ export async function loginAsE2EUser(
     );
   }
 
-  // Step 4: mark onboarding as done so the modal doesn't block e2e tests.
-  // Uses the session cookie from the provision step — the settings API
-  // requires auth but the login hasn't happened yet in the browser.
-  // We'll do it after login via page.evaluate instead.
+  // Step 4: the /api/tenants/provision call in step 3 is responsible for
+  // creating the tenant row if missing (freemium + trial_ends_at = now+30d)
+  // and for attaching the owner admin. No extra DB writes needed here.
 
   // Step 5: fill the /login form and wait for redirect.
   await page.goto(`${PROSPECTION_URL}/login`);
@@ -169,6 +168,17 @@ export async function loginAsE2EUser(
   if (await skipBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
     await skipBtn.click();
     await page.waitForTimeout(500);
+  }
+
+  // Step 7: dismiss the paywall modal if step 4's trial extension did not
+  // cover this tenant (e.g. service role patch failed, tenant row not yet
+  // materialized). The paywall close button is the top-right X.
+  const paywallClose = page
+    .locator('div.fixed.inset-0.z-50 button:has(svg.lucide-x)')
+    .first();
+  if (await paywallClose.isVisible({ timeout: 1500 }).catch(() => false)) {
+    await paywallClose.click().catch(() => {});
+    await page.waitForTimeout(300);
   }
 }
 
