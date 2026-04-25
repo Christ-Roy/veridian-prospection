@@ -211,7 +211,7 @@ export interface ProspectFilters {
   quotaPool?: string[];
 }
 
-function buildFilterWhere(filters: ProspectFilters): { sql: string; params: (string | number)[] } {
+export function buildFilterWhere(filters: ProspectFilters): { sql: string; params: (string | number)[] } {
   const clauses: string[] = [];
   const params: (string | number)[] = [];
 
@@ -299,7 +299,11 @@ function buildFilterWhere(filters: ProspectFilters): { sql: string; params: (str
   }
 
   if (filters.mobileOnly) {
-    clauses.push("e.best_phone_type = 'mobile'");
+    // best_phone_type stores the enrichment source (overture, osm, …), not
+    // the line nature. We classify mobile via the e164 prefix instead:
+    // French mobiles start with +336 or +337. DOM mobiles also exist but are
+    // negligible at our scale.
+    clauses.push("e.best_phone_e164 ~ '^\\+33[67]'");
   }
 
   if (filters.unseenOnly) {
