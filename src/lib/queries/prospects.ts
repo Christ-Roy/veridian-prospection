@@ -1,7 +1,7 @@
 // Queries for the prospect navigation (domains + sectorial presets)
 // 2026-04-05: Refactored to SIREN-centric — now queries the `entreprises` table.
 
-import { prisma, bigIntToNumber, tenantWhere, DEFAULT_ENTREPRISES_WHERE, SMALL_BIZ_FIT_SCORE_SQL } from "./shared";
+import { prisma, bigIntToNumber, tenantWhere, DEFAULT_ENTREPRISES_WHERE, SMALL_BIZ_FIT_SCORE_SQL, buildAgeDirigeantClause } from "./shared";
 import { DOMAINS, getDomainNafCodes, type ProspectPreset } from "../domains";
 
 function buildProspectSelectFields(tenantId: string | null): string {
@@ -203,6 +203,8 @@ export interface ProspectFilters {
   nonIdentifieAvecTel?: boolean;
   /** "with" = only prospects with a known web domain; "without" = only prospects without. */
   hasWebsite?: "with" | "without" | null;
+  /** Dirigeant age ranges (e.g. ["0-34", "35-44", ">=65"]). Multiple = OR. */
+  ageDirigeantRanges?: string[];
   /** Restrict to outreach rows owned by this user (visibility_scope='own'). */
   userFilter?: string;
   /** Pre-computed SIREN pool for freemium quota enforcement. */
@@ -355,6 +357,11 @@ function buildFilterWhere(filters: ProspectFilters): { sql: string; params: (str
     clauses.push(
       "(e.web_domain_normalized IS NULL AND e.web_domain IS NULL AND (e.web_domains_all IS NULL OR jsonb_array_length(e.web_domains_all) = 0))"
     );
+  }
+
+  if (filters.ageDirigeantRanges && filters.ageDirigeantRanges.length > 0) {
+    const clause = buildAgeDirigeantClause(filters.ageDirigeantRanges);
+    if (clause) clauses.push(clause);
   }
 
   // Visibility scope: restrict to outreach rows belonging to this user.

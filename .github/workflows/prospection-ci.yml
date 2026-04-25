@@ -347,13 +347,36 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.PROMOTE_PAT }}
-      - name: Fast-forward merge staging → main
+      - name: Promote staging → main (ff-only, fallback to merge commit)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin main staging
           git checkout main
-          git merge origin/staging --ff-only
+
+          # Already up-to-date? nothing to do.
+          if git merge-base --is-ancestor origin/staging origin/main; then
+            echo "ℹ️ main already contains origin/staging — nothing to promote"
+            exit 0
+          fi
+
+          # Try fast-forward first (clean linear history when staging is descendant of main).
+          if git merge origin/staging --ff-only 2>/dev/null; then
+            echo "✅ Fast-forwarded main to $(git rev-parse --short origin/staging)"
+          else
+            # Branches diverged (typically because someone pushed directly on main —
+            # eg. a hotfix or a feature branch merge). Fall back to a merge commit so
+            # the promote is never blocked. The merge commit makes the divergence
+            # explicit in history and keeps both lineages.
+            echo "⚠️ Branches diverged — falling back to non-ff merge"
+            git merge origin/staging --no-ff -m "ci: promote staging → main (auto)" || {
+              echo "❌ Merge conflict detected — aborting. Please rebase staging on main manually."
+              git merge --abort || true
+              exit 1
+            }
+            echo "✅ Promoted with merge commit: $(git rev-parse --short HEAD)"
+          fi
+
           git push origin main
           echo "✅ Promoted staging $(git rev-parse --short origin/staging) → main"
 

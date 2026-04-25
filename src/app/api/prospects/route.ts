@@ -99,6 +99,13 @@ function parseFilters(sp: URLSearchParams): ProspectFilters {
   if (qualiopiSpec && qualiopiSpec.trim()) filters.qualiopiSpecialite = qualiopiSpec.trim();
   if (sp.get("nonIdentifieAvecTel") === "1") filters.nonIdentifieAvecTel = true;
 
+  // Dirigeant age ranges (CSV: "0-34,35-44,>=65")
+  const ageDirigeant = sp.get("ageDirigeant");
+  if (ageDirigeant) {
+    const ranges = ageDirigeant.split(",").map(s => s.trim()).filter(Boolean);
+    if (ranges.length > 0) filters.ageDirigeantRanges = ranges;
+  }
+
   return filters;
 }
 
@@ -130,7 +137,8 @@ function hasFilters(filters: ProspectFilters): boolean {
     filters.requireEpv ||
     filters.requireBni ||
     filters.qualiopiSpecialite ||
-    filters.nonIdentifieAvecTel
+    filters.nonIdentifieAvecTel ||
+    (filters.ageDirigeantRanges && filters.ageDirigeantRanges.length > 0)
   );
 }
 

@@ -389,3 +389,55 @@ export function bigIntToNumber(val: unknown): number {
   if (typeof val === "number") return val;
   return 0;
 }
+
+// ============================================================================
+// Age dirigeant range helpers
+// Accepts strings like "0-34", "35-44", ">=65", "<35" and returns numeric bounds
+// suitable for a BETWEEN/`>=`/`<=` clause against COLUMN_MAP.age_dirigeant.
+// ============================================================================
+
+export type AgeBounds = { min: number | null; max: number | null };
+
+export function parseAgeRange(raw: string): AgeBounds | null {
+  const s = raw.trim();
+  if (!s) return null;
+  const gte = s.match(/^>=\s*(\d{1,3})$/);
+  if (gte) return { min: parseInt(gte[1], 10), max: null };
+  const lte = s.match(/^<=\s*(\d{1,3})$/);
+  if (lte) return { min: null, max: parseInt(lte[1], 10) };
+  const lt = s.match(/^<\s*(\d{1,3})$/);
+  if (lt) return { min: null, max: parseInt(lt[1], 10) - 1 };
+  const gt = s.match(/^>\s*(\d{1,3})$/);
+  if (gt) return { min: parseInt(gt[1], 10) + 1, max: null };
+  const between = s.match(/^(\d{1,3})\s*-\s*(\d{1,3})$/);
+  if (between) {
+    const min = parseInt(between[1], 10);
+    const max = parseInt(between[2], 10);
+    if (min > max) return null;
+    return { min, max };
+  }
+  return null;
+}
+
+/**
+ * Build a SQL clause filtering on dirigeant age (computed from
+ * dirigeant_annee_naissance). Multiple ranges are OR'd together.
+ * Returns null if no valid range is given.
+ */
+export function buildAgeDirigeantClause(ranges: string[]): string | null {
+  const expr = COLUMN_MAP.age_dirigeant;
+  const parts: string[] = [];
+  for (const raw of ranges) {
+    const bounds = parseAgeRange(raw);
+    if (!bounds) continue;
+    if (bounds.min != null && bounds.max != null) {
+      parts.push(`(${expr}) BETWEEN ${bounds.min} AND ${bounds.max}`);
+    } else if (bounds.min != null) {
+      parts.push(`(${expr}) >= ${bounds.min}`);
+    } else if (bounds.max != null) {
+      parts.push(`(${expr}) <= ${bounds.max}`);
+    }
+  }
+  if (parts.length === 0) return null;
+  return parts.length === 1 ? parts[0] : `(${parts.join(" OR ")})`;
+}

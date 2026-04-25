@@ -210,6 +210,7 @@ export function ProspectPage() {
     if (qualityFilter.requireRge) p.set("requireRge", "1");
     if (qualityFilter.requireQualiopi) p.set("requireQualiopi", "1");
     if (qualityFilter.requireBio) p.set("requireBio", "1");
+    if (qualityFilter.ageDirigeantRanges.length > 0) p.set("ageDirigeant", qualityFilter.ageDirigeantRanges.join(","));
     if (siteMode === "with") p.set("hasWebsite", "1");
     else if (siteMode === "without") p.set("hasWebsite", "0");
     // Sans-site sidebar filters — only relevant when siteMode === "without"
@@ -230,7 +231,7 @@ export function ProspectPage() {
   const activeFilterCount = {
     geo: geoDepts.length > 0 ? 1 : 0,
     taille: (sizeFilter.effectifsCodes.length > 0 || sizeFilter.mobileOnly || sizeFilter.caMin != null || sizeFilter.caMax != null) ? 1 : 0,
-    qualite: (qualityFilter.hideDuplicateSiren || qualityFilter.unseenOnly || qualityFilter.minTechScore > 0 || qualityFilter.requirePhone || qualityFilter.requireEmail || qualityFilter.requireDirigeant || qualityFilter.requireEnriched || qualityFilter.excludeAssociations || qualityFilter.excludePhoneShared || qualityFilter.excludeHttpDead || qualityFilter.requireRge || qualityFilter.requireQualiopi || qualityFilter.requireBio) ? 1 : 0,
+    qualite: (qualityFilter.hideDuplicateSiren || qualityFilter.unseenOnly || qualityFilter.minTechScore > 0 || qualityFilter.requirePhone || qualityFilter.requireEmail || qualityFilter.requireDirigeant || qualityFilter.requireEnriched || qualityFilter.excludeAssociations || qualityFilter.excludePhoneShared || qualityFilter.excludeHttpDead || qualityFilter.requireRge || qualityFilter.requireQualiopi || qualityFilter.requireBio || qualityFilter.ageDirigeantRanges.length > 0) ? 1 : 0,
   };
 
   // Fetch data

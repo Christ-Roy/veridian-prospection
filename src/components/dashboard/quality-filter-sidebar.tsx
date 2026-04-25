@@ -29,6 +29,7 @@ export interface QualityFilterState {
   requireRge: boolean;
   requireQualiopi: boolean;
   requireBio: boolean;
+  ageDirigeantRanges: string[];
 }
 
 export const DEFAULT_QUALITY_FILTER: QualityFilterState = {
@@ -45,7 +46,16 @@ export const DEFAULT_QUALITY_FILTER: QualityFilterState = {
   requireRge: false,
   requireQualiopi: false,
   requireBio: false,
+  ageDirigeantRanges: [],
 };
+
+export const AGE_DIRIGEANT_RANGES: { label: string; value: string }[] = [
+  { label: "< 35", value: "0-34" },
+  { label: "35-44", value: "35-44" },
+  { label: "45-54", value: "45-54" },
+  { label: "55-64", value: "55-64" },
+  { label: "65+", value: ">=65" },
+];
 
 interface QualityFilterSidebarProps {
   open: boolean;
@@ -70,10 +80,23 @@ export function QualityFilterSidebar({ open, onOpenChange, current, onApply }: Q
     onOpenChange(false);
   }
 
+  function toggleAgeRange(value: string) {
+    setFilter(prev => {
+      const has = prev.ageDirigeantRanges.includes(value);
+      return {
+        ...prev,
+        ageDirigeantRanges: has
+          ? prev.ageDirigeantRanges.filter(v => v !== value)
+          : [...prev.ageDirigeantRanges, value],
+      };
+    });
+  }
+
   const hasFilter = filter.hideDuplicateSiren || filter.unseenOnly || filter.minTechScore > 0 ||
     filter.requirePhone || filter.requireEmail || filter.requireDirigeant ||
     filter.requireEnriched || filter.excludeAssociations || filter.excludePhoneShared || filter.excludeHttpDead ||
-    filter.requireRge || filter.requireQualiopi || filter.requireBio;
+    filter.requireRge || filter.requireQualiopi || filter.requireBio ||
+    filter.ageDirigeantRanges.length > 0;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -153,6 +176,35 @@ export function QualityFilterSidebar({ open, onOpenChange, current, onApply }: Q
                 </div>
               </label>
             ))}
+          </div>
+
+          {/* Age dirigeant */}
+          <div className="space-y-2">
+            <Label className="text-xs font-semibold uppercase text-muted-foreground">Âge du dirigeant</Label>
+            <div className="flex flex-wrap gap-1.5 px-2" data-testid="age-dirigeant-chips">
+              {AGE_DIRIGEANT_RANGES.map(({ label, value }) => {
+                const active = filter.ageDirigeantRanges.includes(value);
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => toggleAgeRange(value)}
+                    data-testid={`age-chip-${value.replace(/[^a-zA-Z0-9_-]/g, "_")}`}
+                    aria-pressed={active}
+                    className={`text-xs px-2.5 py-1 rounded-full border transition ${
+                      active
+                        ? "bg-sky-50 border-sky-500 text-sky-700 font-semibold"
+                        : "bg-background border-border text-muted-foreground hover:bg-muted/50"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground px-2">
+              Filtre sur l&apos;âge calculé depuis l&apos;année de naissance INPI. Multi-sélection = OR.
+            </p>
           </div>
 
           {/* Exclusions */}
