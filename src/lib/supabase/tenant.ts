@@ -1,94 +1,49 @@
-import { createClient } from "@supabase/supabase-js";
+/**
+ * Tenant + plan resolution.
+ * 2026-05-08: Migration depuis Supabase vers Prisma local. Plus de dépendance
+ * Supabase pour le plan/trial. Le Hub (via Stripe webhooks) update directement
+ * la table tenants en Postgres prospection.
+ */
+import { prisma } from "@/lib/prisma";
 
-// Cache tenant_id lookups per request (user_id → tenant_id)
 const tenantCache = new Map<string, { id: string; expiresAt: number }>();
-
-// Supabase admin client for tenant lookups (reads from Supabase Postgres, not prospection DB)
-// Tries SUPABASE_URL (internal Kong) first, falls back to NEXT_PUBLIC_SUPABASE_URL (public)
-function getSupabaseAdmin() {
-  const internalUrl = process.env.SUPABASE_URL;
-  const publicUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const url = internalUrl || publicUrl;
-  if (!url || !key) return null;
-  return createClient(url, key);
-}
-
-/** Fallback admin client using public URL (when internal Kong is unreachable) */
-function getSupabaseAdminFallback() {
-  const publicUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!publicUrl || !key) return null;
-  // Only useful if SUPABASE_URL (internal) differs from NEXT_PUBLIC
-  if (publicUrl === (process.env.SUPABASE_URL || publicUrl)) return null;
-  return createClient(publicUrl, key);
-}
+const TENANT_CACHE_TTL_MS = 60_000;
 
 /**
- * Get the tenant ID for a Supabase user.
- * Uses Supabase API (not Prisma) since tenants table lives in Supabase Postgres.
- * Caches results for 60 seconds.
+ * Get the tenant ID for a user.
+ * Tries direct ownership first, then falls back to workspace_members for invited users.
  */
 export async function getTenantId(userId: string): Promise<string | null> {
-  // Check cache
   const cached = tenantCache.get(userId);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.id;
   }
 
-  const supabase = getSupabaseAdmin();
-  if (!supabase) {
-    // No Supabase configured — internal tool mode
-    return null;
-  }
+  const direct = await prisma.tenant.findFirst({
+    where: { userId, deletedAt: null },
+    select: { id: true },
+  });
 
-  let tenant: { id: string } | null = null;
-  let lastError: string | null = null;
+  let tenantId: string | null = direct?.id ?? null;
 
-  const { data, error } = await supabase
-    .from("tenants")
-    .select("id")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (!error && data) {
-    tenant = data;
-  } else {
-    lastError = error?.message || "no tenant row";
-    // Fallback: try public URL if internal Kong failed
-    const fallback = getSupabaseAdminFallback();
-    if (fallback) {
-      console.warn(`[getTenantId] Primary lookup failed (${lastError}), trying public URL fallback...`);
-      const { data: fbData, error: fbError } = await fallback
-        .from("tenants")
-        .select("id")
-        .eq("user_id", userId)
-        .maybeSingle();
-      if (!fbError && fbData) {
-        tenant = fbData;
-        console.log(`[getTenantId] Fallback succeeded for user ${userId}`);
-      } else {
-        lastError = fbError?.message || "no tenant row (fallback)";
-      }
+  if (!tenantId) {
+    const membership = await prisma.workspaceMember.findFirst({
+      where: { userId },
+      include: { workspace: true },
+    });
+    if (membership?.workspace?.tenantId) {
+      tenantId = membership.workspace.tenantId;
     }
   }
 
-  if (!tenant) {
-    console.warn(`[getTenantId] Tenant not found for user ${userId}:`, lastError);
+  if (!tenantId) {
     return null;
   }
 
-  tenantCache.set(userId, {
-    id: tenant.id,
-    expiresAt: Date.now() + 60_000,
-  });
-
-  return tenant.id;
+  tenantCache.set(userId, { id: tenantId, expiresAt: Date.now() + TENANT_CACHE_TTL_MS });
+  return tenantId;
 }
 
-/**
- * Get the tenant ID or throw — for routes that require a tenant.
- */
 export async function requireTenantId(userId: string): Promise<string> {
   const tenantId = await getTenantId(userId);
   if (!tenantId) {
@@ -97,62 +52,47 @@ export async function requireTenantId(userId: string): Promise<string> {
   return tenantId;
 }
 
-/** Prospect limits per plan — configurable via env vars */
 const PLAN_LIMITS: Record<string, number> = {
   freemium: parseInt(process.env.PLAN_LIMIT_FREEMIUM || "300", 10),
   pro: parseInt(process.env.PLAN_LIMIT_PRO || "100000", 10),
   enterprise: parseInt(process.env.PLAN_LIMIT_ENTERPRISE || "500000", 10),
 };
 
-// Cache plan lookups — prevents Supabase admin API rate limiting
-// (incident 2026-04-06: uncached calls on every /api/prospects → 429)
 const planCache = new Map<string, { limit: number; expiresAt: number }>();
-const PLAN_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const PLAN_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /**
  * Get the prospect limit for a tenant based on their plan.
- * Returns Infinity if no limit (internal/admin), or a number cap.
- * Cached for 5 minutes per user to avoid rate-limiting Supabase.
  */
 export async function getTenantProspectLimit(userId: string): Promise<number> {
-  // Check cache first
   const cached = planCache.get(userId);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.limit;
   }
 
-  const supabase = getSupabaseAdmin();
-  if (!supabase) return Infinity;
-
-  // Try direct tenant lookup
   let plan = "freemium";
-  const { data: tenant } = await supabase
-    .from("tenants")
-    .select("prospection_plan")
-    .eq("user_id", userId)
-    .maybeSingle();
 
-  if (tenant?.prospection_plan) {
-    plan = tenant.prospection_plan;
+  const direct = await prisma.tenant.findFirst({
+    where: { userId, deletedAt: null },
+    select: { prospectionPlan: true },
+  });
+
+  if (direct?.prospectionPlan) {
+    plan = direct.prospectionPlan;
   } else {
-    // Invited member fallback: resolve via workspace_members
-    try {
-      const { prisma } = await import("@/lib/prisma");
-      const membership = await prisma.workspaceMember.findFirst({
-        where: { userId },
-        include: { workspace: true },
+    const membership = await prisma.workspaceMember.findFirst({
+      where: { userId },
+      include: { workspace: true },
+    });
+    if (membership?.workspace?.tenantId) {
+      const memberTenant = await prisma.tenant.findUnique({
+        where: { id: membership.workspace.tenantId },
+        select: { prospectionPlan: true },
       });
-      if (membership?.workspace?.tenantId) {
-        const { data: memberTenant } = await supabase
-          .from("tenants")
-          .select("prospection_plan")
-          .eq("id", membership.workspace.tenantId)
-          .maybeSingle();
-        if (memberTenant?.prospection_plan) {
-          plan = memberTenant.prospection_plan;
-        }
+      if (memberTenant?.prospectionPlan) {
+        plan = memberTenant.prospectionPlan;
       }
-    } catch { /* fail open */ }
+    }
   }
 
   const limit = PLAN_LIMITS[plan] ?? PLAN_LIMITS.freemium;

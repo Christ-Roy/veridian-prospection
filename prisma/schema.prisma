@@ -497,7 +497,26 @@ model NotificationPreferences {
 }
 
 // ============================================================================
-// SAAS TABLES — NOT in this database.
-// Tenants, profiles, subscriptions live in Supabase Postgres (hub).
-// Prospection reads them via Supabase API (see src/lib/supabase/tenant.ts).
+// SAAS TABLES — Migrated from Supabase to local Postgres (2026-05-08)
+// Source of truth pour le plan / trial. Stripe webhooks updatent prospection_plan.
 // ============================================================================
+
+model Tenant {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String    @map("user_id") @db.Uuid
+  name            String
+  slug            String    @unique
+  status          String?   @default("pending")
+  prospectionPlan String?   @default("freemium") @map("prospection_plan")
+  trialEndsAt     DateTime? @map("trial_ends_at") @db.Timestamptz
+  metadata        Json?
+  provisionedAt   DateTime? @map("provisioned_at") @db.Timestamptz
+  lastActivityAt  DateTime? @map("last_activity_at") @db.Timestamptz
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz
+
+  @@index([userId])
+  @@index([deletedAt])
+  @@map("tenants")
+}
