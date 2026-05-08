@@ -416,11 +416,19 @@ export async function getProspects(params: ProspectParams, tenantId: string | nu
 
   const defaultUnseenSql = (presets.length === 1 && presets[0] === "top_prospects" && !filters.unseenOnly) ? " AND o.last_visited IS NULL" : "";
 
+  // Exclure les leads déjà engagés dans le pipeline commercial (fiche_ouverte, repondeur, contacte, etc.).
+  // Ces leads sont gérés dans la page Pipeline. Les voir dans Prospection = risque de doublon de prospection.
+  // L'historique des visites (preset "historique") garde tout, et la recherche bypasse aussi.
+  const isHistoriquePreset = presets.length === 1 && presets[0] === "historique";
+  const excludePipelineSql = isHistoriquePreset
+    ? ""
+    : " AND (o.pipeline_stage IS NULL OR o.pipeline_stage = '' OR o.pipeline_stage = 'a_contacter')";
+
   // When searching, bypass sector/preset/unseen filters — the user wants to FIND something specific
   const isSearching = !!filters.search && filters.search.trim().length > 0;
   const whereSql = isSearching
-    ? `${filterSql}`
-    : `${nafSql} AND ${presetSql} AND ${filterSql}${defaultUnseenSql}`;
+    ? `${filterSql}${excludePipelineSql}`
+    : `${nafSql} AND ${presetSql} AND ${filterSql}${defaultUnseenSql}${excludePipelineSql}`;
   const allParams = isSearching
     ? [...filterParams]
     : [...nafParams, ...filterParams];
@@ -474,12 +482,17 @@ export async function getDomainCounts(presets: ProspectPreset[], filters?: Prosp
   const counts: Record<string, number> = {};
   const presetSql = getPresetWhere(presets);
   const { sql: filterSql, params: filterParams } = buildFilterWhere(filters ?? {});
+  // Cohérence avec getProspects : exclure les leads déjà en pipeline (sauf preset historique)
+  const isHistoriquePreset = presets.length === 1 && presets[0] === "historique";
+  const excludePipelineSql = isHistoriquePreset
+    ? ""
+    : " AND (o.pipeline_stage IS NULL OR o.pipeline_stage = '' OR o.pipeline_stage = 'a_contacter')";
 
   // "all" domain count
   const allCountSql = toPositionalParams(`
     SELECT COUNT(*) as count
     ${PROSPECT_FROM}
-    WHERE ${presetSql} AND ${filterSql}
+    WHERE ${presetSql} AND ${filterSql}${excludePipelineSql}
   `);
   const allCountResult = await prisma.$queryRawUnsafe<[{ count: bigint }]>(allCountSql, ...filterParams);
   counts["all"] = bigIntToNumber(allCountResult[0].count);
@@ -513,7 +526,7 @@ export async function getDomainCounts(presets: ProspectPreset[], filters?: Prosp
     const rawSql = `
       SELECT ${caseParts.join(", ")}
       ${PROSPECT_FROM_inner}
-      WHERE ${presetSql} AND ${filterSql}
+      WHERE ${presetSql} AND ${filterSql}${excludePipelineSql}
     `;
     const allP = [...params, ...filterParams];
     const sql = toPositionalParams(rawSql);
@@ -537,28 +550,35 @@ export async function getPresetCounts(domainId: string, filters?: ProspectFilter
   const allParams = [...nafParams, ...filterParams];
   const naf = `e.code_naf`;
 
+  // Cohérence avec getProspects : exclure les leads déjà en pipeline pour tous les presets sauf historique
+  const NOT_IN_PIPELINE = "(o.pipeline_stage IS NULL OR o.pipeline_stage = '' OR o.pipeline_stage = 'a_contacter')";
   const rawSql = `
     SELECT
       SUM(CASE WHEN
         ${PRESET_BASE}
         AND e.prospect_score >= 60
         AND e.best_phone_e164 IS NOT NULL
+        AND ${NOT_IN_PIPELINE}
       THEN 1 ELSE 0 END) as "top_prospects",
       SUM(CASE WHEN
         ${PRESET_BASE}
         AND (${naf} LIKE '43%' OR ${naf} LIKE '41%')
+        AND ${NOT_IN_PIPELINE}
       THEN 1 ELSE 0 END) as "btp_artisans",
       SUM(CASE WHEN
         ${PRESET_BASE}
         AND (${naf} LIKE '86%' OR ${naf} LIKE '69%' OR ${naf} LIKE '71%')
+        AND ${NOT_IN_PIPELINE}
       THEN 1 ELSE 0 END) as "sante_droit",
       SUM(CASE WHEN
         ${PRESET_BASE}
         AND (${naf} LIKE '55%' OR ${naf} LIKE '56%' OR ${naf} LIKE '45%' OR ${naf} LIKE '47%' OR ${naf} LIKE '96%' OR ${naf} LIKE '93%')
+        AND ${NOT_IN_PIPELINE}
       THEN 1 ELSE 0 END) as "commerce_services",
       SUM(CASE WHEN
         ${PRESET_BASE}
         AND e.best_phone_e164 IS NOT NULL
+        AND ${NOT_IN_PIPELINE}
       THEN 1 ELSE 0 END) as "tous",
       SUM(CASE WHEN o.last_visited IS NOT NULL THEN 1 ELSE 0 END) as "historique"
     ${buildProspectFrom(tenantId)}
