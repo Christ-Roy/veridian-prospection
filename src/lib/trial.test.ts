@@ -39,22 +39,23 @@ describe("Supabase admin API rate-limit guard", () => {
 });
 
 /**
- * Unit tests for checkTrialExpired — recabled 2026-04-10 (P0.1).
- *
- * Mocks @supabase/supabase-js so we never hit the network. The mocked client
- * returns a configurable tenant row. We verify:
- *  - trial active → false
- *  - trial expired + freemium plan → true
- *  - trial expired + paid plan → false (Stripe is source of truth)
- *  - cache hit within TTL → no second DB query
+ * Unit tests for checkTrialExpired — 2026-05-08 réécrit pour Prisma direct
+ * (fin Supabase). Mock @/lib/prisma au lieu de @supabase/supabase-js.
  */
-const mockMaybeSingle = vi.fn();
-const mockEq = vi.fn(() => ({ maybeSingle: mockMaybeSingle }));
-const mockSelect = vi.fn(() => ({ eq: mockEq }));
-const mockFrom = vi.fn(() => ({ select: mockSelect }));
+const mockTenantFindFirst = vi.fn();
+const mockTenantFindUnique = vi.fn();
+const mockMembershipFindFirst = vi.fn();
 
-vi.mock("@supabase/supabase-js", () => ({
-  createClient: vi.fn(() => ({ from: mockFrom })),
+vi.mock("@/lib/prisma", () => ({
+  prisma: {
+    tenant: {
+      findFirst: mockTenantFindFirst,
+      findUnique: mockTenantFindUnique,
+    },
+    workspaceMember: {
+      findFirst: mockMembershipFindFirst,
+    },
+  },
 }));
 
 describe("checkTrialExpired", () => {
@@ -62,13 +63,11 @@ describe("checkTrialExpired", () => {
   const USER_ID = "user-abc";
 
   beforeEach(async () => {
-    process.env.SUPABASE_URL = "http://fake";
-    process.env.SUPABASE_SERVICE_ROLE_KEY = "fake-service-role";
-    mockMaybeSingle.mockReset();
-    mockEq.mockClear();
-    mockSelect.mockClear();
-    mockFrom.mockClear();
-    // Fresh module per test so the in-memory cache is clean
+    mockTenantFindFirst.mockReset();
+    mockTenantFindUnique.mockReset();
+    mockMembershipFindFirst.mockReset();
+    // Default: pas de membership (sauf override par test)
+    mockMembershipFindFirst.mockResolvedValue(null);
     vi.resetModules();
     trial = await import("./trial");
     trial.__trialInternals.clearCache();
@@ -79,47 +78,47 @@ describe("checkTrialExpired", () => {
   });
 
   it("returns false when trial is still active", async () => {
-    const futureDate = new Date(Date.now() + 3 * 86400000).toISOString();
-    mockMaybeSingle.mockResolvedValueOnce({
-      data: { prospection_plan: "freemium", trial_ends_at: futureDate },
-      error: null,
+    const futureDate = new Date(Date.now() + 3 * 86400000);
+    mockTenantFindFirst.mockResolvedValueOnce({
+      prospectionPlan: "freemium",
+      trialEndsAt: futureDate,
     });
     const expired = await trial.checkTrialExpired(USER_ID);
     expect(expired).toBe(false);
   });
 
   it("returns true when trial is expired and plan is freemium", async () => {
-    const pastDate = new Date(Date.now() - 86400000).toISOString();
-    mockMaybeSingle.mockResolvedValueOnce({
-      data: { prospection_plan: "freemium", trial_ends_at: pastDate },
-      error: null,
+    const pastDate = new Date(Date.now() - 86400000);
+    mockTenantFindFirst.mockResolvedValueOnce({
+      prospectionPlan: "freemium",
+      trialEndsAt: pastDate,
     });
     const expired = await trial.checkTrialExpired(USER_ID);
     expect(expired).toBe(true);
   });
 
   it("returns false when plan is paid, even if trial_ends_at is in the past", async () => {
-    const pastDate = new Date(Date.now() - 86400000).toISOString();
-    mockMaybeSingle.mockResolvedValueOnce({
-      data: { prospection_plan: "pro", trial_ends_at: pastDate },
-      error: null,
+    const pastDate = new Date(Date.now() - 86400000);
+    mockTenantFindFirst.mockResolvedValueOnce({
+      prospectionPlan: "pro",
+      trialEndsAt: pastDate,
     });
     const expired = await trial.checkTrialExpired(USER_ID);
     expect(expired).toBe(false);
   });
 
   it("returns false when tenant row is missing (fails open)", async () => {
-    // Direct lookup → null, fallback prisma import will throw in unit context
-    mockMaybeSingle.mockResolvedValueOnce({ data: null, error: null });
+    mockTenantFindFirst.mockResolvedValueOnce(null);
+    mockMembershipFindFirst.mockResolvedValueOnce(null);
     const expired = await trial.checkTrialExpired(USER_ID);
     expect(expired).toBe(false);
   });
 
   it("caches the result — second call within TTL does not re-query", async () => {
-    const futureDate = new Date(Date.now() + 3 * 86400000).toISOString();
-    mockMaybeSingle.mockResolvedValueOnce({
-      data: { prospection_plan: "freemium", trial_ends_at: futureDate },
-      error: null,
+    const futureDate = new Date(Date.now() + 3 * 86400000);
+    mockTenantFindFirst.mockResolvedValueOnce({
+      prospectionPlan: "freemium",
+      trialEndsAt: futureDate,
     });
 
     const first = await trial.checkTrialExpired(USER_ID);
@@ -129,13 +128,12 @@ describe("checkTrialExpired", () => {
     expect(first).toBe(false);
     expect(second).toBe(false);
     expect(third).toBe(false);
-    // Only one DB round-trip despite three calls
-    expect(mockMaybeSingle).toHaveBeenCalledTimes(1);
+    expect(mockTenantFindFirst).toHaveBeenCalledTimes(1);
   });
 
-  it("returns false for the internal user id (no Supabase call)", async () => {
+  it("returns false for the internal user id (no DB call)", async () => {
     const expired = await trial.checkTrialExpired("internal");
     expect(expired).toBe(false);
-    expect(mockFrom).not.toHaveBeenCalled();
+    expect(mockTenantFindFirst).not.toHaveBeenCalled();
   });
 });

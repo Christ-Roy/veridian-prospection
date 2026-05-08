@@ -422,6 +422,7 @@ jobs:
 
   deploy-prod:
     needs: docker
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Deploy via SSH (with rollback tag)
