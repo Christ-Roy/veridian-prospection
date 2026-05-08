@@ -18,7 +18,11 @@ export async function getLeads(params: LeadsParams, tenantId: string | null = nu
   const LEADS_FROM_T = buildLeadsFrom(tenantId);
 
   // Default filters: is_registrar, ca_suspect
-  const whereParts: string[] = [DEFAULT_ENTREPRISES_WHERE];
+  // Exclure aussi les leads déjà engagés dans le pipeline (gérés dans la page Pipeline)
+  const whereParts: string[] = [
+    DEFAULT_ENTREPRISES_WHERE,
+    "(o.pipeline_stage IS NULL OR o.pipeline_stage = '' OR o.pipeline_stage = 'a_contacter')",
+  ];
   const queryParams: (string | number)[] = [];
   let paramIndex = 1;
 
