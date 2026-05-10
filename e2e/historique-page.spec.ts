@@ -52,7 +52,24 @@ async function loginRobert(page: Page) {
   await page.locator("#email").fill(ROBERT_EMAIL);
   await page.locator("#password").fill(ROBERT_PASSWORD);
   await page.locator('button[type="submit"]').click();
-  await page.waitForURL(/\/(prospects|$)/, { timeout: 20000 }).catch(() => {});
+  // Throw if we don't leave /login — the rest of the test relies on auth.
+  await page.waitForURL((url) => !url.pathname.includes("/login"), {
+    timeout: 20_000,
+  });
+}
+
+/**
+ * Navigate to /historique and wait for the actual data fetch. The page
+ * fires `fetch("/api/history")` on mount (cf historique/page.tsx) — that's
+ * our readiness signal. Set up the listener BEFORE goto.
+ */
+async function gotoHistoriqueAndWait(page: Page): Promise<void> {
+  const respPromise = page.waitForResponse(
+    (r) => r.url().includes("/api/history") && r.request().method() === "GET",
+    { timeout: 15_000 }
+  );
+  await page.goto(`${PROSPECTION_URL}/historique`);
+  await respPromise;
 }
 
 test.describe("/historique page", () => {
@@ -62,9 +79,7 @@ test.describe("/historique page", () => {
     page,
   }) => {
     await loginRobert(page);
-    await page.goto(`${PROSPECTION_URL}/historique`);
-    await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
-    await page.waitForTimeout(2500);
+    await gotoHistoriqueAndWait(page);
 
     // La page doit afficher quelque chose (table, heading, empty state)
     const body = await page.locator("body").innerText();
@@ -78,7 +93,9 @@ test.describe("/historique page", () => {
   }) => {
     await loginRobert(page);
 
-    // Intercept any /api/history* or /api/outreach responses with body
+    // Intercept any /api/history* or /api/outreach responses with body.
+    // Set up the listener BEFORE navigation so we capture the mount-time
+    // request too.
     const badBodies: Array<{ url: string; status: number; body: string }> = [];
     page.on("response", async (res: Response) => {
       const url = res.url();
@@ -99,9 +116,7 @@ test.describe("/historique page", () => {
       }
     });
 
-    await page.goto(`${PROSPECTION_URL}/historique`);
-    await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
-    await page.waitForTimeout(2500);
+    await gotoHistoriqueAndWait(page);
 
     expect(
       badBodies,
@@ -114,9 +129,7 @@ test.describe("/historique page", () => {
     page,
   }) => {
     await loginRobert(page);
-    await page.goto(`${PROSPECTION_URL}/historique`);
-    await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
-    await page.waitForTimeout(2500);
+    await gotoHistoriqueAndWait(page);
 
     // Guard: aucun lien externe vers https://<9 digits>
     // (régression guard pour le fix faea1d8: historique/page.tsx doit
