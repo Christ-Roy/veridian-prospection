@@ -109,13 +109,6 @@ test.describe("Invite flow e2e (critical demo path)", () => {
       return;
     }
 
-    // Skip gracieux si la page est une 404
-    const bodyCheck = (await page.textContent("body")) || "";
-    if (/404\s*not found/i.test(bodyCheck) || bodyCheck.includes("This page could not be found")) {
-      testInfo.skip(true, "/admin/invitations renvoie 404 — feature pas encore déployée");
-      return;
-    }
-
     // --- Step 3: open create dialog ---
     const newInviteBtn = page.getByRole("button", { name: /nouvelle invitation/i });
     await expect(newInviteBtn).toBeVisible({ timeout: 10000 });
