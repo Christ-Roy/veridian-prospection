@@ -16,6 +16,74 @@
 - **Sante** : 🟢 (stable, e2e verts)
 - **Freemium actuel** : 300 leads distribues selon `score_dept` (lead-quota.ts)
 
+## 🔗 Hub side TODO — câbler le bouton "Open Prospection" sur magic-link à la demande (2026-05-08)
+
+> Endpoint Prospection livré : `POST /api/tenants/magic-link` (HMAC, idempotent,
+> rotation pure du `prospection_login_token`). Branche `feat/tenants-magic-link`.
+> Le bouton actuel du Hub fonctionne pour les nouveaux signups (24h fenêtre) tant
+> que ce qui suit n'est pas câblé — donc pas urgent, mais 24+ tenants existants
+> sont actuellement cassés au-delà de 24h.
+
+**Côté Hub** (`hub/`) :
+
+- [ ] Créer `hub/app/api/admin/prospection/magic-link/route.ts` — pattern miroir
+  de `hub/app/api/admin/notifuse/magic-link/route.ts`. Auth `auth()` + check
+  ownership ou `isPlatformAdmin`. Body `{ tenantId }` (= email owner Prospection).
+  Appelle `POST ${PROSPECTION_API_URL}/api/tenants/magic-link` avec :
+  - `tenant_id`: email du tenant
+  - `timestamp`: `Date.now()`
+  - `signature`: `createHmac("sha256", PROSPECTION_TENANT_API_SECRET).update("${email}:${ts}").digest("hex")`
+  Renvoie `{ login_url, expires_at }` au client.
+  ⚠️ Le secret `PROSPECTION_TENANT_API_SECRET` côté Hub = `TENANT_API_SECRET` côté
+  Prospection (même string déjà déployée en Dokploy) — pas de nouveau secret à
+  provisionner.
+- [ ] Modifier `hub/app/dashboard/components/ProspectionCard.tsx:34-66` :
+  remplacer la logique `tokenValid && loginUrl ? open(loginUrl) : POST regenerate-login`
+  par un appel systématique `POST /api/admin/prospection/magic-link` au clic, puis
+  `window.open(data.login_url)`. Supprimer la prop `loginUrl`/`tokenValid`.
+- [ ] Mettre à jour `hub/app/dashboard/page.tsx:73-87` : retirer la lecture
+  `prospectionLoginToken*` (devient inutile), garder uniquement `prospectionProvisionedAt`
+  pour afficher le badge "Active".
+- [ ] Tests Vitest sur la nouvelle route Hub (auth, ownership, success, propagation
+  des erreurs Prospection).
+- [ ] Smoke test prod : ouvrir un tenant > 24h après signup, cliquer "Open
+  Prospection" → doit logger sans `?error=`.
+
+**Cleanup différé (chantier séparé, pas urgent)** :
+
+- [ ] Supprimer côté Hub les colonnes `prospectionLoginToken`,
+  `prospectionLoginTokenCreatedAt`, `prospectionLoginTokenUsed` du schéma Prisma
+  (devenues mortes une fois le bouton recâblé). Migration `Existing tenants:`
+  nécessaire.
+- [ ] Supprimer la route `hub/app/api/prospection/regenerate-login/route.ts`
+  (remplacée par `magic-link`). Vérifier zéro appelant restant avant.
+- [ ] Côté Prospection : les colonnes `prospection_login_token*` dans Supabase
+  `tenants` restent utilisées par `/api/auth/token` — ne pas toucher.
+
+**Ce qui n'a PAS été touché côté Prospection** : ni `/api/tenants/provision` ni
+`/api/auth/token`. Le flow signup auto continue de marcher exactement pareil.
+
+## 🔍 À auditer — appels auto-référents via URL publique (2026-05-08)
+
+> Découvert sur Notifuse pendant fix DETTE-001 CrowdSec : Notifuse s'auto-appelle
+> via URL publique (Cloudflare round-trip) → 480k req/jour inutiles. Voir
+> [`../notifuse/TODO.md`](../notifuse/TODO.md#-dette-détectée--2026-05-08-1415).
+>
+> **Prospection a `APP_URL=https://prospection.app.veridian.site` ET `NEXTAUTH_URL=https://prospection.app.veridian.site`** — risque modéré.
+
+- [ ] `grep -rn "APP_URL\|NEXTAUTH_URL\|env.APP_URL\|process.env.APP_URL" prospection/src` pour lister les usages
+- [ ] Identifier les **jobs cron** (Inngest, scheduled tasks, scrapers en arrière-plan) qui pourraient s'auto-appeler :
+  - Inngest event handlers (vérifier la config — Inngest utilise normalement son propre serve URL)
+  - Cron jobs `node-cron` ou similaire
+  - Scrapers SIRENE / API entreprises (légitime, vers APIs externes)
+  - Twenty sync (server-to-server vers `twenty.app.veridian.site`, pourrait être interne en `http://twenty-server:3000`)
+- [ ] Vérifier les retry handlers et webhook receivers
+- [ ] Mesurer impact : count hits `prospection.app.veridian.site/*` depuis 172.17.0.1 dans les access logs Traefik
+
+**Probabilité que Prospection soit affecté** : 🟡 moyenne. Si Inngest est branché,
+il utilise typiquement son propre endpoint isolé. Mais si du code custom appelle
+`fetch(\`\${APP_URL}/api/...\`)` pour des jobs, c'est le même bug que Notifuse.
+
 ## Architecture
 
 ```
@@ -106,6 +174,74 @@ prospection/
   - [ ] claude-ai-flow.spec.ts (note Claude, delete)
   - [ ] global-full-flow.spec.ts (parcours complet)
 - [ ] Tests API smoke (P2.2) : prospects, segments, stats, outreach, twenty
+
+## Dette technique post-migration Auth.js v5 (2026-05-06)
+
+> Lors de la migration Supabase Auth → Auth.js v5, plusieurs raccourcis ont
+> été pris pour livrer rapidement. À traiter en P2 dans une session future.
+
+### Fallbacks Supabase admin légacy à retirer (Phase 8 cleanup)
+- 7 fichiers ont encore des imports `@/lib/supabase/tenant` ou
+  `admin.auth.admin.getUserById` en fallback :
+  - `src/app/api/admin/members/route.ts` (ligne ~108-131) — fallback enrich email
+  - `src/app/api/admin/invitations/[id]/route.ts` (ligne ~54)
+  - `src/app/api/trial/route.ts` (ligne ~28) — actuellement stub `return false`
+  - `src/app/api/checkout/route.ts`, `phone/telnyx-token`, `outreach/test-send`
+  - `src/lib/supabase/{tenant,server,api-auth,user-context}.ts` (compat layer)
+- À retirer après que tous les vrais clients soient migrés (Phase 8)
+
+### `trial.ts` est un stub temporaire
+- `checkTrialExpired` retourne toujours `false` (hack 2026-04-06 incident
+  rate-limit Supabase)
+- À recâbler sur Stripe (source de vérité billing) ou sur les colonnes
+  `trial_ends_at` + `prospection_plan` qui ne sont **pas encore** dans le
+  modèle Prisma `Tenant` local
+- Voir P0.6 et P1.1
+
+### Tenant Prisma local incomplet
+- Le modèle `Tenant` Prisma actuel ne contient pas toutes les colonnes
+  Supabase (manque : `lead_score`, `trial_ends_at`, `cleanup_notified_at`,
+  `prospection_api_key`, `prospection_login_token*`, `prospection_plan`,
+  `prospection_config`, `prospection_provisioned_at`)
+- Le script `migrate-supabase-to-authjs.ts` ne migre que les colonnes
+  communes (Twenty + Notifuse + base SaaS)
+- À ajouter au schema Prisma + re-migrer si on veut la parité fonctionnelle
+  complète
+
+### FK entreprises sautée sur DB mirror dev
+- Pendant le test ultime sur dev mirror, les FK `outreach.siren →
+  entreprises.siren` et autres ont été droppées pour éviter de restaurer
+  les 996K entreprises
+- Pas de problème en prod (FK existent), juste un artifact du test mirror
+
+### Tests CI insuffisants (rapport audit subagent 2026-05-06)
+La CI couvre ~70% de "l'app fonctionne", 0% de "l'auth est sécurisée".
+Flows critiques NON testés en e2e :
+- Password reset (Auth.js v5 change le flow vs Supabase magic link)
+- Signup nouvel user (rate-limit interdit en CI)
+- Session expiry + refresh JWT
+- Logout complet (cookies + cache + revoke serveur)
+- Invited member set password 1ère fois (happy path testé, edge cases non)
+
+À ajouter en P2.1 — voir [`tmp/PROSPECTION-AUTH-MIGRATION.md`](../../../tmp/PROSPECTION-AUTH-MIGRATION.md)
+
+### MFA absente de Prospection
+- Hub a MFA email Brevo, Prospection non (simplifié pendant migration)
+- À évaluer : opt-in cohérence multi-app ou pas
+
+### Endpoints HMAC orchestration non créés
+- Phase 3 du plan : `POST /api/internal/{users/upsert,tenants/provision,
+  tenants/suspend,magic-link/issue}`
+- Pas critique pour livrer l'auth locale, mais nécessaire pour future
+  orchestration Hub → Prospection (magic link cross-app)
+
+### Tests e2e multi-tenant incomplets
+- Le spec `e2e/extended/multi-tenant-data-integrity.spec.ts` existe mais la
+  fixture `tenants-prod.json` n'a pas de passwords (exclu volontairement
+  pour sécurité)
+- Pour tester réellement post-migration, il faut soit utiliser des
+  comptes de test Robert dont on a les MDP, soit passer par une session
+  injectée via cookie
 
 ## Bugs connus
 
