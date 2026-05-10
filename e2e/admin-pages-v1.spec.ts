@@ -63,8 +63,13 @@ test.describe("Admin pages V1 smoke", () => {
       await loginAsE2EUser(page, request);
 
       await page.goto(`${PROSPECTION_URL}${path}`);
-      await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
-      await page.waitForTimeout(1500);
+
+      // Wait for the body to render real content (not blank). This auto-waits
+      // and acts as readiness signal — networkidle/sleep was unreliable on
+      // pages with persistent GTM beacons.
+      await expect(page.locator("body")).not.toHaveText(/^\s*$/, {
+        timeout: 15_000,
+      });
 
       // Si la page redirige (user non-admin → /prospects), on skip gracieusement.
       const finalUrl = page.url();

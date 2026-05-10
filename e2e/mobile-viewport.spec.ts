@@ -125,8 +125,15 @@ for (const viewport of VIEWPORTS) {
       }) => {
         await loginFreshUser(page, request);
         await page.goto(`${PROSPECTION_URL}${pg.path}`);
-        await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
-        await page.waitForTimeout(2000); // hydration settle
+
+        // Wait for the page to actually render content (not networkidle,
+        // which lies on pages with GTM beacons). We assert that the body
+        // has > 20 characters of text — that's the test's own contract.
+        // Playwright's expect.toHaveText auto-waits, so this acts as a
+        // readiness signal AND the assertion in one.
+        await expect(page.locator("body")).not.toHaveText(/^\s*$/, {
+          timeout: 15_000,
+        });
 
         // Body has rendered something
         const bodyText = await page.locator("body").innerText();
