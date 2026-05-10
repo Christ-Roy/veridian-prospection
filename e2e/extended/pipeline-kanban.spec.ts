@@ -51,9 +51,13 @@ test.describe("Pipeline Kanban", () => {
       return;
     }
 
-    // Dismiss any overlay then click first card
+    // Dismiss any overlay then click first card. Wait for any open dialog
+    // to actually close before clicking — otherwise the click may target
+    // the overlay instead of the card. expect.toBeHidden auto-waits.
     await page.keyboard.press("Escape");
-    await page.waitForTimeout(300);
+    await expect(
+      page.locator('[role="dialog"][data-state="open"]')
+    ).toHaveCount(0, { timeout: 2_000 });
     await cards.first().click({ force: true });
 
     // Lead sheet should open (dialog or sheet)

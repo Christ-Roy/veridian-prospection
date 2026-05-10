@@ -111,18 +111,17 @@ test.describe("Pipeline view — calendar toggle", () => {
     await expect(page.getByTestId("pipeline-view-list")).toBeVisible();
     await expect(page.getByTestId("pipeline-view-calendar")).toBeVisible();
 
-    // Switch calendrier
+    // Switch calendrier — expect.toBeVisible has its own auto-wait, no
+    // manual sleep needed. If FullCalendar fails to mount, this fails
+    // explicitly at 10s with a clear locator message.
     await page.getByTestId("pipeline-view-calendar").click();
-    await page.waitForTimeout(500);
-
-    // FullCalendar doit afficher sa toolbar
-    await expect(page.locator(".fc-toolbar")).toBeVisible({ timeout: 10000 });
+    await expect(page.locator(".fc-toolbar")).toBeVisible({ timeout: 10_000 });
     await expect(page.locator(".fc-view-harness")).toBeVisible();
 
-    // Retour liste
+    // Retour liste — expect.toHaveCount(0) auto-waits the toolbar to
+    // disappear instead of sleeping.
     await page.getByTestId("pipeline-view-list").click();
-    await page.waitForTimeout(300);
-    await expect(page.locator(".fc-toolbar")).toHaveCount(0);
+    await expect(page.locator(".fc-toolbar")).toHaveCount(0, { timeout: 5_000 });
   });
 });
 
@@ -161,15 +160,21 @@ test.describe("Lead sheet appointments section", () => {
     const hasProspect = (await firstRow.count()) > 0;
     test.skip(!hasProspect, "Tenant has no prospects");
 
+    // Click row + wait for the lead sheet to mount (it fires
+    // /api/leads/<domain> on mount — that's the real readiness signal).
+    const sheetResp = page.waitForResponse(
+      (r) => /\/api\/leads\/[^/?#]+/.test(r.url()) && r.request().method() === "GET",
+      { timeout: 15_000 }
+    );
     await firstRow.click();
-    await page.waitForTimeout(800);
+    await sheetResp;
 
     // Ouvre l'accordion RDV
     const trigger = page.locator('button:has-text("RDV")').first();
     if (await trigger.isVisible()) {
       await trigger.click();
-      await page.waitForTimeout(300);
-      await expect(page.getByTestId("appointments-section")).toBeVisible({ timeout: 5000 });
+      // expect.toBeVisible auto-waits, no manual sleep needed.
+      await expect(page.getByTestId("appointments-section")).toBeVisible({ timeout: 5_000 });
       await expect(page.getByTestId("appointment-new")).toBeVisible();
     }
   });

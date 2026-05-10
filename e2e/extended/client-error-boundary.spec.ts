@@ -8,7 +8,7 @@
  *  2. Wait for layout hydration (ClientErrorBoundary is in root layout)
  *  3. Start intercepting requests to /api/errors
  *  4. Inject a throw via page.evaluate(() => setTimeout(() => { throw }, 100))
- *  5. Wait up to 5s for the POST to happen
+ *  5. expect.poll waits for the POST or debug trace (no manual sleep loop)
  *  6. Assert: at least one POST /api/errors with the injected message in body
  *
  * This spec is the final piece of the client error monitoring trilogy:
@@ -31,30 +31,43 @@ async function loginRobert(page: Page) {
   await page.locator("#email").fill(ROBERT_EMAIL);
   await page.locator("#password").fill(ROBERT_PASSWORD);
   await page.locator('button[type="submit"]').click();
-  await page.waitForURL(/\/(prospects|$)/, { timeout: 20000 }).catch(() => {});
+  // Throw if we don't leave /login — the rest of the spec needs to inject
+  // crashes into an authenticated page.
+  await page.waitForURL((url) => !url.pathname.includes("/login"), {
+    timeout: 20_000,
+  });
 }
 
 /**
- * Wait until the root React layout has hydrated — this is when useEffect in
- * <ClientErrorBoundary> has run and window.onerror is actually installed.
- * Before hydration, any thrown error goes nowhere.
+ * Wait until the root React layout has hydrated — this is when useEffect
+ * in <ClientErrorBoundary> has run and window.onerror is actually
+ * installed. Before hydration, any thrown error goes nowhere.
  *
- * We first try a data-hydrated marker (set by the layout once mounted),
- * then fall back to a networkidle + fixed delay which is enough in practice
- * for the React Effect pass to complete.
+ * We probe an injected sentinel rather than rely on networkidle: the
+ * boundary mounts in a useEffect, so we directly wait for the listener
+ * count via a tiny script. As fallback, we wait for [data-hydrated]
+ * which the layout sets when it has finished mounting.
  */
 async function waitForHydration(page: Page) {
-  await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
+  // First try the explicit data-hydrated marker (set by the root layout
+  // once the effect has run).
   const hasMarker = await page
-    .waitForFunction(() => document.querySelector("[data-hydrated]") !== null, null, {
-      timeout: 3000,
-    })
+    .waitForFunction(
+      () => document.querySelector("[data-hydrated]") !== null,
+      null,
+      { timeout: 5_000 }
+    )
     .then(() => true)
     .catch(() => false);
-  if (!hasMarker) {
-    // No marker present — give React one more tick to install listeners.
-    await page.waitForTimeout(2500);
-  }
+  if (hasMarker) return;
+
+  // Fallback: wait for window.onerror to be installed. This is what the
+  // ClientErrorBoundary actually does, so it is the most truthful signal.
+  // If the marker is missing AND no listener is installed, the test would
+  // be testing nothing — better to fail loudly here than silently wait.
+  await page.waitForFunction(() => typeof window.onerror === "function", null, {
+    timeout: 5_000,
+  });
 }
 
 test.describe("ClientErrorBoundary e2e", () => {
@@ -95,25 +108,22 @@ test.describe("ClientErrorBoundary e2e", () => {
       }, 100);
     }, uniqueMarker);
 
-    // Wait for the POST (or the debug trace) to happen
-    const deadline = Date.now() + 8000;
-    while (
-      Date.now() < deadline &&
-      !capturedBodies.some((b) => b.includes(uniqueMarker)) &&
-      !capturedDebug.some((d) => d.includes(uniqueMarker))
-    ) {
-      await page.waitForTimeout(250);
-    }
-
-    const gotPost = capturedBodies.some((b) => b.includes(uniqueMarker));
-    const gotDebug = capturedDebug.some((d) => d.includes(uniqueMarker));
-    expect(
-      gotPost || gotDebug,
-      `Expected a POST /api/errors OR a console debug containing "${uniqueMarker}". ` +
-        `Got ${capturedBodies.length} POSTs and ${capturedDebug.length} debug lines:\n` +
-        `POSTS:\n${capturedBodies.join("\n---\n")}\n` +
-        `DEBUG:\n${capturedDebug.join("\n---\n")}`
-    ).toBe(true);
+    // Poll for the POST (or the debug trace) to happen. Playwright's
+    // expect.poll handles the retry loop with proper backoff and gives a
+    // clear failure message — far better than a manual `while (sleep)`.
+    await expect
+      .poll(
+        () =>
+          capturedBodies.some((b) => b.includes(uniqueMarker)) ||
+          capturedDebug.some((d) => d.includes(uniqueMarker)),
+        {
+          message:
+            `Expected a POST /api/errors OR a console debug containing "${uniqueMarker}". ` +
+            `Got ${capturedBodies.length} POSTs and ${capturedDebug.length} debug lines.`,
+          timeout: 8_000,
+        }
+      )
+      .toBe(true);
 
     // Sanity: if we captured the POST, the body should parse as JSON with
     // the expected shape. If we only captured the console debug fallback,
@@ -152,22 +162,19 @@ test.describe("ClientErrorBoundary e2e", () => {
       Promise.reject(new Error(marker));
     }, uniqueMarker);
 
-    const deadline = Date.now() + 8000;
-    while (
-      Date.now() < deadline &&
-      !capturedBodies.some((b) => b.includes(uniqueMarker)) &&
-      !capturedDebug.some((d) => d.includes(uniqueMarker))
-    ) {
-      await page.waitForTimeout(250);
-    }
-
-    const gotPost = capturedBodies.some((b) => b.includes(uniqueMarker));
-    const gotDebug = capturedDebug.some((d) => d.includes(uniqueMarker));
-    expect(
-      gotPost || gotDebug,
-      `Expected a POST /api/errors OR console debug containing "${uniqueMarker}" ` +
-        `from unhandledrejection. Got ${capturedBodies.length} POSTs and ` +
-        `${capturedDebug.length} debug lines.`
-    ).toBe(true);
+    await expect
+      .poll(
+        () =>
+          capturedBodies.some((b) => b.includes(uniqueMarker)) ||
+          capturedDebug.some((d) => d.includes(uniqueMarker)),
+        {
+          message:
+            `Expected a POST /api/errors OR console debug containing "${uniqueMarker}" ` +
+            `from unhandledrejection. Got ${capturedBodies.length} POSTs and ` +
+            `${capturedDebug.length} debug lines.`,
+          timeout: 8_000,
+        }
+      )
+      .toBe(true);
   });
 });

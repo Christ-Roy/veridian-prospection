@@ -154,7 +154,8 @@ test.describe("Invite flow e2e (critical demo path)", () => {
     }
 
     // --- Step 5: vérifier que la table montre l'invitation ---
-    await page.waitForTimeout(500);
+    // expect(row).toBeVisible has its own 10s auto-wait, no manual sleep
+    // needed before it.
     const row = page.getByRole("row", { name: new RegExp(INVITEE_EMAIL, "i") });
     await expect(row).toBeVisible({ timeout: 10000 });
     await expect(row.getByText(/en attente/i)).toBeVisible();

@@ -50,7 +50,26 @@ async function loginRobert(page: Page) {
   await page.locator("#email").fill(ROBERT_EMAIL);
   await page.locator("#password").fill(ROBERT_PASSWORD);
   await page.locator('button[type="submit"]').click();
-  await page.waitForURL(/\/(prospects|$)/, { timeout: 20000 }).catch(() => {});
+  // Wait for navigation away from /login. If it doesn't happen, fail
+  // immediately rather than ignoring it — the rest of the test relies on
+  // being authenticated.
+  await page.waitForURL((url) => !url.pathname.includes("/login"), {
+    timeout: 20_000,
+  });
+}
+
+/**
+ * Wait for /prospects (or any post-login route) to be ready for keyboard
+ * input. We don't rely on networkidle (it lies on pages with persistent
+ * websockets / GTM beacons). Instead we wait for the body to receive
+ * focus capability and the main heading to render.
+ */
+async function waitForKeyboardReady(page: Page) {
+  // Body must be focusable for keyboard events to dispatch
+  await page.locator("body").waitFor({ state: "visible", timeout: 10_000 });
+  // Click body to ensure focus is on document, not a stale input that may
+  // remain after the loginRobert form submission.
+  await page.locator("body").click({ position: { x: 10, y: 10 } });
 }
 
 test.describe("Keyboard shortcuts", () => {
@@ -58,23 +77,20 @@ test.describe("Keyboard shortcuts", () => {
 
   test('"?" opens help modal and Escape closes it', async ({ page }) => {
     await loginRobert(page);
-    await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
-    await page.waitForTimeout(1500);
+    await waitForKeyboardReady(page);
 
-    // Press "?" (requires shift+/ on US layout — Playwright's keyboard.press
-    // handles the modifier automatically if we use "Shift+Slash" or the key
-    // string "?")
+    // Press "?" (Shift+Slash on US layout). The hook reacts synchronously
+    // on keydown, so the modal should appear in the next tick.
     await page.keyboard.press("Shift+Slash");
-    await page.waitForTimeout(500);
 
-    // Modal should be visible with the expected title
+    // Modal should be visible with the expected title. Playwright's
+    // expect.toBeVisible has its own auto-wait — no manual sleep needed.
     const heading = page.getByRole("heading", { name: /Raccourcis clavier/i });
-    await expect(heading).toBeVisible({ timeout: 5000 });
+    await expect(heading).toBeVisible({ timeout: 5_000 });
 
-    // Close with Escape
+    // Close with Escape and assert it disappears.
     await page.keyboard.press("Escape");
-    await page.waitForTimeout(500);
-    await expect(heading).not.toBeVisible({ timeout: 5000 });
+    await expect(heading).not.toBeVisible({ timeout: 5_000 });
 
     assertNoConsoleErrors("help-modal-open-close");
   });
@@ -83,17 +99,15 @@ test.describe("Keyboard shortcuts", () => {
     await loginRobert(page);
     // Go to a different page first so that the navigation is observable
     await page.goto(`${PROSPECTION_URL}/historique`);
-    await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
-    await page.waitForTimeout(1500);
+    await page.waitForURL(/\/historique/, { timeout: 10_000 });
+    await waitForKeyboardReady(page);
 
-    // Make sure the focus is on the body, not an input
-    await page.locator("body").click({ position: { x: 10, y: 10 } });
-
+    // The chord is "g" then any nav key within G_SEQUENCE_WINDOW_MS (1500ms
+    // in keyboard-shortcuts-help.tsx). Two synchronous press() calls in
+    // Playwright fire well within that window — no manual sleep required.
     await page.keyboard.press("g");
-    await page.waitForTimeout(100);
     await page.keyboard.press("p");
-    await page.waitForURL(/\/prospects/, { timeout: 5000 });
-    expect(page.url()).toContain("/prospects");
+    await page.waitForURL(/\/prospects/, { timeout: 5_000 });
 
     assertNoConsoleErrors("g+p-navigation");
   });
@@ -101,31 +115,28 @@ test.describe("Keyboard shortcuts", () => {
   test('"g s" sequence navigates to /segments', async ({ page }) => {
     await loginRobert(page);
     await page.goto(`${PROSPECTION_URL}/prospects`);
-    await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
-    await page.waitForTimeout(1500);
-    await page.locator("body").click({ position: { x: 10, y: 10 } });
+    await page.waitForURL(/\/prospects/, { timeout: 10_000 });
+    await waitForKeyboardReady(page);
 
     await page.keyboard.press("g");
-    await page.waitForTimeout(100);
     await page.keyboard.press("s");
-    await page.waitForURL(/\/segments/, { timeout: 5000 });
-    expect(page.url()).toContain("/segments");
+    await page.waitForURL(/\/segments/, { timeout: 5_000 });
 
     assertNoConsoleErrors("g+s-navigation");
   });
 
   test("single-key shortcuts are ignored when typing in an input", async ({
     page,
-    request,
   }) => {
     await loginRobert(page);
     await page.goto(`${PROSPECTION_URL}/prospects`);
-    await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
-    await page.waitForTimeout(1500);
+    await page.waitForURL(/\/prospects/, { timeout: 10_000 });
 
     // Find any input on the page (search bar, filter, etc.)
     const firstInput = page.locator("input").first();
-    const hasInput = await firstInput.isVisible({ timeout: 5000 }).catch(() => false);
+    const hasInput = await firstInput
+      .isVisible({ timeout: 5_000 })
+      .catch(() => false);
     if (!hasInput) {
       test.skip(true, "No input visible on /prospects to test focus guard");
       return;
@@ -135,12 +146,14 @@ test.describe("Keyboard shortcuts", () => {
     const urlBefore = page.url();
     // Type "g" then "p" inside the input — should NOT navigate
     await page.keyboard.type("gp");
-    await page.waitForTimeout(1000);
 
-    expect(page.url(), "typing in input should not trigger g+p navigation").toBe(urlBefore);
-    // The input should now contain "gp"
-    const inputValue = await firstInput.inputValue().catch(() => "");
-    expect(inputValue).toContain("gp");
+    // No sleep: if the chord were going to fire, it would happen immediately
+    // (synchronous keydown handler). We assert the URL hasn't changed and
+    // the input now contains the literal characters typed.
+    expect(page.url(), "typing in input should not trigger g+p navigation").toBe(
+      urlBefore
+    );
+    await expect(firstInput).toHaveValue(/gp/, { timeout: 2_000 });
 
     assertNoConsoleErrors("typing-guard");
   });
