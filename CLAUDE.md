@@ -79,3 +79,4 @@ npx playwright test e2e/extended/ --project=chromium  # Extended e2e
 # retrigger 2026-05-11 — deploy CVE bumps (defu, effect, next, postcss) après fix Traefik dual-router
 
 
+
