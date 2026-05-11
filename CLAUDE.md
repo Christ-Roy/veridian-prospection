@@ -76,6 +76,6 @@ npx playwright test e2e/extended/ --project=chromium  # Extended e2e
 - JAMAIS d'appel Supabase admin API dans un hot path (cache obligatoire)
 - JAMAIS de signup en e2e (login comptes existants uniquement)
 - `checkTrialExpired` = return false (hack temporaire, a recabler)
-# retrigger
+# retrigger 2026-05-11 — deploy CVE bumps (defu, effect, next, postcss) après fix Traefik dual-router
 
 
