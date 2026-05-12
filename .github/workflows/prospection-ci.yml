@@ -11,6 +11,8 @@ on:
     branches: [main]
     paths:
       - 'prospection/**'
+      - '.github/workflows/prospection-ci.yml'
+      - '.github/workflows/_audit-cve.yml'
   workflow_dispatch:
     inputs:
       branch:
@@ -55,8 +57,17 @@ jobs:
       - name: Supabase admin API rate-limit guard
         run: bash scripts/check-supabase-ratelimit.sh
 
+  audit:
+    name: CVE audit (high+critical bloquant)
+    uses: ./.github/workflows/_audit-cve.yml
+    with:
+      app-path: prospection
+      package-manager: npm
+      node-version: "20"
+      omit-dev: true
+
   build:
-    needs: unit
+    needs: [unit, audit]
     runs-on: ubuntu-latest
     defaults:
       run:
