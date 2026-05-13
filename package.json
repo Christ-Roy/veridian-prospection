@@ -16,7 +16,9 @@
     "test:guard": "bash scripts/check-supabase-ratelimit.sh",
     "test:all": "npx tsc --noEmit && npx eslint src/ --quiet && vitest run src/ && bash scripts/check-supabase-ratelimit.sh",
     "db:fresh:siren": "bash scripts/db-fresh-siren.sh",
-    "db:fresh:siren:seed": "SEED=1 bash scripts/db-fresh-siren.sh"
+    "db:fresh:siren:seed": "SEED=1 bash scripts/db-fresh-siren.sh",
+    "prepare": "husky",
+    "setup-hooks": "husky"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",
@@ -68,6 +70,7 @@
     "@types/web-push": "^3.6.4",
     "eslint": "^9",
     "eslint-config-next": "15.3.3",
+    "husky": "^9.1.7",
     "prisma": "^6.19.2",
     "shadcn": "^3.8.5",
     "tailwindcss": "^4",
