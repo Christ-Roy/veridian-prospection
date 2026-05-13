@@ -373,7 +373,9 @@ jobs:
   docker:
     needs: [build, integration]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: [self-hosted, veridian]
+    # Post-extraction monorepo (2026-05-13) : self-hosted runner pas encore
+    # ré-enregistré sur ce repo. ubuntu-latest fonctionne (~30s plus lent).
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
