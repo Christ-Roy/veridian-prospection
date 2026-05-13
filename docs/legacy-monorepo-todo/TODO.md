@@ -15,6 +15,60 @@
 - **URL staging** : https://saas-prospection.staging.veridian.site
 - **Sante** : 🟢 (stable, e2e verts)
 - **Freemium actuel** : 300 leads distribues selon `score_dept` (lead-quota.ts)
+- **Stack Dokploy** : `compose-connect-redundant-firewall-l5fmki` (PROD), `compose-bypass-bluetooth-feed-tbayqr` (STAGING)
+- **DB Prod** : container Postgres séparé `code-prospection-saas-db-1` (postgres:15-alpine)
+
+## 🚀 Sprint GitOps Veridian — prospection (pilot 2026-05-13)
+
+> Sprint global : `~/Bureau/SPRINT-GITOPS-VERIDIAN.md`. Prospection sert de pilot
+> de fait (Notifuse devait piloter mais n'a pas démarré). Runbook pattern écrit
+> au passage : `runbooks/dokploy-gitops-pattern.md`.
+
+### Phase A — Migration GitOps (Raw → Git provider)
+
+- [x] Snapshot forensique compose live + container inspect (image SHA, env, labels)
+- [x] Récupérer SHA digest registry images (prospection + postgres)
+- [x] Branche `feat/prospection-gitops-migration` depuis `origin/main`
+- [x] Créer `infra/services/prospection/docker-compose.yml` (SHA-pinné, DEPLOY_ENV-aware, healthcheck `/api/health`)
+- [x] `.env.example` + `README.md` dans `infra/services/prospection/`
+- [x] Runbook GitOps `runbooks/dokploy-gitops-pattern.md` (pilot)
+- [ ] PR `feat/prospection-gitops-migration` → main mergée (CI verte)
+- [ ] **Bascule Dokploy UI** Raw → Git (manuel — Robert ou validation conjointe) :
+  - Stack `compose-connect-redundant-firewall-l5fmki` → Settings → Provider Git
+  - Repo veridian-platform, branch `main`, path `infra/services/prospection/docker-compose.yml`
+  - Activer Auto Deploy + coller webhook dans GitHub repo Settings → Webhooks
+  - **Avant la bascule** : vérifier que les ENV (AUTH_SECRET, ANON_KEY, SERVICE_ROLE_KEY, TENANT_API_SECRET, DATABASE_URL) sont bien dans Dokploy stack Environment — ajouter aussi `DEPLOY_ENV=prod` et `TRAEFIK_HOST=prospection.app.veridian.site`
+- [ ] Premier deploy manuel via Dokploy UI → smoke 10x `/api/health`
+- [ ] Test idempotence : commit no-op (commentaire README) → push main → webhook redeploy zero-downtime
+- [ ] Test rollback : `git revert` du commit no-op → push main → webhook redeploy état précédent
+
+### Phase B — CI security
+
+- [x] `.github/workflows/prospection-security-cve.yml` (Trivy CRIT+HIGH bloquant, ignore-unfixed, SARIF Security tab, cron quotidien 3h UTC)
+- [x] `.github/dependabot.yml` (npm prospection/ groupé par famille, docker `infra/services/prospection/`, github-actions)
+- [x] `.github/renovate.json` (auto-merge patches Trivy-clean, Next/React/Auth.js manuels)
+- [x] Job `audit` npm déjà branché dans `prospection-ci.yml` (commit 65f98d5, branche `chore/prospection-cve-gate`)
+
+### Phase C — Loop validation 7 jours (à démarrer après bascule Dokploy)
+
+- [ ] J+1 : vérifier webhook GitHub déclenche bien Dokploy redeploy (test no-op)
+- [ ] J+1 : `obs check security` → 0 CRIT/HIGH sur image deployed
+- [ ] J+2 : vérifier que Dependabot a ouvert ses premières PRs (lundi 8h)
+- [ ] J+3 : vérifier que Trivy CI **bloque** une PR si CVE introduite (sabotage temporaire)
+- [ ] J+7 : 0 CRIT/HIGH, 0 incident, mission marquée `[done]`
+
+### Follow-ups identifiés pendant le sprint
+
+- [ ] **Cross-app inter-comm violation** (cf `~/Bureau/cc-saas/prompts/applicatif/07-inter-app-communication.md`) :
+  `SUPABASE_URL: http://compose-parse-digital-alarm-974mhw-kong-1:8000` dans le compose live
+  utilise un nom de container interne (au lieu de `https://api.app.veridian.site`).
+  Le compose Git garde la valeur via `${SUPABASE_URL}` (pas de regression), mais c'est
+  fragile. À fix dans une PR dédiée hors sprint GitOps.
+- [ ] **Composes legacy à nettoyer** : `infra/docker-compose.*.yml` (17 fichiers) divergent
+  tous de la prod. Cleanup à planifier — pas dans ce sprint pour éviter le bruit.
+- [ ] **DB Postgres pas en GitOps** : `code-prospection-saas-db-1` est dans un compose
+  Dokploy séparé non identifié. À migrer en GitOps séparément (avec backup + tests
+  restauration) une fois la prospection-prod stable en Git.
 
 ## 🔗 Hub side TODO — câbler le bouton "Open Prospection" sur magic-link à la demande (2026-05-08)
 

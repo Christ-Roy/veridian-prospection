@@ -1,0 +1,106 @@
+name: Prospection — security CVE (Trivy)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'prospection/**'
+      - 'infra/services/prospection/**'
+      - '.github/workflows/prospection-security-cve.yml'
+  pull_request:
+    paths:
+      - 'prospection/**'
+      - 'infra/services/prospection/**'
+      - '.github/workflows/prospection-security-cve.yml'
+  schedule:
+    # Detecte les CVE upstream apparues apres le dernier merge.
+    # Si une nouvelle CRIT/HIGH sort sur Next.js entre 2 builds, ce cron fail
+    # et ouvre une issue GitHub auto. L'agent CI bump alors la dep.
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: security-cve-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  trivy-scan:
+    name: Trivy scan (CRITICAL+HIGH bloquant)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write  # pour upload SARIF dans Security tab
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image locally (no push, scan-only)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./prospection
+          push: false
+          load: true
+          tags: prospection:${{ github.sha }}
+          build-args: |
+            NEXT_PUBLIC_SUPABASE_URL=https://api.app.veridian.site
+            NEXT_PUBLIC_HUB_URL=https://app.veridian.site
+            NEXT_PUBLIC_SITE_URL=https://prospection.app.veridian.site
+            NEXT_PUBLIC_TRIAL_DAYS=7
+
+      - name: Trivy — scan image (CRITICAL+HIGH bloquant, ignore-unfixed)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'prospection:${{ github.sha }}'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          ignore-unfixed: true
+          format: 'table'
+          # Cache Trivy DB pour eviter rate-limit GitHub Advisory API
+          cache: 'true'
+
+      - name: Trivy — SARIF report (Security tab)
+        if: always()
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'prospection:${{ github.sha }}'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          ignore-unfixed: true
+
+      - name: Upload SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: 'trivy-prospection'
+
+  trivy-deployed:
+    # Scan de l'image DEPLOYED en prod (pas l'image qu'on viendrait de build).
+    # Detecte CVE upstream qui apparaissent APRES le merge sans qu'on push de code.
+    # Cron-only — pas besoin de scanner deployed sur chaque PR.
+    name: Trivy scan — image deployed en prod
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Resolve deployed image SHA from infra/services/prospection/docker-compose.yml
+        id: image
+        run: |
+          IMG=$(grep -E '^\s*image:\s*ghcr.io/christ-roy/prospection' infra/services/prospection/docker-compose.yml | head -1 | sed -E 's/^\s*image:\s*//')
+          echo "Deployed image (from Git compose): $IMG"
+          echo "ref=$IMG" >> "$GITHUB_OUTPUT"
+
+      - name: Trivy scan deployed image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.image.outputs.ref }}
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          ignore-unfixed: true
+          format: 'table'

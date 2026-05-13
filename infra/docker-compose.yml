@@ -1,0 +1,45 @@
+services:
+  # Service name is static. Per-env separation is done via container_name +
+  # Traefik router names below (driven by DEPLOY_ENV).
+  # Compose does NOT support variable interpolation in service names (validated 2026-05-13).
+  prospection:
+    container_name: prospection-${DEPLOY_ENV:-prod}
+    image: ghcr.io/christ-roy/prospection@sha256:1e6edf83a0a22b682fd12b45082dfcb9a3ad7529d5f0b006d298f13ff7912d38
+    restart: unless-stopped
+    networks:
+      - dokploy-network
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+      DATABASE_URL: ${DATABASE_URL}
+      AUTH_SECRET: ${AUTH_SECRET}
+      AUTH_TRUST_HOST: "true"
+      NEXTAUTH_URL: ${NEXTAUTH_URL}
+      SUPABASE_URL: ${SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
+      TENANT_API_SECRET: ${TENANT_API_SECRET}
+      APP_URL: ${APP_URL}
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL}
+      NEXT_PUBLIC_HUB_URL: ${NEXT_PUBLIC_HUB_URL}
+      TRIAL_DAYS: "7"
+      NEXT_PUBLIC_TRIAL_DAYS: "7"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.prospection-${DEPLOY_ENV:-prod}.rule=Host(`${TRAEFIK_HOST:-prospection.app.veridian.site}`)
+      - traefik.http.routers.prospection-${DEPLOY_ENV:-prod}.entrypoints=websecure
+      - traefik.http.routers.prospection-${DEPLOY_ENV:-prod}.tls.certresolver=letsencrypt
+      - traefik.http.services.prospection-${DEPLOY_ENV:-prod}.loadbalancer.server.port=3000
+
+networks:
+  dokploy-network:
+    external: true

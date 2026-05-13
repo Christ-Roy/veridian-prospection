@@ -34,7 +34,14 @@ RUN npx prisma generate && npm run build
 FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
-RUN apk add --no-cache openssl && addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
+# Retire npm + corepack du runner (Next.js standalone tourne avec node server.js).
+# Eradique CVE node-pkg embarques dans /usr/local/lib/node_modules/npm/* (ex
+# CVE-2026-33671 sur picomatch 4.0.3 embedded dans npm). Cf sprint GitOps 2026-05-13.
+RUN apk add --no-cache openssl && \
+    rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack && \
+    addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
