@@ -21,7 +21,7 @@
 // Response: { total, rows: [...], limit, offset }
 
 import { NextRequest, NextResponse } from "next/server";
-import { requireUser } from "@/lib/supabase/user-context";
+import { requireUser } from "@/lib/auth/user-context";
 import { PrismaClient, Prisma } from "@prisma/client";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };

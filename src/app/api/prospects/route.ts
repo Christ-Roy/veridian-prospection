@@ -3,9 +3,9 @@ import { getProspects, getDomainCounts, getPresetCounts, getAllSettings } from "
 import { cached } from "@/lib/cache";
 import type { ProspectPreset } from "@/lib/domains";
 import type { ProspectFilters } from "@/lib/queries/prospects";
-import { requireAuth } from "@/lib/supabase/api-auth";
+import { requireAuth } from "@/lib/auth/api-auth";
 import { getTenantId, getTenantProspectLimit } from "@/lib/supabase/tenant";
-import { getWorkspaceScope } from "@/lib/supabase/user-context";
+import { getWorkspaceScope } from "@/lib/auth/user-context";
 import { isRateLimited } from "@/lib/rate-limit";
 
 // Parse filter params from search params

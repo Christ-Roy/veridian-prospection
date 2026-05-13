@@ -497,26 +497,150 @@ model NotificationPreferences {
 }
 
 // ============================================================================
-// SAAS TABLES — Migrated from Supabase to local Postgres (2026-05-08)
-// Source of truth pour le plan / trial. Stripe webhooks updatent prospection_plan.
+// AUTH.JS v5 — Migration Supabase Auth → Auth.js (2026-05-06)
+// Tables locales pour rendre Prospection autonome (plus de dépendance Supabase).
+// Pattern copié depuis hub/prisma/schema.prisma (P1.4 hub-auth-builder).
+// UUIDs préservés depuis auth.users.id Supabase (compat WorkspaceMember.userId).
 // ============================================================================
 
-model Tenant {
-  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId          String    @map("user_id") @db.Uuid
-  name            String
-  slug            String    @unique
-  status          String?   @default("pending")
-  prospectionPlan String?   @default("freemium") @map("prospection_plan")
-  trialEndsAt     DateTime? @map("trial_ends_at") @db.Timestamptz
-  metadata        Json?
-  provisionedAt   DateTime? @map("provisioned_at") @db.Timestamptz
-  lastActivityAt  DateTime? @map("last_activity_at") @db.Timestamptz
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz
+model User {
+  // UUID préservé depuis auth.users.id Supabase pour compat FK existantes.
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String?
+  email         String    @unique
+  emailVerified DateTime? @map("email_verified") @db.Timestamptz
+  image         String?
+
+  // 2FA email opt-in (cohérent avec Hub)
+  mfaEnabled Boolean @default(false) @map("mfa_enabled")
+
+  // Legacy bridge — pour audit / debug. À terme on peut retirer cette colonne
+  // (les UUIDs sont identiques à auth.users.id donc redondant) mais on garde
+  // pendant la phase de migration pour traçabilité.
+  supabaseUserId String? @unique @map("supabase_user_id") @db.Uuid
+
+  accounts Account[]
+  sessions Session[]
+  mfaCodes MfaCode[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Soft delete (saas-standards §1.6)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id") @db.Uuid
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String?
+  access_token      String? // pour provider=credentials, contient le bcrypt hash
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id") @db.Uuid
+  expires      DateTime @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime @db.Timestamptz
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model MfaCode {
+  id         String    @id @default(cuid())
+  userId     String    @map("user_id") @db.Uuid
+  codeHash   String    @map("code_hash")
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("mfa_codes")
+}
+
+// ============================================================================
+// TENANT — Migré depuis Supabase public.tenants
+// Source de vérité de l'état SaaS d'un client (plan, status, integrations
+// twenty/notifuse). Auparavant dans Supabase, désormais local à Prospection.
+// ============================================================================
+
+enum TenantStatus {
+  pending
+  active
+  suspended
+  deleted
+
+  @@map("tenant_status")
+}
+
+model Tenant {
+  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  // user_id = owner (l'utilisateur qui a signé). FK vers User mais le UUID est
+  // identique à l'ancien auth.users.id, donc préservé.
+  userId          String       @map("user_id") @db.Uuid
+  subscriptionId  String?      @map("subscription_id") @db.Uuid
+  name            String
+  slug            String       @unique
+  status          TenantStatus @default(pending)
+
+  // Intégrations Twenty CRM
+  twentyWorkspaceId          String?   @map("twenty_workspace_id") @db.Uuid
+  twentySubdomain            String?   @map("twenty_subdomain")
+  twentyApiKey               String?   @map("twenty_api_key")
+  twentyUserEmail            String?   @map("twenty_user_email")
+  twentyUserPassword         String?   @map("twenty_user_password")
+  twentyLoginToken           String?   @map("twenty_login_token")
+  twentyLoginTokenCreatedAt  DateTime? @map("twenty_login_token_created_at") @db.Timestamptz
+
+  // Intégrations Notifuse
+  notifuseWorkspaceSlug      String?   @map("notifuse_workspace_slug")
+  notifuseApiKey             String?   @map("notifuse_api_key")
+  notifuseUserEmail          String?   @map("notifuse_user_email")
+  notifuseInvitationSentAt   DateTime? @map("notifuse_invitation_sent_at") @db.Timestamptz
+
+  metadata        Json?
+
+  provisionedAt   DateTime?    @map("provisioned_at") @db.Timestamptz
+  lastActivityAt  DateTime?    @map("last_activity_at") @db.Timestamptz
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Soft delete (saas-standards §1.6) — colonne déjà présente côté Supabase
+  deletedAt       DateTime?    @map("deleted_at") @db.Timestamptz
+
+  @@index([userId])
+  @@index([status])
   @@index([deletedAt])
   @@map("tenants")
 }

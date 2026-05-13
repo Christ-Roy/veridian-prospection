@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getHistoryLeads } from "@/lib/queries";
-import { requireAuth } from "@/lib/supabase/api-auth";
+import { requireAuth } from "@/lib/auth/api-auth";
 import { getTenantId } from "@/lib/supabase/tenant";
 
 export async function GET() {

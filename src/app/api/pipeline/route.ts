@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPipelineLeads, getPipelineColumnOrder, savePipelineColumnOrder, reorderPipelineCards, batchReorderPipelineCards } from "@/lib/queries";
-import { requireAuth } from "@/lib/supabase/api-auth";
+import { requireAuth } from "@/lib/auth/api-auth";
 import { getTenantId } from "@/lib/supabase/tenant";
-import { getWorkspaceScope } from "@/lib/supabase/user-context";
+import { getWorkspaceScope } from "@/lib/auth/user-context";
 
 export async function GET() {
   const auth = await requireAuth();

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
-import { requireUser } from "@/lib/supabase/user-context";
+import { requireUser } from "@/lib/auth/user-context";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 const prisma = globalForPrisma.prisma ?? new PrismaClient();

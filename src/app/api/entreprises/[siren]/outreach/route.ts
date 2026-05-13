@@ -3,7 +3,7 @@
 // Spec: veridian-platform/MASTER_DB_SPEC.md + EMERGENCY-REFACTOR-SIREN-CENTRIC.md
 
 import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/supabase/user-context";
+import { requireUser } from "@/lib/auth/user-context";
 
 const SIREN_RE = /^\d{9}$/;
 

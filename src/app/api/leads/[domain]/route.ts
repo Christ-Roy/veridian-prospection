@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getLeadDetail, recordVisit } from "@/lib/queries";
-import { requireAuth } from "@/lib/supabase/api-auth";
+import { requireAuth } from "@/lib/auth/api-auth";
 import { getTenantId, getTenantProspectLimit } from "@/lib/supabase/tenant";
-import { getWorkspaceScope } from "@/lib/supabase/user-context";
+import { getWorkspaceScope } from "@/lib/auth/user-context";
 import { isRateLimited } from "@/lib/rate-limit";
 
 // Anti-scraping: max 30 lead detail views per minute per user

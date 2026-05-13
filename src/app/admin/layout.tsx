@@ -5,7 +5,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { LayoutDashboard, Building2, Users, Mail, BarChart3, ScrollText } from "lucide-react";
-import { getUserContext } from "@/lib/supabase/user-context";
+import { getUserContext } from "@/lib/auth/user-context";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const ctx = await getUserContext();

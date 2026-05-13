@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/supabase/api-auth";
+import { requireAuth } from "@/lib/auth/api-auth";
 import { prisma } from "@/lib/prisma";
 
 /**

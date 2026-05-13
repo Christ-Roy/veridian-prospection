@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getAllSegments } from "@/lib/segments";
 import { getAllSegmentCounts } from "@/lib/queries";
 import { cached } from "@/lib/cache";
-import { requireAuth } from "@/lib/supabase/api-auth";
+import { requireAuth } from "@/lib/auth/api-auth";
 import { getTenantId } from "@/lib/supabase/tenant";
 
 export async function GET() {

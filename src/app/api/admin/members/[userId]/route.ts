@@ -7,7 +7,7 @@
  * DELETE /api/admin/members/[userId]   → remove the user from ALL workspaces in this tenant
  */
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin, invalidateUserContext } from "@/lib/supabase/user-context";
+import { requireAdmin, invalidateUserContext } from "@/lib/auth/user-context";
 import { PrismaClient } from "@prisma/client";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };

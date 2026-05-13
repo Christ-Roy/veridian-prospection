@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { getClaudeStats } from "@/lib/queries";
 import { cached } from "@/lib/cache";
-import { requireAuth } from "@/lib/supabase/api-auth";
+import { requireAuth } from "@/lib/auth/api-auth";
 import { getTenantId } from "@/lib/supabase/tenant";
-import { getWorkspaceScope } from "@/lib/supabase/user-context";
+import { getWorkspaceScope } from "@/lib/auth/user-context";
 
 export async function GET() {
   const auth = await requireAuth();

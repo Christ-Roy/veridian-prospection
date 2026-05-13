@@ -11,7 +11,7 @@
  *   → list pending invites (not yet used, not expired)
  */
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/supabase/user-context";
+import { requireAdmin } from "@/lib/auth/user-context";
 import { PrismaClient } from "@prisma/client";
 import { randomBytes } from "crypto";
 

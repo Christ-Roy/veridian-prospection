@@ -1,0 +1,101 @@
+[
+  {
+    "email": "robert.brunon@veridian.site",
+    "tenantSlug": "robertbrunon",
+    "tenantName": "robert.brunon's Workspace",
+    "expectedProspectsAtLeast": 593,
+    "expectedPipelineCardsAtLeast": 593,
+    "isAdmin": true,
+    "notes": "owner du tenant"
+  },
+  {
+    "email": "brunon5robert@gmail.com",
+    "tenantSlug": "brunon5robert",
+    "tenantName": "brunon5robert's Workspace",
+    "expectedProspectsAtLeast": 0,
+    "expectedPipelineCardsAtLeast": 0,
+    "isAdmin": true,
+    "notes": "owner du tenant"
+  },
+  {
+    "email": "robinixbox@gmail.com",
+    "tenantSlug": "robinixbox",
+    "tenantName": "robinixbox",
+    "expectedProspectsAtLeast": 0,
+    "expectedPipelineCardsAtLeast": 0,
+    "isAdmin": true,
+    "notes": "owner du tenant"
+  },
+  {
+    "email": "r.brunon@agence-veridian.fr",
+    "tenantSlug": "rbrunon",
+    "tenantName": "r.brunon's Workspace",
+    "expectedProspectsAtLeast": 9,
+    "expectedPipelineCardsAtLeast": 9,
+    "isAdmin": true,
+    "notes": "owner du tenant"
+  },
+  {
+    "email": "guilhem.jacquet@gmail.com",
+    "tenantSlug": "guilhemjacquet",
+    "tenantName": "guilhem.jacquet",
+    "expectedProspectsAtLeast": 0,
+    "expectedPipelineCardsAtLeast": 0,
+    "isAdmin": true,
+    "notes": "owner du tenant"
+  },
+  {
+    "email": "guilhem.jacquet1@gmail.com",
+    "tenantSlug": "guilhemjacquet1",
+    "tenantName": "guilhem.jacquet1",
+    "expectedProspectsAtLeast": 0,
+    "expectedPipelineCardsAtLeast": 0,
+    "isAdmin": true,
+    "notes": "owner du tenant"
+  },
+  {
+    "email": "ismailelmouaddab@gmail.com",
+    "tenantSlug": "ismailelmouaddab",
+    "tenantName": "ismailelmouaddab",
+    "expectedProspectsAtLeast": 0,
+    "expectedPipelineCardsAtLeast": 0,
+    "isAdmin": true,
+    "notes": "owner du tenant"
+  },
+  {
+    "email": "zaleusseucroizi-8925@yopmail.com",
+    "tenantSlug": "zaleusseucroizi8925",
+    "tenantName": "zaleusseucroizi-8925",
+    "expectedProspectsAtLeast": 0,
+    "expectedPipelineCardsAtLeast": 0,
+    "isAdmin": true,
+    "notes": "owner du tenant"
+  },
+  {
+    "email": "raprogripacu-2843@yopmail.com",
+    "tenantSlug": "raprogripacu2843",
+    "tenantName": "raprogripacu-2843",
+    "expectedProspectsAtLeast": 0,
+    "expectedPipelineCardsAtLeast": 0,
+    "isAdmin": true,
+    "notes": "owner du tenant"
+  },
+  {
+    "email": "darysisowath@gmail.com",
+    "tenantSlug": "darysisowath",
+    "tenantName": "darysisowath's Workspace",
+    "expectedProspectsAtLeast": 8,
+    "expectedPipelineCardsAtLeast": 8,
+    "isAdmin": true,
+    "notes": "owner du tenant"
+  },
+  {
+    "email": "ant.jacquet@gmail.com",
+    "tenantSlug": "antjacquet",
+    "tenantName": "ant.jacquet's Workspace",
+    "expectedProspectsAtLeast": 1,
+    "expectedPipelineCardsAtLeast": 1,
+    "isAdmin": true,
+    "notes": "owner du tenant"
+  }
+]

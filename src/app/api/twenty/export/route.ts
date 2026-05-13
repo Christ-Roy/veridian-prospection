@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getLeadsByDomains } from "@/lib/queries";
 import { exportToTwenty } from "@/lib/twenty";
-import { requireAuth } from "@/lib/supabase/api-auth";
+import { requireAuth } from "@/lib/auth/api-auth";
 import { getTenantId } from "@/lib/supabase/tenant";
 
 export async function POST(request: NextRequest) {

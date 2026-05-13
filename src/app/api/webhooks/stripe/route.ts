@@ -71,6 +71,9 @@ export async function POST(request: NextRequest) {
 }
 
 async function updateTenantPlan(tenantId: string, plan: string) {
+  // TODO(authjs-migration): le champ prospection_plan vit encore dans la
+  // table Supabase tenants. Quand la table Tenant Prisma intégrera ce champ,
+  // ajouter un dual-write ici. Pour l'instant on continue d'écrire Supabase.
   const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceKey) return;

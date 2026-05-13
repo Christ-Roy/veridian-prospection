@@ -18,12 +18,12 @@ const navItems = [
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
-export function AppNav() {
+export function AppNav({ initialIsAdmin = false }: { initialIsAdmin?: boolean }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { daysLeft, isExpired } = useTrial();
   const [settings, setSettings] = useState<Record<string, string>>({});
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(initialIsAdmin);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   // "Avec site" / "sans site" toggle: persist via URL param `site` on /prospects.

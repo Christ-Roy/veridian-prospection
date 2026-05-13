@@ -9,6 +9,7 @@
  *   {
  *     status: 'healthy' | 'degraded' | 'unhealthy',
  *     db: 'ok' | 'fail',
+ *     auth: 'ok' | 'fail',
  *     supabase: 'ok' | 'fail' | 'not_configured',
  *     entreprises_count: number,
  *     outreach_count: number,
@@ -20,7 +21,7 @@
  *     commit: string | null,
  *     uptime_s: number,
  *     timestamp: string,
- *     checks_ms: { db, supabase, twenty },
+ *     checks_ms: { db, auth, supabase, twenty },
  *   }
  */
 import { NextResponse } from "next/server";
@@ -70,6 +71,17 @@ async function checkDb(): Promise<{ ok: boolean; ms: number; counts?: Record<str
   }
 }
 
+async function checkAuth(): Promise<{ ok: boolean; ms: number }> {
+  const start = Date.now();
+  try {
+    // Auth.js v5 — vérifie que la table users (Prisma) répond
+    await prisma.user.count();
+    return { ok: true, ms: Date.now() - start };
+  } catch {
+    return { ok: false, ms: Date.now() - start };
+  }
+}
+
 async function checkSupabase(): Promise<{ status: "ok" | "fail" | "not_configured"; ms: number }> {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -105,9 +117,15 @@ async function checkTwenty(): Promise<{ status: "ok" | "fail" | "not_configured"
 }
 
 export async function GET() {
-  const [db, supabase, twenty] = await Promise.all([checkDb(), checkSupabase(), checkTwenty()]);
+  const [db, auth, supabase, twenty] = await Promise.all([
+    checkDb(),
+    checkAuth(),
+    checkSupabase(),
+    checkTwenty(),
+  ]);
 
-  const allOk = db.ok && supabase.status !== "fail" && twenty.status !== "fail";
+  const allOk =
+    db.ok && auth.ok && supabase.status !== "fail" && twenty.status !== "fail";
   const critical = !db.ok;
   const status: "healthy" | "degraded" | "unhealthy" = critical
     ? "unhealthy"
@@ -118,6 +136,7 @@ export async function GET() {
   const body = {
     status,
     db: db.ok ? "ok" : "fail",
+    auth: auth.ok ? "ok" : "fail",
     supabase: supabase.status,
     twenty: twenty.status,
     entreprises_count: db.counts?.entreprises ?? null,
@@ -129,7 +148,12 @@ export async function GET() {
     commit: process.env.GIT_SHA || process.env.NEXT_PUBLIC_COMMIT_SHA || null,
     uptime_s: Math.round((Date.now() - STARTED_AT) / 1000),
     timestamp: new Date().toISOString(),
-    checks_ms: { db: db.ms, supabase: supabase.ms, twenty: twenty.ms },
+    checks_ms: {
+      db: db.ms,
+      auth: auth.ms,
+      supabase: supabase.ms,
+      twenty: twenty.ms,
+    },
   };
 
   return NextResponse.json(body, { status: critical ? 503 : 200 });

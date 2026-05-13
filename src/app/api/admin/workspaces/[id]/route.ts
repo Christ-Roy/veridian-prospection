@@ -5,7 +5,7 @@
  * DELETE /api/admin/workspaces/[id]   → delete workspace (members cascaded, rows re-assigned to Default)
  */
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin, invalidateAllUserContexts } from "@/lib/supabase/user-context";
+import { requireAdmin, invalidateAllUserContexts } from "@/lib/auth/user-context";
 import { PrismaClient } from "@prisma/client";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };

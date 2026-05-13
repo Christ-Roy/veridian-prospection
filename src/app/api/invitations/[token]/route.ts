@@ -46,15 +46,23 @@ export async function GET(
     workspaceName = ws?.name ?? null;
   }
 
-  // Resolve inviter email via Supabase admin (best-effort)
+  // Resolve inviter email — Prisma User d'abord, fallback Supabase admin (legacy)
   let inviterEmail: string | null = null;
-  const admin = getAdminClient();
-  if (admin) {
-    try {
-      const { data } = await admin.auth.admin.getUserById(invitation.invited_by);
-      inviterEmail = data?.user?.email ?? null;
-    } catch {
-      inviterEmail = null;
+  const prismaInviter = await prisma.user.findUnique({
+    where: { id: invitation.invited_by },
+    select: { email: true },
+  });
+  if (prismaInviter?.email) {
+    inviterEmail = prismaInviter.email;
+  } else {
+    const admin = getAdminClient();
+    if (admin) {
+      try {
+        const { data } = await admin.auth.admin.getUserById(invitation.invited_by);
+        inviterEmail = data?.user?.email ?? null;
+      } catch {
+        inviterEmail = null;
+      }
     }
   }
 

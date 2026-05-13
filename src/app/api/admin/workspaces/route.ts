@@ -6,7 +6,7 @@
  * POST  /api/admin/workspaces          → create workspace { name, slug? }
  */
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin, invalidateAllUserContexts } from "@/lib/supabase/user-context";
+import { requireAdmin, invalidateAllUserContexts } from "@/lib/auth/user-context";
 import { PrismaClient } from "@prisma/client";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };

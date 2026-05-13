@@ -1,70 +1,35 @@
 /**
  * Trial expiration check — freemium gating.
  *
- * 2026-05-08: Migration depuis Supabase vers Prisma local.
- * Lit prospection_plan + trial_ends_at depuis la table tenants Prisma.
- * Cached 5 min par userId.
+ * Hack temporaire : `checkTrialExpired` retourne toujours `false`
+ * (cf. CLAUDE.md prospection §"Hacks connus").
+ *
+ * Historique :
+ *  - 2026-04-06 : incident HTTP 429 sur Kong à cause de `admin.auth.admin.getUserById`
+ *    appelé sur chaque /api/prospects → fonction stubée à `return false`.
+ *  - 2026-04-10 : tentative de re-implémentation Supabase-side (lecture
+ *    `tenants.trial_ends_at` via service role).
+ *  - 2026-05-XX : migration Auth.js v5 — Supabase n'est plus la source
+ *    d'auth, et les colonnes `prospection_plan` / `trial_ends_at` ne sont
+ *    pas encore dans le modèle Prisma `Tenant` local. On reste en stub
+ *    `false` jusqu'à ce que la logique de plan soit recâblée sur Stripe
+ *    (source de vérité billing).
+ *
+ * Quand on rebranchera : lecture via `prisma.tenant.findFirst` après
+ * ajout des colonnes au schema, plus de fallback Supabase admin.
  */
-import { prisma } from "@/lib/prisma";
 
 const trialCache = new Map<string, { expired: boolean; expiresAt: number }>();
 const TRIAL_CACHE_TTL_MS = 5 * 60 * 1000;
 
-type TenantTrialRow = {
-  prospectionPlan: string | null;
-  trialEndsAt: Date | null;
-};
-
-async function fetchTenantTrial(userId: string): Promise<TenantTrialRow | null> {
-  const direct = await prisma.tenant.findFirst({
-    where: { userId, deletedAt: null },
-    select: { prospectionPlan: true, trialEndsAt: true },
-  });
-  if (direct) return direct;
-
-  const membership = await prisma.workspaceMember.findFirst({
-    where: { userId },
-    include: { workspace: true },
-  });
-  if (!membership?.workspace?.tenantId) return null;
-
-  return prisma.tenant.findUnique({
-    where: { id: membership.workspace.tenantId },
-    select: { prospectionPlan: true, trialEndsAt: true },
-  });
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function checkTrialExpired(_userId: string): Promise<boolean> {
+  return false;
 }
 
-export async function checkTrialExpired(userId: string): Promise<boolean> {
-  if (!userId || userId === "internal") return false;
-
-  const cached = trialCache.get(userId);
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.expired;
-  }
-
-  let expired = false;
-  try {
-    const tenant = await fetchTenantTrial(userId);
-    const plan = tenant?.prospectionPlan ?? "freemium";
-    if (plan === "pro" || plan === "enterprise") {
-      expired = false;
-    } else if (tenant?.trialEndsAt) {
-      expired = tenant.trialEndsAt.getTime() < Date.now();
-    } else {
-      expired = false;
-    }
-  } catch (err) {
-    console.warn(`[checkTrialExpired] lookup failed for ${userId}:`, err);
-    expired = false;
-  }
-
-  trialCache.set(userId, {
-    expired,
-    expiresAt: Date.now() + TRIAL_CACHE_TTL_MS,
-  });
-  return expired;
-}
-
+/**
+ * Test-only hooks. Not part of the public API — do not import from app code.
+ */
 export const __trialInternals = {
   clearCache: () => trialCache.clear(),
   getCacheSize: () => trialCache.size,

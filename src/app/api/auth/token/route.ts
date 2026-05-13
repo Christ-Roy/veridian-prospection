@@ -1,3 +1,7 @@
+// TODO(authjs-migration): legacy login token via Supabase tenants table.
+// Doit être migré vers un endpoint custom Auth.js qui valide un token éphémère
+// et établit une session JWT (signIn). Conservé tel quel pour ne pas casser le
+// flow de login token existant pendant la transition Lots A/B/C.
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 

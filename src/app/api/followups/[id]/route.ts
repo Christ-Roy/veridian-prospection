@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { updateFollowup } from "@/lib/queries";
-import { requireAuth } from "@/lib/supabase/api-auth";
+import { requireAuth } from "@/lib/auth/api-auth";
 import { getTenantId } from "@/lib/supabase/tenant";
-import { getWorkspaceScope } from "@/lib/supabase/user-context";
+import { getWorkspaceScope } from "@/lib/auth/user-context";
 
 export async function PATCH(
   request: NextRequest,
