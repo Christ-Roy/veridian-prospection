@@ -63,23 +63,29 @@ jobs:
 
       - name: Upload SARIF to GitHub Security tab
         if: always()
+        continue-on-error: true  # repo privé peut bloquer l'upload, scan reste autoritaire
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'
           category: 'trivy-prospection'
 
+  # Scan de l'image DEPLOYED en prod (cron quotidien).
+  # Login GHCR nécessaire car le package est privé.
   trivy-deployed:
-    # Scan de l'image DEPLOYED en prod (pas l'image qu'on viendrait de build).
-    # Detecte CVE upstream qui apparaissent APRES le merge sans qu'on push de code.
-    # Cron-only — pas besoin de scanner deployed sur chaque PR.
-    name: Trivy scan — image deployed en prod
+    name: Trivy scan — image deployed en prod (cron)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      security-events: write
+      packages: read  # pour login + pull GHCR private
     steps:
       - uses: actions/checkout@v6
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Resolve deployed image SHA from infra/docker-compose.yml
         id: image
@@ -87,6 +93,9 @@ jobs:
           IMG=$(grep -E '^\s*image:\s*ghcr.io/christ-roy/prospection' infra/docker-compose.yml | head -1 | sed -E 's/^\s*image:\s*//')
           echo "Deployed image (from Git compose): $IMG"
           echo "ref=$IMG" >> "$GITHUB_OUTPUT"
+
+      - name: Pull image (private GHCR)
+        run: docker pull ${{ steps.image.outputs.ref }}
 
       - name: Trivy scan deployed image
         uses: aquasecurity/trivy-action@master
