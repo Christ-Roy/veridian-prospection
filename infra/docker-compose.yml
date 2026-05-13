@@ -1,9 +1,5 @@
 services:
-  # Service name is static. Per-env separation is done via container_name +
-  # Traefik router names below (driven by DEPLOY_ENV).
-  # Compose does NOT support variable interpolation in service names (validated 2026-05-13).
-  prospection:
-    container_name: prospection-${DEPLOY_ENV:-prod}
+  prospection-prod:
     image: ghcr.io/christ-roy/prospection:${PROSPECTION_IMAGE_TAG:-latest}
     restart: unless-stopped
     networks:
@@ -31,10 +27,10 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=dokploy-network
-      - traefik.http.routers.prospection-${DEPLOY_ENV:-prod}.rule=Host(`${TRAEFIK_HOST:-prospection.app.veridian.site}`)
-      - traefik.http.routers.prospection-${DEPLOY_ENV:-prod}.entrypoints=websecure
-      - traefik.http.routers.prospection-${DEPLOY_ENV:-prod}.tls.certresolver=letsencrypt
-      - traefik.http.services.prospection-${DEPLOY_ENV:-prod}.loadbalancer.server.port=3000
+      - traefik.http.routers.prospection-prod.rule=Host(`prospection.app.veridian.site`)
+      - traefik.http.routers.prospection-prod.entrypoints=websecure
+      - traefik.http.routers.prospection-prod.tls.certresolver=letsencrypt
+      - traefik.http.services.prospection-prod.loadbalancer.server.port=3000
 
 networks:
   dokploy-network:
