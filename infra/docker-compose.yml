@@ -1,6 +1,7 @@
 services:
   prospection-prod:
     image: ghcr.io/christ-roy/prospection:${PROSPECTION_IMAGE_TAG:-latest}
+    pull_policy: always
     restart: unless-stopped
     networks:
       - dokploy-network
