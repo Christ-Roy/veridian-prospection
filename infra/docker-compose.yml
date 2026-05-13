@@ -4,7 +4,7 @@ services:
   # Compose does NOT support variable interpolation in service names (validated 2026-05-13).
   prospection:
     container_name: prospection-${DEPLOY_ENV:-prod}
-    image: ghcr.io/christ-roy/prospection@sha256:1e6edf83a0a22b682fd12b45082dfcb9a3ad7529d5f0b006d298f13ff7912d38
+    image: ghcr.io/christ-roy/prospection@sha256:58e9839f0ef7bdb759dcb2cc01de4eb48275da970084834a5441c1ef76debe70
     restart: unless-stopped
     networks:
       - dokploy-network
