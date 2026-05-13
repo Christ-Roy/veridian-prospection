@@ -44,20 +44,13 @@ export async function GET() {
     );
     if (dbResult && dbResult[0]?.ok === 1) {
       db = "ok";
-      // Extra Prospection : nombre d'entreprises. On utilise pg_class.reltuples
-      // (estimation à jour après ANALYZE, lecture O(1) du catalogue) au lieu
-      // d'un COUNT(*) qui timeout sur 1M+ rows. Précision suffisante pour un
-      // healthcheck, et garantit que leadCount est toujours présent.
+      // Extra Prospection : nombre d'entreprises (best-effort, non bloquant)
       try {
-        const stat = await withTimeout(
-          prisma.$queryRaw<[{ count: bigint }]>`
-            SELECT reltuples::bigint as count
-            FROM pg_class
-            WHERE relname = 'entreprises'
-          `,
+        const count = await withTimeout(
+          prisma.$queryRaw<[{ count: bigint }]>`SELECT COUNT(*) as count FROM entreprises`,
           TIMEOUT_MS,
         );
-        if (stat && stat[0]) leadCount = Number(stat[0].count ?? 0);
+        if (count) leadCount = Number(count[0]?.count ?? 0);
       } catch {
         /* table may not exist on fresh DB */
       }

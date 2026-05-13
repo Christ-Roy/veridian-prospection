@@ -6,7 +6,7 @@
  *                            body: { userId, workspaceId, visibilityScope: "all" | "own" }
  */
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin, invalidateUserContext } from "@/lib/supabase/user-context";
+import { requireAdmin, invalidateUserContext } from "@/lib/auth/user-context";
 import { PrismaClient } from "@prisma/client";
 import { createClient as createSupabaseAdmin } from "@supabase/supabase-js";
 
@@ -110,13 +110,26 @@ export async function GET() {
   const emailMap = new Map<string, string>();
 
   if (userIds.length > 0) {
-    const admin = getAdminClient();
-    if (admin) {
-      // Supabase doesn't expose a bulk getByIds; we page list and filter.
-      // For small tenants this is fine. For large, we'd switch to a DB join.
-      const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
-      for (const u of data?.users ?? []) {
-        if (userIds.includes(u.id)) emailMap.set(u.id, u.email ?? "");
+    // Fallback Prisma User d'abord (users migrés Auth.js)
+    const prismaUsers = await prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, email: true },
+    });
+    for (const u of prismaUsers) {
+      if (u.email) emailMap.set(u.id, u.email);
+    }
+
+    // Fallback Supabase admin pour les users non encore migrés (legacy)
+    const remaining = userIds.filter((id) => !emailMap.has(id));
+    if (remaining.length > 0) {
+      const admin = getAdminClient();
+      if (admin) {
+        // Supabase doesn't expose a bulk getByIds; we page list and filter.
+        // For small tenants this is fine. For large, we'd switch to a DB join.
+        const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
+        for (const u of data?.users ?? []) {
+          if (remaining.includes(u.id)) emailMap.set(u.id, u.email ?? "");
+        }
       }
     }
   }
@@ -126,10 +139,20 @@ export async function GET() {
   if (ownerId && !byUser.has(ownerId)) {
     byUser.set(ownerId, { userId: ownerId, memberships: [] });
     if (!emailMap.has(ownerId)) {
-      const admin = getAdminClient();
-      if (admin) {
-        const { data } = await admin.auth.admin.getUserById(ownerId);
-        if (data?.user?.email) emailMap.set(ownerId, data.user.email);
+      // Fallback Prisma User d'abord
+      const prismaOwner = await prisma.user.findUnique({
+        where: { id: ownerId },
+        select: { email: true },
+      });
+      if (prismaOwner?.email) {
+        emailMap.set(ownerId, prismaOwner.email);
+      } else {
+        // Fallback Supabase admin (legacy)
+        const admin = getAdminClient();
+        if (admin) {
+          const { data } = await admin.auth.admin.getUserById(ownerId);
+          if (data?.user?.email) emailMap.set(ownerId, data.user.email);
+        }
       }
     }
   }

@@ -3,7 +3,7 @@
 // Response: { segments: [{ id, viewName, description, volume, createdAt }, ...] }
 
 import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/supabase/user-context";
+import { requireUser } from "@/lib/auth/user-context";
 import { PrismaClient } from "@prisma/client";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };

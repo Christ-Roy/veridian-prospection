@@ -5,7 +5,7 @@
  * Used by the nav to decide whether to show the "Admin" link.
  */
 import { NextResponse } from "next/server";
-import { getUserContext } from "@/lib/supabase/user-context";
+import { getUserContext } from "@/lib/auth/user-context";
 
 export async function GET() {
   const ctx = await getUserContext();

@@ -4,6 +4,7 @@ import { Geist } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { SipShell } from "@/components/softphone/sip-shell";
 import { AppNav } from "@/components/layout/app-nav";
+import { getUserContext } from "@/lib/auth/user-context";
 import { TrialProvider } from "@/lib/trial-context";
 import { ClientErrorBoundary } from "@/components/client-error-boundary";
 import { KeyboardShortcutsHelp } from "@/components/keyboard-shortcuts-help";
@@ -29,11 +30,17 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Fetch user context côté serveur pour passer isAdmin direct au nav.
+  // Évite la race condition où le lien Admin n'apparaît qu'après le fetch
+  // /api/me côté client.
+  const ctx = await getUserContext().catch(() => null);
+  const initialIsAdmin = ctx?.isAdmin ?? false;
+
   return (
     <html lang="fr">
       <head>
@@ -47,7 +54,7 @@ export default function RootLayout({
         <CommandPalette />
         <TrialProvider>
           <SipShell>
-            <Suspense><AppNav /></Suspense>
+            <Suspense><AppNav initialIsAdmin={initialIsAdmin} /></Suspense>
             <main className="flex-1">
               {children}
             </main>

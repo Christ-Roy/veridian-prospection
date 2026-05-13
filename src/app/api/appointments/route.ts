@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
-import { requireUser } from "@/lib/supabase/user-context";
+import { requireUser } from "@/lib/auth/user-context";
 import { buildGoogleCalendarUrl } from "@/lib/google-calendar";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };

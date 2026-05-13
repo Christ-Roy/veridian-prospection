@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireUser } from '@/lib/supabase/user-context';
+import { requireUser } from '@/lib/auth/user-context';
 
 export const runtime = 'nodejs';
 

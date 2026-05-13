@@ -6,7 +6,7 @@
  *   Réponse : { events: [{ type, siren, title, at, detail }] } ordered DESC
  */
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/supabase/user-context";
+import { requireAdmin } from "@/lib/auth/user-context";
 import { PrismaClient } from "@prisma/client";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };

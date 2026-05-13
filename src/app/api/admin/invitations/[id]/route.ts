@@ -5,7 +5,7 @@
  * Auth: requireAdmin (tenant-scoped — can only revoke your own tenant's rows).
  */
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/supabase/user-context";
+import { requireAdmin } from "@/lib/auth/user-context";
 import { revokeInvitation } from "@/lib/invitations";
 
 export async function DELETE(

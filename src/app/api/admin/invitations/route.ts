@@ -20,7 +20,7 @@
  * Auth: requireAdmin (tenant owner or workspace admin).
  */
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/supabase/user-context";
+import { requireAdmin } from "@/lib/auth/user-context";
 import { prisma } from "@/lib/prisma";
 import {
   createInvitation,

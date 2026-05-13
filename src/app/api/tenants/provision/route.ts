@@ -121,6 +121,35 @@ async function ensureOwnerAdmin(email: string): Promise<void> {
   }
   if (!tenantId) return;
 
+  // 2bis) Dual-write Prisma — créer User + Tenant locaux pendant la migration
+  //       Auth.js. L'écriture est best-effort, on log et on continue si ça
+  //       échoue (Supabase reste source de vérité pour Lots B/C).
+  try {
+    await prisma.user.upsert({
+      where: { id: userId },
+      update: { email },
+      create: { id: userId, email, supabaseUserId: userId },
+    });
+    const tenantSlugLocal =
+      email.split("@")[0].toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40) || "tenant";
+    const tenantSlug = `${tenantSlugLocal}-${Date.now().toString(36)}`;
+    await prisma.tenant.upsert({
+      where: { id: tenantId },
+      update: { userId },
+      create: {
+        id: tenantId,
+        userId,
+        name: `${email.split("@")[0]}'s Workspace`,
+        slug: tenantSlug,
+        status: "active",
+      },
+    });
+  } catch (err) {
+    console.warn(
+      `[provision] Prisma dual-write failed for ${email}: ${(err as Error).message}`,
+    );
+  }
+
   // 3) Workspace "default" upsert
   try {
     let workspace = await prisma.workspace.findFirst({

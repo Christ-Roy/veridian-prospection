@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createBrowserClient } from "@supabase/ssr";
+import { signIn } from "next-auth/react";
 import { toast } from "sonner";
 
 type Props = {
@@ -22,8 +22,6 @@ export function InviteAcceptForm({
   inviterEmail,
 }: Props) {
   const router = useRouter();
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
@@ -57,23 +55,26 @@ export function InviteAcceptForm({
         redirectTo?: string;
       };
 
-      if (data.session && supabaseUrl && supabaseAnonKey) {
-        const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey);
-        const { error: setErr } = await supabase.auth.setSession({
-          access_token: data.session.access_token,
-          refresh_token: data.session.refresh_token,
-        });
-        if (setErr) {
-          console.error("[invite] setSession failed", setErr);
-          toast.error("Session non établie, merci de vous reconnecter");
-          router.push("/login");
-          return;
-        }
+      // TODO(authjs-migration): l'endpoint /api/invitations/[token]/accept
+      // doit retourner OK après création du User + Account credentials côté
+      // Prisma. La session Auth.js est ensuite ouverte via signIn ci-dessous
+      // (credentials provider). Tant que l'endpoint accept n'est pas migré,
+      // le user devra peut-être se relogguer manuellement.
+      const signInResult = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
+      });
+      if (signInResult?.error) {
+        console.error("[invite] signIn failed", signInResult.error);
+        toast.error("Session non établie, merci de vous reconnecter");
+        router.push("/login");
+        return;
       }
 
       toast.success("Invitation acceptée");
       const target = data.redirectTo || "/prospects";
-      // Full reload so middleware picks up cookies set by setSession
+      // Full reload so middleware picks up the new session cookie
       window.location.href = target;
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Erreur réseau";

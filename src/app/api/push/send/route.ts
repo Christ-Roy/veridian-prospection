@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireUser } from '@/lib/supabase/user-context';
+import { requireUser } from '@/lib/auth/user-context';
 import { sendPushNotification } from '@/lib/web-push';
 
 export const runtime = 'nodejs';
 
 /**
  * POST /api/push/send — Broadcast push notification to all subscriptions of the user's tenant.
- * Protected by Supabase auth.
+ * Protected by Auth.js v5.
  */
 export async function POST(req: Request) {
   const result = await requireUser();

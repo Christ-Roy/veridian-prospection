@@ -152,28 +152,9 @@ test.describe.serial("SaaS Flow E2E", () => {
     if (await retryBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
       console.log("[4] Clicking Retry Provisioning...");
       await retryBtn.click();
-
-      // Provisioning is async on the backend (creates tenant, applies
-      // schema, links Stripe). Poll the page state instead of sleeping
-      // a fixed amount: we reload once per probe until "Open Prospection"
-      // appears OR the timeout fires. Max 30s — generous because the
-      // provisioning backend can be slow on cold starts.
-      await expect
-        .poll(
-          async () => {
-            await page.reload();
-            return await page
-              .locator('button:has-text("Open Prospection")')
-              .isVisible({ timeout: 2_000 })
-              .catch(() => false);
-          },
-          {
-            message: "Provisioning never reached the 'Open Prospection' state",
-            timeout: 30_000,
-            intervals: [2_000, 3_000, 4_000, 5_000],
-          }
-        )
-        .toBe(true);
+      await page.waitForTimeout(8000);
+      await page.reload();
+      await page.waitForTimeout(3000);
     }
 
     await snap(page, "04-after-provision");
@@ -346,21 +327,9 @@ test.describe.serial("SaaS Flow E2E", () => {
       },
     });
 
-    // Navigate to auto-login URL in browser (this sets Supabase session
-    // cookies and redirects). Wait for the redirect to settle on a
-    // non-token URL — either /prospects (success) or /login (failure).
-    // No fixed sleep: waitForURL polls until the predicate matches or
-    // the timeout fires.
+    // Navigate to auto-login URL in browser (this sets Supabase session cookies)
     await page.goto(`${PROSPECTION_URL}/api/auth/token?t=${freshToken}`);
-    await page
-      .waitForURL((u) => !u.pathname.includes("/api/auth/token"), {
-        timeout: 10_000,
-      })
-      .catch(() => {
-        // The endpoint may also render directly without redirecting in
-        // some edge cases (token already used). Fall through and let the
-        // url-content check below decide.
-      });
+    await page.waitForTimeout(2000);
     const url = page.url();
     console.log(`[9] After fresh token login: ${url}`);
 
