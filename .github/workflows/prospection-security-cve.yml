@@ -3,15 +3,7 @@ name: Prospection — security CVE (Trivy)
 on:
   push:
     branches: [main]
-    paths:
-      - 'prospection/**'
-      - 'infra/services/prospection/**'
-      - '.github/workflows/prospection-security-cve.yml'
   pull_request:
-    paths:
-      - 'prospection/**'
-      - 'infra/services/prospection/**'
-      - '.github/workflows/prospection-security-cve.yml'
   schedule:
     # Detecte les CVE upstream apparues apres le dernier merge.
     # Si une nouvelle CRIT/HIGH sort sur Next.js entre 2 builds, ce cron fail
@@ -38,7 +30,7 @@ jobs:
       - name: Build image locally (no push, scan-only)
         uses: docker/build-push-action@v6
         with:
-          context: ./prospection
+          context: .
           push: false
           load: true
           tags: prospection:${{ github.sha }}
@@ -89,10 +81,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Resolve deployed image SHA from infra/services/prospection/docker-compose.yml
+      - name: Resolve deployed image SHA from infra/docker-compose.yml
         id: image
         run: |
-          IMG=$(grep -E '^\s*image:\s*ghcr.io/christ-roy/prospection' infra/services/prospection/docker-compose.yml | head -1 | sed -E 's/^\s*image:\s*//')
+          IMG=$(grep -E '^\s*image:\s*ghcr.io/christ-roy/prospection' infra/docker-compose.yml | head -1 | sed -E 's/^\s*image:\s*//')
           echo "Deployed image (from Git compose): $IMG"
           echo "ref=$IMG" >> "$GITHUB_OUTPUT"
 

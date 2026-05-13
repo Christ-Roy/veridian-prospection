@@ -4,15 +4,8 @@ name: Prospection CI/CD
 on:
   push:
     branches: [main, staging]
-    paths:
-      - 'prospection/**'
-      - '.github/workflows/prospection-ci.yml'
   pull_request:
     branches: [main]
-    paths:
-      - 'prospection/**'
-      - '.github/workflows/prospection-ci.yml'
-      - '.github/workflows/_audit-cve.yml'
   workflow_dispatch:
     inputs:
       branch:
@@ -37,16 +30,13 @@ jobs:
     # Actuellement 34 tests unit (rate-limit, use-local-storage-persist,
     # twenty, invitations) en ~1s. Ça doit rester rapide.
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: prospection
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: prospection/package-lock.json
+          cache-dependency-path: package-lock.json
       - run: npm ci
       - name: tsc --noEmit
         run: npx tsc --noEmit
@@ -61,7 +51,7 @@ jobs:
     name: CVE audit (high+critical bloquant)
     uses: ./.github/workflows/_audit-cve.yml
     with:
-      app-path: prospection
+      app-path: .
       package-manager: npm
       node-version: "20"
       omit-dev: true
@@ -69,16 +59,13 @@ jobs:
   build:
     needs: [unit, audit]
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: prospection
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: prospection/package-lock.json
+          cache-dependency-path: package-lock.json
       - run: npm ci
       - run: npm run build
 
@@ -98,16 +85,13 @@ jobs:
           --health-retries 10
         ports:
           - 5432:5432
-    defaults:
-      run:
-        working-directory: prospection
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: prospection/package-lock.json
+          cache-dependency-path: package-lock.json
       - run: npm ci
       - name: Apply schema
         env:
@@ -138,7 +122,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/build-push-action@v6
         with:
-          context: ./prospection
+          context: .
           push: true
           tags: ghcr.io/christ-roy/prospection:staging
           build-args: |
@@ -237,16 +221,13 @@ jobs:
     needs: deploy-staging
     if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
     runs-on: [self-hosted, veridian]
-    defaults:
-      run:
-        working-directory: prospection
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: prospection/package-lock.json
+          cache-dependency-path: package-lock.json
       - run: npm ci
       - name: Install Playwright chromium
         run: npx playwright install --with-deps chromium
@@ -285,7 +266,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: e2e-core-screenshots
-          path: prospection/e2e/screenshots/
+          path: e2e/screenshots/
           retention-days: 7
 
   # ── E2E Extended — NON-BLOQUANT, cloud, 3 browsers en parallèle ─
@@ -300,16 +281,13 @@ jobs:
       fail-fast: false
       matrix:
         browser: [chromium, firefox, webkit]
-    defaults:
-      run:
-        working-directory: prospection
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: prospection/package-lock.json
+          cache-dependency-path: package-lock.json
       - run: npm ci
       - name: Install Playwright ${{ matrix.browser }}
         run: npx playwright install --with-deps ${{ matrix.browser }}
@@ -342,7 +320,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: e2e-extended-${{ matrix.browser }}-screenshots
-          path: prospection/e2e/screenshots/
+          path: e2e/screenshots/
           retention-days: 7
 
   # ── Auto-promote staging → main (ff-only merge) ────────────────────
@@ -420,7 +398,7 @@ jobs:
 
       - uses: docker/build-push-action@v6
         with:
-          context: ./prospection
+          context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -479,7 +457,7 @@ jobs:
           # /api/health?version which exposes pkg.version — catches silent
           # "queued but no-op" Dokploy deploys.
           echo "Waiting for prod health..."
-          EXPECTED_VERSION=$(node -p "require('./prospection/package.json').version" 2>/dev/null || echo "unknown")
+          EXPECTED_VERSION=$(node -p "require('./package.json').version" 2>/dev/null || echo "unknown")
           echo "Expected version: $EXPECTED_VERSION"
           for i in $(seq 1 12); do
             HEALTH=$(curl -sf https://prospection.app.veridian.site/api/health 2>/dev/null || echo "")
@@ -504,16 +482,13 @@ jobs:
       fail-fast: true
       matrix:
         browser: [chromium, firefox, webkit]
-    defaults:
-      run:
-        working-directory: prospection
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: prospection/package-lock.json
+          cache-dependency-path: package-lock.json
       - run: npm ci
       - name: Install Playwright browser
         run: npx playwright install --with-deps ${{ matrix.browser }}
@@ -545,7 +520,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: e2e-prod-screenshots-${{ matrix.browser }}
-          path: prospection/e2e/screenshots/
+          path: e2e/screenshots/
           retention-days: 7
 
   # ── Rollback prod on E2E failure ───────────────────────────────────
