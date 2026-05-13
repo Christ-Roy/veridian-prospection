@@ -15,8 +15,40 @@
 - **URL staging** : https://saas-prospection.staging.veridian.site
 - **Sante** : 🟢 (stable, e2e verts)
 - **Freemium actuel** : 300 leads distribues selon `score_dept` (lead-quota.ts)
-- **Stack Dokploy** : `compose-connect-redundant-firewall-l5fmki` (PROD), `compose-bypass-bluetooth-feed-tbayqr` (STAGING)
+- **Stack auth** : ✅ **Auth.js v5 + Prisma + veridian-core-db** (fin Supabase 2026-05-08 PR #4, deploy prod 2026-05-13 14:06)
+- **Image prod** : `ghcr.io/christ-roy/prospection:latest` (commit `4686e0a` = main HEAD)
+- **Stack Dokploy** : `compose-connect-redundant-firewall-l5fmki` (composeId `0mJI-sSt6jcOMr_2QJ1iI`, mode Raw)
 - **DB Prod** : container Postgres séparé `code-prospection-saas-db-1` (postgres:15-alpine)
+
+## 🟢 Fin Supabase finalisée (2026-05-13)
+
+> Session 2026-05-13 : audit révèle que la prod tournait encore sur image
+> `:staging` du 2026-05-06 (commit pré-PR #4). Le code "fin Supabase" était
+> mergé sur main depuis le 2026-05-08 mais jamais déployé. Compose Dokploy
+> édité le 2026-05-11 17:56 avait forcé `:staging` au lieu de `:latest`.
+
+**Action menée** :
+- Canary test `:latest` sur dokploy-network → Next.js Ready 180ms, `/api/health` 200 + db ok + 997400 leads
+- Snapshot compose pré-bascule + container inspect (`/tmp/prospection-prebascule-20260513-1405/`)
+- Push compose `image: :latest` via Dokploy API `compose.update` (atomique)
+- Redeploy via `compose.redeploy` → 18/18 healthchecks OK pendant 90s, zero downtime
+- Container actuel : `prospection-prod-1` sur `:latest` (SHA `8d62477e` = commit `4686e0a`)
+- Connexions sortantes : 1 vers Postgres prospection (`10.0.1.81:5432`), **AUCUNE vers Supabase Kong** ✅
+
+**Cleanup session** :
+- ✅ `stash@{2}` (saas-flow polish 2026-05-10) sauvé → PR #92 (`test/prospection-saasflow-polish`)
+- ✅ 11 branches locales supprimées (9 `chore/ci-prospection-*-no-timeout` PRs #19-#24 mergées + `chore/prospection-cve-gate` 65f98d5 sur main + `feat/prospection-authjs-migration` obsolète PR #4 refait)
+- ✅ 6 branches remote supprimées (mêmes `chore/ci-prospection-*-no-timeout` + `feat/prospection-authjs-migration` + `feat/prospection-gitops-migration` PR #58 mergée)
+- ✅ `stash@{0}` (lockfile parasite) droppé
+- 📁 Archive doc TODO ex-branche authjs : `/tmp/prospection-archive/TODO-from-authjs-branch-2026-05-10.md` (à supprimer si plus utile)
+
+**Reste à faire pour vraiment couper Supabase de partout** :
+- [ ] **Cleanup code mort** : `prospection/src/lib/supabase/{middleware,server,user-context,api-auth,tenant}.ts` → 5 fichiers dead-code (le SDK ne tape Supabase qu'avec cookie `sb-*` qui n'existe plus avec Auth.js). À supprimer + retirer imports dans les 17 fichiers consumers.
+- [ ] **Retirer SDK npm** : `npm uninstall @supabase/ssr @supabase/supabase-js` dans `prospection/`
+- [ ] **Compose Dokploy ENV cleanup** : retirer `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_SUPABASE_*`, `ANON_KEY`, `SERVICE_ROLE_KEY` du compose
+- [ ] **Route `/api/auth/token`** : utilisée par magic-link Hub→Prospection. Vérifier qu'elle utilise Prisma local (table `tenants` core-db), pas Supabase
+- [ ] **Audit hub** : si hub appelle encore prospection via Supabase service-role, casser cette dépendance (hors scope prospection)
+- [ ] **Stack Supabase elle-même** : ne peut être coupée qu'après cleanup hub + audit cms + audit autres apps (hors scope prospection)
 
 ## 🚀 Sprint GitOps Veridian — prospection (pilot 2026-05-13)
 
