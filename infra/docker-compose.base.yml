@@ -1,0 +1,31 @@
+# Base compose — partagé entre prod et staging.
+#
+# Ne pas lancer ce fichier seul. Toujours via override :
+#   - prod    : docker compose -f docker-compose.base.yml -f docker-compose.prod.yml ...
+#   - staging : docker compose -f docker-compose.base.yml -f docker-compose.staging.yml ...
+#
+# Le fichier docker-compose.yml (consolidé prod) est généré automatiquement par
+# `scripts/ci/render-compose.sh prod` et lu par Dokploy. NE JAMAIS éditer
+# directement docker-compose.yml — modifier base + prod et régénérer.
+
+services:
+  prospection:
+    image: ghcr.io/christ-roy/prospection:${PROSPECTION_IMAGE_TAG:-latest}
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+      DATABASE_URL: ${DATABASE_URL}
+      AUTH_SECRET: ${AUTH_SECRET}
+      AUTH_TRUST_HOST: "true"
+      TENANT_API_SECRET: ${TENANT_API_SECRET}
+      TRIAL_DAYS: "7"
+      NEXT_PUBLIC_TRIAL_DAYS: "7"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s

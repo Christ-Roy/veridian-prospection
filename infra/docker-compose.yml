@@ -1,38 +1,47 @@
+# AUTO-GÉNÉRÉ — ne pas éditer à la main.
+# Source : docker-compose.base.yml + docker-compose.prod.yml
+# Régénération : ./scripts/ci/render-compose.sh prod
+#
 services:
-  prospection-prod:
-    image: ghcr.io/christ-roy/prospection:${PROSPECTION_IMAGE_TAG:-latest}
-    pull_policy: always
-    restart: unless-stopped
-    networks:
-      - dokploy-network
+  prospection:
     environment:
-      NODE_ENV: production
-      HOSTNAME: 0.0.0.0
-      PORT: "3000"
-      DATABASE_URL: ${DATABASE_URL}
+      APP_URL: https://prospection.app.veridian.site
       AUTH_SECRET: ${AUTH_SECRET}
       AUTH_TRUST_HOST: "true"
-      NEXTAUTH_URL: ${NEXTAUTH_URL}
-      TENANT_API_SECRET: ${TENANT_API_SECRET}
-      APP_URL: ${APP_URL}
-      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL}
-      NEXT_PUBLIC_HUB_URL: ${NEXT_PUBLIC_HUB_URL}
-      TRIAL_DAYS: "7"
+      DATABASE_URL: ${DATABASE_URL}
+      DEPLOY_ENV: prod
+      HOSTNAME: 0.0.0.0
+      NEXT_PUBLIC_HUB_URL: https://app.veridian.site
+      NEXT_PUBLIC_SITE_URL: https://prospection.app.veridian.site
       NEXT_PUBLIC_TRIAL_DAYS: "7"
+      NEXTAUTH_URL: https://prospection.app.veridian.site
+      NODE_ENV: production
+      PORT: "3000"
+      TENANT_API_SECRET: ${TENANT_API_SECRET}
+      TRIAL_DAYS: "7"
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/api/health || exit 1"]
-      interval: 30s
+      test:
+        - CMD-SHELL
+        - wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/api/health || exit 1
       timeout: 5s
+      interval: 30s
       retries: 3
       start_period: 30s
+    image: ghcr.io/christ-roy/prospection:${PROSPECTION_IMAGE_TAG:-latest}
     labels:
-      - traefik.enable=true
-      - traefik.docker.network=dokploy-network
-      - traefik.http.routers.prospection-prod.rule=Host(`prospection.app.veridian.site`)
-      - traefik.http.routers.prospection-prod.entrypoints=websecure
-      - traefik.http.routers.prospection-prod.tls.certresolver=letsencrypt
-      - traefik.http.services.prospection-prod.loadbalancer.server.port=3000
-
+      com.veridian.app: prospection
+      com.veridian.env: prod
+      traefik.docker.network: dokploy-network
+      traefik.enable: "true"
+      traefik.http.routers.prospection-prod.entrypoints: websecure
+      traefik.http.routers.prospection-prod.rule: Host(`prospection.app.veridian.site`)
+      traefik.http.routers.prospection-prod.tls.certresolver: letsencrypt
+      traefik.http.services.prospection-prod.loadbalancer.server.port: "3000"
+    networks:
+      dokploy-network: null
+    pull_policy: always
+    restart: unless-stopped
 networks:
   dokploy-network:
+    name: dokploy-network
     external: true

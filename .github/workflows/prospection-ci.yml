@@ -1,16 +1,17 @@
-# CI pipeline — Veridian Prospection (mono-app, post-extraction monorepo 2026-05-13)
+# CI/CD pipeline — Veridian Prospection (post-extraction monorepo 2026-05-13)
 #
-# Pipeline simplifié :
-#   1. unit        : tsc + eslint + vitest unit                   (~60s, bloquant)
-#   2. audit       : npm audit --audit-level=high                 (~30s, bloquant)
-#   3. build       : npm run build (Next.js standalone)           (~90s, bloquant)
-#   4. integration : vitest e2e/integration vs Postgres service   (~60s, bloquant)
-#   5. docker      : build image + push GHCR (latest + sha)       (~3min, sur push main)
+# Déclenche :
+#   - push main      → pipeline complet + build/push GHCR :latest → webhook Dokploy → redeploy prod
+#   - PR vers main   → pipeline complet (quality gate validation)
+#   - workflow_dispatch
 #
-# Le déploiement prod se fera par Dokploy GitOps (webhook sur push main) après
-# la bascule de la stack Dokploy `0mJI-sSt6jcOMr_2QJ1iI` en mode Git provider.
-# En attendant, le push de l'image GHCR :latest suffit (Dokploy actuel en mode Raw
-# pull :latest et redeploy).
+# Jobs (sériels) :
+#   1. quality     : test-mapping (1-pour-1 strict) + tsc + eslint + vitest unit + Supabase guard  (~60s)
+#   2. audit       : npm audit + CVE high/critical bloquant via _audit-cve.yml                     (~30s)
+#   3. build       : npm run build (Next.js standalone)                                            (~90s)
+#   4. integration : vitest e2e/integration vs Postgres éphémère                                   (~60s)
+#   5. docker      : buildx + push GHCR (latest + sha) + cache GHA (push main uniquement)          (~3min cold / ~30s warm)
+#   6. smoke-prod  : curl prod endpoints (laisse Dokploy webhook redeploy + healthcheck)           (~90s)
 
 name: Prospection CI/CD
 
@@ -29,25 +30,38 @@ env:
   NODE_VERSION: "22"
   REGISTRY: ghcr.io
   IMAGE_NAME: christ-roy/prospection
+  PROD_HOST: prospection.app.veridian.site
 
 jobs:
-  unit:
-    # Bloquant ultra-rapide : tsc + eslint + vitest (sans DB).
+  quality:
+    name: Quality gate (test-mapping + tsc + eslint + vitest)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # full history pour test-mapping vs origin/main
+
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
+
+      - name: test-mapping (1-pour-1 strict, dette acceptée via pending list)
+        env:
+          BASE_REF: origin/main
+        run: bash scripts/ci/check-test-mapping.sh
+
       - name: tsc --noEmit
         run: npx tsc --noEmit
+
       - name: eslint src/
         run: npx eslint src/ --quiet
+
       - name: vitest unit tests (src/**/*.test.ts)
         run: npx vitest run src/
+
       - name: Supabase admin API rate-limit guard
         run: bash scripts/check-supabase-ratelimit.sh
 
@@ -61,7 +75,7 @@ jobs:
       omit-dev: true
 
   build:
-    needs: [unit, audit]
+    needs: [quality, audit]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -110,8 +124,9 @@ jobs:
           # No overlap → safe to run in parallel (vitest default).
           npx vitest run e2e/integration/tenant-isolation.test.ts e2e/integration/workspace-isolation.test.ts
 
-  # ── Build + push image GHCR (sur push main uniquement) ────────────────
+  # ── Build + push image GHCR (sur push main uniquement) ──────────────────
   docker:
+    name: Build + push GHCR (latest + sha)
     needs: [build, integration]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -119,15 +134,19 @@ jobs:
       contents: read
       packages: write
     outputs:
-      image_tag: ${{ steps.meta.outputs.version }}
+      sha7: ${{ steps.sha.outputs.sha7 }}
     steps:
+      - id: sha
+        run: echo "sha7=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v6
 
-      # CR_PAT (Personal Access Token user-level) au lieu de GITHUB_TOKEN.
-      # Le package ghcr.io/christ-roy/prospection est encore lié au repo legacy
-      # Christ-Roy/prospection (pré-monorepo), donc le GITHUB_TOKEN de ce repo
-      # ne peut pas push. À nettoyer plus tard : transférer le package GHCR
-      # vers veridian-prospection via Settings UI.
+      - uses: docker/setup-buildx-action@v3
+
+      # CR_PAT (Personal Access Token user-level) au lieu de GITHUB_TOKEN :
+      # le package ghcr.io/christ-roy/prospection est encore lié au repo legacy
+      # Christ-Roy/prospection (pré-monorepo), GITHUB_TOKEN de ce repo ne push pas.
+      # À nettoyer un jour : transférer le package GHCR vers veridian-prospection.
       - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -148,9 +167,50 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           build-args: |
             NEXT_PUBLIC_SUPABASE_URL=https://api.app.veridian.site
             NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.PROD_SUPABASE_ANON_KEY }}
             NEXT_PUBLIC_HUB_URL=https://app.veridian.site
             NEXT_PUBLIC_SITE_URL=https://prospection.app.veridian.site
             NEXT_PUBLIC_TRIAL_DAYS=7
+
+  # ── Smoke prod après webhook Dokploy redeploy ───────────────────────────
+  smoke-prod:
+    name: Smoke prod (post webhook Dokploy)
+    needs: docker
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Attendre que Dokploy ait pull + restart (max 3 min)
+        run: |
+          # Dokploy webhook trigger après push GHCR :latest.
+          # Le redeploy compose pull + up -d + healthcheck start_period 30s.
+          # On laisse 30s avant le 1er check pour pas hit l'ancien container.
+          sleep 30
+
+      - name: GET /api/health (attendre 200, max 6 essais × 15s = 90s)
+        run: |
+          for i in $(seq 1 6); do
+            CODE=$(curl -sS -o /dev/null -w "%{http_code}" "https://${{ env.PROD_HOST }}/api/health" || echo "000")
+            echo "[$i/6] /api/health → $CODE"
+            if [ "$CODE" = "200" ]; then exit 0; fi
+            sleep 15
+          done
+          echo "::error::Smoke prod /api/health timeout après 90s — vérifier Dokploy logs"
+          exit 1
+
+      - name: GET /api/auth/providers
+        run: |
+          CODE=$(curl -sS -o /dev/null -w "%{http_code}" "https://${{ env.PROD_HOST }}/api/auth/providers")
+          [ "$CODE" = "200" ] || { echo "::error::auth providers → $CODE"; exit 1; }
+
+      - name: GET /login (page render)
+        run: |
+          CODE=$(curl -sS -o /dev/null -w "%{http_code}" "https://${{ env.PROD_HOST }}/login")
+          [ "$CODE" = "200" ] || { echo "::error::/login → $CODE"; exit 1; }
+
+      - name: Annonce succès
+        run: |
+          echo "::notice::Prod redeploy OK — https://${{ env.PROD_HOST }} all green"

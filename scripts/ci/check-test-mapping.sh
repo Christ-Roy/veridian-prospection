@@ -173,10 +173,37 @@ for f in $CHANGED; do
     continue  # Hors scope critique
   fi
 
-  # Dette acceptée ?
+  # Dette acceptée — mais strict si TU LE MODIFIES.
+  # Règle : tu touches un fichier en pending → tu dois soit écrire son test
+  # (et le retirer de pending), soit le sortir explicitement de pending.
+  # Sans ça, la dette s'éternise par modifications passives.
   if in_pending "$f"; then
-    echo "${YELLOW}⏸  $f en dette (tests-pending.txt) — laissé passer${NC}"
-    WARNINGS=$((WARNINGS + 1))
+    # Test colocalisé existe + a été modifié dans la PR ?
+    if [ -f "$expected_test" ] && echo "$CHANGED" | grep -Fxq "$expected_test"; then
+      echo "${YELLOW}⚠  $f en pending mais test colocalisé modifié — pense à retirer de tests-pending.txt${NC}"
+      WARNINGS=$((WARNINGS + 1))
+      continue
+    fi
+    # Couvert par coverage map + un covered_by modifié ?
+    covering=$(find_covering_tests "$f")
+    if [ -n "$covering" ]; then
+      cov_match=""
+      while IFS= read -r cov; do
+        [ -z "$cov" ] && continue
+        if [ -f "$cov" ] && echo "$CHANGED" | grep -Fxq "$cov"; then cov_match="$cov"; break; fi
+      done <<< "$covering"
+      if [ -n "$cov_match" ]; then
+        echo "${YELLOW}⚠  $f en pending mais couvert par $cov_match modifié — pense à retirer de tests-pending.txt${NC}"
+        WARNINGS=$((WARNINGS + 1))
+        continue
+      fi
+    fi
+    # Sinon : tu modifies un fichier sans test → REFUS
+    echo "${RED}✗ $f modifié et en tests-pending.txt sans test${NC}"
+    echo "  Toucher un fichier en dette = écrire son test maintenant."
+    echo "  Test attendu : ${expected_test}"
+    echo "  Ou (rare) retirer la ligne de tests-pending.txt explicitement."
+    FAILED=$((FAILED + 1))
     continue
   fi
 

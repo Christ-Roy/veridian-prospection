@@ -1,0 +1,55 @@
+# Teardown staging — Veridian Prospection
+#
+# Trigger : suppression de la branche `staging` côté GitHub.
+# Action : SSH dev-pub → `docker compose down -v --rmi local --remove-orphans`
+# pour libérer ressources + volumes + images locales. Le réseau staging-edge
+# partagé reste intact (Traefik continue de tourner).
+
+name: Prospection Staging Teardown
+
+on:
+  delete:
+  workflow_dispatch:
+
+jobs:
+  teardown:
+    if: github.event.ref_type == 'branch' && github.event.ref == 'staging' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H 37.187.199.185 >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Stop + remove containers / volumes / local images
+        run: |
+          DEST=/home/ubuntu/prospection-staging
+          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 "
+            if [ ! -d $DEST ]; then
+              echo '$DEST absent — déjà supprimé'
+              exit 0
+            fi
+            cd $DEST
+            docker compose -p prospection-staging \
+              -f docker-compose.base.yml -f docker-compose.staging.yml \
+              down -v --rmi local --remove-orphans || true
+            cd /home/ubuntu
+            rm -rf $DEST"
+
+      - name: Prune images orphelines GHCR prospection (staging tags)
+        run: |
+          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 "
+            docker images ghcr.io/christ-roy/prospection --format '{{.Tag}}' \
+              | grep -E '^staging-' \
+              | xargs -I {} docker rmi ghcr.io/christ-roy/prospection:{} 2>/dev/null || true"
+
+      - name: Report final disk state
+        run: |
+          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 '
+            df -h / | tail -1
+            docker ps --filter "label=com.veridian.env=staging"
+            docker system df'
