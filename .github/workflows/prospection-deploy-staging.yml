@@ -120,6 +120,8 @@ jobs:
     name: Deploy → dev-pub (Traefik staging-edge)
     needs: build
     runs-on: ubuntu-latest
+    env:
+      IMAGE_TAG: staging-${{ needs.build.outputs.image_sha }}
     steps:
       - uses: actions/checkout@v6
 
@@ -143,8 +145,9 @@ jobs:
       - name: Write .env on dev (secrets staging)
         run: |
           DEST=/home/ubuntu/prospection-staging
+          echo "Image tag à déployer : ${IMAGE_TAG}"
           ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 "cat > $DEST/.env <<'ENV_EOF'
-          PROSPECTION_IMAGE_TAG=staging-${GITHUB_SHA::8}
+          PROSPECTION_IMAGE_TAG=${IMAGE_TAG}
           DATABASE_URL=${{ secrets.STAGING_DATABASE_URL }}
           AUTH_SECRET=${{ secrets.STAGING_AUTH_SECRET }}
           TENANT_API_SECRET=${{ secrets.STAGING_TENANT_API_SECRET }}
