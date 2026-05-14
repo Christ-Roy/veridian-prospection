@@ -18,12 +18,13 @@ if [ -x scripts/ci/check-test-mapping.sh ]; then
   scripts/ci/check-test-mapping.sh
 fi
 
-# 2. Compose consolidé en sync avec base + prod ?
-# Skip si pas de modif compose dans le diff (gain de temps sur push triviaux)
-if git diff --name-only "$BASE_REF"...HEAD 2>/dev/null | grep -qE '^infra/docker-compose\.(base|prod|yml)$'; then
-  if [ -x scripts/ci/render-compose.sh ]; then
-    scripts/ci/render-compose.sh check
-  fi
+# 2. Rappel régénération compose si base/prod modifié
+# Note : check sémantique désactivé (formats varient entre versions compose CLI).
+# Reste à implémenter un check basé sur yq normalisé.
+if git diff --name-only "$BASE_REF"...HEAD 2>/dev/null | grep -qE '^infra/docker-compose\.(base|prod)\.yml$'; then
+  echo "ℹ️  Tu as modifié infra/docker-compose.{base,prod}.yml."
+  echo "   Vérifie que infra/docker-compose.yml a été régénéré :"
+  echo "     ./scripts/ci/render-compose.sh prod"
 fi
 
 exit 0
