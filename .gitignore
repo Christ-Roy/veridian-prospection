@@ -35,3 +35,4 @@ TASK-*.md
 
 # Playwright screenshots (change every run)
 e2e/screenshots/
+*.rendered.yml

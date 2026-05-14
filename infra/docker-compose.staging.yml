@@ -1,0 +1,32 @@
+# Override STAGING — à utiliser avec docker-compose.base.yml.
+#
+# Cible : Dev Server (37.187.199.185), réseau staging-edge + Traefik standalone.
+# Voir doc Traefik staging : dev:~/traefik-staging/README.md
+# Hôte routé : prospection.staging.veridian.site
+
+services:
+  prospection:
+    image: ghcr.io/christ-roy/prospection:${PROSPECTION_IMAGE_TAG:-staging-latest}
+    networks:
+      - staging-edge
+      - default
+    environment:
+      DEPLOY_ENV: staging
+      NEXTAUTH_URL: https://prospection.staging.veridian.site
+      APP_URL: https://prospection.staging.veridian.site
+      NEXT_PUBLIC_SITE_URL: https://prospection.staging.veridian.site
+      NEXT_PUBLIC_HUB_URL: https://app.veridian.site
+    labels:
+      - "com.veridian.env=staging"
+      - "com.veridian.app=prospection"
+      - "traefik.enable=true"
+      - "traefik.docker.network=staging-edge"
+      - "traefik.http.routers.prospection.rule=Host(`prospection.staging.veridian.site`)"
+      - "traefik.http.routers.prospection.entrypoints=websecure"
+      - "traefik.http.routers.prospection.tls.certresolver=letsencrypt"
+      - "traefik.http.services.prospection.loadbalancer.server.port=3000"
+
+networks:
+  staging-edge:
+    external: true
+  default:

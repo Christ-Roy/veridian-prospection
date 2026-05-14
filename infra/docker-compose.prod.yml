@@ -1,0 +1,28 @@
+# Override PROD — à utiliser avec docker-compose.base.yml.
+#
+# Cible : OVH VPS (100.88.202.29), réseau Dokploy + Traefik avec resolver letsencrypt.
+# Hôte routé : prospection.app.veridian.site
+
+services:
+  prospection:
+    networks:
+      - dokploy-network
+    environment:
+      DEPLOY_ENV: prod
+      NEXTAUTH_URL: https://prospection.app.veridian.site
+      APP_URL: https://prospection.app.veridian.site
+      NEXT_PUBLIC_SITE_URL: https://prospection.app.veridian.site
+      NEXT_PUBLIC_HUB_URL: https://app.veridian.site
+    labels:
+      - "com.veridian.env=prod"
+      - "com.veridian.app=prospection"
+      - "traefik.enable=true"
+      - "traefik.docker.network=dokploy-network"
+      - "traefik.http.routers.prospection-prod.rule=Host(`prospection.app.veridian.site`)"
+      - "traefik.http.routers.prospection-prod.entrypoints=websecure"
+      - "traefik.http.routers.prospection-prod.tls.certresolver=letsencrypt"
+      - "traefik.http.services.prospection-prod.loadbalancer.server.port=3000"
+
+networks:
+  dokploy-network:
+    external: true

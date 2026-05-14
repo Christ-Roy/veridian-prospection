@@ -1,17 +1,29 @@
 #!/usr/bin/env sh
 # Standard CI Veridian — pre-push hook
-# Refuse le push si fichier critique modifié sans test correspondant.
+# Refuse le push si :
+#   1. Fichier critique modifié sans test correspondant
+#   2. infra/docker-compose.yml désync avec base + prod (édition manuelle interdite)
 # JAMAIS --no-verify (Constitution CI §3).
 
+set -e
+
+BASE_REF="${BASE_REF:-origin/$(git rev-parse --abbrev-ref HEAD)}"
+if ! git rev-parse --verify --quiet "$BASE_REF" >/dev/null 2>&1; then
+  BASE_REF="origin/main"
+fi
+export BASE_REF
+
+# 1. Test mapping
 if [ -x scripts/ci/check-test-mapping.sh ]; then
-  BASE_REF="${BASE_REF:-origin/$(git rev-parse --abbrev-ref HEAD)}"
-  # Si la branche distante n'existe pas (premier push), compare contre origin/main
-  if ! git rev-parse --verify --quiet "$BASE_REF" >/dev/null 2>&1; then
-    BASE_REF="origin/main"
-  fi
-  export BASE_REF
-  exec scripts/ci/check-test-mapping.sh
+  scripts/ci/check-test-mapping.sh
 fi
 
-echo "⚠ scripts/ci/check-test-mapping.sh absent ou non exécutable"
+# 2. Compose consolidé en sync avec base + prod ?
+# Skip si pas de modif compose dans le diff (gain de temps sur push triviaux)
+if git diff --name-only "$BASE_REF"...HEAD 2>/dev/null | grep -qE '^infra/docker-compose\.(base|prod|yml)$'; then
+  if [ -x scripts/ci/render-compose.sh ]; then
+    scripts/ci/render-compose.sh check
+  fi
+fi
+
 exit 0
