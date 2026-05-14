@@ -29,6 +29,44 @@ Commit `0d5a797` sur `main`.
   - working tree propre → exit 0
 - [x] `npm audit fix` — 12 CVE high patchées (commit `99dbc93`)
 
+### Brique 1bis — Husky strict pending (commit `ec715f6` staging)
+Modification réflexe au feedback Robert : la dette doit pas s'éterniser passivement.
+
+- [x] Si tu modifies un fichier listé dans `tests-pending.txt` :
+  - soit son test colocalisé existe + est modifié dans la PR → OK warning
+  - soit un `covered_by` de la coverage map est modifié → OK warning
+  - sinon → **push refusé** ("écris le test ou retire la ligne de pending")
+- [x] Pas de changement sur fichiers hors pending (déjà strict avant)
+
+### Workflow staging-first (commits `38279ad..ec715f6` staging)
+**Tous les jobs ont passé une fois vert** sur https://github.com/Christ-Roy/veridian-prospection/actions/runs/25851652520.
+
+- [x] **Compose pattern by-design** :
+  - `infra/docker-compose.base.yml` (config commune)
+  - `infra/docker-compose.prod.yml` (override Traefik dokploy-network)
+  - `infra/docker-compose.staging.yml` (override Traefik staging-edge)
+  - `infra/docker-compose.yml` (auto-généré via `scripts/ci/render-compose.sh prod` pour Dokploy)
+- [x] **`.github/workflows/prospection-deploy-staging.yml`** (on:push staging) — 5 jobs verts :
+  1. Quality gate : lint + typecheck + unit + audit + test-mapping
+  2. Build : buildx + cache GHA + push GHCR `staging-<sha7>` + `staging-latest`
+  3. Deploy : SSH dev-pub, compose pull + up -d
+  4. Smoke : `/api/health` + `/api/auth/providers` + `/login`
+  5. Cleanup : prune containers/images filter `com.veridian.env=staging`
+- [x] **`.github/workflows/prospection-staging-teardown.yml`** (on:delete branch staging) — auto teardown
+- [x] **Infra staging** :
+  - `~/traefik-staging/` (Robert avait setup) + network `staging-edge` partagé
+  - `~/postgres-staging/` créé : Postgres 15-alpine dans staging-edge, DB `prospection` clonée depuis prod (996k entreprises, 19 users, 11 tenants, 13 workspaces)
+  - Secrets `STAGING_DATABASE_URL` + `STAGING_AUTH_SECRET` provisionnés
+- [x] **Branche `staging`** créée + PR #1 ouverte vers `main`
+
+### Workflow prod étendu (commit `ec715f6` staging — sera mergé via PR #1)
+`.github/workflows/prospection-ci.yml` réécrit propre :
+
+- [x] Job `quality` : test-mapping en début + tsc + eslint + vitest + supabase guard (avant audit, build, integration)
+- [x] Job `docker` : ajout `docker/setup-buildx-action@v3` + cache GHA → builds successifs ~30s au lieu de ~3min
+- [x] Output `sha7` aligné sur staging
+- [x] Job `smoke-prod` : attend webhook Dokploy + curl `/api/health` (6×15s) + `/api/auth/providers` + `/login`
+
 ### GitOps prod (modèle Prospection appliqué + dupliqué)
 - [x] Compose `infra/docker-compose.yml` en sourceType=git, healthcheck `127.0.0.1`, pas de `container_name`, `pull_policy: always`
 - [x] Webhook GitHub → Dokploy avec `content_type=json` (cf [`memory/project_github_webhook_content_type.md`](#))
