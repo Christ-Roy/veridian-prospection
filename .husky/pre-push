@@ -21,7 +21,9 @@ fi
 # 2. Rappel régénération compose si base/prod modifié
 # Note : check sémantique désactivé (formats varient entre versions compose CLI).
 # Reste à implémenter un check basé sur yq normalisé.
-if git diff --name-only "$BASE_REF"...HEAD 2>/dev/null | grep -qE '^infra/docker-compose\.(base|prod)\.yml$'; then
+# Capture sépare pour ne pas faire échouer le hook quand grep ne match rien (set -e).
+INFRA_CHANGES=$(git diff --name-only "$BASE_REF"...HEAD 2>/dev/null | grep -E '^infra/docker-compose\.(base|prod)\.yml$' || true)
+if [ -n "$INFRA_CHANGES" ]; then
   echo "ℹ️  Tu as modifié infra/docker-compose.{base,prod}.yml."
   echo "   Vérifie que infra/docker-compose.yml a été régénéré :"
   echo "     ./scripts/ci/render-compose.sh prod"

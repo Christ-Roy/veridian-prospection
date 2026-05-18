@@ -290,6 +290,42 @@ if [ -n "$PRISMA_CHANGES" ]; then
   fi
 fi
 
+# ─── NUCLEAR : tests-pending.txt doit être VIDE pour les routes API ──────────
+# Décision Robert 2026-05-14 : aucune route API ne doit rester sans test.
+# Le hook refuse tout push tant qu'une `src/app/api/**/route.ts` est listée
+# dans tests-pending.txt.
+#
+# Pour débloquer : écrire le test colocalisé, retirer la ligne de pending.
+# Override technique en cas de hotfix critique : commit avec PENDING_OVERRIDE=1
+# dans l'environnement (NOTE : tracé dans l'historique git via env du commit).
+if [ -f "$PENDING_FILE" ] && [ "${PENDING_OVERRIDE:-0}" != "1" ]; then
+  # `|| true` : sous `set -euo pipefail`, grep retourne 1 quand rien ne match,
+  # ce qui sortirait du script silencieusement. C'est précisément l'état
+  # "0 route en dette" qu'on veut autoriser.
+  API_ROUTES_IN_PENDING=$( (grep -E '^src/app/api/.*/route\.ts$' "$PENDING_FILE" || true) | wc -l | tr -d ' ')
+  if [ "$API_ROUTES_IN_PENDING" -gt 0 ]; then
+    echo
+    echo "${RED}╔════════════════════════════════════════════════════════════╗${NC}"
+    echo "${RED}║ ROUTES API SANS TEST — NUCLEAR MODE                       ║${NC}"
+    echo "${RED}║ $API_ROUTES_IN_PENDING route(s) API listée(s) dans tests-pending.txt        ║${NC}"
+    echo "${RED}╚════════════════════════════════════════════════════════════╝${NC}"
+    echo
+    echo "Tu dois écrire les tests colocalisés AVANT de pouvoir push."
+    echo "Pour chacune : crée __tests__/api/<path>.test.ts puis retire la"
+    echo "ligne correspondante de tests-pending.txt."
+    echo
+    echo "Routes API encore en dette :"
+    grep -E '^src/app/api/.*/route\.ts$' "$PENDING_FILE" | head -10 | sed 's/^/  - /'
+    if [ "$API_ROUTES_IN_PENDING" -gt 10 ]; then
+      echo "  ... et $((API_ROUTES_IN_PENDING - 10)) autres."
+    fi
+    echo
+    echo "Override hotfix critique (rare, à justifier en PR description) :"
+    echo "  PENDING_OVERRIDE=1 git push ..."
+    FAILED=$((FAILED + 1))
+  fi
+fi
+
 # ─── Conclusion ──────────────────────────────────────────────────────────────
 echo
 if [ "$FAILED" -gt 0 ]; then
