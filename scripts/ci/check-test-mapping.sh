@@ -299,7 +299,10 @@ fi
 # Override technique en cas de hotfix critique : commit avec PENDING_OVERRIDE=1
 # dans l'environnement (NOTE : tracé dans l'historique git via env du commit).
 if [ -f "$PENDING_FILE" ] && [ "${PENDING_OVERRIDE:-0}" != "1" ]; then
-  API_ROUTES_IN_PENDING=$(grep -E '^src/app/api/.*/route\.ts$' "$PENDING_FILE" | wc -l | tr -d ' ')
+  # `|| true` : sous `set -euo pipefail`, grep retourne 1 quand rien ne match,
+  # ce qui sortirait du script silencieusement. C'est précisément l'état
+  # "0 route en dette" qu'on veut autoriser.
+  API_ROUTES_IN_PENDING=$( (grep -E '^src/app/api/.*/route\.ts$' "$PENDING_FILE" || true) | wc -l | tr -d ' ')
   if [ "$API_ROUTES_IN_PENDING" -gt 0 ]; then
     echo
     echo "${RED}╔════════════════════════════════════════════════════════════╗${NC}"
