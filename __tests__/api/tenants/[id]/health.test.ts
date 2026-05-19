@@ -58,10 +58,28 @@ function signedGet(tenantId: string) {
 describe("GET /api/tenants/{id}/health", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  test("401 si HMAC absent", async () => {
+  test("401 Unauthorized si HMAC absent — pas de query DB", async () => {
     const req = makeRequest("/api/tenants/t-1/health", { method: "GET" });
     const res = await GET(req, { params: Promise.resolve({ id: "t-1" }) });
     expect(res.status).toBe(401);
+    const body = (await readJson(res)) as { error: string };
+    expect(body.error).toBe("Unauthorized");
+    expect(mocks.tenantFindUnique).not.toHaveBeenCalled();
+  });
+
+  test("401 Invalid signature avec HMAC bidon", async () => {
+    const req = makeRequest("/api/tenants/t-1/health", {
+      method: "GET",
+      headers: {
+        "x-veridian-timestamp": String(Date.now()),
+        "x-veridian-hub-signature": "00".repeat(32),
+      },
+    });
+    const res = await GET(req, { params: Promise.resolve({ id: "t-1" }) });
+    expect(res.status).toBe(401);
+    const body = (await readJson(res)) as { error: string };
+    expect(body.error).toBe("Invalid signature");
+    expect(mocks.tenantFindUnique).not.toHaveBeenCalled();
   });
 
   test("200 + status=deleted si tenant introuvable", async () => {

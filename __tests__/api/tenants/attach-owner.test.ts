@@ -77,25 +77,54 @@ function req(raw: string, headers: Record<string, string>) {
 describe("POST /api/tenants/attach-owner", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  test("401 si HMAC absent", async () => {
+  test("401 Unauthorized si HMAC absent — pas de fuite DB", async () => {
     const r = makeRequest("/api/tenants/attach-owner", {
       method: "POST",
       body: { tenant_id: "t-1", owner_email: "a@b.c" },
     });
-    expect((await POST(r)).status).toBe(401);
+    const res = await POST(r);
+    expect(res.status).toBe(401);
+    const body = (await readJson(res)) as { error: string };
+    expect(body.error).toBe("Unauthorized");
+    expect(mocks.tenantFindUnique).not.toHaveBeenCalled();
+    expect(mocks.userFindFirst).not.toHaveBeenCalled();
   });
 
-  test("400 si tenant_id manquant", async () => {
+  test("401 Invalid signature si HMAC bidon", async () => {
+    const raw = JSON.stringify({ tenant_id: "t-1", owner_email: "a@b.c" });
+    const r = makeRequest("/api/tenants/attach-owner", {
+      method: "POST",
+      headers: {
+        "x-veridian-timestamp": String(Date.now()),
+        "x-veridian-hub-signature": "00".repeat(32),
+      },
+      body: raw,
+    });
+    const res = await POST(r);
+    expect(res.status).toBe(401);
+    const body = (await readJson(res)) as { error: string };
+    expect(body.error).toBe("Invalid signature");
+  });
+
+  test("400 invalid_payload si tenant_id manquant — pas de hit DB", async () => {
     const { raw, headers } = signed({ owner_email: "a@b.c" });
-    expect((await POST(req(raw, headers))).status).toBe(400);
+    const res = await POST(req(raw, headers));
+    expect(res.status).toBe(400);
+    const body = (await readJson(res)) as { error: string };
+    expect(body.error).toBe("invalid_payload");
+    expect(mocks.tenantFindUnique).not.toHaveBeenCalled();
   });
 
-  test("400 si owner_email manquant", async () => {
+  test("400 invalid_payload si owner_email manquant", async () => {
     const { raw, headers } = signed({ tenant_id: "t-1" });
-    expect((await POST(req(raw, headers))).status).toBe(400);
+    const res = await POST(req(raw, headers));
+    expect(res.status).toBe(400);
+    const body = (await readJson(res)) as { error: string };
+    expect(body.error).toBe("invalid_payload");
+    expect(mocks.tenantFindUnique).not.toHaveBeenCalled();
   });
 
-  test("400 si role invalide (member ou viewer rejetés)", async () => {
+  test("400 invalid_payload si role=member — validation avant DB", async () => {
     const { raw, headers } = signed({
       tenant_id: "t-1",
       owner_email: "a@b.c",
@@ -103,12 +132,34 @@ describe("POST /api/tenants/attach-owner", () => {
     });
     const res = await POST(req(raw, headers));
     expect(res.status).toBe(400);
+    const body = (await readJson(res)) as { error: string; message: string };
+    expect(body.error).toBe("invalid_payload");
+    expect(body.message).toContain("role");
+    // La validation doit court-circuiter AVANT toute query DB
+    expect(mocks.tenantFindUnique).not.toHaveBeenCalled();
   });
 
-  test("404 si tenant introuvable", async () => {
+  test("400 invalid_payload si role=viewer", async () => {
+    const { raw, headers } = signed({
+      tenant_id: "t-1",
+      owner_email: "a@b.c",
+      role: "viewer",
+    });
+    expect((await POST(req(raw, headers))).status).toBe(400);
+  });
+
+  test("404 tenant_not_found", async () => {
     mocks.tenantFindUnique.mockResolvedValueOnce(null);
     const { raw, headers } = signed({ tenant_id: "t-x", owner_email: "a@b.c" });
-    expect((await POST(req(raw, headers))).status).toBe(404);
+    const res = await POST(req(raw, headers));
+    expect(res.status).toBe(404);
+    const body = (await readJson(res)) as { error: string };
+    expect(body.error).toBe("tenant_not_found");
+    expect(mocks.tenantFindUnique).toHaveBeenCalledOnce();
+    expect(mocks.tenantFindUnique.mock.calls[0][0].where.id).toBe("t-x");
+    // 404 = arrêt early, pas de hit User / Workspace
+    expect(mocks.userFindFirst).not.toHaveBeenCalled();
+    expect(mocks.workspaceFindFirst).not.toHaveBeenCalled();
   });
 
   test("200 attached=true sur user nouveau + workspace default créé", async () => {
