@@ -213,4 +213,105 @@ Robert route ce ticket vers l'agent Hub via un fichier `veridian-hub/todo/2026-0
 
 ---
 
-## Réponse — (à compléter quand traité)
+## Réponse — Session 2026-05-19 (Robert + agent Prospection)
+
+### ✅ Livré en prod (commit `ffe7947` 2026-05-19 18:25, image `2784401b8fcf`)
+
+**Phase 1 — HMAC standardisé** ✅
+- `src/lib/hub/hmac.ts` créé (4 helpers : verifyHubHmac standard,
+  verifyLegacyEmailTsHmac, verifyLegacyBearer, extractBearerApiKey)
+- `POST /api/tenants/provision` migré au format `{ts}.{body}` standard
+- Backward-compat 30j via `ACCEPT_LEGACY_HMAC` + `ACCEPT_LEGACY_BEARER`
+- 19 tests unitaires + 11 tests handler
+- Doc : `docs/hub-contract.md`
+- Ticket Hub déposé : `veridian-hub/todo/2026-05-19-prospection-conformity.md`
+  (à traiter côté agent Hub pour fermer la boucle migration HMAC client Hub)
+
+**Phase 2 — Endpoints lifecycle base** ✅
+- `update-plan` : whitelist plans/sources, immunité plan_source lifetime/internal
+  (409 plan_source_immutable), append PlanHistory. Migration Prisma 0004.
+- `attach-owner` : additif uniquement, never downgrade un owner, workspace
+  default créé si absent.
+- `suspend` / `resume` : idempotent, emit `tenant.suspended`/`tenant.resumed`
+  fire-and-forget.
+- `GET /api/tenants/[id]/health` : magic_link_capable=false si pas d'owner OU
+  soft-deleted OU pas d'api_key. Plan retourné via fallback raw SQL
+  `prospection_plan` pendant fenêtre dual-read 30j.
+
+**Phase 4 — Plans offerts** ✅
+- `lifetime_site_vitrine`, `lifetime_partner`, `internal` ajoutés dans
+  `PLAN_LIMITS` (Infinity) + helper `isGiftedPlan()` + `GIFTED_PLANS` set.
+- `starter` plan ajouté (5000 quota).
+- `buildQuotaFilter` étendu aux 7 plans.
+
+**Phase 5 — Webhooks app→Hub (partiel)** ✅
+- Helper `src/lib/hub/webhooks.ts` : retry exponential 3× sur 5xx/network,
+  pas de retry sur 4xx, no-op si NODE_ENV=test ou HUB_WEBHOOK_DISABLE=1
+  ou HUB_API_URL absent.
+- Webhooks `tenant.suspended` + `tenant.resumed` câblés.
+- 11 tests dont retry, 4xx skip, network error, idempotency_key UUID v4.
+
+**Phase 6 — Lifecycle v1.1** ✅
+- Migration Prisma 0005 (purge_eligible_at, last_touched_at, purged_at).
+- 4 endpoints : `soft-delete`, `restore`, `purge`, `usage-summary`. 37
+  nouveaux tests, machine d'états §5.7 verrouillée.
+- Cascade DELETE explicite par table dans purge avec garde-fous serrés
+  (slug match, reason ≥ 3 chars, eligible_at ≤ NOW). Audit GDPR garde
+  ligne tenant + PII nullées + slug suffixé anti-collision.
+
+### ⏳ Reste à livrer (P3 + P6.5 + P7 + P8)
+
+**Phase 3 — generateMagicLink Bearer api_key** — Pas commencé.
+- Helper `extractBearerApiKey` déjà livré dans `src/lib/hub/hmac.ts`
+- Route `POST /api/workspaces.generateMagicLink` à créer (Bearer api_key,
+  pas HMAC). Pré-requis : créer une table `tenant_api_keys` Prisma + décider
+  stockage (1 api_key = 1 workspace per §6.2).
+- Estim : ~2-3h dans une session dédiée.
+
+**Phase 6.5 — Émission tenant.touched** — Pas commencé.
+- Helper `touchTenantIfSoftDeleted(tenantId)` à câbler dans le middleware
+  ou les routes user-protected, avec throttle 24h in-memory.
+- Le helper `emitHubWebhookAsync` accepte déjà l'event `tenant.touched`.
+- Estim : ~2h.
+
+**Phase 7 — Test integration scénario complet** — Pas commencé.
+- Test e2e Postgres réel qui exerce le cycle complet : provision →
+  attach-owner → health → suspend → resume → soft-delete → restore →
+  purge avec vérification des invariants.
+- Le smoke staging DB clonée prod 2026-05-19 a fait ce travail manuellement
+  (24 scénarios pass). À automatiser en CI dans `e2e/integration/`.
+- Estim : ~3h.
+
+**Phase 8 — Observabilité + Idempotency-Key** — Optionnelle.
+- Logs JSON structurés middleware Next
+- Endpoint `/metrics` Prometheus
+- Idempotency-Key sur les 4 endpoints critiques + table
+  `veridian_idempotency_keys` + cleanup cron.
+- Estim : ~4h.
+
+### 📋 Dette technique laissée
+
+Voir le ticket parallèle `todo/2026-05-19-dette-technique-audit.md` qui
+liste 8 priorités sur 4 sprints :
+- Sprint 2 — Supabase cleanup global (49 fichiers, ~6h)
+- Sprint 3 — Colonnes DB legacy (prospection_plan, subscription_id,
+  twenty_*, notifuse_* — ~3h)
+- Sprint 4 — Refactor gros fichiers (>700 lignes)
+- Plus : refactor `ensureOwnerAdmin` (155 lignes Supabase admin mort
+  dans le hot path provision)
+
+### Statut global
+
+Le **noyau du contrat Hub côté Prospection est livré et en prod** : HMAC
+standard, lifecycle complet (suspend/resume/soft-delete/restore/purge/
+usage-summary), update-plan avec immunité Stripe vs lifetime, webhooks
+de base, plans offerts. Smoke prod 2026-05-19 a validé sur les vrais
+tenants prod (tenant Robert health 200 active).
+
+Reste P3 (generateMagicLink) + P6.5 (tenant.touched) + P7 (integration) +
+P8 (observabilité) — pas bloquants pour le Hub qui peut déjà piloter
+Prospection sur tous les autres axes.
+
+**Statut du ticket** : partiellement done. Réouvert dans une session
+dédiée pour finir P3 + P6.5 + P7 + P8 quand Robert le décidera.
+
