@@ -19,7 +19,7 @@ import {
   verifyLegacyBearer,
   extractBearerApiKey,
   HUB_TIMESTAMP_DRIFT_MS,
-} from "./hmac";
+} from "@/lib/hub/hmac";
 
 const SECRET = "test-secret-abcdef";
 
