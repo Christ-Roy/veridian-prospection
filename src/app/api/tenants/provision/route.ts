@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createHmac, randomBytes, timingSafeEqual } from "crypto";
+import { randomBytes } from "crypto";
 import { PrismaClient } from "@prisma/client";
 import { createClient as createSupabaseAdmin } from "@supabase/supabase-js";
+import {
+  verifyHubHmac,
+  verifyLegacyEmailTsHmac,
+  verifyLegacyBearer,
+} from "@/lib/hub/hmac";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 const prisma = globalForPrisma.prisma ?? new PrismaClient();
@@ -187,8 +192,15 @@ async function ensureOwnerAdmin(email: string): Promise<void> {
   }
 }
 
-const TENANT_API_SECRET = process.env.TENANT_API_SECRET;
-const MAX_TIMESTAMP_DRIFT_MS = 5 * 60 * 1000; // 5 minutes
+// Le secret est lu *au runtime* (pas au module-load) pour que les tests
+// puissent injecter via vi.hoisted() et que la rotation 6 mois (cf §6.5)
+// fonctionne sans redémarrage du process.
+function getSecret(): string | undefined {
+  return process.env.HUB_API_SECRET || process.env.TENANT_API_SECRET;
+}
+
+const ACCEPT_LEGACY_HMAC = process.env.ACCEPT_LEGACY_HMAC !== "0";
+const ACCEPT_LEGACY_BEARER = process.env.ACCEPT_LEGACY_BEARER !== "0";
 
 // Simple in-memory rate limiter (10 requests per minute per IP)
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -205,18 +217,6 @@ function checkRateLimit(ip: string): boolean {
   return true;
 }
 
-function verifyHmac(email: string, timestamp: number, signature: string): boolean {
-  if (!TENANT_API_SECRET) return false;
-  const expected = createHmac("sha256", TENANT_API_SECRET)
-    .update(`${email}:${timestamp}`)
-    .digest("hex");
-  try {
-    return timingSafeEqual(Buffer.from(signature, "hex"), Buffer.from(expected, "hex"));
-  } catch {
-    return false;
-  }
-}
-
 export async function POST(request: NextRequest) {
   // Rate limit
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0] || "unknown";
@@ -224,34 +224,81 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }
 
-  const body = await request.json();
+  const secret = getSecret();
+  if (!secret) {
+    return NextResponse.json({ error: "Server misconfigured" }, { status: 500 });
+  }
+
+  const rawBody = await request.text();
+  let body: { email?: string; plan?: string; timestamp?: number; signature?: string };
+  try {
+    body = rawBody ? JSON.parse(rawBody) : {};
+  } catch {
+    return NextResponse.json({ error: "invalid_payload" }, { status: 400 });
+  }
   const { email, plan, timestamp, signature } = body;
 
   if (!email) {
     return NextResponse.json({ error: "email is required" }, { status: 400 });
   }
 
-  if (!TENANT_API_SECRET) {
-    return NextResponse.json({ error: "Server misconfigured" }, { status: 500 });
+  // 1) Pattern A — HMAC standard contrat §6.1 : signature dans les headers
+  //    sur `${timestamp}.${rawBody}`. Source de vérité long terme.
+  const headerSig = request.headers.get("x-veridian-hub-signature");
+  const headerTs = Number(request.headers.get("x-veridian-timestamp"));
+
+  let authOk = false;
+  let authMode: "standard" | "legacy_email_ts" | "legacy_bearer" | null = null;
+  let lastFailure = "Unauthorized";
+
+  if (headerSig) {
+    const v = verifyHubHmac(secret, headerTs, rawBody, headerSig);
+    if (v.ok) {
+      authOk = true;
+      authMode = "standard";
+    } else {
+      lastFailure = v.reason === "timestamp_drift" ? "Timestamp expired or invalid"
+        : v.reason === "invalid_signature" ? "Invalid signature"
+        : v.reason === "invalid_timestamp" ? "Timestamp expired or invalid"
+        : "Unauthorized";
+    }
   }
 
-  // Auth: HMAC signature (preferred) or legacy Bearer token (backward compat)
-  if (timestamp && signature) {
-    // HMAC auth: verify signature and timestamp freshness
-    const ts = Number(timestamp);
-    if (isNaN(ts) || Math.abs(Date.now() - ts) > MAX_TIMESTAMP_DRIFT_MS) {
-      return NextResponse.json({ error: "Timestamp expired or invalid" }, { status: 401 });
-    }
-    if (!verifyHmac(email, ts, signature)) {
-      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
-    }
-  } else {
-    // Legacy Bearer token (backward compat — will be removed)
-    const authHeader = request.headers.get("authorization");
-    if (authHeader !== `Bearer ${TENANT_API_SECRET}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // 2) Legacy A — HMAC `email:ts` dans le body (format Prospection historique)
+  if (!authOk && ACCEPT_LEGACY_HMAC && timestamp && signature) {
+    const v = verifyLegacyEmailTsHmac(secret, email, Number(timestamp), signature);
+    if (v.ok) {
+      authOk = true;
+      authMode = "legacy_email_ts";
+      console.warn(
+        "[provision] legacy HMAC email:ts accepted — migrate Hub to standard {ts}.{body}",
+      );
+    } else {
+      lastFailure = v.reason === "timestamp_drift" ? "Timestamp expired or invalid"
+        : v.reason === "invalid_signature" ? "Invalid signature"
+        : lastFailure;
     }
   }
+
+  // 3) Legacy B — `Authorization: Bearer <secret>`. C'est ce que le Hub
+  //    utilise aujourd'hui (regenerate-login, impersonate). Reste actif tant
+  //    que la migration Hub n'est pas live.
+  if (!authOk && ACCEPT_LEGACY_BEARER) {
+    const v = verifyLegacyBearer(secret, request.headers.get("authorization"));
+    if (v.ok) {
+      authOk = true;
+      authMode = "legacy_bearer";
+    }
+  }
+
+  if (!authOk) {
+    return NextResponse.json(
+      { error: lastFailure },
+      { status: 401 },
+    );
+  }
+  // authMode disponible pour observabilité (log structuré P8).
+  void authMode;
 
   // Generate fresh credentials. The hub (regenerate-login) is responsible
   // for persisting these in the Supabase tenants table.

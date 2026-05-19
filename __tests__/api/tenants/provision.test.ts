@@ -1,21 +1,25 @@
 /**
  * Tests de la route POST /api/tenants/provision (callable par le Hub).
  *
- * Couvre :
+ * Couvre l'authentification triple :
+ *  - Pattern A — HMAC standard `{ts}.{body}` dans les headers (cible contrat §6.1)
+ *  - Legacy A — HMAC `email:ts` dans le body (fenêtre 30j ACCEPT_LEGACY_HMAC)
+ *  - Legacy B — `Authorization: Bearer <secret>` (fenêtre Hub ACCEPT_LEGACY_BEARER)
+ *
+ * Plus :
  *  - 400 si email manquant
- *  - 500 si TENANT_API_SECRET non configuré
- *  - 401 si signature HMAC invalide
- *  - 401 si timestamp hors fenêtre (drift > 5min)
- *  - 401 si Bearer token legacy mauvais
+ *  - 500 si secret non configuré
+ *  - 401 si signature invalide / timestamp drift / body modifié
  *  - 429 si rate limit atteint (10/min/IP)
- *  - 200 + credentials générés sur HMAC valide
- *  - 200 + credentials générés sur Bearer token legacy valide
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
 import { createHmac } from "crypto";
 
 vi.hoisted(() => {
+  process.env.HUB_API_SECRET = "test-secret-xyz";
   process.env.TENANT_API_SECRET = "test-secret-xyz";
+  process.env.ACCEPT_LEGACY_HMAC = "1";
+  process.env.ACCEPT_LEGACY_BEARER = "1";
   // Pas de Supabase configuré → ensureOwnerAdmin sera no-op (court-circuit propre)
   delete process.env.SUPABASE_URL;
   delete process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -48,6 +52,7 @@ import { makeRequest, readJson } from "../_helpers";
 
 const SECRET = "test-secret-xyz";
 
+/** Legacy HMAC : signature sur `email:timestamp` placée dans le body. */
 function signedBody(
   email: string,
   extras: { driftMs?: number; badSig?: boolean; plan?: string } = {},
@@ -61,6 +66,21 @@ function signedBody(
     timestamp: ts,
     signature: sig,
     plan: extras.plan,
+  };
+}
+
+/** Standard HMAC : signature `{ts}.{rawBody}` dans les headers `X-Veridian-*`. */
+function standardHeaders(
+  rawBody: string,
+  extras: { driftMs?: number; badSig?: boolean } = {},
+): Record<string, string> {
+  const ts = Date.now() + (extras.driftMs ?? 0);
+  const sig = extras.badSig
+    ? "00".repeat(32)
+    : createHmac("sha256", SECRET).update(`${ts}.${rawBody}`).digest("hex");
+  return {
+    "x-veridian-timestamp": String(ts),
+    "x-veridian-hub-signature": sig,
   };
 }
 
@@ -154,6 +174,70 @@ describe("POST /api/tenants/provision", () => {
     const body = (await readJson(res)) as { plan: string };
     // No plan provided → defaults to freemium
     expect(body.plan).toBe("freemium");
+  });
+
+  // === Pattern A — HMAC standard contrat §6.1 ===
+
+  test("returns 200 on standard HMAC {ts}.{body} dans les headers", async () => {
+    const bodyObj = { email: "client@example.com", plan: "pro" };
+    const raw = JSON.stringify(bodyObj);
+    const req = makeRequest("/api/tenants/provision", {
+      method: "POST",
+      headers: {
+        ...standardHeaders(raw),
+        "x-forwarded-for": `10.0.10.${Math.floor(Math.random() * 250)}`,
+      },
+      body: raw,
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const body = (await readJson(res)) as { plan: string };
+    expect(body.plan).toBe("pro");
+  });
+
+  test("returns 401 si standard HMAC signe mal le body", async () => {
+    const raw = JSON.stringify({ email: "client@example.com" });
+    const req = makeRequest("/api/tenants/provision", {
+      method: "POST",
+      headers: {
+        ...standardHeaders(raw, { badSig: true }),
+        "x-forwarded-for": `10.0.11.${Math.floor(Math.random() * 250)}`,
+      },
+      body: raw,
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(401);
+  });
+
+  test("returns 401 si standard HMAC en drift > 5min", async () => {
+    const raw = JSON.stringify({ email: "client@example.com" });
+    const req = makeRequest("/api/tenants/provision", {
+      method: "POST",
+      headers: {
+        ...standardHeaders(raw, { driftMs: -6 * 60 * 1000 }),
+        "x-forwarded-for": `10.0.12.${Math.floor(Math.random() * 250)}`,
+      },
+      body: raw,
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(401);
+    const body = (await readJson(res)) as { error: string };
+    expect(body.error).toBe("Timestamp expired or invalid");
+  });
+
+  test("returns 401 si body modifié après signature (replay-proof)", async () => {
+    const original = JSON.stringify({ email: "client@example.com" });
+    const tampered = JSON.stringify({ email: "attacker@example.com" });
+    const req = makeRequest("/api/tenants/provision", {
+      method: "POST",
+      headers: {
+        ...standardHeaders(original),
+        "x-forwarded-for": `10.0.13.${Math.floor(Math.random() * 250)}`,
+      },
+      body: tampered,
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(401);
   });
 
   test("rate-limits to 10 requests/min/IP (11th returns 429)", async () => {
