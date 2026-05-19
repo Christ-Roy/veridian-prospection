@@ -3,7 +3,9 @@
  * ajoutée suite au refactor visibility cross-membre (2026-05-19).
  *
  * 2026-05-20 : ajout d'invariants pour patchOutreach() + updateOutreach()
- * sur le sync status ↔ pipeline_stage.
+ * sur le sync status ↔ pipeline_stage. Mise à jour : suppression de l'import
+ * applyStatusTransition (non utilisé dans pipeline.ts, helper appelé
+ * indirectement via pipelineStageForStatus uniquement).
  *
  * Périmètre : uniquement les changements liés à la PR. Le reste de
  * getPipelineLeads (group by stage, calcul email_count, etc.) reste en

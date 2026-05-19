@@ -1,5 +1,5 @@
 import { prisma, bigIntToNumber, tenantWhere, DEFAULT_ENTREPRISES_WHERE } from "./shared";
-import { applyStatusTransition, pipelineStageForStatus } from "@/lib/outreach/status";
+import { pipelineStageForStatus } from "@/lib/outreach/status";
 
 export interface PipelineLead {
   /** Alias legacy: front-end PipelineBoard reads `domain` to key/select leads. */
