@@ -214,12 +214,27 @@ export async function getLeadDetail(siren: string, tenantId: string | null = nul
   };
 }
 
-export async function getHistoryLeads(limit = 200, tenantId: string | null = null): Promise<Lead[]> {
+export async function getHistoryLeads(
+  limit = 200,
+  tenantId: string | null = null,
+  userId: string | null = null,
+): Promise<Lead[]> {
   const LEADS_SELECT_T = buildLeadsSelect(tenantId);
+  // Filtre owner : si on a un userId, on ne montre que les outreach dont
+  // l'user_id matche (mes consultations). Sinon (admin/legacy) on tombe sur
+  // le filtre tenant uniquement.
+  // Validation UUID stricte avant interpolation (anti SQL injection).
+  let userClause = "";
+  if (userId) {
+    if (!/^[0-9a-f-]{36}$/i.test(userId)) {
+      throw new Error(`getHistoryLeads: invalid userId format: ${userId}`);
+    }
+    userClause = ` AND o.user_id = '${userId}'`;
+  }
   const rows = await prisma.$queryRawUnsafe<Lead[]>(
     `${LEADS_SELECT_T}
      WHERE ${DEFAULT_ENTREPRISES_WHERE}
-       AND o.last_visited IS NOT NULL
+       AND o.last_visited IS NOT NULL${userClause}
      ORDER BY o.last_visited DESC
      LIMIT $1`,
     limit

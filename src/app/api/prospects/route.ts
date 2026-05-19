@@ -5,7 +5,8 @@ import type { ProspectPreset } from "@/lib/domains";
 import type { ProspectFilters } from "@/lib/queries/prospects";
 import { requireAuth } from "@/lib/auth/api-auth";
 import { getTenantId, getTenantProspectLimit } from "@/lib/supabase/tenant";
-import { getWorkspaceScope } from "@/lib/auth/user-context";
+import { getUserContext } from "@/lib/auth/user-context";
+import { resolveVisibilityMode, type VisibilityScope } from "@/lib/queries/visibility";
 import { isRateLimited } from "@/lib/rate-limit";
 
 // Parse filter params from search params
@@ -160,14 +161,23 @@ export async function GET(request: NextRequest) {
   }
 
   const tenantId = await getTenantId(auth.user.id);
-  const { userFilter } = await getWorkspaceScope();
+  const ctx = await getUserContext();
   const sp = request.nextUrl.searchParams;
   const action = sp.get("action");
   const filters = parseFilters(sp);
 
-  // Visibility scope: if the user's workspace membership is 'own', restrict
-  // prospect rows to only those with an outreach record owned by them.
-  if (userFilter) filters.userFilter = userFilter;
+  // Visibility scope canonique : sur /prospects, on est TOUJOURS en mode
+  // discovery (anti double appel — un commercial ne voit pas les leads
+  // déjà ouverts par ses collègues), sauf admin avec ?showAll=1.
+  const adminOverride = ctx?.isAdmin && sp.get("showAll") === "1";
+  const visibility: VisibilityScope | undefined = ctx && tenantId
+    ? {
+        mode: resolveVisibilityMode(ctx, "discovery", adminOverride),
+        tenantId,
+        userId: auth.user.id,
+        workspaceIds: ctx.workspaces.map((w) => w.id),
+      }
+    : undefined;
 
   // Enforce lead quota for freemium users
   const prospectLimit = await getTenantProspectLimit(auth.user.id);
@@ -206,14 +216,16 @@ export async function GET(request: NextRequest) {
 
   // Action: get domain counts for sidebar
   if (action === "domain-counts") {
-    // Only cache if no filters (filtered counts change often)
-    if (!hasF) {
+    // Cache désactivé en mode visibility-aware : la clé devrait inclure userId
+    // pour ne pas servir un cache cross-user. À recâbler plus tard si besoin
+    // de perf (cf project_visibility_cache_perf).
+    if (!hasF && !visibility) {
       const counts = await cached(`domain-counts-${presetsCacheKey}-${tid}`, 5 * 60 * 1000, () => getDomainCounts(presets, undefined, tenantId));
       return NextResponse.json(counts, {
         headers: { "Cache-Control": "private, max-age=300" },
       });
     }
-    const counts = await getDomainCounts(presets, filters, tenantId);
+    const counts = await getDomainCounts(presets, filters, tenantId, visibility);
     return NextResponse.json(counts, {
       headers: { "Cache-Control": "private, max-age=30" },
     });
@@ -222,13 +234,13 @@ export async function GET(request: NextRequest) {
   // Action: get preset counts for preset tabs
   if (action === "preset-counts") {
     const domainId = sp.get("domain") ?? "all";
-    if (!hasF) {
+    if (!hasF && !visibility) {
       const counts = await cached(`preset-counts-${domainId}-${tid}`, 5 * 60 * 1000, () => getPresetCounts(domainId, undefined, tenantId));
       return NextResponse.json(counts, {
         headers: { "Cache-Control": "private, max-age=300" },
       });
     }
-    const counts = await getPresetCounts(domainId, filters, tenantId);
+    const counts = await getPresetCounts(domainId, filters, tenantId, visibility);
     return NextResponse.json(counts, {
       headers: { "Cache-Control": "private, max-age=30" },
     });
@@ -241,7 +253,7 @@ export async function GET(request: NextRequest) {
   const sort = sp.get("sort") ?? undefined;
   const sortDir = sp.get("sortDir") === "asc" ? "asc" as const : "desc" as const;
 
-  const result = await getProspects({ domainId, presets, page, pageSize, sort, sortDir, filters }, tenantId);
+  const result = await getProspects({ domainId, presets, page, pageSize, sort, sortDir, filters, visibility }, tenantId);
 
   // Obfuscate sensitive fields only for freemium users with expired trial
   // Paid plans (pro, enterprise) never see obfuscated data

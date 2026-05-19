@@ -9,6 +9,7 @@ const {
   getTenantIdMock,
   getTenantProspectLimitMock,
   getWorkspaceScopeMock,
+  getUserContextMock,
   cachedMock,
   isRateLimitedMock,
   queriesMock,
@@ -17,6 +18,7 @@ const {
   getTenantIdMock: vi.fn(),
   getTenantProspectLimitMock: vi.fn(),
   getWorkspaceScopeMock: vi.fn(),
+  getUserContextMock: vi.fn(),
   cachedMock: vi.fn(
     async <T>(_k: string, _ttl: number, fn: () => Promise<T>) => fn(),
   ),
@@ -36,6 +38,7 @@ vi.mock("@/lib/supabase/tenant", () => ({
 }));
 vi.mock("@/lib/auth/user-context", () => ({
   getWorkspaceScope: getWorkspaceScopeMock,
+  getUserContext: getUserContextMock,
 }));
 vi.mock("@/lib/cache", () => ({ cached: cachedMock }));
 vi.mock("@/lib/rate-limit", () => ({ isRateLimited: isRateLimitedMock }));
@@ -68,6 +71,13 @@ describe("GET /api/prospects", () => {
       ctx: { tenantId: "t-1" },
       filter: null,
       insertId: null,
+    });
+    getUserContextMock.mockResolvedValue({
+      userId: "u-1",
+      tenantId: "t-1",
+      isAdmin: false,
+      workspaces: [],
+      activeWorkspaceId: null,
     });
     queriesMock.getProspects.mockResolvedValue({
       results: [{ siren: "123456789", denomination: "ACME" }],

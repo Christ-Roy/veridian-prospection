@@ -3,6 +3,7 @@
 
 import { prisma, bigIntToNumber, tenantWhere, DEFAULT_ENTREPRISES_WHERE, SMALL_BIZ_FIT_SCORE_SQL, buildAgeDirigeantClause } from "./shared";
 import { DOMAINS, getDomainNafCodes, type ProspectPreset } from "../domains";
+import { buildOutreachJoin, buildOutreachWhere, type VisibilityScope } from "./visibility";
 
 function buildProspectSelectFields(tenantId: string | null): string {
   const twCa = tenantWhere("ca", tenantId);
@@ -62,7 +63,16 @@ function buildProspectSelectFields(tenantId: string | null): string {
 `;
 }
 
-function buildProspectFrom(tenantId: string | null): string {
+function buildProspectFrom(tenantId: string | null, visibility?: VisibilityScope): string {
+  // Si on a un VisibilityScope (cas standard /prospects authentifié), on
+  // utilise le helper canonique. Sinon fallback legacy (counts publics
+  // ou contexte sans user — ex. domain-counts pour la sidebar non-authn).
+  if (visibility) {
+    return `
+  FROM entreprises e
+  LEFT JOIN outreach o ON o.siren = e.siren ${buildOutreachJoin(visibility)}
+`;
+  }
   const outreachJoin = tenantId !== null
     ? `LEFT JOIN outreach o ON o.siren = e.siren AND (o.tenant_id = '${tenantId}' OR o.tenant_id IS NULL)`
     : `LEFT JOIN outreach o ON o.siren = e.siren AND o.tenant_id IS NULL`;
@@ -368,13 +378,11 @@ export function buildFilterWhere(filters: ProspectFilters): { sql: string; param
     if (clause) clauses.push(clause);
   }
 
-  // Visibility scope: restrict to outreach rows belonging to this user.
-  // The outreach table is LEFT JOINed as `o` — when userFilter is set, we
-  // want to exclude rows where o.user_id doesn't match (or is NULL).
-  if (filters.userFilter) {
-    clauses.push("o.user_id = ?");
-    params.push(filters.userFilter);
-  }
+  // (Le filtre userFilter legacy a été remplacé par le helper VisibilityScope
+  // — cf src/lib/queries/visibility.ts. Le champ ProspectFilters.userFilter
+  // reste dans l'interface pour back-compat des callers internes, mais n'est
+  // plus appliqué ici. Ne pas réintroduire de clause sur o.user_id ici sans
+  // passer par le helper.)
 
   // Freemium quota pool: restrict to pre-selected SIREN list
   if (filters.quotaPool && filters.quotaPool.length > 0) {
@@ -402,13 +410,15 @@ interface ProspectParams {
   sort?: string;
   sortDir?: "asc" | "desc";
   filters?: ProspectFilters;
+  /** Scope de visibilité — passé par l'API route à partir du UserContext. */
+  visibility?: VisibilityScope;
 }
 
 export async function getProspects(params: ProspectParams, tenantId: string | null = null) {
-  const { domainId, presets, page, pageSize, sort = "prospect_score", sortDir = "desc", filters = {} } = params;
+  const { domainId, presets, page, pageSize, sort = "prospect_score", sortDir = "desc", filters = {}, visibility } = params;
 
   const PROSPECT_SELECT_FIELDS = buildProspectSelectFields(tenantId);
-  const PROSPECT_FROM = buildProspectFrom(tenantId);
+  const PROSPECT_FROM = buildProspectFrom(tenantId, visibility);
 
   const { sql: nafSql, params: nafParams } = buildDomainNafWhere(domainId);
   const presetSql = getPresetWhere(presets);
@@ -416,11 +426,16 @@ export async function getProspects(params: ProspectParams, tenantId: string | nu
 
   const defaultUnseenSql = (presets.length === 1 && presets[0] === "top_prospects" && !filters.unseenOnly) ? " AND o.last_visited IS NULL" : "";
 
+  // Clause de visibilité anti double appel : sur /prospects on ne montre que
+  // les leads libres OU mes a_contacter. Injectée systématiquement quand un
+  // VisibilityScope est passé (cas standard authentifié).
+  const visibilitySql = visibility ? ` AND ${buildOutreachWhere(visibility)}` : "";
+
   // When searching, bypass sector/preset/unseen filters — the user wants to FIND something specific
   const isSearching = !!filters.search && filters.search.trim().length > 0;
   const whereSql = isSearching
-    ? `${filterSql}`
-    : `${nafSql} AND ${presetSql} AND ${filterSql}${defaultUnseenSql}`;
+    ? `${filterSql}${visibilitySql}`
+    : `${nafSql} AND ${presetSql} AND ${filterSql}${defaultUnseenSql}${visibilitySql}`;
   const allParams = isSearching
     ? [...filterParams]
     : [...nafParams, ...filterParams];
@@ -469,17 +484,18 @@ export async function getProspects(params: ProspectParams, tenantId: string | nu
 export const _SORT_MAP_ALIAS = SORT_MAP_ALIAS;
 
 // Get counts for all domains for a given preset(s)
-export async function getDomainCounts(presets: ProspectPreset[], filters?: ProspectFilters, tenantId: string | null = null): Promise<Record<string, number>> {
-  const PROSPECT_FROM = buildProspectFrom(tenantId);
+export async function getDomainCounts(presets: ProspectPreset[], filters?: ProspectFilters, tenantId: string | null = null, visibility?: VisibilityScope): Promise<Record<string, number>> {
+  const PROSPECT_FROM = buildProspectFrom(tenantId, visibility);
   const counts: Record<string, number> = {};
   const presetSql = getPresetWhere(presets);
   const { sql: filterSql, params: filterParams } = buildFilterWhere(filters ?? {});
+  const visibilitySql = visibility ? ` AND ${buildOutreachWhere(visibility)}` : "";
 
   // "all" domain count
   const allCountSql = toPositionalParams(`
     SELECT COUNT(*) as count
     ${PROSPECT_FROM}
-    WHERE ${presetSql} AND ${filterSql}
+    WHERE ${presetSql} AND ${filterSql}${visibilitySql}
   `);
   const allCountResult = await prisma.$queryRawUnsafe<[{ count: bigint }]>(allCountSql, ...filterParams);
   counts["all"] = bigIntToNumber(allCountResult[0].count);
@@ -509,11 +525,11 @@ export async function getDomainCounts(presets: ProspectPreset[], filters?: Prosp
   }
 
   if (caseParts.length > 0) {
-    const PROSPECT_FROM_inner = buildProspectFrom(tenantId);
+    const PROSPECT_FROM_inner = buildProspectFrom(tenantId, visibility);
     const rawSql = `
       SELECT ${caseParts.join(", ")}
       ${PROSPECT_FROM_inner}
-      WHERE ${presetSql} AND ${filterSql}
+      WHERE ${presetSql} AND ${filterSql}${visibilitySql}
     `;
     const allP = [...params, ...filterParams];
     const sql = toPositionalParams(rawSql);
@@ -531,10 +547,11 @@ export async function getDomainCounts(presets: ProspectPreset[], filters?: Prosp
 }
 
 // Get counts for all presets for a given domain
-export async function getPresetCounts(domainId: string, filters?: ProspectFilters, tenantId: string | null = null): Promise<Record<ProspectPreset, number>> {
+export async function getPresetCounts(domainId: string, filters?: ProspectFilters, tenantId: string | null = null, visibility?: VisibilityScope): Promise<Record<ProspectPreset, number>> {
   const { sql: nafSql, params: nafParams } = buildDomainNafWhere(domainId);
   const { sql: filterSql, params: filterParams } = buildFilterWhere(filters ?? {});
   const allParams = [...nafParams, ...filterParams];
+  const visibilitySql = visibility ? ` AND ${buildOutreachWhere(visibility)}` : "";
   const naf = `e.code_naf`;
 
   const rawSql = `
@@ -561,8 +578,8 @@ export async function getPresetCounts(domainId: string, filters?: ProspectFilter
         AND e.best_phone_e164 IS NOT NULL
       THEN 1 ELSE 0 END) as "tous",
       SUM(CASE WHEN o.last_visited IS NOT NULL THEN 1 ELSE 0 END) as "historique"
-    ${buildProspectFrom(tenantId)}
-    WHERE ${nafSql} AND ${filterSql}
+    ${buildProspectFrom(tenantId, visibility)}
+    WHERE ${nafSql} AND ${filterSql}${visibilitySql}
   `;
   const sql = toPositionalParams(rawSql);
   const result = await prisma.$queryRawUnsafe<Record<string, bigint>[]>(sql, ...allParams);

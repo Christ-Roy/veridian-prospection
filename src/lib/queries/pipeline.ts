@@ -56,6 +56,10 @@ export async function getPipelineLeads(
   const twF = tenantWhere("f", tenantId);
   const wsO = workspaceSqlClause("o", workspaceFilter);
   const wsF = workspaceSqlClause("f", workspaceFilter);
+  // Validation UUID stricte avant interpolation (anti SQL injection).
+  if (userFilter && !/^[0-9a-f-]{36}$/i.test(userFilter)) {
+    throw new Error(`getPipelineLeads: invalid userFilter format: ${userFilter}`);
+  }
   const rows = await prisma.$queryRawUnsafe<PipelineLead[]>(`
     SELECT
       e.siren,
