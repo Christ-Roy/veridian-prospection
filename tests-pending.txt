@@ -101,8 +101,6 @@ src/lib/naf.ts
 src/lib/prisma.ts
 src/lib/queries/activity.ts
 src/lib/queries/index.ts
-src/lib/queries/lead-quota.test.ts
-src/lib/queries/lead-quota.ts
 src/lib/queries/leads.ts
 src/lib/queries/pipeline.ts
 src/lib/queries/prospects-filters.test.ts
@@ -118,7 +116,6 @@ src/lib/segments.ts
 src/lib/supabase/api-auth.ts
 src/lib/supabase/middleware.ts
 src/lib/supabase/server.ts
-src/lib/supabase/tenant.ts
 src/lib/supabase/user-context.ts
 src/lib/trial.test.ts
 src/lib/trial.ts

@@ -22,10 +22,18 @@ const { tenantFindUnique, tenantUpdate } = vi.hoisted(() => ({
   tenantUpdate: vi.fn(),
 }));
 
+const { emitWebhookMock } = vi.hoisted(() => ({
+  emitWebhookMock: vi.fn(),
+}));
+
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     tenant: { findUnique: tenantFindUnique, update: tenantUpdate },
   },
+}));
+
+vi.mock("@/lib/hub/webhooks", () => ({
+  emitHubWebhookAsync: emitWebhookMock,
 }));
 
 import { POST } from "@/app/api/tenants/suspend/route";
@@ -51,16 +59,56 @@ describe("POST /api/tenants/suspend", () => {
     vi.clearAllMocks();
   });
 
-  test("401 si HMAC absent", async () => {
+  test("401 si HMAC absent (Unauthorized générique)", async () => {
     const req = makeRequest("/api/tenants/suspend", {
       method: "POST",
       body: { tenant_id: "t-1" },
     });
     const res = await POST(req);
     expect(res.status).toBe(401);
+    const body = (await readJson(res)) as { error: string };
+    expect(body.error).toBe("Unauthorized");
+    // Critique : pas de fuite DB avant l'auth
+    expect(tenantFindUnique).not.toHaveBeenCalled();
   });
 
-  test("400 si tenant_id manquant", async () => {
+  test("401 si signature HMAC invalide (Invalid signature distinct)", async () => {
+    const ts = Date.now();
+    const raw = JSON.stringify({ tenant_id: "t-1" });
+    const req = makeRequest("/api/tenants/suspend", {
+      method: "POST",
+      headers: {
+        "x-veridian-timestamp": String(ts),
+        "x-veridian-hub-signature": "00".repeat(32),
+      },
+      body: raw,
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(401);
+    const body = (await readJson(res)) as { error: string };
+    expect(body.error).toBe("Invalid signature");
+    expect(tenantFindUnique).not.toHaveBeenCalled();
+  });
+
+  test("401 si timestamp drift > 5min (Timestamp expired)", async () => {
+    const ts = Date.now() - 10 * 60 * 1000;
+    const raw = JSON.stringify({ tenant_id: "t-1" });
+    const sig = createHmac("sha256", SECRET).update(`${ts}.${raw}`).digest("hex");
+    const req = makeRequest("/api/tenants/suspend", {
+      method: "POST",
+      headers: {
+        "x-veridian-timestamp": String(ts),
+        "x-veridian-hub-signature": sig,
+      },
+      body: raw,
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(401);
+    const body = (await readJson(res)) as { error: string };
+    expect(body.error).toBe("Timestamp expired or invalid");
+  });
+
+  test("400 si tenant_id manquant — error=invalid_payload (§5.10)", async () => {
     const { raw, headers } = signed({});
     const req = makeRequest("/api/tenants/suspend", {
       method: "POST",
@@ -69,6 +117,11 @@ describe("POST /api/tenants/suspend", () => {
     });
     const res = await POST(req);
     expect(res.status).toBe(400);
+    const body = (await readJson(res)) as { error: string; message: string };
+    expect(body.error).toBe("invalid_payload");
+    expect(body.message).toContain("tenant_id");
+    // tenant.findUnique ne doit JAMAIS être appelé sans tenant_id
+    expect(tenantFindUnique).not.toHaveBeenCalled();
   });
 
   test("404 si tenant introuvable", async () => {
@@ -122,6 +175,37 @@ describe("POST /api/tenants/suspend", () => {
     const body = (await readJson(res)) as { suspended_at: string };
     expect(body.suspended_at).toBe("2026-05-19T10:00:00.000Z");
     expect(tenantUpdate).not.toHaveBeenCalled();
+  });
+
+  test("émet webhook tenant.suspended sur transition active→suspended", async () => {
+    tenantFindUnique.mockResolvedValueOnce({
+      id: "t-1",
+      status: "active",
+      metadata: null,
+    });
+    tenantUpdate.mockResolvedValueOnce({});
+    const { raw, headers } = signed({
+      tenant_id: "t-1",
+      reason: "billing_past_due",
+    });
+    await POST(req(raw, headers));
+    expect(emitWebhookMock).toHaveBeenCalledOnce();
+    const [event, tenantId, data] = emitWebhookMock.mock.calls[0];
+    expect(event).toBe("tenant.suspended");
+    expect(tenantId).toBe("t-1");
+    expect(data.reason).toBe("billing_past_due");
+    expect(data.suspended_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  test("pas de webhook si tenant déjà suspendu (idempotent)", async () => {
+    tenantFindUnique.mockResolvedValueOnce({
+      id: "t-1",
+      status: "suspended",
+      metadata: { suspendedAt: "2026-05-01T00:00:00Z" },
+    });
+    const { raw, headers } = signed({ tenant_id: "t-1" });
+    await POST(req(raw, headers));
+    expect(emitWebhookMock).not.toHaveBeenCalled();
   });
 
   test("default reason=admin_action si non fourni", async () => {

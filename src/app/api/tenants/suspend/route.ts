@@ -14,6 +14,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { requireHubHmac } from "@/lib/hub/auth";
+import { emitHubWebhookAsync } from "@/lib/hub/webhooks";
 import { prisma } from "@/lib/prisma";
 
 type SuspendBody = {
@@ -64,6 +65,13 @@ export async function POST(request: NextRequest) {
       },
     });
     console.log(`[suspend] tenant=${tenant_id} reason=${reason ?? "admin_action"}`);
+
+    // Fire-and-forget webhook Hub. Le contrat §7.1 prévoit cet event pour
+    // que le Hub puisse propager l'état dans son admin lifecycle panel.
+    emitHubWebhookAsync("tenant.suspended", tenant_id, {
+      suspended_at: suspendedAt,
+      reason: reason ?? "admin_action",
+    });
   }
 
   return NextResponse.json({

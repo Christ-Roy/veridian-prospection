@@ -52,12 +52,40 @@ export async function requireTenantId(userId: string): Promise<string> {
   return tenantId;
 }
 
-/** Prospect limits per plan — configurable via env vars */
+/**
+ * Prospect limits per plan — configurable via env vars.
+ *
+ * Plans cf CONTRAT-HUB.md §3.3 :
+ *  - freemium / starter : payants, quota cap
+ *  - pro / enterprise : payants, gros caps
+ *  - lifetime_site_vitrine / lifetime_partner / internal : offerts,
+ *    quota illimité (Infinity). Immune au downgrade Stripe (§3.3 immunité).
+ */
 const PLAN_LIMITS: Record<string, number> = {
   freemium: parseInt(process.env.PLAN_LIMIT_FREEMIUM || "300", 10),
+  starter: parseInt(process.env.PLAN_LIMIT_STARTER || "5000", 10),
   pro: parseInt(process.env.PLAN_LIMIT_PRO || "100000", 10),
   enterprise: parseInt(process.env.PLAN_LIMIT_ENTERPRISE || "500000", 10),
+  // Plans offerts — quota illimité, jamais de downgrade.
+  lifetime_site_vitrine: Number.POSITIVE_INFINITY,
+  lifetime_partner: Number.POSITIVE_INFINITY,
+  internal: Number.POSITIVE_INFINITY,
 };
+
+/**
+ * Plans considérés comme offerts (gratuits, illimités, immunes au downgrade).
+ * Source de vérité §3.3 du contrat.
+ */
+export const GIFTED_PLANS = new Set([
+  "lifetime_site_vitrine",
+  "lifetime_partner",
+  "internal",
+] as const);
+
+/** Retourne true si le plan n'a jamais de trial expiré ni de quota. */
+export function isGiftedPlan(plan: string | null | undefined): boolean {
+  return typeof plan === "string" && GIFTED_PLANS.has(plan as never);
+}
 
 // Cache plan lookups — prevents Supabase admin API rate limiting
 // (incident 2026-04-06: uncached calls on every /api/prospects → 429)

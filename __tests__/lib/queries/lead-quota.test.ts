@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { buildQuotaFilter, buildFreemiumLeadPoolSQL } from "./lead-quota";
+import {
+  buildQuotaFilter,
+  buildFreemiumLeadPoolSQL,
+} from "@/lib/queries/lead-quota";
 
 describe("Lead quota system", () => {
   describe("buildQuotaFilter", () => {
@@ -29,8 +32,8 @@ describe("Lead quota system", () => {
       expect(result.where).not.toContain("prospect_score");
     });
 
-    it("full/enterprise: returns no filter + no limit", () => {
-      for (const plan of ["full", "enterprise"] as const) {
+    it("full/enterprise/pro: returns no filter + no limit", () => {
+      for (const plan of ["full", "enterprise", "pro"] as const) {
         const result = buildQuotaFilter({
           plan,
           maxLeads: null,
@@ -40,6 +43,47 @@ describe("Lead quota system", () => {
         expect(result.limit).toBeNull();
         expect(result.where).toBe("1=1");
       }
+    });
+
+    it("lifetime_*/internal (plans offerts §3.3): no filter, no limit, ignore deps/sectors", () => {
+      for (const plan of [
+        "lifetime_site_vitrine",
+        "lifetime_partner",
+        "internal",
+      ] as const) {
+        const result = buildQuotaFilter({
+          plan,
+          maxLeads: null,
+          departments: ["69", "42"], // ignored
+          sectors: ["BTP"], // ignored
+        });
+        expect(result.limit).toBeNull();
+        expect(result.where).toBe("1=1");
+      }
+    });
+
+    it("starter: applique dept+sector mais pas de cap leads SQL", () => {
+      const result = buildQuotaFilter({
+        plan: "starter",
+        maxLeads: 5000,
+        departments: ["69"],
+        sectors: ["BTP"],
+      });
+      expect(result.limit).toBeNull();
+      expect(result.where).toContain("departement IN ('69')");
+      expect(result.where).toContain("secteur_final IN ('BTP')");
+      expect(result.where).not.toContain("prospect_score");
+    });
+
+    it("starter sans dept/sector: where=1=1, pas de limit", () => {
+      const result = buildQuotaFilter({
+        plan: "starter",
+        maxLeads: 5000,
+        departments: [],
+        sectors: [],
+      });
+      expect(result.limit).toBeNull();
+      expect(result.where).toBe("1=1");
     });
 
     it("freemium with no dept/sector: returns only score filter", () => {

@@ -11,6 +11,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { requireHubHmac } from "@/lib/hub/auth";
+import { emitHubWebhookAsync } from "@/lib/hub/webhooks";
 import { prisma } from "@/lib/prisma";
 
 type ResumeBody = { tenant_id?: string };
@@ -56,6 +57,10 @@ export async function POST(request: NextRequest) {
       },
     });
     console.log(`[resume] tenant=${tenant_id}`);
+
+    emitHubWebhookAsync("tenant.resumed", tenant_id, {
+      resumed_at: now.toISOString(),
+    });
   }
 
   return NextResponse.json({
