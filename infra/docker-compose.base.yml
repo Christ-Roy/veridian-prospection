@@ -13,6 +13,12 @@ services:
     image: ghcr.io/christ-roy/prospection:${PROSPECTION_IMAGE_TAG:-latest}
     pull_policy: always
     restart: unless-stopped
+    # ─── Fusible 60 % VM (politique Veridian) ──────────────────────────
+    # VM prod = 11 GB RAM / 6 CPU → 60 % = 6.6 GB / 3.6 CPU max par app.
+    # Si une app fuit, OOM-killer la cible elle seule sans tomber la VM.
+    # Monitoring : veridian-hub/scripts/ops/claude-hooks/infra-status.sh
+    mem_limit: 6600m
+    cpus: 3.6
     environment:
       NODE_ENV: production
       HOSTNAME: 0.0.0.0
