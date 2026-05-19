@@ -57,10 +57,18 @@ export async function POST(req: NextRequest) {
           if (row.siren) {
             const tid = row.tenantId ?? "00000000-0000-0000-0000-000000000000";
             const wid = row.workspaceId ?? null;
+            // status='appele' ↔ pipeline_stage='repondeur' (mapping canonique
+            // cf src/lib/outreach/status.ts). Anti-régression : si le lead
+            // est déjà en site_demo/acompte/finition/client/upsell, on
+            // préserve son état avancé.
             await prisma.$executeRaw`
-              INSERT INTO outreach (siren, tenant_id, workspace_id, status, contact_method, contacted_date, updated_at)
-              VALUES (${row.siren}, ${tid}::uuid, ${wid}::uuid, 'appele', 'phone', ${today}, ${now})
-              ON CONFLICT(siren, tenant_id) DO UPDATE SET status='appele', contact_method='phone', contacted_date=${today}, updated_at=${now}, workspace_id=COALESCE(outreach.workspace_id, EXCLUDED.workspace_id)
+              INSERT INTO outreach (siren, tenant_id, workspace_id, status, pipeline_stage, contact_method, contacted_date, updated_at, last_interaction_at)
+              VALUES (${row.siren}, ${tid}::uuid, ${wid}::uuid, 'appele', 'repondeur', 'phone', ${today}, ${now}, NOW())
+              ON CONFLICT(siren, tenant_id) DO UPDATE SET
+                status = CASE WHEN outreach.pipeline_stage IN ('site_demo','acompte','finition','client','upsell') THEN outreach.status ELSE 'appele' END,
+                pipeline_stage = CASE WHEN outreach.pipeline_stage IN ('site_demo','acompte','finition','client','upsell') THEN outreach.pipeline_stage ELSE 'repondeur' END,
+                contact_method='phone', contacted_date=${today}, updated_at=${now}, last_interaction_at=NOW(),
+                workspace_id=COALESCE(outreach.workspace_id, EXCLUDED.workspace_id)
             `;
           }
         }
@@ -93,12 +101,15 @@ export async function POST(req: NextRequest) {
 
             const tidHangup = row.tenantId ?? "00000000-0000-0000-0000-000000000000";
             const widHangup = row.workspaceId ?? null;
+            // status='rappeler' ↔ pipeline_stage='a_rappeler'. Anti-régression
+            // étendue à interesse/rdv/client/contacte (legacy) + stages avancés.
             await prisma.$executeRaw`
-              INSERT INTO outreach (siren, tenant_id, workspace_id, status, updated_at)
-              VALUES (${row.siren}, ${tidHangup}::uuid, ${widHangup}::uuid, 'rappeler', ${now})
+              INSERT INTO outreach (siren, tenant_id, workspace_id, status, pipeline_stage, updated_at, last_interaction_at)
+              VALUES (${row.siren}, ${tidHangup}::uuid, ${widHangup}::uuid, 'rappeler', 'a_rappeler', ${now}, NOW())
               ON CONFLICT(siren, tenant_id) DO UPDATE SET
-                status = CASE WHEN outreach.status IN ('interesse','rdv','client','contacte') THEN outreach.status ELSE 'rappeler' END,
-                updated_at = ${now},
+                status = CASE WHEN outreach.status IN ('interesse','rdv','client','contacte') OR outreach.pipeline_stage IN ('site_demo','acompte','finition','client','upsell') THEN outreach.status ELSE 'rappeler' END,
+                pipeline_stage = CASE WHEN outreach.pipeline_stage IN ('site_demo','acompte','finition','client','upsell') THEN outreach.pipeline_stage ELSE 'a_rappeler' END,
+                updated_at = ${now}, last_interaction_at = NOW(),
                 workspace_id = COALESCE(outreach.workspace_id, EXCLUDED.workspace_id)
             `;
           }
@@ -145,12 +156,15 @@ export async function POST(req: NextRequest) {
 
           const tidMachine = row.tenantId ?? "00000000-0000-0000-0000-000000000000";
           const widMachine = row.workspaceId ?? null;
+          // Répondeur détecté : status='rappeler' + pipeline_stage='a_rappeler'
+          // (équivalent fonctionnel — il faut rappeler plus tard).
           await prisma.$executeRaw`
-            INSERT INTO outreach (siren, tenant_id, workspace_id, status, contact_method, contacted_date, updated_at)
-            VALUES (${row.siren}, ${tidMachine}::uuid, ${widMachine}::uuid, 'rappeler', 'phone', ${today}, ${now})
+            INSERT INTO outreach (siren, tenant_id, workspace_id, status, pipeline_stage, contact_method, contacted_date, updated_at, last_interaction_at)
+            VALUES (${row.siren}, ${tidMachine}::uuid, ${widMachine}::uuid, 'rappeler', 'a_rappeler', 'phone', ${today}, ${now}, NOW())
             ON CONFLICT(siren, tenant_id) DO UPDATE SET
-              status = CASE WHEN outreach.status IN ('interesse','rdv','client','contacte') THEN outreach.status ELSE 'rappeler' END,
-              contact_method='phone', contacted_date=${today}, updated_at=${now},
+              status = CASE WHEN outreach.status IN ('interesse','rdv','client','contacte') OR outreach.pipeline_stage IN ('site_demo','acompte','finition','client','upsell') THEN outreach.status ELSE 'rappeler' END,
+              pipeline_stage = CASE WHEN outreach.pipeline_stage IN ('site_demo','acompte','finition','client','upsell') THEN outreach.pipeline_stage ELSE 'a_rappeler' END,
+              contact_method='phone', contacted_date=${today}, updated_at=${now}, last_interaction_at=NOW(),
               workspace_id = COALESCE(outreach.workspace_id, EXCLUDED.workspace_id)
           `;
 

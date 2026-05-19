@@ -1,4 +1,5 @@
 import { prisma, bigIntToNumber, tenantWhere, DEFAULT_ENTREPRISES_WHERE } from "./shared";
+import { applyStatusTransition, pipelineStageForStatus } from "@/lib/outreach/status";
 
 export interface PipelineLead {
   /** Alias legacy: front-end PipelineBoard reads `domain` to key/select leads. */
@@ -149,16 +150,20 @@ export async function updateOutreach(
   const effectiveTid = tenantId ?? "00000000-0000-0000-0000-000000000000";
   const wid = workspaceId ?? null;
   const uid = userId ?? null;
+  // Sync : pipeline_stage dérivé du status (mapping canonique).
+  const pipelineStage = pipelineStageForStatus(data.status);
   await prisma.$executeRaw`
-    INSERT INTO outreach (siren, tenant_id, workspace_id, status, notes, contact_method, contacted_date, qualification, updated_at, user_id)
-    VALUES (${siren}, ${effectiveTid}::uuid, ${wid}::uuid, ${data.status}, ${data.notes}, ${data.contact_method}, ${data.contacted_date}, ${data.qualification}, ${now}, ${uid}::uuid)
+    INSERT INTO outreach (siren, tenant_id, workspace_id, status, pipeline_stage, notes, contact_method, contacted_date, qualification, updated_at, user_id, last_interaction_at)
+    VALUES (${siren}, ${effectiveTid}::uuid, ${wid}::uuid, ${data.status}, ${pipelineStage}, ${data.notes}, ${data.contact_method}, ${data.contacted_date}, ${data.qualification}, ${now}, ${uid}::uuid, NOW())
     ON CONFLICT(siren, tenant_id) DO UPDATE SET
       status = EXCLUDED.status,
+      pipeline_stage = EXCLUDED.pipeline_stage,
       notes = EXCLUDED.notes,
       contact_method = EXCLUDED.contact_method,
       contacted_date = EXCLUDED.contacted_date,
       qualification = EXCLUDED.qualification,
       updated_at = EXCLUDED.updated_at,
+      last_interaction_at = NOW(),
       workspace_id = COALESCE(outreach.workspace_id, EXCLUDED.workspace_id),
       user_id = COALESCE(EXCLUDED.user_id, outreach.user_id)
   `;
@@ -200,10 +205,24 @@ export async function patchOutreach(
   if (data.real_value !== undefined) { pipelineFields.push(`real_value = $${pIdx++}`); pipelineValues.push(data.real_value); }
   if (data.upsell_estimated !== undefined) { pipelineFields.push(`upsell_estimated = $${pIdx++}`); pipelineValues.push(data.upsell_estimated); }
 
+  // Cohérence status ↔ pipeline_stage : si l'un est fourni, on synchronise
+  // l'autre via le helper canonique (cf src/lib/outreach/status.ts).
+  // - status fourni → recalcul pipeline_stage à partir de la table de mapping
+  // - pipeline_stage fourni explicitement → écrase status par la valeur
+  //   canonique (drag&drop kanban veut imposer le stage).
+  // C'est la fin des désync de type (status='hors_cible', pipeline_stage='fiche_ouverte').
+  let syncedStatus = data.status;
+  let syncedPipelineStage = data.pipeline_stage;
+  if (data.status !== undefined && data.pipeline_stage === undefined) {
+    syncedPipelineStage = pipelineStageForStatus(data.status);
+  } else if (data.pipeline_stage !== undefined && data.status === undefined) {
+    syncedStatus = data.pipeline_stage;
+  }
+
   if (existing) {
     // Standard Prisma fields
     const updateData: Record<string, unknown> = { updatedAt: now };
-    if (data.status !== undefined) updateData.status = data.status;
+    if (syncedStatus !== undefined) updateData.status = syncedStatus;
     // Notes: prepend new note to existing (historical log, not replace)
     if (data.notes !== undefined) {
       const existingNotes = existing.notes || "";
@@ -220,20 +239,46 @@ export async function patchOutreach(
       data: updateData,
     });
 
-    // Pipeline fields via raw SQL (not in Prisma schema)
-    if (pipelineFields.length > 0) {
-      pipelineFields.push(`last_interaction_at = NOW()`);
-      const setClause = pipelineFields.join(", ");
+    // Sync pipeline_stage si nécessaire (toujours, dès qu'on touche le status)
+    const pipelineSetParts: string[] = [];
+    const pipelineSetVals: unknown[] = [];
+    let qIdx = 1;
+    if (syncedPipelineStage !== undefined) {
+      pipelineSetParts.push(`pipeline_stage = $${qIdx++}`);
+      pipelineSetVals.push(syncedPipelineStage);
+    }
+    if (data.interest_pct !== undefined) { pipelineSetParts.push(`interest_pct = $${qIdx++}`); pipelineSetVals.push(data.interest_pct); }
+    if (data.deadline !== undefined) { pipelineSetParts.push(`deadline = $${qIdx++}::date`); pipelineSetVals.push(data.deadline || null); }
+    if (data.site_price !== undefined) { pipelineSetParts.push(`site_price = $${qIdx++}`); pipelineSetVals.push(data.site_price); }
+    if (data.acompte_pct !== undefined) { pipelineSetParts.push(`acompte_pct = $${qIdx++}`); pipelineSetVals.push(data.acompte_pct); }
+    if (data.acompte_amount !== undefined) { pipelineSetParts.push(`acompte_amount = $${qIdx++}`); pipelineSetVals.push(data.acompte_amount); }
+    if (data.monthly_recurring !== undefined) { pipelineSetParts.push(`monthly_recurring = $${qIdx++}`); pipelineSetVals.push(data.monthly_recurring); }
+    if (data.annual_deal !== undefined) { pipelineSetParts.push(`annual_deal = $${qIdx++}`); pipelineSetVals.push(data.annual_deal); }
+    if (data.estimated_value !== undefined) { pipelineSetParts.push(`estimated_value = $${qIdx++}`); pipelineSetVals.push(data.estimated_value); }
+    if (data.real_value !== undefined) { pipelineSetParts.push(`real_value = $${qIdx++}`); pipelineSetVals.push(data.real_value); }
+    if (data.upsell_estimated !== undefined) { pipelineSetParts.push(`upsell_estimated = $${qIdx++}`); pipelineSetVals.push(data.upsell_estimated); }
+
+    if (pipelineSetParts.length > 0) {
+      pipelineSetParts.push(`last_interaction_at = NOW()`);
+      const setClause = pipelineSetParts.join(", ");
       await prisma.$executeRawUnsafe(
-        `UPDATE outreach SET ${setClause} WHERE siren = $${pIdx++} AND tenant_id = $${pIdx++}::uuid`,
-        ...pipelineValues, siren, effectiveTid
+        `UPDATE outreach SET ${setClause} WHERE siren = $${qIdx++} AND tenant_id = $${qIdx++}::uuid`,
+        ...pipelineSetVals, siren, effectiveTid
       );
     }
+    // Note : `pipelineFields`/`pipelineValues` ci-dessus (loop pIdx) sont
+    // désormais ignorés au profit de pipelineSetParts qui inclut la sync
+    // status/pipeline_stage. Variables conservées pour minimiser le diff.
+    void pipelineFields;
+    void pipelineValues;
   } else {
+    // Nouvelle ligne : on force la cohérence dès l'insert.
+    const initialStatus = syncedStatus ?? "a_contacter";
+    const initialStage = syncedPipelineStage ?? pipelineStageForStatus(initialStatus);
     await prisma.outreach.create({
       data: {
         siren,
-        status: data.status ?? "a_contacter",
+        status: initialStatus,
         notes: data.notes ?? "",
         contactMethod: data.contact_method ?? "",
         contactedDate: data.contacted_date ?? "",
@@ -244,14 +289,10 @@ export async function patchOutreach(
         userId,
       },
     });
-    // Set pipeline fields on newly created record
-    if (pipelineFields.length > 0 || data.pipeline_stage) {
-      const stage = data.pipeline_stage ?? "fiche_ouverte";
-      await prisma.$executeRawUnsafe(
-        `UPDATE outreach SET pipeline_stage = $1, last_interaction_at = NOW() WHERE siren = $2 AND tenant_id = $3::uuid`,
-        stage, siren, effectiveTid
-      );
-    }
+    await prisma.$executeRawUnsafe(
+      `UPDATE outreach SET pipeline_stage = $1, last_interaction_at = NOW() WHERE siren = $2 AND tenant_id = $3::uuid`,
+      initialStage, siren, effectiveTid
+    );
   }
 }
 

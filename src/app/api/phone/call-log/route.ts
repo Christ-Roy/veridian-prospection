@@ -154,20 +154,33 @@ async function handleCompletion(
   }
 
   // --- Outreach + followup logic ---
+  // Cohérence status ↔ pipeline_stage : tous les events phone écrivent les
+  // 2 colonnes (mapping canonique cf src/lib/outreach/status.ts).
+  // Anti-régression : les stages avancés du funnel sont préservés.
   if (siren) {
     if (answered && duration >= 30) {
+      // Appel pris ≥30s → 'appele' ↔ 'repondeur' (proxy "contact tenté").
       await prisma.$executeRaw`
-        INSERT INTO outreach (siren, tenant_id, workspace_id, status, contact_method, contacted_date, updated_at, user_id)
-        VALUES (${siren}, ${tid}::uuid, ${wid}::uuid, 'appele', 'phone', ${today}, ${now}, ${userId}::uuid)
-        ON CONFLICT(siren, tenant_id) DO UPDATE SET status='appele', contact_method='phone', contacted_date=${today}, updated_at=${now}, workspace_id=COALESCE(outreach.workspace_id, EXCLUDED.workspace_id), user_id=COALESCE(EXCLUDED.user_id, outreach.user_id)
+        INSERT INTO outreach (siren, tenant_id, workspace_id, status, pipeline_stage, contact_method, contacted_date, updated_at, last_interaction_at, user_id)
+        VALUES (${siren}, ${tid}::uuid, ${wid}::uuid, 'appele', 'repondeur', 'phone', ${today}, ${now}, NOW(), ${userId}::uuid)
+        ON CONFLICT(siren, tenant_id) DO UPDATE SET
+          status = CASE WHEN outreach.pipeline_stage IN ('site_demo','acompte','finition','client','upsell') THEN outreach.status ELSE 'appele' END,
+          pipeline_stage = CASE WHEN outreach.pipeline_stage IN ('site_demo','acompte','finition','client','upsell') THEN outreach.pipeline_stage ELSE 'repondeur' END,
+          contact_method='phone', contacted_date=${today}, updated_at=${now}, last_interaction_at=NOW(),
+          workspace_id=COALESCE(outreach.workspace_id, EXCLUDED.workspace_id),
+          user_id=COALESCE(EXCLUDED.user_id, outreach.user_id)
       `;
     } else if (!answered || duration < 10) {
+      // Pas répondu ou trop court → 'rappeler' ↔ 'a_rappeler'.
       await prisma.$executeRaw`
-        INSERT INTO outreach (siren, tenant_id, workspace_id, status, contact_method, contacted_date, updated_at, user_id)
-        VALUES (${siren}, ${tid}::uuid, ${wid}::uuid, 'rappeler', 'phone', ${today}, ${now}, ${userId}::uuid)
+        INSERT INTO outreach (siren, tenant_id, workspace_id, status, pipeline_stage, contact_method, contacted_date, updated_at, last_interaction_at, user_id)
+        VALUES (${siren}, ${tid}::uuid, ${wid}::uuid, 'rappeler', 'a_rappeler', 'phone', ${today}, ${now}, NOW(), ${userId}::uuid)
         ON CONFLICT(siren, tenant_id) DO UPDATE SET
-          status = CASE WHEN outreach.status IN ('interesse','rdv','client','contacte','appele') THEN outreach.status ELSE 'rappeler' END,
-          contact_method='phone', contacted_date=${today}, updated_at=${now}, workspace_id=COALESCE(outreach.workspace_id, EXCLUDED.workspace_id), user_id=COALESCE(EXCLUDED.user_id, outreach.user_id)
+          status = CASE WHEN outreach.status IN ('interesse','rdv','client','contacte','appele') OR outreach.pipeline_stage IN ('site_demo','acompte','finition','client','upsell') THEN outreach.status ELSE 'rappeler' END,
+          pipeline_stage = CASE WHEN outreach.pipeline_stage IN ('site_demo','acompte','finition','client','upsell') THEN outreach.pipeline_stage ELSE 'a_rappeler' END,
+          contact_method='phone', contacted_date=${today}, updated_at=${now}, last_interaction_at=NOW(),
+          workspace_id=COALESCE(outreach.workspace_id, EXCLUDED.workspace_id),
+          user_id=COALESCE(EXCLUDED.user_id, outreach.user_id)
       `;
 
       const followupDate = addBusinessDays(new Date(), 2);

@@ -305,17 +305,53 @@ export const EFFECTIFS_LABELS: Record<string, string> = {
   "53": "10000+",
 };
 
-// Legacy statuses (kept for backward compat with existing outreach.status)
+// Affichage badges — couvre TOUTES les valeurs status legacy + tous les
+// stages canoniques pipeline_stage. Avant l'extension (2026-05-20), les
+// valeurs non listées tombaient en fallback "a_contacter" → affichait un
+// status faux dans /historique pour les leads skip/qualified/archive/etc.
+//
+// Convention couleurs :
+//   - gris   : neutre / fin de funnel négatif (a_contacter, hors_cible, archive)
+//   - indigo : début funnel (fiche_ouverte)
+//   - sky    : contact tenté (appele, repondeur, contacte)
+//   - orange : à recontacter (rappeler, a_rappeler)
+//   - purple : demo en cours (rdv, site_demo)
+//   - emerald/teal : en cours de signature (acompte, finition)
+//   - yellow : client signé (client)
+//   - rose   : upsell post-contrat
+//   - red    : refus explicite (pas_interesse)
 export const STATUS_OPTIONS = [
+  // ─── stages canoniques pipeline ──────────────────────────────────────
   { value: "a_contacter", label: "A contacter", color: "bg-gray-100 text-gray-700" },
   { value: "fiche_ouverte", label: "Fiche ouverte", color: "bg-indigo-100 text-indigo-700" },
-  { value: "appele", label: "Appele", color: "bg-sky-100 text-sky-700" },
-  { value: "interesse", label: "Interesse", color: "bg-green-100 text-green-700" },
-  { value: "pas_interesse", label: "Pas interesse", color: "bg-red-100 text-red-700" },
-  { value: "rappeler", label: "A rappeler", color: "bg-orange-100 text-orange-700" },
-  { value: "rdv", label: "RDV", color: "bg-purple-100 text-purple-700" },
+  { value: "repondeur", label: "Repondeur", color: "bg-sky-100 text-sky-700" },
+  { value: "a_rappeler", label: "A rappeler", color: "bg-orange-100 text-orange-700" },
+  { value: "site_demo", label: "Site demo", color: "bg-purple-100 text-purple-700" },
+  { value: "acompte", label: "Acompte", color: "bg-emerald-100 text-emerald-700" },
+  { value: "finition", label: "Finition", color: "bg-teal-100 text-teal-700" },
   { value: "client", label: "Client", color: "bg-yellow-100 text-yellow-800 font-bold" },
+  { value: "upsell", label: "Upsell", color: "bg-rose-100 text-rose-700" },
+  // ─── stages terminaux ─────────────────────────────────────────────────
+  { value: "archive", label: "Archive", color: "bg-gray-100 text-gray-500" },
+  { value: "pas_interesse", label: "Pas interesse", color: "bg-red-100 text-red-700" },
   { value: "hors_cible", label: "Hors cible", color: "bg-gray-200 text-gray-500" },
+  // ─── valeurs status legacy (préservées pour audit historique) ─────────
+  { value: "appele", label: "Appele", color: "bg-sky-100 text-sky-700" },
+  { value: "rappeler", label: "A rappeler", color: "bg-orange-100 text-orange-700" },
+  { value: "interesse", label: "Interesse", color: "bg-green-100 text-green-700" },
+  { value: "rdv", label: "RDV", color: "bg-purple-100 text-purple-700" },
+  { value: "contacte", label: "Contacte", color: "bg-sky-100 text-sky-700" },
+  { value: "qualified", label: "Qualifie", color: "bg-orange-100 text-orange-700" },
+  { value: "disqualifie", label: "Disqualifie", color: "bg-gray-200 text-gray-500" },
+  { value: "non_qualifie", label: "Non qualifie", color: "bg-gray-200 text-gray-500" },
+  { value: "non_pertinent", label: "Non pertinent", color: "bg-gray-200 text-gray-500" },
+  { value: "rejete", label: "Rejete", color: "bg-gray-200 text-gray-500" },
+  { value: "skip", label: "Skip", color: "bg-gray-100 text-gray-500" },
+  { value: "skip_qualifie", label: "Skip qualifie", color: "bg-gray-100 text-gray-500" },
+  { value: "a_ignorer", label: "A ignorer", color: "bg-gray-200 text-gray-500" },
+  { value: "en_attente", label: "En attente", color: "bg-gray-100 text-gray-700" },
+  { value: "en_observation", label: "En observation", color: "bg-orange-100 text-orange-700" },
+  { value: "email_invalide", label: "Email invalide", color: "bg-gray-100 text-gray-500" },
 ] as const;
 
 export function getStatusInfo(status: string) {

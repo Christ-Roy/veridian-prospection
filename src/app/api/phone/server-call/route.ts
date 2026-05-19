@@ -118,13 +118,20 @@ export async function POST(req: NextRequest) {
       ON CONFLICT(month, destination) DO UPDATE SET call_count = ovh_monthly_destinations.call_count + 1
     `;
 
-    // Auto-update outreach status
+    // Auto-update outreach status — status='appele' ↔ pipeline_stage='repondeur'
+    // (mapping canonique cf src/lib/outreach/status.ts). Anti-régression sur
+    // les stages avancés du funnel.
     if (siren) {
       const today = new Date().toISOString().split("T")[0];
       await prisma.$executeRaw`
-        INSERT INTO outreach (siren, tenant_id, workspace_id, status, contact_method, contacted_date, updated_at, user_id)
-        VALUES (${siren}, ${tid}::uuid, ${wid}::uuid, 'appele', 'phone', ${today}, ${now}, ${uid}::uuid)
-        ON CONFLICT(siren, tenant_id) DO UPDATE SET status='appele', contact_method='phone', contacted_date=${today}, updated_at=${now}, workspace_id=COALESCE(outreach.workspace_id, EXCLUDED.workspace_id), user_id=COALESCE(EXCLUDED.user_id, outreach.user_id)
+        INSERT INTO outreach (siren, tenant_id, workspace_id, status, pipeline_stage, contact_method, contacted_date, updated_at, last_interaction_at, user_id)
+        VALUES (${siren}, ${tid}::uuid, ${wid}::uuid, 'appele', 'repondeur', 'phone', ${today}, ${now}, NOW(), ${uid}::uuid)
+        ON CONFLICT(siren, tenant_id) DO UPDATE SET
+          status = CASE WHEN outreach.pipeline_stage IN ('site_demo','acompte','finition','client','upsell') THEN outreach.status ELSE 'appele' END,
+          pipeline_stage = CASE WHEN outreach.pipeline_stage IN ('site_demo','acompte','finition','client','upsell') THEN outreach.pipeline_stage ELSE 'repondeur' END,
+          contact_method='phone', contacted_date=${today}, updated_at=${now}, last_interaction_at=NOW(),
+          workspace_id=COALESCE(outreach.workspace_id, EXCLUDED.workspace_id),
+          user_id=COALESCE(EXCLUDED.user_id, outreach.user_id)
       `;
     }
 
