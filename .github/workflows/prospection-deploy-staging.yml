@@ -175,6 +175,37 @@ jobs:
               -f docker-compose.base.yml -f docker-compose.staging.yml \
               up -d --remove-orphans"
 
+      # Migration Prisma — solution pérenne au trou §18.9.
+      #
+      # Le container app vire npm/npx (CVE hygiene), donc on ne peut pas
+      # appeler prisma migrate deploy depuis lui. On utilise un container
+      # node:22-alpine éphémère sur dev-pub avec le dossier prisma/ volumé,
+      # qui joint le réseau interne pour atteindre postgres-staging.
+      #
+      # Idempotent : prisma migrate deploy ne re-applique pas une migration
+      # déjà présente dans _prisma_migrations.
+      - name: Copy prisma migrations to dev
+        run: |
+          DEST=/home/ubuntu/prospection-staging
+          rsync -az -e "ssh -i ~/.ssh/id_ed25519" \
+            prisma/ \
+            ubuntu@37.187.199.185:$DEST/prisma/
+
+      - name: Run prisma migrate deploy (staging DB)
+        # Container éphémère sur le réseau staging-edge (où vit postgres-staging).
+        # Idempotent : prisma migrate deploy skip les migrations déjà appliquées.
+        run: |
+          DEST=/home/ubuntu/prospection-staging
+          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 "
+            cd $DEST &&
+            docker run --rm \
+              --network staging-edge \
+              -v \$PWD/prisma:/app/prisma \
+              -w /app \
+              -e DATABASE_URL=\"${{ secrets.STAGING_DATABASE_URL }}\" \
+              node:22-alpine sh -c 'apk add --no-cache openssl >/dev/null && npm install --no-package-lock --silent prisma@6.19.2 2>&1 | tail -3 && npx prisma migrate deploy'
+          "
+
       - name: Wait healthcheck (max 90s)
         run: |
           ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 '
