@@ -15,7 +15,26 @@
  *   - diamond (80+):  ~0.3% → 1 lead
  */
 
-export type TenantPlan = "freemium" | "geo" | "full" | "enterprise";
+/**
+ * Plans supportés. Source de vérité §3.3 du CONTRAT-HUB.md.
+ *
+ * - freemium : quota cap, restrictions zone+secteur (default trial / free)
+ * - starter, pro, enterprise : payants Stripe, caps croissants
+ * - geo, full : alias historiques (cf checkout flow) — gardés pour
+ *   backward-compat ; mappent vers les plans contractuels en interne
+ * - lifetime_site_vitrine, lifetime_partner, internal : offerts, quota
+ *   illimité, immune au downgrade Stripe
+ */
+export type TenantPlan =
+  | "freemium"
+  | "starter"
+  | "pro"
+  | "enterprise"
+  | "geo"
+  | "full"
+  | "lifetime_site_vitrine"
+  | "lifetime_partner"
+  | "internal";
 
 export interface LeadQuotaConfig {
   plan: TenantPlan;
@@ -42,8 +61,34 @@ export function buildQuotaFilter(config: LeadQuotaConfig): {
   switch (config.plan) {
     case "full":
     case "enterprise":
+    case "pro":
+    // Plans offerts §3.3 — quota illimité, jamais de feature lockée.
+    case "lifetime_site_vitrine":
+    case "lifetime_partner":
+    case "internal":
       // No restriction — see everything
       return { where: "1=1", limit: null };
+
+    case "starter":
+      // Starter : zone + sector restrictions mais pas de cap leads (5k DB-side
+      // côté PLAN_LIMITS — ce filtre SQL ne s'occupe pas du cap, c'est
+      // getTenantProspectLimit qui le gère).
+      if (config.departments.length > 0) {
+        const depts = config.departments
+          .map((d) => `'${d.replace(/'/g, "''")}'`)
+          .join(",");
+        clauses.push(`e.departement IN (${depts})`);
+      }
+      if (config.sectors.length > 0) {
+        const secs = config.sectors
+          .map((s) => `'${s.replace(/'/g, "''")}'`)
+          .join(",");
+        clauses.push(`e.secteur_final IN (${secs})`);
+      }
+      return {
+        where: clauses.length > 0 ? clauses.join(" AND ") : "1=1",
+        limit: null,
+      };
 
     case "geo":
       // All leads in their geo zone, no lead count limit
