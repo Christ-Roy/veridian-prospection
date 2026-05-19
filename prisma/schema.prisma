@@ -647,14 +647,29 @@ model Tenant {
   createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  // Soft delete (saas-standards §1.6) — colonne déjà présente côté Supabase
+  // Lifecycle v1.1 — machine à états contrat §5.7.
+  //
+  // Transitions légales :
+  //   active ⇄ suspended → soft_deleted → purge_eligible → purged (humain)
+  //   soft_deleted → restore vers suspended
+  //   soft_deleted + touch → repousse purge_eligible_at
+  //
+  // Colonnes :
+  //   deletedAt        : NOW() au soft-delete, NULL au restore
+  //   purgeEligibleAt  : NOW() + SOFT_DELETE_GRACE_DAYS (90j default)
+  //   lastTouchedAt    : NOW() à chaque tenant.touched (throttle 24h)
+  //   purgedAt         : NOW() au purge irréversible (audit GDPR)
   deletedAt       DateTime?    @map("deleted_at") @db.Timestamptz
+  purgeEligibleAt DateTime?    @map("purge_eligible_at") @db.Timestamptz
+  lastTouchedAt   DateTime?    @map("last_touched_at") @db.Timestamptz
+  purgedAt        DateTime?    @map("purged_at") @db.Timestamptz
 
   planHistory     PlanHistory[]
 
   @@index([userId])
   @@index([status])
   @@index([deletedAt])
+  @@index([purgeEligibleAt])
   @@map("tenants")
 }
 
