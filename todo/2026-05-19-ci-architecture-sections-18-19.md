@@ -104,14 +104,18 @@ la double-redondance pull.
 
 ### 18.3 Crons silencieusement KO depuis N jours
 
-**Scénario constaté** : Le workflow `prospection-e2e-cleanup` (cron quotidien
-03:00 UTC) tournait en erreur depuis ~5 jours. Cause : hostname obsolète
-(`saas-prospection.staging.veridian.site` au lieu de
-`prospection.staging.veridian.site` post-migration Traefik 2026-05-14).
-Aucune alerte. Personne n'a remarqué.
+**Scénario constaté** (2026-05-19, depuis supprimé) : Un cron quotidien
+`prospection-e2e-cleanup` (legacy, nettoyait `auth.users` Supabase avant la
+migration Auth.js) a tourné en erreur ~5 jours d'affilée sans alerte. Cause
+identifiée a posteriori : hostname obsolète post-migration Traefik. Le cron
+lui-même a été supprimé (cleanup Supabase global — contrat Hub §5.7-5.8 +
+endpoint `POST /api/tenants/soft-delete` remplace toute la chaîne).
 
-**Coût** : Aucun cleanup. Table `auth.users` Supabase qui s'accumule. Risque
-de rate-limit signup atteint silencieusement.
+Mais l'angle mort reste valable pour **tous les futurs crons** : un cron
+qui échoue ne crie pas. Personne ne lit les emails GitHub Actions.
+
+**Coût** : N'importe quel cron critique (reconciliation Stripe, health-check
+Hub→app, mutation testing nightly) peut tourner KO pendant des semaines.
 
 #### Solution
 
