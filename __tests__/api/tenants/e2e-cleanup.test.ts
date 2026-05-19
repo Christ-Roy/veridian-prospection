@@ -64,6 +64,16 @@ function signed(payload: string, extras: { driftMs?: number; badSig?: boolean } 
   return { timestamp: ts, signature: sig };
 }
 
+/** Standard HMAC contrat §6.1 : signature `{ts}.{rawBody}` dans les headers. */
+function standardHeaders(rawBody: string): Record<string, string> {
+  const ts = Date.now();
+  const sig = createHmac("sha256", SECRET).update(`${ts}.${rawBody}`).digest("hex");
+  return {
+    "x-veridian-timestamp": String(ts),
+    "x-veridian-hub-signature": sig,
+  };
+}
+
 describe("POST /api/tenants/e2e-cleanup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -129,6 +139,26 @@ describe("POST /api/tenants/e2e-cleanup", () => {
     );
     // Pas d'appel deleteUser en dryRun
     expect(adminDeleteUserMock).not.toHaveBeenCalled();
+  });
+
+  test("accepte standard HMAC {ts}.{body} (contrat §6.1) — dryRun", async () => {
+    adminListUsersMock.mockResolvedValueOnce({
+      data: { users: [] },
+      error: null,
+    });
+
+    const bodyObj = { dryRun: true, olderThanHours: 24 };
+    const raw = JSON.stringify(bodyObj);
+    const req = makeRequest("/api/tenants/e2e-cleanup", {
+      method: "POST",
+      headers: standardHeaders(raw),
+      body: raw,
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const body = (await readJson(res)) as { dryRun: boolean; wouldDelete: number };
+    expect(body.dryRun).toBe(true);
+    expect(body.wouldDelete).toBe(0);
   });
 
   test("delete: removes matching throwaway users only", async () => {
