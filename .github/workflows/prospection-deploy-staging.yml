@@ -193,6 +193,16 @@ jobs:
     needs: deploy
     runs-on: ubuntu-latest
     steps:
+      # Staging accessible uniquement via tailnet Veridian (2026-05-19).
+      # Cf veridian-hub/docs/CONTRAT-HUB.md §8.6.
+      - name: Tailscale (connect runner to tailnet for staging smoke)
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci-github
+          version: latest
+
       - name: GET /api/health
         run: |
           for i in $(seq 1 6); do
