@@ -20,10 +20,6 @@ vi.hoisted(() => {
   process.env.TENANT_API_SECRET = "test-secret-xyz";
   process.env.ACCEPT_LEGACY_HMAC = "1";
   process.env.ACCEPT_LEGACY_BEARER = "1";
-  // Pas de Supabase configuré → ensureOwnerAdmin sera no-op (court-circuit propre)
-  delete process.env.SUPABASE_URL;
-  delete process.env.NEXT_PUBLIC_SUPABASE_URL;
-  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
 });
 
 const { prismaCtorMock } = vi.hoisted(() => ({
@@ -33,8 +29,11 @@ const { prismaCtorMock } = vi.hoisted(() => ({
 vi.mock("@prisma/client", () => {
   class PrismaClient {
     user = { upsert: vi.fn() };
-    tenant = { upsert: vi.fn() };
-    workspace = { findFirst: vi.fn(), create: vi.fn() };
+    tenant = { findFirst: vi.fn().mockResolvedValue(null), create: vi.fn().mockResolvedValue({ id: "tenant-id" }) };
+    workspace = {
+      findFirst: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockResolvedValue({ id: "ws-id" }),
+    };
     workspaceMember = { upsert: vi.fn() };
     constructor() {
       prismaCtorMock();
@@ -42,10 +41,6 @@ vi.mock("@prisma/client", () => {
   }
   return { PrismaClient };
 });
-
-vi.mock("@supabase/supabase-js", () => ({
-  createClient: vi.fn(),
-}));
 
 import { POST } from "@/app/api/tenants/provision/route";
 import { makeRequest, readJson } from "../_helpers";

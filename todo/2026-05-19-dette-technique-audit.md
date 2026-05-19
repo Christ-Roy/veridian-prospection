@@ -13,7 +13,18 @@ chaque mois passé sans cleanup = plus dur à fermer.
 
 ## P0 — Bombes à retardement (à fixer avant la giga-MAJ prod)
 
-### P0.1 — Migrations 0004 + 0005 pas appliquées en prod ⚠️ BLOCKER GIGA-MAJ
+### P0.1 — Migrations 0004 + 0005 pas appliquées en prod ✅ DONE 2026-05-19
+
+**Vérification post-giga-MAJ** : `_prisma_migrations` prod liste 0001→0005
+finished_at à 16:24-16:25 (appliquées via `prisma migrate deploy` du CI
+compose-up). Colonnes `plan/plan_source/purge_eligible_at/last_touched_at/purged_at`
+présentes dans `tenants` prod. Smoke 3 endpoints lifecycle (update-plan,
+soft-delete, usage-summary) → 401 Unauthorized propre (HMAC rejette avant DB,
+pas de P2022). Constat du ticket obsolète : la giga-MAJ d'hier soir
+a tout réglé.
+
+<details>
+<summary>Constat initial (obsolète)</summary>
 
 **Constat** : prod DB n'a aucune des colonnes `plan`, `plan_source`,
 `purge_eligible_at`, `last_touched_at`, `purged_at`. Code applicatif déployé
@@ -34,7 +45,22 @@ au curl manuel — Hub n'appelle pas encore l'endpoint donc personne n'a vu).
 
 **Quand** : avant toute giga-MAJ Robert. Action humaine déclenchée explicite.
 
-### P0.2 — `ensureOwnerAdmin` dans provision = code Supabase mort
+</details>
+
+### P0.2 — `ensureOwnerAdmin` dans provision = code Supabase mort ✅ DONE 2026-05-19
+
+**Refactor** : `ensureOwnerAdmin(email)` (155 lignes Supabase + Prisma) →
+`ensureOwnerWorkspace(userId, email)` (90 lignes Prisma pure). Suppression de
+`getSupabaseAdminClient`, du cache userIdCache, du dual-write Supabase tenants,
+de la pagination listUsers. Import `@supabase/supabase-js` viré du fichier.
+Tests provision : 11/11 verts. Ticket de coordination ouvert dans
+`veridian-hub/todo/2026-05-19-prospection-provision-user-id.md` pour que le
+Hub envoie `user_id` (sans quoi le workspace setup reste skip avec warning).
+
+Diff : `-201 / +75` (~126 lignes nettes supprimées).
+
+<details>
+<summary>Constat initial</summary>
 
 **Fichier** : `src/app/api/tenants/provision/route.ts:39-193` (~155 lignes).
 La fonction appelle `admin.auth.admin.listUsers`, `admin.from("tenants").insert`
@@ -59,6 +85,8 @@ le code complet (155 lignes) est exécuté pour rien à chaque provision.
 
 **Estim** : 1h30 (la logique Prisma existe déjà dans la fonction, juste
 extraire).
+
+</details>
 
 ---
 

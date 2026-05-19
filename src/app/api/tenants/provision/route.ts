@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { PrismaClient } from "@prisma/client";
-import { createClient as createSupabaseAdmin } from "@supabase/supabase-js";
 import {
   verifyHubHmac,
   verifyLegacyEmailTsHmac,
@@ -12,159 +11,56 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 const prisma = globalForPrisma.prisma ?? new PrismaClient();
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
-// In-memory cache: email → userId. Cleared at process restart, which is
-// desirable so a deleted user isn't cached stale. Caps the size at 100
-// entries (LRU-ish: drops the oldest when full) — we only ever provision
-// a handful of distinct emails per deploy, so this is ample.
-const userIdCache = new Map<string, string>();
-const USER_CACHE_MAX = 100;
-function cacheUserId(email: string, userId: string): void {
-  if (userIdCache.size >= USER_CACHE_MAX) {
-    const firstKey = userIdCache.keys().next().value;
-    if (firstKey) userIdCache.delete(firstKey);
-  }
-  userIdCache.set(email.toLowerCase(), userId);
-}
-
-function getSupabaseAdminClient() {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null;
-  return createSupabaseAdmin(url, key);
-}
-
 /**
- * Ensure a freshly provisioned tenant has:
- *   - a "Default" workspace (slug=default)
- *   - the owner user assigned as admin of that workspace
+ * Crée (idempotent) le User + Tenant local + workspace "default" + membership
+ * owner côté Prisma à la suite d'un provisioning Hub.
  *
- * Safe to call multiple times — idempotent. Logs and swallows errors so a
- * provisioning flow never breaks on membership setup.
+ * @param userId  UUID Hub (utilisé tel quel comme id User Prospection).
+ *                Le Hub doit le transmettre via `metadata.hub_user_id` ou
+ *                `user_id` dans le body — sinon on skip avec un warn (le
+ *                tenant existera côté Hub mais sans workspace local, le user
+ *                ne pourra pas se connecter tant que le Hub n'aura pas
+ *                migré au contrat v1.2).
+ *
+ * Best-effort : on log et on swallow les erreurs pour ne pas casser le flow
+ * de provisioning principal (le Hub considère succès dès qu'on a renvoyé
+ * api_key + login_url).
  */
-async function ensureOwnerAdmin(email: string): Promise<void> {
-  const admin = getSupabaseAdminClient();
-  if (!admin) {
-    console.warn("[provision] Supabase admin unavailable, skipping auto-admin");
-    return;
-  }
-
-  // 1) Résoudre user_id Supabase par email.
-  //
-  // Fast path: in-memory cache (cleared at process restart). Covers the
-  // repeated calls that happen during a single e2e run (~5 specs × 3
-  // browsers = 15 provisions of the same user in a few minutes).
-  //
-  // Slow path: paginate listUsers (up to 10 pages × 1000 = 10k users
-  // scanned). The e2e-cleanup cron keeps staging's auth.users lean so
-  // this stays fast; the cache makes the second+ call free anyway.
-  let userId: string | null = null;
-  const target = email.toLowerCase();
-  const cached = userIdCache.get(target);
-  if (cached) {
-    userId = cached;
-  } else try {
-    for (let page = 1; page <= 10; page++) {
-      const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
-      if (error) throw error;
-      const user = data?.users?.find((u) => (u.email ?? "").toLowerCase() === target);
-      if (user) {
-        userId = user.id;
-        cacheUserId(target, user.id);
-        break;
-      }
-      if (!data?.users || data.users.length < 1000) break; // last page
-    }
-  } catch (err) {
-    console.warn(`[provision] listUsers failed: ${(err as Error).message}`);
-    return;
-  }
-  if (!userId) {
-    console.warn(`[provision] No Supabase user found for ${email} after pagination — skipping auto-admin`);
-    return;
-  }
-
-  // 2) Résoudre tenant_id via public.tenants.user_id — crée la ligne si
-  //    absente (cas e2e: user créé via admin API sans passer par Hub/Stripe).
-  //    Le tenant provisionné ici reçoit trial_ends_at = now + 30d et
-  //    prospection_plan = 'freemium' — le Hub override ces champs s'il
-  //    prend la main plus tard via webhook Stripe.
-  let tenantId: string | null = null;
-  try {
-    const { data: tenant } = await admin
-      .from("tenants")
-      .select("id")
-      .eq("user_id", userId)
-      .maybeSingle();
-    if (tenant?.id) tenantId = tenant.id;
-  } catch (err) {
-    console.warn(`[provision] tenant lookup failed: ${(err as Error).message}`);
-    return;
-  }
-  if (!tenantId) {
-    try {
-      const trialEndsAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-      const slug = email.split("@")[0].toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40) || "tenant";
-      const { data: created, error: insertErr } = await admin
-        .from("tenants")
-        .insert({
-          user_id: userId,
-          name: `${email.split("@")[0]}'s Workspace`,
-          slug: `${slug}-${Date.now().toString(36)}`,
-          status: "active",
-          prospection_plan: "freemium",
-          trial_ends_at: trialEndsAt,
-        })
-        .select("id")
-        .single();
-      if (insertErr) throw insertErr;
-      tenantId = created?.id ?? null;
-      console.log(`[provision] Created tenant row for ${email} → ${tenantId}`);
-    } catch (err) {
-      console.warn(`[provision] tenant insert failed for ${email}: ${(err as Error).message}`);
-      return;
-    }
-  }
-  if (!tenantId) return;
-
-  // 2bis) Dual-write Prisma — créer User + Tenant locaux pendant la migration
-  //       Auth.js. L'écriture est best-effort, on log et on continue si ça
-  //       échoue (Supabase reste source de vérité pour Lots B/C).
+async function ensureOwnerWorkspace(userId: string, email: string): Promise<void> {
   try {
     await prisma.user.upsert({
       where: { id: userId },
       update: { email },
       create: { id: userId, email, supabaseUserId: userId },
     });
-    const tenantSlugLocal =
-      email.split("@")[0].toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40) || "tenant";
-    const tenantSlug = `${tenantSlugLocal}-${Date.now().toString(36)}`;
-    await prisma.tenant.upsert({
-      where: { id: tenantId },
-      update: { userId },
-      create: {
-        id: tenantId,
-        userId,
-        name: `${email.split("@")[0]}'s Workspace`,
-        slug: tenantSlug,
-        status: "active",
-      },
-    });
-  } catch (err) {
-    console.warn(
-      `[provision] Prisma dual-write failed for ${email}: ${(err as Error).message}`,
-    );
-  }
 
-  // 3) Workspace "default" upsert
-  try {
+    const slugBase = email.split("@")[0].toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40) || "tenant";
+
+    let tenant = await prisma.tenant.findFirst({
+      where: { userId },
+      select: { id: true },
+    });
+
+    if (!tenant) {
+      tenant = await prisma.tenant.create({
+        data: {
+          userId,
+          name: `${email.split("@")[0]}'s Workspace`,
+          slug: `${slugBase}-${Date.now().toString(36)}`,
+          status: "active",
+        },
+        select: { id: true },
+      });
+    }
+
     let workspace = await prisma.workspace.findFirst({
-      where: { tenantId, slug: "default" },
+      where: { tenantId: tenant.id, slug: "default" },
       select: { id: true },
     });
     if (!workspace) {
       workspace = await prisma.workspace.create({
         data: {
-          tenantId,
+          tenantId: tenant.id,
           name: "Default",
           slug: "default",
           createdBy: userId,
@@ -173,7 +69,6 @@ async function ensureOwnerAdmin(email: string): Promise<void> {
       });
     }
 
-    // 4) Membership admin upsert
     await prisma.workspaceMember.upsert({
       where: { workspaceId_userId: { workspaceId: workspace.id, userId } },
       update: { role: "admin" },
@@ -184,11 +79,12 @@ async function ensureOwnerAdmin(email: string): Promise<void> {
         visibilityScope: "all",
       },
     });
+
     console.log(
-      `[provision] Auto-admin OK: user=${userId} tenant=${tenantId} workspace=${workspace.id}`
+      `[provision] Auto-admin OK: user=${userId} tenant=${tenant.id} workspace=${workspace.id}`,
     );
   } catch (err) {
-    console.error(`[provision] auto-admin upsert failed: ${(err as Error).message}`);
+    console.error(`[provision] auto-admin upsert failed for ${email}: ${(err as Error).message}`);
   }
 }
 
@@ -230,13 +126,21 @@ export async function POST(request: NextRequest) {
   }
 
   const rawBody = await request.text();
-  let body: { email?: string; plan?: string; timestamp?: number; signature?: string };
+  let body: {
+    email?: string;
+    plan?: string;
+    timestamp?: number;
+    signature?: string;
+    user_id?: string;
+    metadata?: { hub_user_id?: string };
+  };
   try {
     body = rawBody ? JSON.parse(rawBody) : {};
   } catch {
     return NextResponse.json({ error: "invalid_payload" }, { status: 400 });
   }
   const { email, plan, timestamp, signature } = body;
+  const hubUserId = body.user_id || body.metadata?.hub_user_id;
 
   if (!email) {
     return NextResponse.json({ error: "email is required" }, { status: 400 });
@@ -308,10 +212,17 @@ export async function POST(request: NextRequest) {
 
   console.log(`[provision] Generated token for ${email}, plan=${plan || "freemium"}`);
 
-  // Best-effort auto-admin: create Default workspace + admin membership for the
-  // tenant owner. Non-blocking — if the user/tenant isn't fully materialized
-  // yet on the Supabase side, the backfill script will catch it.
-  await ensureOwnerAdmin(email);
+  // Best-effort: create User + Tenant + Default workspace + admin membership.
+  // Requiert `user_id` (ou `metadata.hub_user_id`) dans le body — sinon on
+  // skip avec warning. Le Hub doit migrer vers le contrat v1.2 §5.1 pour
+  // débloquer ce flow (cf todo/2026-05-19-hub-contract-conformity.md).
+  if (hubUserId) {
+    await ensureOwnerWorkspace(hubUserId, email);
+  } else {
+    console.warn(
+      `[provision] No user_id in body for ${email} — skipping workspace setup. Hub must send metadata.hub_user_id (contrat v1.2).`,
+    );
+  }
 
   return NextResponse.json({
     tenant_id: email,
