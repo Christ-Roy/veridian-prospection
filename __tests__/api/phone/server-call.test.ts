@@ -1,8 +1,14 @@
 /**
  * Tests des routes /api/phone/server-call (POST, GET, DELETE).
+ *
+ * 2026-05-20 : ajout d'un test focus sur le sync status ↔ pipeline_stage
+ * pour les events phone. Quand un appel sortant est initié, on doit écrire
+ * status='appele' ET pipeline_stage='repondeur' (mapping canonique
+ * src/lib/outreach/status.ts).
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
 import { NextResponse } from "next/server";
+import { pipelineStageForStatus } from "@/lib/outreach/status";
 
 const {
   requireAuthMock,
@@ -40,6 +46,13 @@ describe("/api/phone/server-call", () => {
         makeRequest("/api/phone/server-call", { method: "POST", body: {} }),
       );
       expect(res.status).toBe(401);
+    });
+
+    test("invariant : appel initié = status 'appele' mappe vers pipeline_stage 'repondeur'", () => {
+      // Couvre la cohérence SQL inline de server-call/route.ts:125-128 qui
+      // écrit status='appele' + pipeline_stage='repondeur' lors d'un call init.
+      // Test de l'invariant logique (le mapping canonique), pas du SQL lui-même.
+      expect(pipelineStageForStatus("appele")).toBe("repondeur");
     });
   });
 

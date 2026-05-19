@@ -1,8 +1,12 @@
 /**
  * Tests de POST /api/phone/call-log.
+ *
+ * 2026-05-20 : ajout d'invariants sur le sync status ↔ pipeline_stage pour
+ * les events manual call log.
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
 import { NextResponse } from "next/server";
+import { pipelineStageForStatus } from "@/lib/outreach/status";
 
 const {
   requireAuthMock,
@@ -35,5 +39,15 @@ describe("POST /api/phone/call-log", () => {
     });
     const res = await POST(makeRequest("/api/phone/call-log", { method: "POST", body: {} }));
     expect(res.status).toBe(401);
+  });
+
+  test("invariant : 'appele' (call answered ≥30s) mappe vers 'repondeur'", () => {
+    // Couvre l'invariant SQL inline route.ts:159-163 (call answered ≥30s)
+    expect(pipelineStageForStatus("appele")).toBe("repondeur");
+  });
+
+  test("invariant : 'rappeler' (no answer / call court) mappe vers 'a_rappeler'", () => {
+    // Couvre l'invariant SQL inline route.ts:165-172 (!answered || <10s)
+    expect(pipelineStageForStatus("rappeler")).toBe("a_rappeler");
   });
 });

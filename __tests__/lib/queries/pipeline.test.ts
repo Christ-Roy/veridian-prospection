@@ -2,11 +2,15 @@
  * Tests focalisés sur la validation UUID userFilter de getPipelineLeads,
  * ajoutée suite au refactor visibility cross-membre (2026-05-19).
  *
+ * 2026-05-20 : ajout d'invariants pour patchOutreach() + updateOutreach()
+ * sur le sync status ↔ pipeline_stage.
+ *
  * Périmètre : uniquement les changements liés à la PR. Le reste de
  * getPipelineLeads (group by stage, calcul email_count, etc.) reste en
  * tests-pending.txt.
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
+import { pipelineStageForStatus, applyStatusTransition } from "@/lib/outreach/status";
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
@@ -43,5 +47,27 @@ describe("getPipelineLeads — visibility refactor 2026-05-19", () => {
   test("rejette userFilter avec wildcard SQL", async () => {
     await expect(getPipelineLeads(T, null, "%' OR 1=1 --"))
       .rejects.toThrow(/invalid userFilter/);
+  });
+});
+
+describe("patchOutreach/updateOutreach — sync status ↔ pipeline_stage (2026-05-20)", () => {
+  test("status='hors_cible' (dismiss UI) → pipeline_stage='hors_cible' (terminal)", () => {
+    expect(pipelineStageForStatus("hors_cible")).toBe("hors_cible");
+  });
+
+  test("status='contacte' (mail send) → pipeline_stage='repondeur'", () => {
+    expect(pipelineStageForStatus("contacte")).toBe("repondeur");
+  });
+
+  test("anti-régression : 'appele' sur lead en 'acompte' → null (preserve)", () => {
+    expect(applyStatusTransition("appele", "acompte", "acompte")).toBeNull();
+  });
+
+  test("terminal hors_cible force même depuis lead avancé", () => {
+    // Commercial peut toujours archiver un lead, même en cours de contrat.
+    expect(applyStatusTransition("hors_cible", "site_demo", "site_demo")).toEqual({
+      status: "hors_cible",
+      pipeline_stage: "hors_cible",
+    });
   });
 });

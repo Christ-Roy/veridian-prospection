@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatCA, formatEffectifs, formatTimeAgo, getStatusInfo } from "./types";
+import { formatCA, formatEffectifs, formatTimeAgo, getStatusInfo } from "@/lib/types";
 
 describe("getStatusInfo — extension 2026-05-20 (toutes valeurs status reconnues)", () => {
   it("reconnaît les stages canoniques pipeline", () => {
