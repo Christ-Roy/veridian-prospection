@@ -4,7 +4,7 @@ import {
   buildOutreachWhere,
   resolveVisibilityMode,
   type VisibilityScope,
-} from "./visibility";
+} from "@/lib/queries/visibility";
 
 const T = "00000000-0000-4000-8000-000000000001";
 const U = "00000000-0000-4000-8000-000000000002";
