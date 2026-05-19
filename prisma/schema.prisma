@@ -631,6 +631,17 @@ model Tenant {
 
   metadata        Json?
 
+  // Plan SaaS — source de vérité pour le pilotage Hub (contrat §5.2).
+  // Colonne `prospection_plan` legacy reste lue en fallback dans le code (cf
+  // src/lib/supabase/tenant.ts) pendant la fenêtre de migration douce 30j.
+  // Valeurs possibles : freemium | pro | enterprise | starter |
+  // lifetime_site_vitrine | lifetime_partner | internal.
+  plan            String?      @default("freemium")
+  // Source de la dernière mise à jour de plan — bloque le downgrade Stripe
+  // sur lifetime_* / internal (cf §3.3 immunité plan_source).
+  // Valeurs : stripe | manual | lifetime_site_vitrine | lifetime_partner | internal.
+  planSource      String?      @default("stripe") @map("plan_source")
+
   provisionedAt   DateTime?    @map("provisioned_at") @db.Timestamptz
   lastActivityAt  DateTime?    @map("last_activity_at") @db.Timestamptz
   createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz
@@ -639,8 +650,27 @@ model Tenant {
   // Soft delete (saas-standards §1.6) — colonne déjà présente côté Supabase
   deletedAt       DateTime?    @map("deleted_at") @db.Timestamptz
 
+  planHistory     PlanHistory[]
+
   @@index([userId])
   @@index([status])
   @@index([deletedAt])
   @@map("tenants")
+}
+
+/// Audit trail des changements de plan (contrat §5.2).
+/// Rétention minimale : 50 dernières lignes par tenant.
+model PlanHistory {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  plan        String
+  planSource  String   @map("plan_source")
+  previousPlan String? @map("previous_plan")
+  reason      String?
+  changedAt   DateTime @default(now()) @map("changed_at") @db.Timestamptz
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, changedAt(sort: Desc)])
+  @@map("veridian_plan_history")
 }
