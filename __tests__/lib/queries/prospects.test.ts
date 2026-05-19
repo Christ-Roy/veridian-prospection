@@ -12,7 +12,7 @@
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
 
-const queryMock = vi.fn().mockResolvedValue([{ count: 0n }]);
+const queryMock = vi.fn().mockResolvedValue([{ count: BigInt(0) }]);
 const dataQueryMock = vi.fn().mockResolvedValue([]);
 
 vi.mock("@/lib/prisma", () => ({
@@ -33,7 +33,7 @@ function setupPrismaMock() {
   let callCount = 0;
   (prisma.$queryRawUnsafe as ReturnType<typeof vi.fn>).mockImplementation(async () => {
     callCount++;
-    return callCount === 1 ? [{ count: 0n }] : [];
+    return callCount === 1 ? [{ count: BigInt(0) }] : [];
   });
 }
 
