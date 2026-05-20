@@ -38,6 +38,95 @@ async function login(page: Page) {
   await page.waitForURL(/\/(prospects|historique|$)/, { timeout: 20_000 });
 }
 
+/**
+ * Test cross-app SSO Hub→Prosp. Reproduit fidèlement le journey commercial :
+ *  1. Hub `/api/prospection/regenerate-login` génère un loginToken (HMAC)
+ *  2. POST côté Hub stocke le token dans Tenant Hub + Prosp persiste le sien
+ *  3. Browser navigue sur /api/auth/token?t=<token>
+ *  4. Prosp valide via Prisma local + crée session Auth.js JWT
+ *  5. Cookie __Secure-authjs.session-token set + redirect /prospects
+ *
+ * Validé manuellement 2026-05-20 via Chrome MCP — promu en test régression.
+ * Ne dépend pas du Hub : utilise directement HMAC standard pour générer le
+ * token comme le Hub, ce qui isole le test de la disponibilité Hub staging.
+ */
+test.describe("Cross-app SSO Hub→Prospection", () => {
+  test("HMAC provision → autologin → session valide + cookie + /prospects", async ({
+    request,
+    browser,
+  }) => {
+    const HUB_SECRET =
+      process.env.STAGING_HUB_API_SECRET || "staging-prospection-secret-2026";
+    const STAGING_URL =
+      process.env.STAGING_URL || "https://prospection.staging.veridian.site";
+    // User staging dédié — owner d'un tenant existant côté Prosp
+    const userId = "53245ae1-6bf8-4ec6-870f-32d75b7c0281";
+    const email = "robert.brunon@veridian.site";
+
+    // 1) Provision HMAC (simule le Hub)
+    const ts = Date.now();
+    const body = JSON.stringify({
+      email,
+      name: "Robert",
+      plan: "freemium",
+      user_id: userId,
+      metadata: { hub_user_id: userId },
+    });
+    const crypto = await import("crypto");
+    const signature = crypto
+      .createHmac("sha256", HUB_SECRET)
+      .update(`${ts}.${body}`)
+      .digest("hex");
+
+    const provisionRes = await request.post(
+      `${STAGING_URL}/api/tenants/provision`,
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "X-Veridian-Timestamp": String(ts),
+          "X-Veridian-Hub-Signature": signature,
+        },
+        data: body,
+      },
+    );
+    expect(provisionRes.status()).toBe(200);
+    const provisionData = (await provisionRes.json()) as { login_url: string };
+    expect(provisionData.login_url).toMatch(/\/api\/auth\/token\?t=[a-f0-9]{64}$/);
+
+    // 2) Browser navigue sur le login_url (fresh context, pas de cookie)
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto(provisionData.login_url);
+    // Attendre la redirection finale
+    await page.waitForURL(/\/(prospects|$)/, { timeout: 10_000 });
+
+    // 3) Cookie session set ?
+    const cookies = await context.cookies();
+    const sessionCookie = cookies.find((c) =>
+      /authjs\.session-token/.test(c.name),
+    );
+    expect(sessionCookie, "cookie session manquant").toBeDefined();
+    expect(sessionCookie!.httpOnly).toBe(true);
+    expect(sessionCookie!.sameSite?.toLowerCase()).toBe("lax");
+
+    // 4) /api/auth/session retourne bien le user (sessionnement effectif)
+    const sessionRes = await page.request.get(`${STAGING_URL}/api/auth/session`);
+    expect(sessionRes.status()).toBe(200);
+    const session = (await sessionRes.json()) as { user?: { id: string; email: string } };
+    expect(session.user?.id).toBe(userId);
+    expect(session.user?.email).toBe(email);
+
+    // 5) Replay du même token → token_used
+    const replayRes = await context.request.get(provisionData.login_url, {
+      maxRedirects: 0,
+    });
+    const replayLocation = replayRes.headers()["location"] ?? "";
+    expect(replayLocation).toContain("token_used");
+
+    await context.close();
+  });
+});
+
 test.describe("Journeys critiques staging headfull", () => {
   test("1. Login credentials → dashboard render", async ({ page }) => {
     await login(page);
