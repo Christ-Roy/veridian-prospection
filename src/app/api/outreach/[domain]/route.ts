@@ -15,7 +15,9 @@ export async function PUT(
   const tenantId = await getTenantId(auth.user.id);
   const { insertId: workspaceId } = await getWorkspaceScope();
   const { domain } = await params;
-  const body = await request.json();
+  // Pattern Veridian : .catch fallback objet vide, le handler accepte les
+  // valeurs nullish via les `?? defaults`. Évite le 500 sur JSON malformé.
+  const body = await request.json().catch(() => ({}));
 
   updateOutreach(domain, {
     status: body.status ?? "a_contacter",
@@ -38,7 +40,9 @@ export async function PATCH(
 
   const tenantId = await getTenantId(auth.user.id);
   const { domain } = await params;
-  const body = await request.json();
+  // Pattern Veridian : .catch fallback objet vide pour éviter 500 sur JSON
+  // malformé. patchOutreach gère les champs absents (PATCH = update partiel).
+  const body = await request.json().catch(() => ({}));
 
   patchOutreach(domain, body, tenantId, undefined, auth.user.id);
 

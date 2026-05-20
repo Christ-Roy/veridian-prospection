@@ -18,11 +18,11 @@ if [ -x scripts/ci/check-test-mapping.sh ]; then
   scripts/ci/check-test-mapping.sh
 fi
 
-# 1bis. Route safety audit (try/catch sur request.json + requireAdmin guards)
-# Mode soft initial : warning seulement. Passer en blocking quand les routes
-# en dette seront fixées (cf todo/2026-05-21-route-safety-audit.md).
+# 1bis. Route safety audit (try/catch/.catch sur request.json + requireAdmin guards)
+# Mode BLOCKING depuis 2026-05-21 — toutes les routes en dette ont été fixées.
+# Skip d'urgence : SKIP_ROUTE_SAFETY=1 git push (à NE JAMAIS faire en CI).
 if [ -x scripts/ci/check-route-safety.sh ]; then
-  ROUTE_SAFETY_SOFT=1 scripts/ci/check-route-safety.sh
+  scripts/ci/check-route-safety.sh
 fi
 
 # 2. Rappel régénération compose si base/prod modifié

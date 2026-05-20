@@ -47,7 +47,10 @@ while IFS= read -r file; do
   # Pas de request.json() = rien à valider
   if ! grep -q "request\.json()" "$file"; then continue; fi
   # Check : try OU safeParse présent dans le fichier
-  if grep -qE "(try\s*\{|safeParse\()" "$file"; then continue; fi
+  # Patterns acceptés : try{, safeParse(, ou .catch(  (le `.catch(() => ({}))`
+  # est un pattern Veridian classique = fallback silencieux + handler valide les
+  # champs requis ensuite).
+  if grep -qE "(try\s*\{|safeParse\(|\.catch\()" "$file"; then continue; fi
   UNSAFE_ROUTES="$UNSAFE_ROUTES$file"$'\n'
 done < <(find src/app/api -name "route.ts" -type f 2>/dev/null)
 

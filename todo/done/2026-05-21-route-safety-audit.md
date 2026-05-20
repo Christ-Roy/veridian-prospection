@@ -49,3 +49,17 @@ Audit livré pendant la session Phase 3 generateMagicLink — éviter d'empiler 
 - [ ] `bash scripts/ci/check-route-safety.sh` retourne 0 violation
 - [ ] `.husky/pre-push` flip blocking (retire `ROUTE_SAFETY_SOFT=1`)
 - [ ] Ticket archivé en `todo/done/`
+
+---
+
+## Résolution — 2026-05-21
+
+Audit révisé : 5 des 6 routes (toutes admin/*) utilisaient déjà le pattern `request.json().catch(() => ({}))` qui est sûr. Mon script de check ne le reconnaissait pas — faux positifs.
+
+**Actions** :
+1. `scripts/ci/check-route-safety.sh` : ajout du pattern `.catch(` aux regex acceptées (cohérent avec convention Veridian existante).
+2. `src/app/api/outreach/[domain]/route.ts` : seule vraie dette, fixé en adoptant le même pattern `.catch(() => ({}))` pour PUT + PATCH.
+3. Tests régression ajoutés dans `__tests__/api/outreach/[domain].test.ts` (2 cas JSON malformé → 200 avec defaults au lieu de 500).
+4. `.husky/pre-push` : retrait `ROUTE_SAFETY_SOFT=1` → **mode blocking**.
+
+Vérif finale `bash scripts/ci/check-route-safety.sh` → 0 violation.
