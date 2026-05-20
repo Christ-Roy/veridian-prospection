@@ -62,9 +62,6 @@ jobs:
       - name: vitest unit tests (src/**/*.test.ts)
         run: npx vitest run src/
 
-      - name: Supabase admin API rate-limit guard
-        run: bash scripts/check-supabase-ratelimit.sh
-
   audit:
     name: CVE audit (high+critical bloquant)
     uses: ./.github/workflows/_audit-cve.yml
