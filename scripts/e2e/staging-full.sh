@@ -35,6 +35,19 @@ if [ -z "${STAGING_USER_PASSWORD:-}" ]; then
   exit 1
 fi
 
+# Auto-détecte le secret HMAC selon l'URL cible. Permet de run le E2E SSO
+# Hub→Prosp contre n'importe quel environnement sans configurer manuellement.
+if [[ "$STAGING_URL" == *"app.veridian.site"* ]] && [ -z "${PROD_HUB_API_SECRET:-}" ]; then
+  echo "ℹ Cible PROD — récupère le secret HMAC depuis le container prod via SSH"
+  PROD_HUB_API_SECRET=$(ssh prod-pub 'docker exec compose-connect-redundant-firewall-l5fmki-prospection-1 env 2>/dev/null | grep -E "^(PROSPECTION_HUB_API_SECRET|TENANT_API_SECRET)=" | head -1 | cut -d= -f2-' 2>/dev/null || echo "")
+  if [ -n "$PROD_HUB_API_SECRET" ]; then
+    export PROD_HUB_API_SECRET
+    echo "✓ PROD_HUB_API_SECRET récupéré (${#PROD_HUB_API_SECRET} chars)"
+  else
+    echo "⚠ Impossible de récupérer le secret prod — test SSO sera skippé"
+  fi
+fi
+
 export STAGING_URL STAGING_USER_EMAIL STAGING_USER_PASSWORD
 
 # Pré-check : staging répond

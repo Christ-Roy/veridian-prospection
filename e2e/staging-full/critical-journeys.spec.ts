@@ -55,10 +55,25 @@ test.describe("Cross-app SSO Hub→Prospection", () => {
     request,
     browser,
   }) => {
-    const HUB_SECRET =
-      process.env.STAGING_HUB_API_SECRET || "staging-prospection-secret-2026";
     const STAGING_URL =
       process.env.STAGING_URL || "https://prospection.staging.veridian.site";
+
+    // Le secret HMAC diffère selon l'environnement (staging vs prod). Le test
+    // détecte le secret correspondant à l'URL cible via ENV, ou skip
+    // proprement si non fourni. Évite les faux fails quand on run le E2E
+    // contre prod sans avoir exporté STAGING_HUB_API_SECRET=<secret-prod>.
+    const HUB_SECRET = STAGING_URL.includes("app.veridian.site")
+      ? process.env.PROD_HUB_API_SECRET
+      : process.env.STAGING_HUB_API_SECRET || "staging-prospection-secret-2026";
+
+    test.skip(
+      !HUB_SECRET,
+      `HMAC secret manquant pour ${STAGING_URL}. ` +
+        `Set ${STAGING_URL.includes("app.veridian.site") ? "PROD_HUB_API_SECRET" : "STAGING_HUB_API_SECRET"} pour exécuter ce test.`,
+    );
+    // Post test.skip : HUB_SECRET est garanti défini (sinon le test est skippé
+    // avant d'arriver ici). Le cast unblocks TS qui ne propage pas le guard.
+    const secret = HUB_SECRET as string;
     // User staging dédié — owner d'un tenant existant côté Prosp
     const userId = "53245ae1-6bf8-4ec6-870f-32d75b7c0281";
     const email = "robert.brunon@veridian.site";
@@ -74,7 +89,7 @@ test.describe("Cross-app SSO Hub→Prospection", () => {
     });
     const crypto = await import("crypto");
     const signature = crypto
-      .createHmac("sha256", HUB_SECRET)
+      .createHmac("sha256", secret)
       .update(`${ts}.${body}`)
       .digest("hex");
 
