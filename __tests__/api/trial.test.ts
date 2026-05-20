@@ -3,43 +3,37 @@
  *
  * Couvre :
  *  - 401 sans auth
- *  - internal mode → daysLeft=TRIAL_DAYS, plan=internal
- *  - Supabase non configuré → fallback plan=unknown
- *  - plan pro → daysLeft=999, isExpired=false
- *  - calcul daysLeft à partir de createdAt utilisateur
+ *  - 200 plan=freemium si pas de tenant trouvé (fallback)
+ *  - 200 plan=pro / enterprise → daysLeft=999, isExpired=false
+ *  - 200 lookup tenant via owner (userId direct)
+ *  - 200 lookup tenant via membre invité (workspace_members)
+ *  - 200 calcul daysLeft depuis createdAt user (TRIAL_DAYS=7)
+ *  - 200 plan=error en cas d'exception Prisma (degradation gracieuse)
+ *
+ * Anti-régression : aucune dépendance Supabase (refactor 2026-05-20).
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
 
-const { requireAuthMock, prismaMock, createClientMock, supabaseMock } = vi.hoisted(() => {
-  const sb = {
-    from: vi.fn(),
-    auth: { admin: { getUserById: vi.fn() } },
-  };
-  return {
-    requireAuthMock: vi.fn(),
-    prismaMock: {
-      user: { findUnique: vi.fn() },
-      workspaceMember: { findFirst: vi.fn() },
-    },
-    supabaseMock: sb,
-    createClientMock: vi.fn(() => sb),
-  };
-});
+const { requireAuthMock, prismaMock } = vi.hoisted(() => ({
+  requireAuthMock: vi.fn(),
+  prismaMock: {
+    user: { findUnique: vi.fn() },
+    tenant: { findFirst: vi.fn() },
+    workspaceMember: { findFirst: vi.fn() },
+  },
+}));
 
 vi.mock("@/lib/auth/api-auth", () => ({ requireAuth: requireAuthMock }));
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
-vi.mock("@supabase/supabase-js", () => ({ createClient: createClientMock }));
 
 import { GET } from "@/app/api/trial/route";
 import { readJson } from "./_helpers";
 import { NextResponse } from "next/server";
 
-describe("GET /api/trial", () => {
+describe("GET /api/trial — Prisma-only après refactor 2026-05-20", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    delete process.env.SUPABASE_URL;
-    delete process.env.NEXT_PUBLIC_SUPABASE_URL;
-    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    process.env.TRIAL_DAYS = "7";
   });
 
   test("returns 401 when not authenticated", async () => {
@@ -50,42 +44,25 @@ describe("GET /api/trial", () => {
     expect(res.status).toBe(401);
   });
 
-  test("returns plan=internal for internal user", async () => {
-    requireAuthMock.mockResolvedValue({
-      user: { id: "internal", email: "internal@v.site" },
-    });
+  test("returns plan=freemium quand aucun tenant trouvé (ni owner ni membre)", async () => {
+    requireAuthMock.mockResolvedValue({ user: { id: "u-1", email: "u@v.site" } });
+    prismaMock.user.findUnique.mockResolvedValue({ createdAt: new Date() });
+    prismaMock.tenant.findFirst.mockResolvedValue(null);
+    prismaMock.workspaceMember.findFirst.mockResolvedValue(null);
+
     const res = await GET();
     expect(res.status).toBe(200);
     const body = (await readJson(res)) as { plan: string; daysLeft: number };
-    expect(body.plan).toBe("internal");
-    expect(body.daysLeft).toBeGreaterThan(0);
+    expect(body.plan).toBe("freemium");
+    expect(body.daysLeft).toBe(7);
   });
 
-  test("returns plan=unknown when Supabase not configured", async () => {
-    requireAuthMock.mockResolvedValue({
-      user: { id: "u-1", email: "u@v.site" },
-    });
-    const res = await GET();
-    const body = (await readJson(res)) as { plan: string };
-    expect(body.plan).toBe("unknown");
-  });
-
-  test("returns daysLeft=999 for paid plan (pro)", async () => {
-    process.env.SUPABASE_URL = "https://fake.supabase.co";
-    process.env.SUPABASE_SERVICE_ROLE_KEY = "k";
-    requireAuthMock.mockResolvedValue({
-      user: { id: "u-1", email: "u@v.site" },
-    });
+  test("returns daysLeft=999 pour plan pro (owner direct)", async () => {
+    requireAuthMock.mockResolvedValue({ user: { id: "u-1", email: "u@v.site" } });
     prismaMock.user.findUnique.mockResolvedValue({
       createdAt: new Date("2025-01-01"),
     });
-    supabaseMock.from.mockReturnValue({
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      maybeSingle: vi
-        .fn()
-        .mockResolvedValue({ data: { prospection_plan: "pro" }, error: null }),
-    });
+    prismaMock.tenant.findFirst.mockResolvedValueOnce({ plan: "pro" });
 
     const res = await GET();
     const body = (await readJson(res)) as {
@@ -98,29 +75,82 @@ describe("GET /api/trial", () => {
     expect(body.isExpired).toBe(false);
   });
 
-  test("computes daysLeft from createdAt when no plan override", async () => {
-    process.env.SUPABASE_URL = "https://fake.supabase.co";
-    process.env.SUPABASE_SERVICE_ROLE_KEY = "k";
-    process.env.TRIAL_DAYS = "7";
-    requireAuthMock.mockResolvedValue({
-      user: { id: "u-1", email: "u@v.site" },
-    });
-    // Compte créé il y a 2 jours → daysLeft ~= 5
-    prismaMock.user.findUnique.mockResolvedValue({
-      createdAt: new Date(Date.now() - 2 * 86400_000),
-    });
-    supabaseMock.from.mockReturnValue({
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      maybeSingle: vi
-        .fn()
-        .mockResolvedValue({ data: { prospection_plan: "freemium" }, error: null }),
+  test("returns daysLeft=999 pour plan enterprise (owner direct)", async () => {
+    requireAuthMock.mockResolvedValue({ user: { id: "u-1", email: "u@v.site" } });
+    prismaMock.user.findUnique.mockResolvedValue({ createdAt: new Date() });
+    prismaMock.tenant.findFirst.mockResolvedValueOnce({ plan: "enterprise" });
+
+    const body = (await readJson(await GET())) as { plan: string; daysLeft: number };
+    expect(body.plan).toBe("enterprise");
+    expect(body.daysLeft).toBe(999);
+  });
+
+  test("fallback workspace_members quand user n'est pas owner direct", async () => {
+    requireAuthMock.mockResolvedValue({ user: { id: "u-invited", email: "guest@v.site" } });
+    prismaMock.user.findUnique.mockResolvedValue({ createdAt: new Date() });
+    // 1er findFirst (owner direct) → null, 2e (via workspace) → tenant trouvé
+    prismaMock.tenant.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ plan: "pro" });
+    prismaMock.workspaceMember.findFirst.mockResolvedValue({
+      workspace: { tenantId: "t-1" },
     });
 
     const res = await GET();
     const body = (await readJson(res)) as { plan: string; daysLeft: number };
+    expect(body.plan).toBe("pro");
+    expect(body.daysLeft).toBe(999);
+    // Vérifie qu'on a bien lookup le tenant via membership
+    expect(prismaMock.workspaceMember.findFirst).toHaveBeenCalled();
+  });
+
+  test("calcule daysLeft depuis createdAt quand plan freemium", async () => {
+    requireAuthMock.mockResolvedValue({ user: { id: "u-1", email: "u@v.site" } });
+    // Compte créé il y a 2 jours → daysLeft ~= 5
+    prismaMock.user.findUnique.mockResolvedValue({
+      createdAt: new Date(Date.now() - 2 * 86400_000),
+    });
+    prismaMock.tenant.findFirst.mockResolvedValueOnce({ plan: "freemium" });
+
+    const body = (await readJson(await GET())) as { plan: string; daysLeft: number };
     expect(body.plan).toBe("freemium");
     expect(body.daysLeft).toBeGreaterThanOrEqual(4);
     expect(body.daysLeft).toBeLessThanOrEqual(6);
+  });
+
+  test("daysLeft=0 si trial expiré (compte créé il y a 30j)", async () => {
+    requireAuthMock.mockResolvedValue({ user: { id: "u-1", email: "u@v.site" } });
+    prismaMock.user.findUnique.mockResolvedValue({
+      createdAt: new Date(Date.now() - 30 * 86400_000),
+    });
+    prismaMock.tenant.findFirst.mockResolvedValueOnce({ plan: "freemium" });
+
+    const body = (await readJson(await GET())) as { daysLeft: number };
+    expect(body.daysLeft).toBe(0);
+  });
+
+  test("plan=error en cas d'exception Prisma (degradation gracieuse)", async () => {
+    requireAuthMock.mockResolvedValue({ user: { id: "u-1", email: "u@v.site" } });
+    prismaMock.user.findUnique.mockRejectedValue(new Error("db down"));
+
+    const res = await GET();
+    expect(res.status).toBe(200);
+    const body = (await readJson(res)) as { plan: string; daysLeft: number };
+    expect(body.plan).toBe("error");
+    expect(body.daysLeft).toBe(7);
+  });
+
+  // Anti-régression : la route ne doit JAMAIS appeler @supabase/supabase-js
+  // (refactor 2026-05-20). Le module est désinstallé, l'import casserait.
+  test("source de la route ne contient plus d'import supabase", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(
+      path.resolve(process.cwd(), "src/app/api/trial/route.ts"),
+      "utf-8",
+    );
+    expect(source).not.toMatch(/@supabase\/supabase-js/);
+    expect(source).not.toMatch(/SUPABASE_URL/);
+    expect(source).not.toMatch(/SUPABASE_SERVICE_ROLE_KEY/);
   });
 });

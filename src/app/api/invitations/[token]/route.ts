@@ -17,14 +17,6 @@
 import { NextResponse } from "next/server";
 import { getInvitationByToken } from "@/lib/invitations";
 import { prisma } from "@/lib/prisma";
-import { createClient as createSupabaseAdmin } from "@supabase/supabase-js";
-
-function getAdminClient() {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null;
-  return createSupabaseAdmin(url, key);
-}
 
 export async function GET(
   _request: Request,
@@ -46,25 +38,12 @@ export async function GET(
     workspaceName = ws?.name ?? null;
   }
 
-  // Resolve inviter email — Prisma User d'abord, fallback Supabase admin (legacy)
-  let inviterEmail: string | null = null;
+  // Resolve inviter email via Prisma User
   const prismaInviter = await prisma.user.findUnique({
     where: { id: invitation.invited_by },
     select: { email: true },
   });
-  if (prismaInviter?.email) {
-    inviterEmail = prismaInviter.email;
-  } else {
-    const admin = getAdminClient();
-    if (admin) {
-      try {
-        const { data } = await admin.auth.admin.getUserById(invitation.invited_by);
-        inviterEmail = data?.user?.email ?? null;
-      } catch {
-        inviterEmail = null;
-      }
-    }
-  }
+  const inviterEmail: string | null = prismaInviter?.email ?? null;
 
   return NextResponse.json({
     email: invitation.email,

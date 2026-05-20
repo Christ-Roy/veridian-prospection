@@ -13,18 +13,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth/user-context";
 import { PrismaClient } from "@prisma/client";
-import { createClient as createSupabaseAdmin } from "@supabase/supabase-js";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 const prisma = globalForPrisma.prisma ?? new PrismaClient();
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
-
-function getAdminClient() {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null;
-  return createSupabaseAdmin(url, key);
-}
 
 type OutreachAgg = { workspace_id: string | null; status: string; count: bigint };
 type CallAgg = { workspace_id: string | null; n: bigint; total_seconds: bigint | null };
@@ -119,25 +111,12 @@ export async function GET(request: NextRequest) {
   );
   const emailMap = new Map<string, string>();
   if (userIds.length > 0) {
-    // Fallback Prisma User d'abord (users migrés Auth.js)
     const prismaUsers = await prisma.user.findMany({
       where: { id: { in: userIds } },
       select: { id: true, email: true },
     });
     for (const u of prismaUsers) {
       if (u.email) emailMap.set(u.id, u.email);
-    }
-
-    // Fallback Supabase admin pour les users non encore migrés (legacy)
-    const remaining = userIds.filter((id) => !emailMap.has(id));
-    if (remaining.length > 0) {
-      const admin = getAdminClient();
-      if (admin) {
-        const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
-        for (const u of data?.users ?? []) {
-          if (remaining.includes(u.id)) emailMap.set(u.id, u.email ?? "");
-        }
-      }
     }
   }
 

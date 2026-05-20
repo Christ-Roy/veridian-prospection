@@ -10,7 +10,6 @@
  *     status: 'healthy' | 'degraded' | 'unhealthy',
  *     db: 'ok' | 'fail',
  *     auth: 'ok' | 'fail',
- *     supabase: 'ok' | 'fail' | 'not_configured',
  *     entreprises_count: number,
  *     outreach_count: number,
  *     followups_count: number,
@@ -20,12 +19,11 @@
  *     commit: string | null,
  *     uptime_s: number,
  *     timestamp: string,
- *     checks_ms: { db, auth, supabase },
+ *     checks_ms: { db, auth },
  *   }
  */
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createClient } from "@supabase/supabase-js";
 
 const STARTED_AT = Date.now();
 
@@ -81,30 +79,10 @@ async function checkAuth(): Promise<{ ok: boolean; ms: number }> {
   }
 }
 
-async function checkSupabase(): Promise<{ status: "ok" | "fail" | "not_configured"; ms: number }> {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return { status: "not_configured", ms: 0 };
-  const start = Date.now();
-  try {
-    const supabase = createClient(url, key);
-    // Cheap call: head count on tenants
-    const { error } = await supabase.from("tenants").select("id", { count: "exact", head: true });
-    return { status: error ? "fail" : "ok", ms: Date.now() - start };
-  } catch {
-    return { status: "fail", ms: Date.now() - start };
-  }
-}
-
 export async function GET() {
-  const [db, auth, supabase] = await Promise.all([
-    checkDb(),
-    checkAuth(),
-    checkSupabase(),
-  ]);
+  const [db, auth] = await Promise.all([checkDb(), checkAuth()]);
 
-  const allOk =
-    db.ok && auth.ok && supabase.status !== "fail";
+  const allOk = db.ok && auth.ok;
   const critical = !db.ok;
   const status: "healthy" | "degraded" | "unhealthy" = critical
     ? "unhealthy"
@@ -116,7 +94,6 @@ export async function GET() {
     status,
     db: db.ok ? "ok" : "fail",
     auth: auth.ok ? "ok" : "fail",
-    supabase: supabase.status,
     entreprises_count: db.counts?.entreprises ?? null,
     outreach_count: db.counts?.outreach ?? null,
     followups_count: db.counts?.followups ?? null,
@@ -129,7 +106,6 @@ export async function GET() {
     checks_ms: {
       db: db.ms,
       auth: auth.ms,
-      supabase: supabase.ms,
     },
   };
 

@@ -46,10 +46,6 @@ vi.mock("@prisma/client", () => {
   return { PrismaClient };
 });
 
-vi.mock("@supabase/supabase-js", () => ({
-  createClient: vi.fn(() => ({ from: vi.fn() })),
-}));
-
 import { GET } from "@/app/api/admin/kpi/route";
 import { makeRequest, makeUserContext, readJson } from "../_helpers";
 

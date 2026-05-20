@@ -37,10 +37,6 @@ vi.mock("@prisma/client", () => {
   }
   return { PrismaClient };
 });
-vi.mock("@supabase/supabase-js", () => ({
-  createClient: vi.fn(() => ({ auth: { admin: { listUsers: vi.fn().mockResolvedValue({ data: { users: [] } }) } } })),
-}));
-
 import { GET, PATCH } from "@/app/api/admin/members/route";
 import { makeRequest, makeUserContext, makeForbidden } from "../_helpers";
 

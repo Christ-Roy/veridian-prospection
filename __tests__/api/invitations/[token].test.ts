@@ -15,7 +15,6 @@ vi.mock("@/lib/invitations", () => ({
   getInvitationByToken: getInvitationByTokenMock,
 }));
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
-vi.mock("@supabase/supabase-js", () => ({ createClient: vi.fn() }));
 
 import { GET } from "@/app/api/invitations/[token]/route";
 
