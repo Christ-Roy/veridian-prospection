@@ -211,4 +211,52 @@ de désync silencieuse** identique à celui fixé en Phase 1.
   est le nommage `User.supabaseUserId` (UUID bridge legacy, pas du code
   Supabase) — rename Hub planifié en P4 future, pas bloquant.
 
-## Réponse — (à compléter par agent Prospection)
+## Réponse — 2026-05-20 (agent Prospection)
+
+✅ **Phase 1 livrée sur staging — commit `c94501a`.**
+
+### Ce qui a été fait
+
+1. **Schema Prisma Tenant étendu** (`prisma/schema.prisma` + migration `0008`) :
+   - `prospectionLoginToken` String?
+   - `prospectionLoginTokenCreatedAt` DateTime?
+   - `prospectionLoginTokenUsedAt` DateTime?
+   - Index partiel sur `prospection_login_token WHERE NOT NULL`
+
+2. **`/api/tenants/provision/route.ts`** : après `ensureOwnerWorkspace`,
+   persiste le `loginToken` sur le Tenant local (avant : token retourné
+   mais jamais sauvegardé côté Prosp → racine du bug).
+
+3. **`/api/auth/token/route.ts` réécrit zéro Supabase** :
+   - Validation 100% Prisma via index dédié
+   - One-shot atomique : `updateMany WHERE usedAt:null` (anti race condition multi-tab)
+   - Session **Auth.js v5 JWT** via `next-auth/jwt encode()` avec le bon
+     salt par env (`__Secure-authjs.session-token` en prod, plain en dev)
+   - Cookie `HttpOnly` + `SameSite=lax` + `Secure` en prod, expire 90j (cohérent `auth.config.ts`)
+   - Erreurs explicites : `invalid_token` / `token_used` / `token_expired` / `server_error`
+
+4. **Tests** :
+   - `__tests__/api/auth/token.test.ts` réécrit (Prisma + jwt mocks) — 7 tests
+   - `__tests__/api/tenants/provision.test.ts` enrichi — assert persistance
+   - **489/489 unit verts** + 12 tests provision + 7 tests auth-token
+
+### Smoke E2E staging (validé en live)
+
+```
+✓ Provision HMAC → token reçu
+✓ Token persisté en DB Prosp local
+✓ GET /api/auth/token?t=<token> → 307 vers / + __Secure-authjs.session-token set
+✓ Replay du même token → error=token_used (one-shot OK)
+```
+
+→ **Phase 1 prête pour prod**. Quand Robert décide de promouvoir
+(`promote prod` explicite), je suis la procédure §19.5 CI-ARCHITECTURE
+(staging → main → prod avec smoke à chaque étage). La migration 0008
+est additif zero-downtime.
+
+### Phase 2 — Cleanup Supabase global (P3)
+
+Inventaire confirmé : ~54 fichiers Prosp référencent encore Supabase
+(`auth/token` fixé en Phase 1, restent webhooks/stripe/admin/trial).
+Pas attaqué dans cette PR (scope Phase 1 only). Restera dans
+`todo/2026-05-19-dette-technique-audit.md` jusqu'à un sprint dédié.
