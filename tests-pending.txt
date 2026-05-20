@@ -3,8 +3,6 @@ src/components/command-palette.tsx
 src/components/dashboard/admin-kpi.tsx
 src/components/dashboard/admin-members.tsx
 src/components/dashboard/appointment-calendar.tsx
-src/components/dashboard/_archived/advanced-filters.tsx
-src/components/dashboard/_archived/leads-table.tsx
 src/components/dashboard/calendar-dialog.tsx
 src/components/dashboard/domain-sidebar.tsx
 src/components/dashboard/filter-bar.tsx
@@ -100,8 +98,6 @@ src/lib/mode.ts
 src/lib/naf.ts
 src/lib/prisma.ts
 src/lib/queries/activity.ts
-src/lib/queries/index.ts
-src/lib/queries/leads.ts
 src/lib/queries/pipeline.ts
 src/lib/queries/prospects-filters.test.ts
 src/lib/queries/prospects.test.ts
@@ -115,8 +111,6 @@ src/lib/rate-limit.ts
 src/lib/segments.ts
 src/lib/trial.test.ts
 src/lib/trial.ts
-src/lib/twenty.test.ts
-src/lib/twenty.ts
 src/lib/types.test.ts
 src/lib/utils.ts
 src/lib/web-push.ts

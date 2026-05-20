@@ -1,6 +1,5 @@
 import { prisma, buildLeadsSelect, buildLeadsFrom, COLUMN_MAP, bigIntToNumber, tenantOutreachJoin, DEFAULT_ENTREPRISES_WHERE } from "./shared";
 import type { Lead, LeadDetail } from "../types";
-import type { ExportLead } from "../twenty";
 
 interface LeadsParams {
   page: number;
@@ -248,51 +247,3 @@ export async function getHistoryLeads(
   });
 }
 
-/**
- * Export leads by SIREN list.
- * Used by the Twenty CRM export feature.
- */
-export async function getLeadsBySiren(sirens: string[], tenantId: string | null = null): Promise<ExportLead[]> {
-  if (sirens.length === 0) return [];
-  const toj = tenantOutreachJoin(tenantId);
-  const placeholders = sirens.map((_, i) => `$${i + 1}`).join(",");
-  const rows = await prisma.$queryRawUnsafe<ExportLead[]>(
-    `SELECT
-      e.siren AS domain,
-      e.web_domain_normalized as web_domain,
-      COALESCE(e.denomination, '') as nom_entreprise,
-      e.adresse as api_adresse,
-      e.commune as api_ville,
-      e.code_postal as api_code_postal,
-      e.tranche_effectifs as api_effectifs,
-      e.chiffre_affaires as api_ca,
-      e.social_linkedin,
-      e.social_twitter,
-      e.dirigeant_prenom as api_dirigeant_prenom,
-      e.dirigeant_nom as api_dirigeant_nom,
-      e.dirigeant_qualite as api_dirigeant_qualite,
-      NULL::text as dirigeant_email,
-      e.best_email_normalized as email_principal,
-      e.best_phone_e164 as phone_principal,
-      o.notes as outreach_notes,
-      o.status as outreach_status,
-      o.contacted_date,
-      o.qualification,
-      NULL::text as cnb_barreau,
-      NULL::text as cnb_specialite1,
-      NULL::text as cnb_date_serment,
-      NULL::integer as est_encore_avocat
-    FROM entreprises e
-    LEFT JOIN outreach o ON o.siren = e.siren ${toj}
-    WHERE e.siren IN (${placeholders})
-      AND ${DEFAULT_ENTREPRISES_WHERE}`,
-    ...sirens
-  );
-  return rows.map(row => ({
-    ...row,
-    api_ca: row.api_ca !== null ? Number(row.api_ca) : null,
-  }));
-}
-
-// Legacy alias (kept for transition; will be removed once callers migrate)
-export const getLeadsByDomains = getLeadsBySiren;

@@ -1,7 +1,7 @@
 // Barrel re-export — all API routes import from "@/lib/queries" which resolves here
 
 // Leads
-export { getLeads, getLeadDetail, getHistoryLeads, getLeadsByDomains, getLeadsBySiren } from "./leads";
+export { getLeads, getLeadDetail, getHistoryLeads } from "./leads";
 
 // Stats
 export { getStats } from "./stats";

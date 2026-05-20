@@ -33,8 +33,6 @@ describe("GET /api/status", () => {
     delete process.env.SUPABASE_URL;
     delete process.env.NEXT_PUBLIC_SUPABASE_URL;
     delete process.env.SUPABASE_SERVICE_ROLE_KEY;
-    delete process.env.TWENTY_API_URL;
-    delete process.env.TWENTY_API_KEY;
   });
 
   test("returns 200 healthy when DB ping ok and no external deps configured", async () => {
@@ -49,8 +47,19 @@ describe("GET /api/status", () => {
     expect(body.db).toBe("ok");
     expect(body.auth).toBe("ok");
     expect(body.supabase).toBe("not_configured");
-    expect(body.twenty).toBe("not_configured");
     expect(typeof body.uptime_s).toBe("number");
+  });
+
+  // Anti-régression : Twenty CRM a été supprimé (refactor 2026-05-20).
+  // Si quelqu'un réintroduit checkTwenty() ou le champ `twenty`, ce test
+  // casse et oblige à justifier l'ajout au lieu de le laisser passer en silence.
+  test("response payload no longer exposes Twenty CRM signal", async () => {
+    prismaMock.$queryRaw.mockResolvedValue([{ ok: 1, c: BigInt(0) }]);
+    prismaMock.user.count.mockResolvedValue(0);
+
+    const body = (await readJson(await GET())) as Record<string, unknown>;
+    expect(body).not.toHaveProperty("twenty");
+    expect((body.checks_ms as Record<string, unknown>)).not.toHaveProperty("twenty");
   });
 
   test("returns 200 unhealthy when DB ping fails (critical)", async () => {
