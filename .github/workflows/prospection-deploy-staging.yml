@@ -260,17 +260,17 @@ jobs:
       # puis visite toutes les pages dashboard, assert pas d'erreur visible
       # ni console.error. Chope les régressions transverses qui passeraient
       # entre les mailles des tests ciblés.
+      - name: Checkout (pour récup le spec crawler)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
       - name: Setup Node (pour crawler Playwright)
         uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: package-lock.json
-
-      - name: Checkout (pour récup le spec crawler)
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 1
 
       - run: npm ci
       - run: npx playwright install --with-deps chromium
