@@ -1,4 +1,4 @@
-import { prisma, buildLeadsSelect, buildLeadsFrom, COLUMN_MAP, bigIntToNumber, tenantOutreachJoin, DEFAULT_ENTREPRISES_WHERE } from "./shared";
+import { prisma, buildLeadsSelect, buildLeadsFrom, COLUMN_MAP, bigIntToNumber, DEFAULT_ENTREPRISES_WHERE } from "./shared";
 import type { Lead, LeadDetail } from "../types";
 
 interface LeadsParams {

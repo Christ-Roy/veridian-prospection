@@ -6,6 +6,7 @@
  *   - Validation UUID stricte de userId (anti SQL injection)
  *   - Signature : tenantId optionnel + userId optionnel
  *   - Surface des exports (anti-régression Twenty removal 2026-05-20)
+ *   - Imports nettoyés (tenantOutreachJoin orphelin retiré post Twenty)
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
 
@@ -64,5 +65,19 @@ describe("surface des exports — anti-régression Twenty removal", () => {
     expect(typeof leadsModule.getLeads).toBe("function");
     expect(typeof leadsModule.getLeadDetail).toBe("function");
     expect(typeof leadsModule.getHistoryLeads).toBe("function");
+  });
+
+  // tenantOutreachJoin n'était utilisé que par getLeadsBySiren (supprimé).
+  // Si quelqu'un le ré-importe sans nouveau caller légitime, lint silencieux
+  // OK mais sémantique cassée. Ce test verrouille qu'on n'a plus besoin de
+  // ce helper côté leads.ts en lisant le source directement.
+  test("queries/leads.ts n'importe plus tenantOutreachJoin (post Twenty removal)", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(
+      path.resolve(process.cwd(), "src/lib/queries/leads.ts"),
+      "utf-8",
+    );
+    expect(source).not.toMatch(/tenantOutreachJoin/);
   });
 });
