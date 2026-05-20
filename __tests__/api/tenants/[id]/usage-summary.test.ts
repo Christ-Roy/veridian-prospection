@@ -21,7 +21,6 @@ vi.hoisted(() => {
 const mocks = vi.hoisted(() => ({
   tenantFindUnique: vi.fn(),
   outreachCount: vi.fn(),
-  outreachEmailCount: vi.fn(),
   callLogCount: vi.fn(),
   appointmentCount: vi.fn(),
   followupCount: vi.fn(),
@@ -33,7 +32,6 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     tenant: { findUnique: mocks.tenantFindUnique },
     outreach: { count: mocks.outreachCount },
-    outreachEmail: { count: mocks.outreachEmailCount },
     callLog: { count: mocks.callLogCount },
     appointment: { count: mocks.appointmentCount },
     followup: { count: mocks.followupCount },
@@ -108,7 +106,6 @@ describe("GET /api/tenants/{id}/usage-summary", () => {
       lastTouchedAt: touchedAt,
     });
     mocks.outreachCount.mockResolvedValueOnce(120);
-    mocks.outreachEmailCount.mockResolvedValueOnce(45);
     mocks.callLogCount.mockResolvedValueOnce(30);
     mocks.appointmentCount.mockResolvedValueOnce(15);
     mocks.followupCount.mockResolvedValueOnce(8);
@@ -130,7 +127,7 @@ describe("GET /api/tenants/{id}/usage-summary", () => {
       domain_specific: Record<string, number>;
     };
     expect(body.tenant_id).toBe("t-1");
-    expect(body.data_volume.rows_total).toBe(120 + 45 + 30 + 15 + 8);
+    expect(body.data_volume.rows_total).toBe(120 + 30 + 15 + 8);
     expect(body.data_volume.size_mb_estimate).toBeGreaterThanOrEqual(0);
 
     // lastTouchedAt prioritaire (§5.8.4 : touch écrase lastActivity côté UX)
@@ -138,7 +135,6 @@ describe("GET /api/tenants/{id}/usage-summary", () => {
     expect(body.activity.active_users_30d).toBe(5);
 
     expect(body.domain_specific.prospects_outreach_total).toBe(120);
-    expect(body.domain_specific.emails_sent_total).toBe(45);
     expect(body.domain_specific.calls_logged_total).toBe(30);
     expect(body.domain_specific.appointments_total).toBe(15);
     expect(body.domain_specific.followups_total).toBe(8);
@@ -154,7 +150,6 @@ describe("GET /api/tenants/{id}/usage-summary", () => {
       lastTouchedAt: null,
     });
     mocks.outreachCount.mockResolvedValueOnce(0);
-    mocks.outreachEmailCount.mockResolvedValueOnce(0);
     mocks.callLogCount.mockResolvedValueOnce(0);
     mocks.appointmentCount.mockResolvedValueOnce(0);
     mocks.followupCount.mockResolvedValueOnce(0);
@@ -176,7 +171,6 @@ describe("GET /api/tenants/{id}/usage-summary", () => {
       lastTouchedAt: null,
     });
     mocks.outreachCount.mockResolvedValueOnce(0);
-    mocks.outreachEmailCount.mockResolvedValueOnce(0);
     mocks.callLogCount.mockResolvedValueOnce(0);
     mocks.appointmentCount.mockResolvedValueOnce(0);
     mocks.followupCount.mockResolvedValueOnce(0);
@@ -199,7 +193,6 @@ describe("GET /api/tenants/{id}/usage-summary", () => {
       lastTouchedAt: null,
     });
     mocks.outreachCount.mockResolvedValueOnce(50);
-    mocks.outreachEmailCount.mockResolvedValueOnce(0);
     mocks.callLogCount.mockResolvedValueOnce(0);
     mocks.appointmentCount.mockResolvedValueOnce(50); // appointments total
     mocks.followupCount.mockResolvedValueOnce(0);
@@ -221,7 +214,6 @@ describe("GET /api/tenants/{id}/usage-summary", () => {
       lastTouchedAt: null,
     });
     mocks.outreachCount.mockResolvedValue(0);
-    mocks.outreachEmailCount.mockResolvedValue(0);
     mocks.callLogCount.mockResolvedValue(0);
     mocks.appointmentCount.mockResolvedValue(0);
     mocks.followupCount.mockResolvedValue(0);

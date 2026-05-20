@@ -133,9 +133,6 @@ export async function POST(
     const r1 = await tx.outreach.deleteMany({ where: { tenantId } });
     rows.outreach = r1.count;
 
-    const r2 = await tx.outreachEmail.deleteMany({ where: { tenantId } });
-    rows.outreach_emails = r2.count;
-
     const r3 = await tx.callLog.deleteMany({ where: { tenantId } });
     rows.call_log = r3.count;
 

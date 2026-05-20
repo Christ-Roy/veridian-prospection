@@ -73,14 +73,12 @@ interface LeadSheetProps {
 export function LeadSheet({ domain, onClose, onUpdated }: LeadSheetProps) {
   const [lead, setLead] = useState<LeadDetail | null>(null);
   const [loading, setLoading] = useState(false);
-  const [, setClaudeActivities] = useState<unknown[]>([]);
   const [followups, setFollowups] = useState<Followup[]>([]);
   const [stageEditOpen, setStageEditOpen] = useState(false);
 
   useEffect(() => {
     if (!domain) {
       setLead(null);
-      setClaudeActivities([]);
       setFollowups([]);
       return;
     }
@@ -90,18 +88,11 @@ export function LeadSheet({ domain, onClose, onUpdated }: LeadSheetProps) {
       .then((d) => { setLead(d); setLoading(false); })
       .catch(() => setLoading(false));
 
-    fetch(`/api/claude/${encodeURIComponent(domain)}`)
-      .then((r) => r.json())
-      .then((d) => setClaudeActivities(Array.isArray(d) ? d : []))
-      .catch(() => {});
-
     fetch(`/api/followups?domain=${encodeURIComponent(domain)}`)
       .then((r) => r.json())
       .then((d) => setFollowups(Array.isArray(d) ? d : []))
       .catch(() => {});
   }, [domain]);
-
-  // Claude activities fetched for future use but not displayed in current UI
 
   async function handleAddFollowup(scheduled_at: string, note: string) {
     if (!domain) return;

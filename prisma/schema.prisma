@@ -151,7 +151,6 @@ model Entreprise {
   callLogs         CallLog[]
   followups        Followup[]
   claudeActivities ClaudeActivity[]
-  outreachEmails   OutreachEmail[]
   // Indexes are created by open-data-hub/migration_pg_entreprises.sql
   // (23 indexes including 3 critical composites for segment queries).
 
@@ -237,26 +236,6 @@ model Followup {
   @@index([status])
   @@index([scheduledAt])
   @@map("followups")
-}
-
-model OutreachEmail {
-  id        Int     @id @default(autoincrement())
-  tenantId  String? @map("tenant_id") @db.Uuid
-  siren     String
-  toEmail   String  @map("to_email")
-  fromEmail String  @default("robert.brunon@veridian.site") @map("from_email")
-  subject   String
-  bodyText  String  @map("body_text")
-  sentAt    String  @map("sent_at")
-  messageId String? @map("message_id")
-  status    String  @default("sent")
-
-  entreprise Entreprise @relation(fields: [siren], references: [siren])
-
-  @@index([tenantId])
-  @@index([siren])
-  @@index([sentAt])
-  @@map("outreach_emails")
 }
 
 model CallLog {

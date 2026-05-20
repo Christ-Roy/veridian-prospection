@@ -3,9 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 import { LeadSheet } from "./lead-sheet";
 import { formatCA, PIPELINE_STAGES, INTEREST_SCALE } from "@/lib/types";
 import { StageTransitionModal, type StageData } from "./lead-sheet/stage-transition";
@@ -13,7 +10,6 @@ import { toast } from "sonner";
 import {
   Phone,
   Mail,
-  Send,
   Loader2,
   X,
   MessageSquare,
@@ -43,7 +39,6 @@ interface PipelineLead {
   ca: number | null;
   effectifs: string | null;
   cms: string | null;
-  email_count: number;
   pending_followups: number;
   pipeline_stage: string | null;
   interest_pct: number | null;
@@ -94,7 +89,6 @@ export function PipelineBoard() {
   const [pipeline, setPipeline] = useState<Record<string, PipelineLead[]>>({});
   const [loading, setLoading] = useState(true);
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
-  const [emailModal, setEmailModal] = useState<string | null>(null);
 
   // Stage transition modal from pipeline
   const [transitionOpen, setTransitionOpen] = useState(false);
@@ -453,15 +447,6 @@ export function PipelineBoard() {
         onCancel={() => { setTransitionOpen(false); setTransitionLead(null); }}
       />
 
-      {/* Email modal */}
-      {emailModal && (
-        <EmailComposeModal
-          domain={emailModal}
-          lead={allLeads.find(l => l.domain === emailModal) || null}
-          onClose={() => setEmailModal(null)}
-          onSent={() => { setEmailModal(null); fetchPipeline(); }}
-        />
-      )}
     </div>
   );
 }
@@ -630,63 +615,3 @@ function PipelineCard({
   );
 }
 
-// ============================================================================
-// EMAIL COMPOSE MODAL
-// ============================================================================
-
-function EmailComposeModal({
-  domain, lead, onClose, onSent,
-}: {
-  domain: string;
-  lead: PipelineLead | null;
-  onClose: () => void;
-  onSent: () => void;
-}) {
-  const bestEmail = lead?.dirigeant_email || lead?.email || "";
-  const [to, setTo] = useState(bestEmail);
-  const [subject, setSubject] = useState("");
-  const [body, setBody] = useState("");
-  const [sending, setSending] = useState(false);
-
-  async function handleSend() {
-    if (!to || !subject || !body) { toast.error("Remplissez tous les champs"); return; }
-    setSending(true);
-    const toastId = toast.loading("Envoi...");
-    try {
-      const res = await fetch(`/api/outreach/${encodeURIComponent(domain)}/send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to, subject, body }),
-      });
-      if (res.ok) { toast.success("Email envoye !", { id: toastId }); onSent(); }
-      else { const r = await res.json(); toast.error(r.error || "Erreur", { id: toastId }); }
-    } catch (e) {
-      toast.error(`Erreur: ${e instanceof Error ? e.message : String(e)}`, { id: toastId });
-    } finally { setSending(false); }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4">
-        <div className="flex items-center justify-between px-4 py-3 border-b">
-          <h3 className="font-semibold text-sm flex items-center gap-2">
-            <Send className="h-4 w-4 text-green-600" /> {lead?.nom_entreprise || domain}
-          </h3>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
-        </div>
-        <div className="p-4 space-y-3">
-          <div><Label className="text-xs">De</Label><Input value="robert.brunon@veridian.site" disabled className="h-8 text-sm bg-muted/30" /></div>
-          <div><Label className="text-xs">A</Label><Input value={to} onChange={(e) => setTo(e.target.value)} placeholder="email@exemple.fr" className="h-8 text-sm" /></div>
-          <div><Label className="text-xs">Objet</Label><Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Objet..." className="h-8 text-sm" /></div>
-          <div><Label className="text-xs">Message</Label><Textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Bonjour..." className="min-h-[180px] text-sm" /></div>
-        </div>
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t bg-muted/20 rounded-b-xl">
-          <Button variant="outline" size="sm" onClick={onClose}>Annuler</Button>
-          <Button size="sm" onClick={handleSend} disabled={sending} className="gap-1.5 bg-green-600 hover:bg-green-700">
-            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Envoyer
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}

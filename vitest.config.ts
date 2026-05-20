@@ -8,8 +8,8 @@ export default defineConfig({
     // __tests__/api: route handler tests with mocked deps (fast)
     include: [
       "e2e/integration/**/*.test.ts",
-      "src/**/*.test.ts",
-      "__tests__/**/*.test.ts",
+      "src/**/*.test.{ts,tsx}",
+      "__tests__/**/*.test.{ts,tsx}",
     ],
     testTimeout: 30000,
     environment: "node",

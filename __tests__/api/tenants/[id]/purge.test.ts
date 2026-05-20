@@ -82,7 +82,6 @@ function setupTxMock(rowCounts: Record<string, number> = {}) {
   mocks.prismaTransaction.mockImplementationOnce(async (cb) => {
     const tx = {
       outreach: { deleteMany: vi.fn().mockResolvedValue({ count: rowCounts.outreach ?? 0 }) },
-      outreachEmail: { deleteMany: vi.fn().mockResolvedValue({ count: rowCounts.outreach_emails ?? 0 }) },
       callLog: { deleteMany: vi.fn().mockResolvedValue({ count: rowCounts.call_log ?? 0 }) },
       claudeActivity: { deleteMany: vi.fn().mockResolvedValue({ count: rowCounts.claude_activity ?? 0 }) },
       followup: { deleteMany: vi.fn().mockResolvedValue({ count: rowCounts.followups ?? 0 }) },
@@ -283,7 +282,6 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
     });
     setupTxMock({
       outreach: 42,
-      outreach_emails: 12,
       call_log: 8,
       claude_activity: 100,
       followups: 5,
@@ -308,7 +306,6 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
     expect(body.purged_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(body.rows_deleted).toEqual({
       outreach: 42,
-      outreach_emails: 12,
       call_log: 8,
       claude_activity: 100,
       followups: 5,

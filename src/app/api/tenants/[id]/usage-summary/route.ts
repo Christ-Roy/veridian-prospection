@@ -40,7 +40,6 @@ export async function GET(
   // Agrégats par table tenant_id-scoped
   const [
     outreachCount,
-    outreachEmailsCount,
     callLogCount,
     appointmentsCount,
     followupsCount,
@@ -48,7 +47,6 @@ export async function GET(
     activeMembersCount,
   ] = await Promise.all([
     prisma.outreach.count({ where: { tenantId } }),
-    prisma.outreachEmail.count({ where: { tenantId } }),
     prisma.callLog.count({ where: { tenantId } }),
     prisma.appointment.count({ where: { tenantId } }),
     prisma.followup.count({ where: { tenantId } }),
@@ -60,7 +58,6 @@ export async function GET(
 
   const rowsTotal =
     outreachCount +
-    outreachEmailsCount +
     callLogCount +
     appointmentsCount +
     followupsCount;
@@ -102,7 +99,6 @@ export async function GET(
     },
     domain_specific: {
       prospects_outreach_total: outreachCount,
-      emails_sent_total: outreachEmailsCount,
       calls_logged_total: callLogCount,
       appointments_total: appointmentsCount,
       followups_total: followupsCount,

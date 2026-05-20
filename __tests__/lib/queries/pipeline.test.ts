@@ -73,3 +73,20 @@ describe("patchOutreach/updateOutreach — sync status ↔ pipeline_stage (2026-
     });
   });
 });
+
+// Anti-régression : champ email_count retiré du PipelineLead (cleanup
+// envoi email himalaya 2026-05-20). La sous-query SQL COUNT(*) FROM
+// outreach_emails et le mapping email_count ne doivent pas réapparaître.
+describe("queries/pipeline source — anti-régression Claude+email cleanup", () => {
+  test("le source n'inclut plus la sous-query outreach_emails ni le champ email_count", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(
+      path.resolve(process.cwd(), "src/lib/queries/pipeline.ts"),
+      "utf-8",
+    );
+    expect(source).not.toMatch(/outreach_emails/);
+    expect(source).not.toMatch(/email_count/);
+    expect(source).not.toMatch(/twOe\b/);
+  });
+});

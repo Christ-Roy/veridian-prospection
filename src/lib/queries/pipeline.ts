@@ -22,7 +22,6 @@ export interface PipelineLead {
   ca: number | null;
   effectifs: string | null;
   cms: string | null;
-  email_count: number;
   pending_followups: number;
   // New pipeline fields
   pipeline_stage: string | null;
@@ -53,7 +52,6 @@ export async function getPipelineLeads(
   userFilter: string | null = null,
 ): Promise<Record<string, PipelineLead[]>> {
   const tw = tenantWhere("o", tenantId);
-  const twOe = tenantWhere("oe", tenantId);
   const twF = tenantWhere("f", tenantId);
   const wsO = workspaceSqlClause("o", workspaceFilter);
   const wsF = workspaceSqlClause("f", workspaceFilter);
@@ -99,7 +97,6 @@ export async function getPipelineLeads(
       e.chiffre_affaires as ca,
       e.tranche_effectifs as effectifs,
       e.web_cms as cms,
-      (SELECT COUNT(*) FROM outreach_emails oe WHERE oe.siren = e.siren AND ${twOe}) as email_count,
       (SELECT COUNT(*) FROM followups f WHERE f.siren = e.siren AND f.status = 'pending' AND ${twF}${wsF}) as pending_followups
     FROM outreach o
     JOIN entreprises e ON o.siren = e.siren
@@ -112,7 +109,6 @@ export async function getPipelineLeads(
   const normalized = rows.map(row => ({
     ...row,
     ca: row.ca !== null ? Number(row.ca) : null,
-    email_count: bigIntToNumber(row.email_count),
     pending_followups: bigIntToNumber(row.pending_followups),
     // Pipeline numeric fields come as strings from raw SQL — force Number
     estimated_value: row.estimated_value != null ? Number(row.estimated_value) : null,

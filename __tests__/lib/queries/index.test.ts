@@ -51,8 +51,6 @@ describe("@/lib/queries — surface du barrel", () => {
     "getFollowups",
     "addFollowup",
     "updateFollowup",
-    "addOutreachEmail",
-    "getOutreachEmails",
     // prospects
     "getProspects",
     "getDomainCounts",
@@ -73,5 +71,14 @@ describe("@/lib/queries — surface du barrel", () => {
   });
   test("getLeadsByDomains n'est plus exporté depuis le barrel", () => {
     expect((queries as Record<string, unknown>).getLeadsByDomains).toBeUndefined();
+  });
+
+  // Anti-régression Claude/email cleanup (2026-05-20) : envoi email via
+  // himalaya CLI supprimé, table outreach_emails n'est plus écrite.
+  test("addOutreachEmail n'est plus exporté", () => {
+    expect((queries as Record<string, unknown>).addOutreachEmail).toBeUndefined();
+  });
+  test("getOutreachEmails n'est plus exporté", () => {
+    expect((queries as Record<string, unknown>).getOutreachEmails).toBeUndefined();
   });
 });

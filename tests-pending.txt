@@ -14,12 +14,9 @@ src/components/dashboard/lead-sheet/auto-save-notes.tsx
 src/components/dashboard/lead-sheet/google-maps-dropdown.tsx
 src/components/dashboard/lead-sheet/lead-header.tsx
 src/components/dashboard/lead-sheet/quick-notes.tsx
-src/components/dashboard/lead-sheet/sections.tsx
 src/components/dashboard/lead-sheet/stage-transition.tsx
-src/components/dashboard/lead-sheet.tsx
 src/components/dashboard/notification-preferences-form.tsx
 src/components/dashboard/outreach-form.tsx
-src/components/dashboard/pipeline-board.tsx
 src/components/dashboard/pipeline-view.tsx
 src/components/dashboard/prospect-page.tsx
 src/components/dashboard/quality-filter-sidebar.tsx
@@ -97,8 +94,6 @@ src/lib/invitations.ts
 src/lib/mode.ts
 src/lib/naf.ts
 src/lib/prisma.ts
-src/lib/queries/activity.ts
-src/lib/queries/pipeline.ts
 src/lib/queries/prospects-filters.test.ts
 src/lib/queries/prospects.test.ts
 src/lib/queries/prospects.ts

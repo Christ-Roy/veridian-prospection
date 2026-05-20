@@ -31,7 +31,7 @@ export {
   removeFromSegment,
 } from "./segments";
 
-// Activity (Claude, Followups, Outreach Emails)
+// Activity (Claude, Followups)
 export {
   getClaudeActivities,
   addClaudeActivity,
@@ -41,10 +41,7 @@ export {
   getFollowups,
   addFollowup,
   updateFollowup,
-  addOutreachEmail,
-  getOutreachEmails,
 } from "./activity";
-export type { OutreachEmail } from "./activity";
 
 // Prospects (new navigation)
 export { getProspects, getDomainCounts, getPresetCounts, getSetting, setSetting, getAllSettings } from "./prospects";

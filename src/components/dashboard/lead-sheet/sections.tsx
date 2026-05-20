@@ -24,15 +24,12 @@ function formatBodaccStatus(status: string): string {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import type { LeadDetail, ClaudeActivity, Followup } from "@/lib/types";
+import type { LeadDetail, Followup } from "@/lib/types";
 import {
-  CLAUDE_ACTIVITY_COLORS,
-  CLAUDE_ACTIVITY_LABELS,
   formatCA,
   formatEffectifs,
   formatTimeAgo,
 } from "@/lib/types";
-import type { ClaudeActivityType } from "@/lib/types";
 import { formatNaf } from "@/lib/naf";
 import { toast } from "sonner";
 import {
@@ -45,13 +42,7 @@ import {
   Linkedin,
   Facebook,
   Instagram,
-  Loader2,
   Star,
-  ChevronDown,
-  ChevronRight,
-  Send,
-  Edit3,
-  Save,
   X,
   Plus,
   CheckCircle2,
@@ -334,118 +325,6 @@ export function TechniqueSection({ lead }: { lead: LeadDetail }) {
 }
 
 // --- Claude Activity section ---
-
-export function ClaudeNotesSection({ activities, domain, onUpdate }: { activities: ClaudeActivity[]; domain: string; onUpdate: () => void }) {
-  if (activities.length === 0) return <p className="text-xs text-muted-foreground">Aucune note Claude</p>;
-  return (
-    <div className="space-y-2">
-      {activities.map((activity) => (
-        <ClaudeActivityCard key={activity.id} activity={activity} domain={domain} onUpdate={onUpdate} />
-      ))}
-    </div>
-  );
-}
-
-function ClaudeActivityCard({ activity, domain, onUpdate }: { activity: ClaudeActivity; domain: string; onUpdate: () => void }) {
-  const [expanded, setExpanded] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [editContent, setEditContent] = useState(activity.content);
-  const [sending, setSending] = useState(false);
-
-  const isLong = activity.content.length > 200;
-  const isDraft = activity.activity_type === "email_draft";
-  const colorClass = CLAUDE_ACTIVITY_COLORS[activity.activity_type as ClaudeActivityType] ?? "bg-gray-100 text-gray-700 border-gray-200";
-  const label = CLAUDE_ACTIVITY_LABELS[activity.activity_type as ClaudeActivityType] ?? activity.activity_type;
-
-  async function handleSave() {
-    const toastId = toast.loading("Sauvegarde du draft...");
-    try {
-      const res = await fetch(`/api/claude/${encodeURIComponent(domain)}/${activity.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: editContent }),
-      });
-      if (res.ok) {
-        toast.success("Draft sauvegarde", { id: toastId });
-        setEditing(false);
-        onUpdate();
-      } else {
-        toast.error("Erreur", { id: toastId });
-      }
-    } catch (e) {
-      toast.error(`Erreur: ${e instanceof Error ? e.message : String(e)}`, { id: toastId });
-    }
-  }
-
-  async function handleSend() {
-    setSending(true);
-    const toastId = toast.loading("Envoi de l'email...");
-    try {
-      const lines = editContent.split("\n");
-      let to = "", subject = "", bodyStart = 0;
-      for (let i = 0; i < lines.length; i++) {
-        if (lines[i].startsWith("To:")) to = lines[i].replace("To:", "").trim();
-        else if (lines[i].startsWith("Subject:")) subject = lines[i].replace("Subject:", "").trim();
-        else if (lines[i].trim() === "") { bodyStart = i + 1; break; }
-      }
-      const body = lines.slice(bodyStart).join("\n").trim();
-      if (!to || !subject || !body) { toast.error("Draft invalide", { id: toastId }); setSending(false); return; }
-
-      const res = await fetch(`/api/outreach/${encodeURIComponent(domain)}/send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to, subject, body }),
-      });
-      if (res.ok) { toast.success("Email envoye !", { id: toastId }); onUpdate(); }
-      else { const r = await res.json(); toast.error(r.error || "Erreur", { id: toastId }); }
-    } catch (e) {
-      toast.error(`Erreur: ${e instanceof Error ? e.message : String(e)}`, { id: toastId });
-    } finally { setSending(false); }
-  }
-
-  return (
-    <div className="border rounded-md p-2.5 space-y-1.5">
-      <div className="flex items-center gap-2">
-        <Badge className={`text-[10px] h-5 px-1.5 ${colorClass}`}>{label}</Badge>
-        {activity.title && <span className="text-sm font-medium truncate">{activity.title}</span>}
-        <span className="ml-auto text-[10px] text-muted-foreground whitespace-nowrap">
-          {formatTimeAgo(activity.created_at) ?? activity.created_at}
-        </span>
-      </div>
-      {editing ? (
-        <div className="space-y-2">
-          <Textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} className="min-h-[200px] text-xs font-mono" />
-          <div className="flex items-center gap-1.5">
-            <Button size="sm" onClick={handleSave} className="h-7 gap-1"><Save className="h-3 w-3" /> Sauver</Button>
-            <Button size="sm" variant="ghost" onClick={() => { setEditing(false); setEditContent(activity.content); }} className="h-7 gap-1"><X className="h-3 w-3" /> Annuler</Button>
-          </div>
-        </div>
-      ) : (
-        <>
-          <div className="text-xs text-muted-foreground whitespace-pre-wrap font-mono">
-            {isLong && !expanded ? activity.content.slice(0, 200) + "..." : activity.content}
-          </div>
-          <div className="flex items-center gap-1.5">
-            {isLong && (
-              <button className="text-[10px] text-cyan-600 hover:underline flex items-center gap-0.5" onClick={() => setExpanded(!expanded)}>
-                {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                {expanded ? "Reduire" : "Voir plus"}
-              </button>
-            )}
-            {isDraft && (
-              <>
-                <Button size="sm" variant="outline" onClick={() => setEditing(true)} className="h-6 gap-1 text-[10px]"><Edit3 className="h-3 w-3" /> Modifier</Button>
-                <Button size="sm" onClick={handleSend} disabled={sending} className="h-6 gap-1 text-[10px] bg-green-600 hover:bg-green-700">
-                  {sending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />} Envoyer
-                </Button>
-              </>
-            )}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
 
 // --- Followup section ---
 
