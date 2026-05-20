@@ -127,3 +127,19 @@ standard `{ts}.{body}` côté Hub via `lib/prospection/client.ts`.
   `ACCEPT_LEGACY_BEARER=0` + `ACCEPT_LEGACY_HMAC=0` en ENV Dokploy.
 - Notifier l'agent Hub pour patcher la matrice §10 contrat-hub.md.
 - À ce moment-là, archiver ce ticket dans `todo/done/`.
+
+## Réponse — 2026-05-20 (audit Loki)
+
+Query Loki Grafana Cloud sur 14j (`{service_name=~".*prospection.*"} |~ "legacy *"`) → **0 occurrence**. Vrai signal négatif puisqu'aucune route ne loguait l'acceptance legacy.
+
+**Action prise** : commit `e823297` ajoute un `console.warn` explicite dans :
+- `src/lib/hub/auth.ts:requireHubHmac` (9 routes contrat §5 utilisent ce middleware)
+- `src/app/api/users/by-email/route.ts` (route Discovery)
+
+Format log : `[hub-auth] legacy Bearer accepted on <route> — migrate Hub to standard HMAC {ts}.{body}`.
+
+Tests sabotage-test ajoutés (auth.test.ts + by-email.test.ts) : casser le warn fait échouer la CI.
+
+**Nouvelle fenêtre d'observation** : 7j à partir du déploiement prod du commit `e823297` (≈ 2026-05-27). Si toujours 0 occurrence dans Loki, flipper `ACCEPT_LEGACY_BEARER=0` + `ACCEPT_LEGACY_HMAC=0` en ENV Dokploy compose `0mJI-sSt6jcOMr_2QJ1iI` via API `compose.update` puis `compose.deploy`.
+
+À ce moment-là, archiver ce ticket dans `todo/done/` + ping agent Hub pour la matrice §10.
