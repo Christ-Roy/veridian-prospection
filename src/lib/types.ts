@@ -355,7 +355,18 @@ export const STATUS_OPTIONS = [
 ] as const;
 
 export function getStatusInfo(status: string) {
-  return STATUS_OPTIONS.find((s) => s.value === status) ?? STATUS_OPTIONS[0];
+  const found = STATUS_OPTIONS.find((s) => s.value === status);
+  if (found) return found;
+  // Fallback safe : si le status n'est pas dans la liste (ex: nouveau stage
+  // ajouté côté DB pas encore propagé au front, ou bug d'une futur refonte),
+  // on affiche la valeur brute formatée plutôt que "A contacter" trompeur.
+  // Bug racine 2026-05-20 : un commercial voyait "A contacter" sur un lead en
+  // "site_demo" parce que le bundle JS cached ne connaissait pas la valeur.
+  const label = status
+    .split("_")
+    .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : ""))
+    .join(" ");
+  return { value: status, label, color: "bg-gray-200 text-gray-600" };
 }
 
 // New pipeline stages — commercial funnel

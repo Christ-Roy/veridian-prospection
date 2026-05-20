@@ -1,8 +1,13 @@
 // Service Worker — Veridian Prospection PWA
 // Strategie : stale-while-revalidate pour assets statiques,
 // network-only pour les appels API (donnees toujours fraiches).
+//
+// 2026-05-20 — bump v2 : invalide le cache de l'ancien bundle JS qui
+// servait un STATUS_OPTIONS incomplet (sans 'site_demo', 'a_rappeler',
+// etc.). Les commerciaux voyaient "A contacter" sur des leads en pleine
+// négo. Cf todo/2026-05-19-audit-bugs-prospect-status-cross-membre.md.
 
-const CACHE_NAME = 'veridian-prospection-v1';
+const CACHE_NAME = 'veridian-prospection-v2';
 
 const PRECACHE_URLS = ['/'];
 

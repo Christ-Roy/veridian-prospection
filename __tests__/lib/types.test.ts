@@ -28,8 +28,18 @@ describe("getStatusInfo — extension 2026-05-20 (toutes valeurs status reconnue
     expect(getStatusInfo("en_observation").label).toBe("En observation");
   });
 
-  it("fallback safe pour valeur inconnue", () => {
-    expect(getStatusInfo("xyz_inexistant").label).toBe("A contacter");
+  it("fallback safe pour valeur inconnue → affiche la valeur brute, PAS 'A contacter'", () => {
+    // Bug terrain 2026-05-20 : un commercial voyait "A contacter" sur un lead
+    // en "site_demo" parce que le bundle JS cached était antérieur à
+    // l'extension STATUS_OPTIONS. Le fallback affiche maintenant la valeur
+    // brute formatée pour éviter ce piège.
+    const info = getStatusInfo("xyz_inexistant");
+    expect(info.label).not.toBe("A contacter");
+    expect(info.label).toBe("Xyz Inexistant");
+  });
+
+  it("fallback safe avec underscore → label formatté lisible", () => {
+    expect(getStatusInfo("new_unknown_stage").label).toBe("New Unknown Stage");
   });
 });
 

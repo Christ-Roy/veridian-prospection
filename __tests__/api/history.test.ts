@@ -52,4 +52,16 @@ describe("GET /api/history", () => {
     expect(res.status).toBe(200);
     expect(getHistoryLeadsMock).toHaveBeenCalledWith(200, "t-1", null);
   });
+
+  test("renvoie Cache-Control: no-store (anti désync UI)", async () => {
+    // Sans no-store, le navigateur peut cacher la réponse plusieurs minutes
+    // via heuristique HTTP. Un commercial qui passe du kanban à /historique
+    // doit voir le statut à jour immédiatement.
+    requireAuthMock.mockResolvedValue({ user: { id: "u-1", email: "u@v.site" } });
+    getTenantIdMock.mockResolvedValue("t-1");
+    getUserContextMock.mockResolvedValue({ isAdmin: false, workspaces: [] });
+    getHistoryLeadsMock.mockResolvedValue([]);
+    const res = await GET(req());
+    expect(res.headers.get("Cache-Control")).toContain("no-store");
+  });
 });

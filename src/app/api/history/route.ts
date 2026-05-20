@@ -17,5 +17,10 @@ export async function GET(request: NextRequest) {
   const userId = showAll ? null : auth.user.id;
 
   const leads = await getHistoryLeads(200, tenantId, userId);
-  return NextResponse.json(leads);
+  // no-store : un commercial qui passe d'un lead en négo dans le kanban à
+  // /historique doit voir le statut à jour immédiatement, sans dépendre du
+  // cache navigateur (HTTP heuristic peut tenir des minutes sans Cache-Control).
+  return NextResponse.json(leads, {
+    headers: { "Cache-Control": "no-store, must-revalidate" },
+  });
 }
