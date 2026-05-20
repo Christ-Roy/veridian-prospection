@@ -1,7 +1,7 @@
 # CI/CD pipeline — Veridian Prospection (post-extraction monorepo 2026-05-13)
 #
 # Déclenche :
-#   - push main      → pipeline complet + build/push GHCR :latest → webhook Dokploy → redeploy prod
+#   - push main      → pipeline complet + build/push GHCR :latest (deploy prod manuel via §20)
 #   - PR vers main   → pipeline complet (quality gate validation)
 #   - workflow_dispatch
 #
@@ -11,7 +11,13 @@
 #   3. build       : npm run build (Next.js standalone)                                            (~90s)
 #   4. integration : vitest e2e/integration vs Postgres éphémère                                   (~60s)
 #   5. docker      : buildx + push GHCR (latest + sha) + cache GHA (push main uniquement)          (~3min cold / ~30s warm)
-#   6. smoke-prod  : curl prod endpoints (laisse Dokploy webhook redeploy + healthcheck)           (~90s)
+#
+# Promotion prod : déclenchée par l'agent via Dokploy API `compose.deploy`
+# (cf. CLAUDE.md §20 protocole tier 🔴 étape 6). Le webhook GitHub→Dokploy
+# fire à T0 mais l'image GHCR n'est prête qu'à T+5-8min → race condition
+# qui déploie l'ancien digest. Garde-fou implicite conservé : pas d'auto-
+# deploy prod sur push main, l'agent confirme via `docker inspect`
+# que le SHA actif correspond bien au commit avant d'annoncer livré.
 
 name: Prospection CI/CD
 
@@ -173,41 +179,9 @@ jobs:
             NEXT_PUBLIC_SITE_URL=https://prospection.app.veridian.site
             NEXT_PUBLIC_TRIAL_DAYS=7
 
-  # ── Smoke prod après webhook Dokploy redeploy ───────────────────────────
-  smoke-prod:
-    name: Smoke prod (post webhook Dokploy)
-    needs: docker
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Attendre que Dokploy ait pull + restart (max 3 min)
-        run: |
-          # Dokploy webhook trigger après push GHCR :latest.
-          # Le redeploy compose pull + up -d + healthcheck start_period 30s.
-          # On laisse 30s avant le 1er check pour pas hit l'ancien container.
-          sleep 30
-
-      - name: GET /api/health (attendre 200, max 6 essais × 15s = 90s)
-        run: |
-          for i in $(seq 1 6); do
-            CODE=$(curl -sS -o /dev/null -w "%{http_code}" "https://${{ env.PROD_HOST }}/api/health" || echo "000")
-            echo "[$i/6] /api/health → $CODE"
-            if [ "$CODE" = "200" ]; then exit 0; fi
-            sleep 15
-          done
-          echo "::error::Smoke prod /api/health timeout après 90s — vérifier Dokploy logs"
-          exit 1
-
-      - name: GET /api/auth/providers
-        run: |
-          CODE=$(curl -sS -o /dev/null -w "%{http_code}" "https://${{ env.PROD_HOST }}/api/auth/providers")
-          [ "$CODE" = "200" ] || { echo "::error::auth providers → $CODE"; exit 1; }
-
-      - name: GET /login (page render)
-        run: |
-          CODE=$(curl -sS -o /dev/null -w "%{http_code}" "https://${{ env.PROD_HOST }}/login")
-          [ "$CODE" = "200" ] || { echo "::error::/login → $CODE"; exit 1; }
-
-      - name: Annonce succès
-        run: |
-          echo "::notice::Prod redeploy OK — https://${{ env.PROD_HOST }} all green"
+# Le job smoke-prod a été retiré 2026-05-20 : il check `/api/health` après
+# 30s alors que Dokploy n'a pas encore pull la nouvelle image (race
+# condition webhook GitHub vs build CI). Le 200 ne reflétait que la santé
+# de l'ANCIEN container et masquait le bug "image stale" pendant des heures.
+# La vérif réelle se fait via `docker inspect` côté agent (cf. CLAUDE.md §20
+# étape 6) après `compose.deploy` API explicite.
