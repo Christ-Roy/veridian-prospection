@@ -428,3 +428,11 @@ fi
 
 **Critère "trou colmaté"** : aucun PR ne peut introduire de l'auto-promote
 sur Prospection ; les autres apps doivent en avoir un (warning).
+
+---
+
+## Archivage — 2026-05-20
+
+Ce brouillon a été **intégré dans `veridian-hub/docs/CI-ARCHITECTURE.md` §18-19** (livré côté Hub avant 2026-05-20). La version Hub est **plus à jour** : §19.1 a été marquée "PARTIELLEMENT obsolète depuis 2026-05-20" car remplacée par §20 "Promotion graduée par risque".
+
+Aucune action côté Prospection requise — ce brouillon n'est plus la source de vérité. Pour toute modif des sections 18-19-20, modifier directement `veridian-hub/docs/CI-ARCHITECTURE.md`.
