@@ -27,3 +27,17 @@ le flow OAuth puis renvoie un magic link Prospection via le contrat HMAC.
 ## Référence
 
 - Spec complète : `veridian-hub/todo/2026-05-20-fallback-login-apps-redirect-hub.md`
+
+## État — 2026-05-20
+
+🛑 **BLOQUÉ — Hub n'a pas livré le support `?next=`.**
+
+Audit fait sur `veridian-hub` :
+- `components/auth/LoginForm.tsx` utilise `callbackUrl` (next-auth standard), **pas `next`**
+- Aucune whitelist `*.veridian.site` côté serveur
+- Aucun code de relay `next → generateMagicLink → redirect` côté Hub
+- Checklist du ticket parent Hub : 0/3 cases cochées
+
+→ Ticket ré-ouvrable dès que `2026-05-20-fallback-login-apps-redirect-hub.md`
+côté Hub est livré + déployé. Robert doit router la livraison côté
+agent Hub avant que cet agent puisse implémenter les boutons.
