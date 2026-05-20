@@ -54,4 +54,10 @@ describe("lead-sheet/sections.tsx — anti-régression Claude+email cleanup 2026
     // Régression inverse : on ne veut PAS perdre Followup qui est legit
     expect(source).toMatch(/export\s+function\s+FollowupSection/);
   });
+
+  test("plus d'import formatTimeAgo orphelin (cleanup post ClaudeActivityCard)", () => {
+    // formatTimeAgo n'était plus utilisé que dans ClaudeActivityCard. L'import
+    // doit avoir été nettoyé pour ne pas casser eslint --quiet.
+    expect(source).not.toMatch(/formatTimeAgo/);
+  });
 });

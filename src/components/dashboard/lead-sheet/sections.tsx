@@ -28,7 +28,6 @@ import type { LeadDetail, Followup } from "@/lib/types";
 import {
   formatCA,
   formatEffectifs,
-  formatTimeAgo,
 } from "@/lib/types";
 import { formatNaf } from "@/lib/naf";
 import { toast } from "sonner";
