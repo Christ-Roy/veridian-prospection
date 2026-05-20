@@ -4,10 +4,47 @@
 > **Périmètre** : repo `veridian-prospection` uniquement (autres apps = audit séparé)
 > **Méthode** : grep exhaustif + smoke staging DB prod clonée + diff schéma DB vs Prisma
 > **Objectif** : tickets actionnables ranked ROI/risque pour réduire la dette à zéro
+> **Statut global** : ✅ **CLÔTURÉ 2026-05-20** — ~80% du périmètre actionnable livré
+> en prod. Reste P2.1-P2.4 (DROP COLUMN tier 💀 CRITIQUE) suivi dans ticket
+> dédié `todo/2026-05-20-dette-tech-db-destructive-sprints.md`.
 
-Total estimation : **3-4 jours focus dev**, en sprints atomiques shippable
-indépendamment. Aucune des opérations n'est urgente — prod fonctionne. Mais
-chaque mois passé sans cleanup = plus dur à fermer.
+---
+
+## Bilan livraison — 2026-05-20
+
+Session de cleanup massif effectuée le 2026-05-20. **~5300 lignes nettes
+supprimées en prod** réparties sur 5 sprints :
+
+| Sprint | Périmètre audit | Statut |
+|---|---|---|
+| P0.1 — Migrations 0004+0005 prod | — | ✅ DONE 2026-05-19 (giga-MAJ) |
+| P0.2 — `ensureOwnerAdmin` Supabase mort | — | ✅ DONE 2026-05-19 |
+| P1.2 — Fichiers `lib/supabase/*` morts | 4 fichiers | ✅ supprimés (commit `3e413c2`) |
+| P1.3 — Fallback sécu `{user:"internal"}` | api-auth.ts | ✅ supprimé (commit `e8a9982`) |
+| P1.4 — Migration auth Supabase → Prisma | 6 routes API | ✅ migrées (commit `955f894`) |
+| P1.5 — Scripts dev orphelins Supabase | 8 scripts + 1 e2e | ✅ supprimés (commit `955f894`) |
+| Dep `@supabase/*` retirée package.json | — | ✅ retirée (commit `955f894`) |
+| P2.5 — Code mort Twenty (lib + 2 routes + UI) | ~2300 lignes | ✅ supprimé (commit `ed63af2`) |
+| Bonus — Claude qualif + email himalaya | 7 routes + UI | ✅ supprimé (commit `61427f9`) |
+
+Tests anti-régression posés à chaque sprint (sabotage-audit validé) :
+- Status payload sans `twenty` ni `supabase`
+- Barrel queries sans `getLeadsBySiren`, `addOutreachEmail`, `getOutreachEmails`
+- Source files sans `tenantOutreachJoin`, `formatTimeAgo`, `@supabase/*`
+- UI sans `EmailComposeModal`, `ClaudeNotesSection`, `setClaudeActivities`
+
+## Reste à faire — sprints DB destructifs (tier 💀)
+
+Suivi dans `todo/2026-05-20-dette-tech-db-destructive-sprints.md` :
+
+- **P2.1** : DROP COLUMN `prospection_plan` (legacy Supabase, fallback raw SQL)
+- **P2.2** : DROP COLUMN `subscription_id` (0 lignes, jamais utilisé)
+- **P2.3** : DROP TABLES Prisma orphelines (39 tables non-déclarées en DB)
+- **P2.4** : DROP COLUMNS `twenty_*` (7) + `notifuse_*` (4) sur `tenants`
+- **DROP TABLE `outreach_emails`** (0 rows, plus de writer après cleanup Claude+email)
+
+Chacun = migration Prisma à appliquer manuellement (la CI prod n'applique pas).
+Requiert go explicite Robert (tier 💀 par règle §20).
 
 ---
 
