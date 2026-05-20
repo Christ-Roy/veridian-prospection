@@ -4,6 +4,7 @@
 #
 services:
   prospection:
+    cpus: 3.6
     environment:
       APP_URL: https://prospection.app.veridian.site
       AUTH_SECRET: ${AUTH_SECRET}
@@ -37,6 +38,7 @@ services:
       traefik.http.routers.prospection-prod.rule: Host(`prospection.app.veridian.site`)
       traefik.http.routers.prospection-prod.tls.certresolver: letsencrypt
       traefik.http.services.prospection-prod.loadbalancer.server.port: "3000"
+    mem_limit: "6920601600"
     networks:
       dokploy-network: null
     pull_policy: always
