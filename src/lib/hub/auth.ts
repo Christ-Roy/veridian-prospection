@@ -96,7 +96,14 @@ export async function requireHubHmac<TBody = unknown>(
   // Legacy Bearer — fenêtre Hub
   if (ACCEPT_LEGACY_BEARER) {
     const v = verifyLegacyBearer(secret, request.headers.get("authorization"));
-    if (v.ok) return { ok: true, body, rawBody, mode: "legacy_bearer" };
+    if (v.ok) {
+      // Log explicite pour pouvoir flipper ACCEPT_LEGACY_BEARER=0 en confiance
+      // après une fenêtre d'observation 7j à 0 occurrence.
+      console.warn(
+        `[hub-auth] legacy Bearer accepted on ${request.nextUrl.pathname} — migrate Hub to standard HMAC {ts}.{body}`,
+      );
+      return { ok: true, body, rawBody, mode: "legacy_bearer" };
+    }
   }
 
   return {

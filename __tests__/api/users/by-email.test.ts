@@ -251,3 +251,44 @@ describe("GET /api/users/by-email — Hub Discovery", () => {
     expect(text).not.toContain("t1"); // tenant_id non exposé
   });
 });
+
+// ─── Legacy Bearer observability (fenêtre 7j avant flip ACCEPT_LEGACY_BEARER=0) ──
+describe("GET /api/users/by-email — legacy Bearer observability", () => {
+  test("log warn explicite quand legacy Bearer accepté", async () => {
+    // Le module lit ACCEPT_LEGACY_BEARER à l'import. On bascule l'env puis
+    // on re-importe via resetModules.
+    vi.resetModules();
+    process.env.ACCEPT_LEGACY_BEARER = "1";
+
+    // Re-mock prisma pour le module fraîchement importé
+    vi.doMock("@/lib/prisma", () => ({
+      prisma: {
+        user: { findFirst: vi.fn().mockResolvedValue(null) },
+        workspaceMember: { findMany: vi.fn() },
+        tenant: { findMany: vi.fn() },
+      },
+    }));
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { GET: GETreloaded } = await import(
+        "@/app/api/users/by-email/route"
+      );
+      const request = makeRequest("/api/users/by-email", {
+        method: "GET",
+        headers: { authorization: `Bearer ${SECRET}` },
+        searchParams: { email: "x@y.com" },
+      });
+      const res = await GETreloaded(request);
+      expect(res.status).toBe(200);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("legacy Bearer accepted"),
+      );
+    } finally {
+      warnSpy.mockRestore();
+      process.env.ACCEPT_LEGACY_BEARER = "0";
+      vi.doUnmock("@/lib/prisma");
+      vi.resetModules();
+    }
+  });
+});

@@ -114,6 +114,26 @@ describe("requireHubHmac", () => {
     if (r.ok) expect(r.mode).toBe("legacy_bearer");
   });
 
+  test("log warn explicite quand legacy Bearer accepté (pour observabilité 7j avant flip flag)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const raw = JSON.stringify({ tenant_id: "t-1" });
+      const req = makeRequest("/api/tenants/suspend", {
+        method: "POST",
+        headers: { authorization: `Bearer ${SECRET}` },
+        body: raw,
+      });
+      const r = await requireHubHmac(req);
+      expect(r.ok).toBe(true);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("legacy Bearer accepted"),
+      );
+      expect(warnSpy.mock.calls[0][0]).toContain("/api/tenants/suspend");
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   test("rejette si ni HMAC ni Bearer fournis", async () => {
     const req = makeRequest("/api/tenants/suspend", {
       method: "POST",

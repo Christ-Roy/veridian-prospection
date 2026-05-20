@@ -67,6 +67,11 @@ export async function GET(request: NextRequest) {
     if (!v.ok) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    // Log explicite pour pouvoir flipper ACCEPT_LEGACY_BEARER=0 en confiance
+    // après une fenêtre d'observation 7j à 0 occurrence.
+    console.warn(
+      "[by-email] legacy Bearer accepted — migrate Hub to standard HMAC {ts}.",
+    );
   } else {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
