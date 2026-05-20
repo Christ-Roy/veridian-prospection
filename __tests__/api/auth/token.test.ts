@@ -13,7 +13,8 @@ import { describe, expect, test, vi, beforeEach } from "vitest";
 
 vi.hoisted(() => {
   process.env.AUTH_SECRET = "test-secret-veridian-prosp-AAAAAAAAAAAAAAAAAAAA";
-  process.env.NODE_ENV = "test";
+  // NODE_ENV est read-only sous tsc strict — on ne le touche pas. Vitest met
+  // déjà NODE_ENV=test par défaut.
 });
 
 const { tenantMock, userMock, encodeMock } = vi.hoisted(() => ({
