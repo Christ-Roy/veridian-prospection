@@ -113,10 +113,6 @@ src/lib/queries/stats.ts
 src/lib/rate-limit.test.ts
 src/lib/rate-limit.ts
 src/lib/segments.ts
-src/lib/supabase/api-auth.ts
-src/lib/supabase/middleware.ts
-src/lib/supabase/server.ts
-src/lib/supabase/user-context.ts
 src/lib/trial.test.ts
 src/lib/trial.ts
 src/lib/twenty.test.ts
