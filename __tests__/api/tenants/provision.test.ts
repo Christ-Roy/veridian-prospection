@@ -41,7 +41,8 @@ vi.mock("@prisma/client", () => {
     };
     workspace = {
       findFirst: vi.fn().mockResolvedValue(null),
-      create: vi.fn().mockResolvedValue({ id: "ws-id" }),
+      create: vi.fn().mockResolvedValue({ id: "ws-id", apiKeyHash: null }),
+      update: vi.fn().mockResolvedValue({ id: "ws-id" }),
     };
     workspaceMember = { upsert: vi.fn() };
     constructor() {
@@ -287,6 +288,33 @@ describe("POST /api/tenants/provision", () => {
     // L'assertion sur tenant.update est implicite : si le mock ne supportait
     // pas .update, le code aurait planté. Le mock résout {id:"tenant-id"}
     // donc le flow continue sans erreur même si findFirst retourne null.
+  });
+
+  test("mint api_key §6.2 sur workspace default au premier provision", async () => {
+    // On vérifie via un nouveau provision standard HMAC que le mécanisme
+    // §5.6+§6.2 (api_key sur workspace.apiKeyHash) est câblé. Le mock
+    // workspace.create retourne apiKeyHash:null → ensureOwnerWorkspace
+    // détecte qu'il faut mint, appelle workspace.update avec un hash sha256.
+    const hubUserId = "00000000-0000-0000-0000-0000000abcde";
+    const bodyObj = {
+      email: "mint-test@example.com",
+      plan: "freemium",
+      user_id: hubUserId,
+    };
+    const raw = JSON.stringify(bodyObj);
+    const req = makeRequest("/api/tenants/provision", {
+      method: "POST",
+      headers: {
+        ...standardHeaders(raw),
+        "x-forwarded-for": `10.0.50.${Math.floor(Math.random() * 250)}`,
+      },
+      body: raw,
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const body = (await readJson(res)) as { api_key: string };
+    // api_key retournée = 64 chars hex (token mint frais, pas le placeholder)
+    expect(body.api_key).toMatch(/^[a-f0-9]{64}$/);
   });
 
   test("rate-limits to 10 requests/min/IP (11th returns 429)", async () => {

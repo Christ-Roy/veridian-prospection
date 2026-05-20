@@ -302,6 +302,13 @@ model Workspace {
   // SaaS standard — soft delete (P1.1). Purge définitive cron 30j (P1.6).
   deletedAt  DateTime? @map("deleted_at") @db.Timestamptz
 
+  // Contrat Hub §5.6 + §6.2 — Bearer api_key tenant pour generateMagicLink.
+  // 1 api_key = 1 workspace (scoping strict). Hash sha256 hex (64 chars), la
+  // clé en clair n'est jamais persistée — retournée au Hub une seule fois au
+  // provision puis stockée côté Hub dans hub_app.tenants.prospectionApiKey.
+  apiKeyHash      String?   @unique @map("api_key_hash")
+  apiKeyCreatedAt DateTime? @map("api_key_created_at") @db.Timestamptz
+
   members WorkspaceMember[]
 
   @@unique([tenantId, slug])

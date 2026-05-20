@@ -6,6 +6,7 @@ import {
   verifyLegacyEmailTsHmac,
   verifyLegacyBearer,
 } from "@/lib/hub/hmac";
+import { generateApiKey, hashApiKey } from "@/lib/hub/apiKey";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 const prisma = globalForPrisma.prisma ?? new PrismaClient();
@@ -22,11 +23,20 @@ if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
  *                ne pourra pas se connecter tant que le Hub n'aura pas
  *                migré au contrat v1.2).
  *
+ * @returns api_key en clair (string) si une nouvelle api_key a été générée
+ *          pour le workspace default — à retourner au Hub UNE SEULE FOIS.
+ *          Retourne null si le workspace avait déjà une api_key (Hub déjà
+ *          provisionné, on ne regénère pas pour pas casser son auth) ou
+ *          si le user_id est absent (skip workspace setup).
+ *
  * Best-effort : on log et on swallow les erreurs pour ne pas casser le flow
  * de provisioning principal (le Hub considère succès dès qu'on a renvoyé
  * api_key + login_url).
  */
-async function ensureOwnerWorkspace(userId: string, email: string): Promise<void> {
+async function ensureOwnerWorkspace(
+  userId: string,
+  email: string,
+): Promise<string | null> {
   try {
     await prisma.user.upsert({
       where: { id: userId },
@@ -55,7 +65,7 @@ async function ensureOwnerWorkspace(userId: string, email: string): Promise<void
 
     let workspace = await prisma.workspace.findFirst({
       where: { tenantId: tenant.id, slug: "default" },
-      select: { id: true },
+      select: { id: true, apiKeyHash: true },
     });
     if (!workspace) {
       workspace = await prisma.workspace.create({
@@ -65,7 +75,7 @@ async function ensureOwnerWorkspace(userId: string, email: string): Promise<void
           slug: "default",
           createdBy: userId,
         },
-        select: { id: true },
+        select: { id: true, apiKeyHash: true },
       });
     }
 
@@ -80,11 +90,30 @@ async function ensureOwnerWorkspace(userId: string, email: string): Promise<void
       },
     });
 
+    // Contrat Hub §5.6 + §6.2 — Bearer api_key pour generateMagicLink.
+    // Idempotence stricte : si une api_key existe déjà pour ce workspace, on
+    // NE la regénère PAS (sinon on invalide la clé que le Hub a stockée
+    // après le premier provision). La rotation explicite passera par §5.15
+    // v1.2 quand câblée.
+    let apiKeyPlain: string | null = null;
+    if (!workspace.apiKeyHash) {
+      apiKeyPlain = generateApiKey();
+      await prisma.workspace.update({
+        where: { id: workspace.id },
+        data: {
+          apiKeyHash: hashApiKey(apiKeyPlain),
+          apiKeyCreatedAt: new Date(),
+        },
+      });
+    }
+
     console.log(
-      `[provision] Auto-admin OK: user=${userId} tenant=${tenant.id} workspace=${workspace.id}`,
+      `[provision] Auto-admin OK: user=${userId} tenant=${tenant.id} workspace=${workspace.id} api_key_minted=${apiKeyPlain !== null}`,
     );
+    return apiKeyPlain;
   } catch (err) {
     console.error(`[provision] auto-admin upsert failed for ${email}: ${(err as Error).message}`);
+    return null;
   }
 }
 
@@ -204,23 +233,36 @@ export async function POST(request: NextRequest) {
   // authMode disponible pour observabilité (log structuré P8).
   void authMode;
 
-  // Generate fresh credentials. Le token autologin est généré ici et
-  // persisté côté Prisma local (cf 2026-05-20 — fin de la dépendance
-  // Supabase pour le flow auth/token). Le Hub stocke aussi le token de son
-  // côté pour son UI (regenerate-login), mais Prospection valide contre
-  // sa propre copie.
-  const apiKey = randomBytes(32).toString("hex");
+  // Token autologin one-shot (mécanisme distinct de l'api_key §6.2). Persisté
+  // sur Tenant pour /api/auth/token?t=<token>.
   const loginToken = randomBytes(32).toString("hex");
   const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_SITE_URL || "";
 
   console.log(`[provision] Generated token for ${email}, plan=${plan || "freemium"}`);
+
+  // api_key §6.2 — générée et persistée (hashée) par ensureOwnerWorkspace
+  // côté workspace default. Sur premier provision : on récupère le plain
+  // pour le retourner au Hub. Sur replay : workspace.apiKeyHash existe déjà,
+  // ensureOwnerWorkspace retourne null. Dans ce cas on retourne une clé
+  // éphémère placeholder (le Hub a déjà la vraie clé en stockage). Le Hub
+  // sait que sur replay sa propre copie reste valide (cf §5.1 idempotence).
+  let apiKey: string;
 
   // Best-effort: create User + Tenant + Default workspace + admin membership.
   // Requiert `user_id` (ou `metadata.hub_user_id`) dans le body — sinon on
   // skip avec warning. Le Hub doit migrer vers le contrat v1.2 §5.1 pour
   // débloquer ce flow (cf todo/2026-05-19-hub-contract-conformity.md).
   if (hubUserId) {
-    await ensureOwnerWorkspace(hubUserId, email);
+    const mintedApiKey = await ensureOwnerWorkspace(hubUserId, email);
+    if (mintedApiKey) {
+      apiKey = mintedApiKey;
+    } else {
+      // Replay sur workspace existant — placeholder, Hub utilise sa propre copie.
+      apiKey = randomBytes(32).toString("hex");
+      console.log(
+        `[provision] Replay detected for ${email} — workspace already has api_key, returning placeholder`,
+      );
+    }
 
     // Persiste le token autologin sur le tenant local de cet user. Sans ça,
     // le GET /api/auth/token?t=... qui suit ne trouvera rien et redirigera
@@ -254,6 +296,9 @@ export async function POST(request: NextRequest) {
     console.warn(
       `[provision] No user_id in body for ${email} — skipping workspace setup. Hub must send metadata.hub_user_id (contrat v1.2).`,
     );
+    // Pas de hub_user_id → pas de workspace setup → on retourne un placeholder
+    // (le Hub legacy ne sait pas appeler generateMagicLink de toute façon).
+    apiKey = randomBytes(32).toString("hex");
   }
 
   return NextResponse.json({
