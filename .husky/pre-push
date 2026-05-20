@@ -18,6 +18,13 @@ if [ -x scripts/ci/check-test-mapping.sh ]; then
   scripts/ci/check-test-mapping.sh
 fi
 
+# 1bis. Route safety audit (try/catch sur request.json + requireAdmin guards)
+# Mode soft initial : warning seulement. Passer en blocking quand les routes
+# en dette seront fixées (cf todo/2026-05-21-route-safety-audit.md).
+if [ -x scripts/ci/check-route-safety.sh ]; then
+  ROUTE_SAFETY_SOFT=1 scripts/ci/check-route-safety.sh
+fi
+
 # 2. Rappel régénération compose si base/prod modifié
 # Note : check sémantique désactivé (formats varient entre versions compose CLI).
 # Reste à implémenter un check basé sur yq normalisé.
