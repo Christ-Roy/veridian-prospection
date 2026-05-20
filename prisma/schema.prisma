@@ -623,6 +623,16 @@ model Tenant {
   twentyLoginToken           String?   @map("twenty_login_token")
   twentyLoginTokenCreatedAt  DateTime? @map("twenty_login_token_created_at") @db.Timestamptz
 
+  // Autologin SSO Veridian (couche 1 — token one-shot Hub→Prospection).
+  // Le token est généré par POST /api/tenants/provision (HMAC Hub), stocké
+  // ici en clair (random 32 bytes hex, validité 24h, one-shot), et consommé
+  // par GET /api/auth/token?t=<token> qui crée une session Auth.js locale.
+  // Avant 2026-05-20, cette colonne était lue depuis Supabase tenants
+  // legacy — migration vers DB locale Prosp pour virer la dépendance Supabase.
+  prospectionLoginToken          String?   @map("prospection_login_token")
+  prospectionLoginTokenCreatedAt DateTime? @map("prospection_login_token_created_at") @db.Timestamptz
+  prospectionLoginTokenUsedAt    DateTime? @map("prospection_login_token_used_at") @db.Timestamptz
+
   // Intégrations Notifuse
   notifuseWorkspaceSlug      String?   @map("notifuse_workspace_slug")
   notifuseApiKey             String?   @map("notifuse_api_key")

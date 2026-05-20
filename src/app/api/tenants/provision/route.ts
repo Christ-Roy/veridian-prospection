@@ -204,8 +204,11 @@ export async function POST(request: NextRequest) {
   // authMode disponible pour observabilité (log structuré P8).
   void authMode;
 
-  // Generate fresh credentials. The hub (regenerate-login) is responsible
-  // for persisting these in the Supabase tenants table.
+  // Generate fresh credentials. Le token autologin est généré ici et
+  // persisté côté Prisma local (cf 2026-05-20 — fin de la dépendance
+  // Supabase pour le flow auth/token). Le Hub stocke aussi le token de son
+  // côté pour son UI (regenerate-login), mais Prospection valide contre
+  // sa propre copie.
   const apiKey = randomBytes(32).toString("hex");
   const loginToken = randomBytes(32).toString("hex");
   const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_SITE_URL || "";
@@ -218,6 +221,35 @@ export async function POST(request: NextRequest) {
   // débloquer ce flow (cf todo/2026-05-19-hub-contract-conformity.md).
   if (hubUserId) {
     await ensureOwnerWorkspace(hubUserId, email);
+
+    // Persiste le token autologin sur le tenant local de cet user. Sans ça,
+    // le GET /api/auth/token?t=... qui suit ne trouvera rien et redirigera
+    // sur /login → user pense que sa session ne marche pas (bug observé sur
+    // staging avant ce fix).
+    try {
+      const tenant = await prisma.tenant.findFirst({
+        where: { userId: hubUserId, deletedAt: null },
+        select: { id: true },
+      });
+      if (tenant) {
+        await prisma.tenant.update({
+          where: { id: tenant.id },
+          data: {
+            prospectionLoginToken: loginToken,
+            prospectionLoginTokenCreatedAt: new Date(),
+            prospectionLoginTokenUsedAt: null,
+          },
+        });
+      } else {
+        console.warn(
+          `[provision] No tenant found for hub_user_id=${hubUserId} → token not persisted, autologin will fail`,
+        );
+      }
+    } catch (err) {
+      console.error(
+        `[provision] Failed to persist login_token for ${email}: ${(err as Error).message}`,
+      );
+    }
   } else {
     console.warn(
       `[provision] No user_id in body for ${email} — skipping workspace setup. Hub must send metadata.hub_user_id (contrat v1.2).`,

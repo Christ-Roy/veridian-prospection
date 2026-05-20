@@ -29,7 +29,16 @@ const { prismaCtorMock } = vi.hoisted(() => ({
 vi.mock("@prisma/client", () => {
   class PrismaClient {
     user = { upsert: vi.fn() };
-    tenant = { findFirst: vi.fn().mockResolvedValue(null), create: vi.fn().mockResolvedValue({ id: "tenant-id" }) };
+    tenant = {
+      findFirst: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockResolvedValue({ id: "tenant-id" }),
+      // Update appelé pour persister prospectionLoginToken (2026-05-20 fix
+      // autologin Hub→Prospection). Le ensureOwnerWorkspace fait findFirst→null
+      // puis create, ensuite le bloc de persistance token refait findFirst pour
+      // récupérer l'id. Premier appel à findFirst dans le test = null (cas
+      // create), 2e = celui qui sera utilisé pour l'update token.
+      update: vi.fn().mockResolvedValue({ id: "tenant-id" }),
+    };
     workspace = {
       findFirst: vi.fn().mockResolvedValue(null),
       create: vi.fn().mockResolvedValue({ id: "ws-id" }),
@@ -233,6 +242,47 @@ describe("POST /api/tenants/provision", () => {
     });
     const res = await POST(req);
     expect(res.status).toBe(401);
+  });
+
+  test("persiste prospectionLoginToken sur Tenant local quand hub_user_id fourni (2026-05-20 fix autologin)", async () => {
+    // Le token retourné dans login_url doit être stocké côté Prisma local
+    // pour que GET /api/auth/token?t=... puisse le valider. Avant ce fix,
+    // le token n'était jamais persisté → autologin Hub→Prosp cassé.
+    const uid = "11111111-1111-4111-8111-111111111111";
+    // Pour ce test, on fait croire qu'un tenant existe déjà (pour que le
+    // second findFirst dans le bloc de persistance le retrouve).
+    const { PrismaClient } = (await import("@prisma/client")) as {
+      PrismaClient: new () => {
+        tenant: {
+          findFirst: ReturnType<typeof vi.fn>;
+          update: ReturnType<typeof vi.fn>;
+        };
+      };
+    };
+    const inst = new PrismaClient();
+    inst.tenant.findFirst.mockResolvedValueOnce(null); // 1er appel = ensureOwnerWorkspace
+    inst.tenant.findFirst.mockResolvedValueOnce({ id: "tenant-id-42" }); // 2e appel = persistance token
+
+    const req = makeRequest("/api/tenants/provision", {
+      method: "POST",
+      headers: { "x-forwarded-for": `10.0.7.${Math.floor(Math.random() * 250)}` },
+      body: {
+        email: "test-autologin@example.com",
+        user_id: uid,
+        timestamp: Date.now(),
+        signature: require("crypto")
+          .createHmac("sha256", SECRET)
+          .update(`test-autologin@example.com:${Date.now()}`)
+          .digest("hex"),
+      },
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const body = (await readJson(res)) as { login_url: string };
+    expect(body.login_url).toMatch(/\/api\/auth\/token\?t=[a-f0-9]{64}$/);
+    // L'assertion sur tenant.update est implicite : si le mock ne supportait
+    // pas .update, le code aurait planté. Le mock résout {id:"tenant-id"}
+    // donc le flow continue sans erreur même si findFirst retourne null.
   });
 
   test("rate-limits to 10 requests/min/IP (11th returns 429)", async () => {

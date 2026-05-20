@@ -1,150 +1,164 @@
 /**
- * Tests de la route GET /api/auth/token (legacy login token Supabase).
+ * Tests de GET /api/auth/token — autologin one-shot Hub → Prospection.
  *
- * Couvre :
+ * Couvre (2026-05-20 — refactor Supabase → Prisma + Auth.js JWT) :
  *  - 400 si paramètre `t` manquant
- *  - redirect vers /login?error=invalid_token si token introuvable
- *  - redirect vers /login?error=token_used si déjà consommé
- *  - redirect vers /login?error=token_expired si > 24h
- *  - redirect vers / (succès) + token marqué utilisé
+ *  - redirect /login?error=invalid_token si token inconnu en DB
+ *  - redirect /login?error=token_used si déjà consommé
+ *  - redirect /login?error=token_expired si > 24h
+ *  - redirect / + cookie session set + marquage `usedAt` sur token valide
+ *  - redirect /login?error=server_error si AUTH_SECRET absent
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
 
-// Les routes API capturent souvent des `process.env.X` au module-load (top-level).
-// On set donc les env AVANT que la route ne soit importée, via vi.hoisted().
 vi.hoisted(() => {
-  process.env.SUPABASE_URL = "https://fake.supabase.co";
-  process.env.SUPABASE_SERVICE_ROLE_KEY = "fake-key";
+  process.env.AUTH_SECRET = "test-secret-veridian-prosp-AAAAAAAAAAAAAAAAAAAA";
+  process.env.NODE_ENV = "test";
 });
 
-// Builder pour la chaîne SELECT : select().eq().maybeSingle()
-function selectChain(result: { data: unknown; error: unknown }) {
-  const b = {
-    select: vi.fn().mockReturnThis(),
-    eq: vi.fn().mockReturnThis(),
-    maybeSingle: vi.fn().mockResolvedValue(result),
-  };
-  return b;
-}
+const { tenantMock, userMock, encodeMock } = vi.hoisted(() => ({
+  tenantMock: {
+    findFirst: vi.fn(),
+    updateMany: vi.fn(),
+  },
+  userMock: {
+    findUnique: vi.fn(),
+  },
+  encodeMock: vi.fn().mockResolvedValue("fake.jwt.session"),
+}));
 
-// Builder pour la chaîne UPDATE : update().eq() (awaité direct)
-function updateChain() {
-  const b: {
-    update: ReturnType<typeof vi.fn>;
-    eq: ReturnType<typeof vi.fn>;
-    then?: unknown;
-  } = {
-    update: vi.fn(),
-    eq: vi.fn(),
-  };
-  b.update.mockImplementation(() => b);
-  // .eq() doit être thenable parce que le code fait `await supabase.from().update().eq()`
-  b.eq.mockImplementation(() => {
-    return {
-      then: (onFulfilled: (v: unknown) => unknown) =>
-        Promise.resolve({ data: null, error: null }).then(onFulfilled),
-    };
-  });
-  return b;
-}
+vi.mock("@/lib/prisma", () => ({
+  prisma: {
+    tenant: tenantMock,
+    user: userMock,
+  },
+}));
 
-const { supabaseMock, createClientMock } = vi.hoisted(() => {
-  const sb = {
-    from: vi.fn(),
-  };
-  return {
-    supabaseMock: sb,
-    createClientMock: vi.fn(() => sb),
-  };
-});
-
-vi.mock("@supabase/supabase-js", () => ({
-  createClient: createClientMock,
+vi.mock("next-auth/jwt", () => ({
+  encode: encodeMock,
 }));
 
 import { GET } from "@/app/api/auth/token/route";
 import { makeRequest, readJson } from "../_helpers";
 
-describe("GET /api/auth/token", () => {
+describe("GET /api/auth/token — autologin Prisma + Auth.js JWT", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    encodeMock.mockResolvedValue("fake.jwt.session");
   });
 
   test("returns 400 when ?t= is missing", async () => {
-    const req = makeRequest("/api/auth/token");
-    const res = await GET(req);
+    const res = await GET(makeRequest("/api/auth/token"));
     expect(res.status).toBe(400);
     const body = (await readJson(res)) as { error: string };
     expect(body.error).toBe("Token required");
   });
 
-  test("redirects to /login?error=invalid_token when token not found", async () => {
-    supabaseMock.from.mockReturnValue(
-      selectChain({ data: null, error: null }),
-    );
-    const req = makeRequest("/api/auth/token", {
-      searchParams: { t: "missing-token" },
-    });
-    const res = await GET(req);
+  test("redirects to /login?error=invalid_token when token not in DB", async () => {
+    tenantMock.findFirst.mockResolvedValue(null);
+    const res = await GET(makeRequest("/api/auth/token", { searchParams: { t: "missing" } }));
     expect(res.status).toBeGreaterThanOrEqual(300);
     expect(res.status).toBeLessThan(400);
     expect(res.headers.get("location")).toContain("/login?error=invalid_token");
   });
 
-  test("redirects to /login?error=token_used when already used", async () => {
-    const sc = selectChain({
-      data: {
-        id: "t-1",
-        prospection_login_token_created_at: new Date().toISOString(),
-        prospection_login_token_used: true,
-      },
-      error: null,
+  test("redirects to /login?error=token_used when already consumed", async () => {
+    tenantMock.findFirst.mockResolvedValue({
+      id: "t-1",
+      userId: "u-1",
+      prospectionLoginTokenCreatedAt: new Date(),
+      prospectionLoginTokenUsedAt: new Date(),
     });
-    supabaseMock.from.mockReturnValueOnce(sc);
-    const req = makeRequest("/api/auth/token", { searchParams: { t: "used" } });
-    const res = await GET(req);
+    const res = await GET(makeRequest("/api/auth/token", { searchParams: { t: "used" } }));
     expect(res.headers.get("location")).toContain("/login?error=token_used");
   });
 
   test("redirects to /login?error=token_expired when > 24h", async () => {
-    const old = new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString();
-    supabaseMock.from.mockReturnValueOnce(
-      selectChain({
-        data: {
-          id: "t-1",
-          prospection_login_token_created_at: old,
-          prospection_login_token_used: false,
-        },
-        error: null,
-      }),
-    );
-
-    const req = makeRequest("/api/auth/token", { searchParams: { t: "old" } });
-    const res = await GET(req);
+    tenantMock.findFirst.mockResolvedValue({
+      id: "t-1",
+      userId: "u-1",
+      prospectionLoginTokenCreatedAt: new Date(Date.now() - 26 * 60 * 60 * 1000),
+      prospectionLoginTokenUsedAt: null,
+    });
+    const res = await GET(makeRequest("/api/auth/token", { searchParams: { t: "old" } }));
     expect(res.headers.get("location")).toContain("/login?error=token_expired");
   });
 
-  test("redirects to root and marks token used on valid token", async () => {
-    const selectMock = selectChain({
-      data: {
-        id: "t-1",
-        prospection_login_token_created_at: new Date().toISOString(),
-        prospection_login_token_used: false,
-      },
-      error: null,
+  test("redirects to / + sets session cookie + marks token used on valid token", async () => {
+    tenantMock.findFirst.mockResolvedValue({
+      id: "t-1",
+      userId: "u-1",
+      prospectionLoginTokenCreatedAt: new Date(),
+      prospectionLoginTokenUsedAt: null,
     });
-    const updateMock = updateChain();
-    // Premier appel = SELECT, deuxième = UPDATE
-    supabaseMock.from
-      .mockReturnValueOnce(selectMock)
-      .mockReturnValueOnce(updateMock);
+    tenantMock.updateMany.mockResolvedValue({ count: 1 });
+    userMock.findUnique.mockResolvedValue({
+      id: "u-1",
+      email: "u@v.site",
+      name: "User",
+      image: null,
+    });
+    const res = await GET(makeRequest("/api/auth/token", { searchParams: { t: "good" } }));
 
-    const req = makeRequest("/api/auth/token", { searchParams: { t: "good" } });
-    const res = await GET(req);
-
+    // Redirect vers /
     expect(res.headers.get("location")).toMatch(/\/$/);
-    expect(updateMock.update).toHaveBeenCalledWith({
-      prospection_login_token_used: true,
+
+    // Marquage atomique : updateMany avec filter prospectionLoginTokenUsedAt: null
+    expect(tenantMock.updateMany).toHaveBeenCalledWith({
+      where: { id: "t-1", prospectionLoginTokenUsedAt: null },
+      data: { prospectionLoginTokenUsedAt: expect.any(Date) },
     });
+
+    // JWT encoded via next-auth/jwt avec le bon payload
+    expect(encodeMock).toHaveBeenCalledTimes(1);
+    const encodeArg = encodeMock.mock.calls[0][0];
+    expect(encodeArg.token).toEqual(expect.objectContaining({
+      sub: "u-1",
+      uid: "u-1",
+      email: "u@v.site",
+    }));
+
+    // Cookie session set
+    const setCookie = res.headers.get("set-cookie") ?? "";
+    expect(setCookie).toMatch(/authjs\.session-token=fake\.jwt\.session/);
+    expect(setCookie).toMatch(/HttpOnly/i);
+    expect(setCookie).toMatch(/SameSite=lax/i);
+  });
+
+  test("race condition : si updateMany.count=0 → /login?error=token_used", async () => {
+    tenantMock.findFirst.mockResolvedValue({
+      id: "t-1",
+      userId: "u-1",
+      prospectionLoginTokenCreatedAt: new Date(),
+      prospectionLoginTokenUsedAt: null,
+    });
+    // Une autre tab a consommé entre le findFirst et l'updateMany
+    tenantMock.updateMany.mockResolvedValue({ count: 0 });
+    const res = await GET(makeRequest("/api/auth/token", { searchParams: { t: "race" } }));
+    expect(res.headers.get("location")).toContain("/login?error=token_used");
+  });
+
+  test("redirect /login?error=server_error si AUTH_SECRET manquant", async () => {
+    const saved = process.env.AUTH_SECRET;
+    delete process.env.AUTH_SECRET;
+    delete process.env.NEXTAUTH_SECRET;
+    tenantMock.findFirst.mockResolvedValue({
+      id: "t-1",
+      userId: "u-1",
+      prospectionLoginTokenCreatedAt: new Date(),
+      prospectionLoginTokenUsedAt: null,
+    });
+    tenantMock.updateMany.mockResolvedValue({ count: 1 });
+    userMock.findUnique.mockResolvedValue({
+      id: "u-1",
+      email: "u@v.site",
+      name: null,
+      image: null,
+    });
+
+    const res = await GET(makeRequest("/api/auth/token", { searchParams: { t: "ok" } }));
+    expect(res.headers.get("location")).toContain("/login?error=server_error");
+
+    process.env.AUTH_SECRET = saved;
   });
 });
