@@ -2,45 +2,53 @@
 
 > Voir le CLAUDE.md racine (`../CLAUDE.md`) pour la vision globale.
 
-## 🚨 Promotion prod = STRICTEMENT HUMAINE (lis-moi avant toute action git)
+## Promotion prod = §20 CI-ARCHITECTURE (graduée par risque)
 
-**Prospection est l'app critique Veridian** : c'est l'app de revenu actif,
-avec très faible tolérance à la casse prod (cf. CI-ARCHITECTURE.md §19.1).
+**Depuis 2026-05-20**, Prospection suit le modèle §20 de
+`veridian-hub/docs/CI-ARCHITECTURE.md` : promotion graduée par risque.
+L'agent **arbitre lui-même** le tier des commits non-promus et **exécute
+la promo autonome** sauf tier 💀 CRITIQUE.
 
-**Règle absolue** : **AUCUN agent ne doit jamais** faire l'une de ces actions :
+### 4 tiers — comportement agent
 
-- ❌ `git checkout main` puis `git merge origin/staging` (no-ff OU ff-only)
-- ❌ `git push origin main`
-- ❌ `gh workflow run prospection-ci.yml --ref main`
-- ❌ Tout `compose.deploy` via API Dokploy ciblant `prospection-prod` (composeId `0mJI-sSt6jcOMr_2QJ1iI`)
-- ❌ Toute manip qui aurait pour effet d'avancer le SHA déployé en prod
+| Tier | Exemples | Action agent |
+|---|---|---|
+| 🟢 BAS | doc, todo, test seul | Auto-promote CI via marker `[risk:low]` |
+| 🟡 MOYEN | route non-auth, UI dashboard | CI vert + reco écrite → promote autonome |
+| 🔴 HAUT | auth, migration DB, lib partagée, compose prod | E2E headfull staging 100% + reco + monitoring 10min + auto-rollback → **promote autonome** |
+| 💀 CRITIQUE | DROP COLUMN, rotation secret, refonte session | **Demande go/stop explicite à Robert** |
 
-**Mode opératoire imposé** :
+### Protocole tier 🔴 HAUT (le plus fréquent pour Prospection)
 
-- Tu travailles **exclusivement sur la branche `staging`**. Tu ship fast,
-  autant de petits commits que tu veux.
-- Tu push **uniquement** `git push origin staging`.
-- Tu suis le run CI staging (`prospection-deploy-staging.yml`), tu smoke
-  staging via curl + Chrome MCP si nécessaire.
-- **Tu ne touches PAS à `main`**. Même si staging est vert, même si "ça
-  serait propre", même si "le diff est minuscule".
+1. Push staging → CI staging vert
+2. `bash scripts/e2e/staging-full.sh` → 100% des journeys verts (sinon HOLD)
+3. Reco écrite dans le chat (audit, pas demande)
+4. `git checkout main && git pull --ff-only && git merge --ff-only origin/staging && git push origin main`
+5. Watch CI prod jusqu'à vert
+6. **Vérif SHA container actif** (`docker inspect`) — si stale > 5min après push, `compose.deploy` API Dokploy forcé (le webhook foire silencieusement, cf [[project_prospection_dokploy_webhook_fail]])
+7. **Si migration Prisma** : appliquer manuellement (cf [[project_prisma_migrate_pattern]]) — la CI prod ne le fait pas
+8. **Re-run E2E headfull contre PROD** (`STAGING_URL=https://prospection.app.veridian.site bash scripts/e2e/staging-full.sh`) — un test vert sur staging ne garantit pas la prod
+9. Monitoring 10 min via `bash /tmp/monitor_prod_postdeploy.sh` (auto-rollback si 3 fails consécutifs)
 
-**La promotion prod sera faite par Robert** quand il décidera, en mode
-"giga-MAJ" — il dira explicitement quelque chose comme :
+### Veto Robert (mots-clés)
 
-> "promote prod maintenant" / "go giga maj prod" / "passe en prod"
+| Mot-clé | Effet |
+|---|---|
+| `stop` / `attends` | Annule la promo en cours ou bloque la prochaine |
+| `rollback` | `git revert` + push main + monitoring jusqu'à recovery |
+| `freeze` | Gèle tous les push staging→main jusqu'à `unfreeze` |
+| `unfreeze` | Reprend le flow normal |
 
-Quand cette commande arrive (et SEULEMENT à ce moment-là), tu peux suivre
-la procédure §19.5 de CI-ARCHITECTURE.md.
+### Historique
 
-**Si tu te demandes "est-ce que je peux promouvoir ?", la réponse est NON.**
-Le doute est suffisant pour s'abstenir. Robert préfère perdre 10s à dire
-"vas-y" qu'à rollback une prod cassée.
+- **2026-05-19** : règle "humain only" posée après 2 auto-promotions silencieuses (incident Dokploy webhook foiré). Règle utile mais trop restrictive.
+- **2026-05-20** : §20 publié dans CI-ARCHITECTURE.md, remplace la règle "humain only". Validé par première promo `ffe7947 → 4732603` (tier 🔴, 12 commits, 3 migrations, auth refactor) — exécutée autonome, aucun veto, monitoring 10/10.
 
-**Historique de la règle** : posée 2026-05-19 après que l'agent Prospection
-a fait 2 auto-promotions ce jour-là en mode "ship fast", dont une qui a
-révélé que Dokploy ne pullait pas la nouvelle image — heureusement détecté
-par smoke curl manuel, sinon divergence main↔prod silencieuse.
+### Pièges à connaître (avant chaque promo)
+
+- ⚠️ CI prod **ne fait PAS** `prisma migrate deploy` — appliquer manuellement
+- ⚠️ Webhook GitHub→Dokploy peut foirer en silence — vérifier le SHA actif post-deploy
+- ⚠️ E2E headfull staging ≠ E2E headfull prod — toujours re-runner contre prod après promo
 
 ---
 

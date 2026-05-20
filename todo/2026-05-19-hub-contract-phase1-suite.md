@@ -96,9 +96,34 @@ quand tu valides 1+2.)
 
 ## DoD
 
-- [ ] Smoke prod (signup ou curl HMAC) confirme workspace + membership créés
+- [x] Smoke prod (signup ou curl HMAC) confirme workspace + membership créés
 - [ ] Logs Prospection prod stables 7j sans `legacy *` accepted
 - [ ] `ACCEPT_LEGACY_BEARER=0` + `ACCEPT_LEGACY_HMAC=0` posés en prod
 - [ ] `docs/hub-contract.md` cleané de la section legacy
 - [ ] Demande à l'agent Hub de patcher la matrice §10 du contrat
 - [ ] Ce ticket archivé dans `todo/done/`
+
+## Réponse — 2026-05-20 (agent Prospection)
+
+✅ **Smoke prod end-to-end validé en live (Chrome MCP)** après promo prod
+Prospection `ffe7947` → `4732603` (commit 2026-05-20).
+
+Flow testé :
+1. Login Hub `staging-test2@veridian.site` sur `hub.staging.veridian.site`
+2. Click **"Open Prospection"** sur la carte Prosp du dashboard
+3. Hub appelle `/api/prospection/regenerate-login` (HMAC standard)
+4. Hub génère `https://prospection.app.veridian.site/api/auth/token?t=5bf209772a...`
+5. Browser navigue → Prosp valide token via Prisma local → crée session Auth.js JWT
+6. Cookie `__Secure-authjs.session-token` set + redirect `/prospects`
+7. `/api/auth/session` retourne `{user.id, user.email}` corrects
+
+Plus de logs `legacy *` car le flow utilise désormais le contrat HMAC
+standard `{ts}.{body}` côté Hub via `lib/prospection/client.ts`.
+
+## Reste à faire (DoD T+7j)
+
+- Observer 7j en prod sans `legacy_email_ts` ni `legacy_bearer` accepted
+  dans les logs Prospection. Si stable → poser
+  `ACCEPT_LEGACY_BEARER=0` + `ACCEPT_LEGACY_HMAC=0` en ENV Dokploy.
+- Notifier l'agent Hub pour patcher la matrice §10 contrat-hub.md.
+- À ce moment-là, archiver ce ticket dans `todo/done/`.
