@@ -87,15 +87,18 @@ export function isGiftedPlan(plan: string | null | undefined): boolean {
   return typeof plan === "string" && GIFTED_PLANS.has(plan as never);
 }
 
-// Cache plan lookups — prevents Supabase admin API rate limiting
-// (incident 2026-04-06: uncached calls on every /api/prospects → 429)
+// Cache plan lookups par user — évite de re-résoudre le tenant+plan sur chaque
+// requête /api/prospects (historique: incident 2026-04-06 sur Supabase admin API).
 const planCache = new Map<string, { limit: number; expiresAt: number }>();
 const PLAN_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
  * Get the prospect limit for a tenant based on their plan.
  * Returns Infinity if no limit (internal/admin), or a number cap.
- * Cached for 5 minutes per user to avoid rate-limiting Supabase.
+ * Cached 5 minutes per user.
+ *
+ * Source de vérité : colonne Prisma `tenant.plan` (backfill 0004 depuis
+ * `prospection_plan` legacy). La colonne legacy est droppée en Sprint C.
  */
 export async function getTenantProspectLimit(userId: string): Promise<number> {
   const cached = planCache.get(userId);
@@ -103,12 +106,10 @@ export async function getTenantProspectLimit(userId: string): Promise<number> {
     return cached.limit;
   }
 
-  // Raw SQL: prospection_plan column exists in DB but not in Prisma schema.
-  // TODO: add field to schema.prisma in a follow-up migration.
   let plan = "freemium";
   try {
     const rows = await prisma.$queryRawUnsafe<{ plan: string | null }[]>(
-      `SELECT t.prospection_plan AS plan
+      `SELECT t.plan AS plan
        FROM tenants t
        LEFT JOIN workspaces w ON w.tenant_id = t.id
        LEFT JOIN workspace_members wm ON wm.workspace_id = w.id AND wm.deleted_at IS NULL
