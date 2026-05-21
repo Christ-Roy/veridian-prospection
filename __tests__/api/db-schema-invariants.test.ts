@@ -19,13 +19,44 @@ const BANNED_MODELS = [
   "OutreachEmail",
 ] as const;
 
+// Champs scalaires retirés d'un modèle (mais le modèle existe toujours).
+// Le test ci-dessous lit `Prisma.dmmf.datamodel.models` pour garantir qu'aucune
+// PR future ne réintroduit silencieusement le champ via `prisma format`.
+const BANNED_FIELDS: ReadonlyArray<{
+  model: string;
+  field: string;
+  dbColumn: string;
+  reason: string;
+}> = [
+  {
+    // Sprint B (T11, 2026-05-21) — DROP COLUMN tenants.subscription_id
+    // Migration : prisma/migrations/0013_drop_tenants_subscription_id/
+    model: "Tenant",
+    field: "subscriptionId",
+    dbColumn: "subscription_id",
+    reason:
+      "UUID jamais rempli (0 rows non-null staging+prod). Source de vérité Stripe = Hub (contrat §7.4).",
+  },
+];
+
 describe("Prisma schema invariants — modèles bannis", () => {
   for (const modelName of BANNED_MODELS) {
     test(`le modèle "${modelName}" ne doit jamais réapparaître dans Prisma Client`, () => {
-      // Prisma.ModelName est l'enum runtime listant tous les modèles du schema.
-      // Si on réintroduit le modèle, l'enum le contient → ce test casse.
       const modelNames = Object.values(Prisma.ModelName) as string[];
       expect(modelNames).not.toContain(modelName);
+    });
+  }
+});
+
+describe("Prisma schema invariants — champs bannis", () => {
+  for (const { model, field, dbColumn, reason } of BANNED_FIELDS) {
+    test(`${model}.${field} (col ${dbColumn}) ne doit jamais réapparaître — ${reason}`, () => {
+      const target = Prisma.dmmf.datamodel.models.find((m) => m.name === model);
+      expect(target, `Modèle Prisma "${model}" introuvable`).toBeDefined();
+      const fieldNames = target!.fields.map((f) => f.name);
+      const dbColumns = target!.fields.map((f) => f.dbName ?? f.name);
+      expect(fieldNames).not.toContain(field);
+      expect(dbColumns).not.toContain(dbColumn);
     });
   }
 });
