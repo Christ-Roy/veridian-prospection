@@ -601,14 +601,13 @@ enum TenantStatus {
 }
 
 model Tenant {
-  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id     String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   // user_id = owner (l'utilisateur qui a signé). FK vers User mais le UUID est
   // identique à l'ancien auth.users.id, donc préservé.
-  userId         String       @map("user_id") @db.Uuid
-  subscriptionId String?      @map("subscription_id") @db.Uuid
-  name           String
-  slug           String       @unique
-  status         TenantStatus @default(pending)
+  userId String       @map("user_id") @db.Uuid
+  name   String
+  slug   String       @unique
+  status TenantStatus @default(pending)
 
   // Intégrations Twenty CRM
   twentyWorkspaceId         String?   @map("twenty_workspace_id") @db.Uuid
