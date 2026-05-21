@@ -37,6 +37,18 @@ const BANNED_FIELDS: ReadonlyArray<{
     reason:
       "UUID jamais rempli (0 rows non-null staging+prod). Source de vérité Stripe = Hub (contrat §7.4).",
   },
+  {
+    // Sprint C (T12, 2026-05-21) — DROP COLUMN tenants.prospection_plan
+    // Migration : prisma/migrations/0014_drop_tenants_prospection_plan/
+    // Le field n'a jamais été mappé dans Prisma (lu uniquement en raw SQL
+    // legacy via $queryRawUnsafe). Le bannir ici empêche qu'une future PR
+    // l'ajoute au model Tenant et recrée la colonne via prisma migrate dev.
+    model: "Tenant",
+    field: "prospectionPlan",
+    dbColumn: "prospection_plan",
+    reason:
+      "Colonne legacy Supabase. Source de vérité = tenant.plan (backfill 0004 et 0014).",
+  },
 ];
 
 describe("Prisma schema invariants — modèles bannis", () => {
