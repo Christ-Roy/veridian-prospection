@@ -327,12 +327,17 @@ model WorkspaceMember {
   joinedAt        DateTime  @default(now()) @map("joined_at") @db.Timestamptz
   // SaaS standard — soft delete (P1.1)
   deletedAt       DateTime? @map("deleted_at") @db.Timestamptz
+  // CONTRAT-HUB §5.21 — freeze cross-app. Si non NULL, le user est en mode
+  // dégradé paywall sur ce workspace (obfuscation sensitive fields + 402 sur
+  // écritures). Levé via /api/tenants/{id}/unfreeze-members.
+  frozenAt        DateTime? @map("frozen_at") @db.Timestamptz
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@id([workspaceId, userId])
   @@index([userId])
   @@index([workspaceId, deletedAt])
+  @@index([frozenAt])
   @@map("workspace_members")
 }
 

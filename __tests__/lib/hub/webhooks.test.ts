@@ -212,3 +212,34 @@ describe("emitHubWebhookAsync", () => {
     await new Promise((r) => setTimeout(r, 10));
   });
 });
+
+describe("HubWebhookEvent — événements §5.18.4", () => {
+  beforeEach(() => {
+    process.env.HUB_API_URL = "https://hub.test.veridian.site";
+    process.env.HUB_WEBHOOK_TOKEN = "test-webhook-token";
+    process.env.HUB_WEBHOOK_DISABLE = "0";
+    (process.env as Record<string, string>).NODE_ENV = "production";
+  });
+  afterEach(() => {
+    global.fetch = ORIGINAL_FETCH;
+  });
+
+  test("tenant.member_role_changed est un event accepté + payload transmis", async () => {
+    const fetchMock = mockFetchOk();
+    const r = await emitHubWebhook("tenant.member_role_changed", "t-1", {
+      user_email: "bob@example.com",
+      old_role: "member",
+      new_role: "admin",
+      workspace_id: "ws-1",
+      visibility_scope: "own",
+      changed_by: "admin@example.com",
+    });
+    expect(r.delivered).toBe(true);
+    const [, init] = fetchMock.mock.calls[0];
+    const body = JSON.parse((init as { body: string }).body);
+    expect(body.event).toBe("tenant.member_role_changed");
+    expect(body.data.old_role).toBe("member");
+    expect(body.data.new_role).toBe("admin");
+    expect(body.data.visibility_scope).toBe("own");
+  });
+});

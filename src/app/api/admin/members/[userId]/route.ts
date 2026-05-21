@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin, invalidateUserContext } from "@/lib/auth/user-context";
 import { PrismaClient } from "@prisma/client";
+import { emitHubWebhookAsync } from "@/lib/hub/webhooks";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 const prisma = globalForPrisma.prisma ?? new PrismaClient();
@@ -54,7 +55,11 @@ export async function PATCH(
     return NextResponse.json({ ok: true, removed: true });
   }
 
-  // Upsert membership
+  // Upsert membership — capture l'ancien rôle pour le webhook §5.18.4.
+  const before = await prisma.workspaceMember.findUnique({
+    where: { workspaceId_userId: { workspaceId, userId } },
+    select: { role: true, visibilityScope: true },
+  });
   await prisma.workspaceMember.upsert({
     where: { workspaceId_userId: { workspaceId, userId } },
     update: { role },
@@ -62,6 +67,33 @@ export async function PATCH(
   });
 
   invalidateUserContext(userId);
+
+  // Webhook tenant.member_role_changed — n'émet que si le rôle a effectivement
+  // changé (upsert silencieux idempotent ne génère pas de signal Hub).
+  if (!before || before.role !== role) {
+    const [targetUser, actorUser] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: { email: true },
+      }),
+      prisma.user.findUnique({
+        where: { id: auth.ctx.userId },
+        select: { email: true },
+      }),
+    ]);
+    if (targetUser?.email) {
+      emitHubWebhookAsync("tenant.member_role_changed", auth.ctx.tenantId, {
+        user_email: targetUser.email,
+        old_role: before?.role ?? null,
+        new_role: role,
+        workspace_id: workspaceId,
+        visibility_scope:
+          before?.visibilityScope ?? (role === "admin" ? "all" : "own"),
+        changed_by: actorUser?.email ?? auth.ctx.userId,
+      });
+    }
+  }
+
   return NextResponse.json({ ok: true, workspaceId, userId, role });
 }
 

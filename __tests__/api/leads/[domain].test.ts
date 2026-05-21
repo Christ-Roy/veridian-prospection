@@ -10,6 +10,8 @@ const {
   getTenantProspectLimitMock,
   getWorkspaceScopeMock,
   isRateLimitedMock,
+  isUserFrozenMock,
+  checkTrialExpiredMock,
   queriesMock,
 } = vi.hoisted(() => ({
   requireAuthMock: vi.fn(),
@@ -17,6 +19,8 @@ const {
   getTenantProspectLimitMock: vi.fn(),
   getWorkspaceScopeMock: vi.fn(),
   isRateLimitedMock: vi.fn(),
+  isUserFrozenMock: vi.fn(),
+  checkTrialExpiredMock: vi.fn(),
   queriesMock: { getLeadDetail: vi.fn(), recordVisit: vi.fn() },
 }));
 
@@ -29,6 +33,8 @@ vi.mock("@/lib/auth/user-context", () => ({
   getWorkspaceScope: getWorkspaceScopeMock,
 }));
 vi.mock("@/lib/rate-limit", () => ({ isRateLimited: isRateLimitedMock }));
+vi.mock("@/lib/auth/freeze", () => ({ isUserFrozen: isUserFrozenMock }));
+vi.mock("@/lib/trial", () => ({ checkTrialExpired: checkTrialExpiredMock }));
 vi.mock("@/lib/queries", () => queriesMock);
 
 import { GET } from "@/app/api/leads/[domain]/route";
@@ -56,5 +62,45 @@ describe("GET /api/leads/[domain]", () => {
     const res = await GET(makeRequest("/api/leads/123456789"), params);
     expect(res.status).toBe(429);
     expect(res.headers.get("retry-after")).toBe("30");
+  });
+
+  test("obfusque SENSITIVE_FIELDS si user freezed (§5.21 cross-app)", async () => {
+    requireAuthMock.mockResolvedValue({ user: { id: "u-1", email: "u@v.site" } });
+    getTenantIdMock.mockResolvedValue("tenant-1");
+    getTenantProspectLimitMock.mockResolvedValue(99999); // plan payant → pas trial expired
+    getWorkspaceScopeMock.mockResolvedValue({ insertId: "ws-1" });
+    queriesMock.getLeadDetail.mockResolvedValue({
+      siren: "123456789",
+      email: "contact@target.com",
+      phone: "0123456789",
+      dirigeant: "Jean Dupont",
+    });
+    queriesMock.recordVisit.mockResolvedValue(undefined);
+    isUserFrozenMock.mockResolvedValue(true);
+
+    const res = await GET(makeRequest("/api/leads/123456789"), params);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, string>;
+    // Champ obfusqué : prefix 33% conservé + reste en bullets.
+    expect(body.email).not.toBe("contact@target.com");
+    expect(body.email).toMatch(/^c{0,5}.*•+$/);
+    expect(body.phone).not.toBe("0123456789");
+    expect(isUserFrozenMock).toHaveBeenCalledWith("u-1", "tenant-1");
+  });
+
+  test("ne hit pas isUserFrozen si tenantId null (early skip)", async () => {
+    requireAuthMock.mockResolvedValue({ user: { id: "u-1", email: "u@v.site" } });
+    getTenantIdMock.mockResolvedValue(null);
+    getTenantProspectLimitMock.mockResolvedValue(99999);
+    getWorkspaceScopeMock.mockResolvedValue({ insertId: "ws-1" });
+    queriesMock.getLeadDetail.mockResolvedValue({
+      siren: "123456789",
+      email: "contact@target.com",
+    });
+    queriesMock.recordVisit.mockResolvedValue(undefined);
+
+    const res = await GET(makeRequest("/api/leads/123456789"), params);
+    expect(res.status).toBe(200);
+    expect(isUserFrozenMock).not.toHaveBeenCalled();
   });
 });

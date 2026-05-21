@@ -23,7 +23,9 @@ export type HubWebhookEvent =
   | "tenant.deleted"
   | "tenant.touched"
   | "tenant.owner_changed"
-  | "tenant.quota_exceeded";
+  | "tenant.quota_exceeded"
+  // §5.18.4 — admin Prospection change le rôle ou visibility_scope d'un member
+  | "tenant.member_role_changed";
 
 export interface HubWebhookPayload {
   event: HubWebhookEvent;

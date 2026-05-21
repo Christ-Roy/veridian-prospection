@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin, invalidateUserContext } from "@/lib/auth/user-context";
 import { PrismaClient } from "@prisma/client";
+import { emitHubWebhookAsync } from "@/lib/hub/webhooks";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 const prisma = globalForPrisma.prisma ?? new PrismaClient();
@@ -171,11 +172,41 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
   }
 
+  // Capture l'ancien scope pour le webhook §5.18.4 — n'émet que si changement.
+  const before = await prisma.workspaceMember.findUnique({
+    where: { workspaceId_userId: { workspaceId, userId } },
+    select: { role: true, visibilityScope: true },
+  });
+
   await prisma.workspaceMember.update({
     where: { workspaceId_userId: { workspaceId, userId } },
     data: { visibilityScope },
   });
 
   invalidateUserContext(userId);
+
+  if (before && before.visibilityScope !== visibilityScope) {
+    const [targetUser, actorUser] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: { email: true },
+      }),
+      prisma.user.findUnique({
+        where: { id: auth.ctx.userId },
+        select: { email: true },
+      }),
+    ]);
+    if (targetUser?.email) {
+      emitHubWebhookAsync("tenant.member_role_changed", auth.ctx.tenantId, {
+        user_email: targetUser.email,
+        old_role: before.role,
+        new_role: before.role,
+        workspace_id: workspaceId,
+        visibility_scope: visibilityScope,
+        changed_by: actorUser?.email ?? auth.ctx.userId,
+      });
+    }
+  }
+
   return NextResponse.json({ ok: true, userId, workspaceId, visibilityScope });
 }

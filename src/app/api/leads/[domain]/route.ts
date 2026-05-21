@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/auth/api-auth";
 import { getTenantId, getTenantProspectLimit } from "@/lib/supabase/tenant";
 import { getWorkspaceScope } from "@/lib/auth/user-context";
 import { isRateLimited } from "@/lib/rate-limit";
+import { isUserFrozen } from "@/lib/auth/freeze";
 
 // Anti-scraping: max 30 lead detail views per minute per user
 const LEADS_RATE_LIMIT = 30;
@@ -38,26 +39,31 @@ export async function GET(
   await recordVisit(siren, tenantId, workspaceId, userId);
   lead.last_visited = new Date().toISOString().replace("T", " ").split(".")[0];
 
-  // Obfuscate sensitive fields only for expired freemium trials
-  // Paid plans (pro, enterprise) never see obfuscated data
+  // Obfuscation des champs sensibles : 2 déclencheurs cumulatifs.
+  //  1) Freemium expiré (logique trial historique)
+  //  2) Freeze cross-app Hub §5.21 — l'admin Veridian a frozen ce user
+  //     indépendamment du plan (impayé seat, suspension membre, etc.)
   const prospectLimit = await getTenantProspectLimit(userId);
   const isPaidPlan = prospectLimit > 300;
+  let obfuscate = false;
   if (!isPaidPlan) {
-    // Import checkTrialExpired lazily to avoid circular deps
     const { checkTrialExpired } = await import("@/lib/trial");
-    const isExpired = await checkTrialExpired(userId);
-    if (isExpired) {
-      const record = lead as unknown as Record<string, unknown>;
-      for (const field of SENSITIVE_FIELDS) {
-        const val = record[field];
-        if (typeof val === "string" && val.length > 0) {
-          // Don't break JSON arrays — replace with valid placeholder
-          if (val.startsWith("[")) {
-            record[field] = "[]";
-          } else {
-            const cutoff = Math.max(1, Math.floor(val.length * 0.33));
-            record[field] = val.slice(0, cutoff) + "\u2022".repeat(val.length - cutoff);
-          }
+    obfuscate = await checkTrialExpired(userId);
+  }
+  if (!obfuscate && tenantId) {
+    obfuscate = await isUserFrozen(userId, tenantId);
+  }
+  if (obfuscate) {
+    const record = lead as unknown as Record<string, unknown>;
+    for (const field of SENSITIVE_FIELDS) {
+      const val = record[field];
+      if (typeof val === "string" && val.length > 0) {
+        // Don't break JSON arrays — replace with valid placeholder
+        if (val.startsWith("[")) {
+          record[field] = "[]";
+        } else {
+          const cutoff = Math.max(1, Math.floor(val.length * 0.33));
+          record[field] = val.slice(0, cutoff) + "•".repeat(val.length - cutoff);
         }
       }
     }
