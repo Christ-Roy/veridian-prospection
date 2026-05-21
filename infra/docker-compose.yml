@@ -12,6 +12,8 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       DEPLOY_ENV: prod
       HOSTNAME: 0.0.0.0
+      HUB_API_URL: ${HUB_API_URL:-https://app.veridian.site}
+      HUB_WEBHOOK_TOKEN: ${HUB_WEBHOOK_TOKEN:-}
       NEXT_PUBLIC_HUB_URL: https://app.veridian.site
       NEXT_PUBLIC_SITE_URL: https://prospection.app.veridian.site
       NEXT_PUBLIC_TRIAL_DAYS: "7"

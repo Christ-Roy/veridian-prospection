@@ -27,6 +27,11 @@ services:
       AUTH_SECRET: ${AUTH_SECRET}
       AUTH_TRUST_HOST: "true"
       TENANT_API_SECRET: ${TENANT_API_SECRET}
+      # Bearer Prospection→Hub /api/webhooks/prospection (contrat §6.3 pattern C).
+      # Lu par src/lib/hub/webhooks.ts. Côté Hub ce token s'appelle
+      # PROSPECTION_WEBHOOK_TOKEN (token attribué à Prospection).
+      HUB_API_URL: ${HUB_API_URL:-https://app.veridian.site}
+      HUB_WEBHOOK_TOKEN: ${HUB_WEBHOOK_TOKEN:-}
       TRIAL_DAYS: "7"
       NEXT_PUBLIC_TRIAL_DAYS: "7"
     healthcheck:
