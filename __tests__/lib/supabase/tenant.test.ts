@@ -114,4 +114,20 @@ describe("getTenantProspectLimit", () => {
     const limit = await getTenantProspectLimit(`u-err-${Math.random()}`);
     expect(limit).toBe(300);
   });
+
+  /**
+   * Anti-régression Sprint C — la colonne legacy `prospection_plan` est
+   * droppée par la migration 0014. Toute lecture par ce nom retournerait
+   * silencieusement freemium (catch dans la fonction) et casserait le
+   * quota Pro de tous les tenants. Ce test bloque le retour à
+   * `prospection_plan` dans la query.
+   */
+  test("query SQL utilise tenant.plan (pas la colonne legacy prospection_plan)", async () => {
+    queryRawUnsafe.mockResolvedValueOnce([{ plan: "pro" }]);
+    await getTenantProspectLimit(`u-sql-check-${Math.random()}`);
+    expect(queryRawUnsafe).toHaveBeenCalledTimes(1);
+    const sql = queryRawUnsafe.mock.calls[0][0] as string;
+    expect(sql).toMatch(/SELECT\s+t\.plan/i);
+    expect(sql).not.toMatch(/prospection_plan/i);
+  });
 });
