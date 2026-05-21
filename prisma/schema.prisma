@@ -637,8 +637,6 @@ model Tenant {
   metadata Json?
 
   // Plan SaaS — source de vérité pour le pilotage Hub (contrat §5.2).
-  // Colonne `prospection_plan` legacy reste lue en fallback dans le code (cf
-  // src/lib/supabase/tenant.ts) pendant la fenêtre de migration douce 30j.
   // Valeurs possibles : freemium | pro | enterprise | starter |
   // lifetime_site_vitrine | lifetime_partner | internal.
   plan       String? @default("freemium")
