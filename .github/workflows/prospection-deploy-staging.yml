@@ -155,6 +155,8 @@ jobs:
           DATABASE_URL=${{ secrets.STAGING_DATABASE_URL }}
           AUTH_SECRET=${{ secrets.STAGING_AUTH_SECRET }}
           TENANT_API_SECRET=${{ secrets.STAGING_TENANT_API_SECRET }}
+          HUB_API_URL=${{ secrets.STAGING_HUB_API_URL }}
+          HUB_WEBHOOK_TOKEN=${{ secrets.STAGING_HUB_WEBHOOK_TOKEN }}
           ENV_EOF
           chmod 600 $DEST/.env"
 
