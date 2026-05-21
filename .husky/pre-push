@@ -46,6 +46,12 @@ if [ -x scripts/ci/check-hygiene.sh ]; then
   scripts/ci/check-hygiene.sh
 fi
 
+# 1sexies. ENV sync : process.env.X dans src/ doit être déclaré dans
+# .env.example OU compose. BLOCKING. Skip d'urgence : SKIP_ENV_SYNC=1
+if [ -x scripts/ci/check-env-sync.sh ]; then
+  scripts/ci/check-env-sync.sh
+fi
+
 # 2. Rappel régénération compose si base/prod modifié
 # Note : check sémantique désactivé (formats varient entre versions compose CLI).
 # Reste à implémenter un check basé sur yq normalisé.
