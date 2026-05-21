@@ -12,6 +12,8 @@ vi.hoisted(() => {
 
 const mocks = vi.hoisted(() => ({
   tenantFindUnique: vi.fn(),
+  tenantFindFirst: vi.fn(),
+  userFindUnique: vi.fn(),
   userFindMany: vi.fn(),
   workspaceFindMany: vi.fn(),
   memberUpdateMany: vi.fn(),
@@ -20,8 +22,14 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    tenant: { findUnique: mocks.tenantFindUnique },
-    user: { findMany: mocks.userFindMany },
+    tenant: {
+      findUnique: mocks.tenantFindUnique,
+      findFirst: mocks.tenantFindFirst,
+    },
+    user: {
+      findUnique: mocks.userFindUnique,
+      findMany: mocks.userFindMany,
+    },
     workspace: { findMany: mocks.workspaceFindMany },
     workspaceMember: { updateMany: mocks.memberUpdateMany },
   },
@@ -110,5 +118,32 @@ describe("POST /api/tenants/[id]/unfreeze-members", () => {
     expect(res.status).toBe(200);
     const body = (await readJson(res)) as { affected_members: number };
     expect(body.affected_members).toBe(0);
+  });
+
+  test("T7 — accepte tenant_id en email owner", async () => {
+    mocks.userFindUnique.mockResolvedValueOnce({ id: "owner-uid" });
+    mocks.tenantFindFirst.mockResolvedValueOnce({
+      id: TENANT_ID,
+      userId: "owner-uid",
+    });
+    mocks.userFindMany.mockResolvedValueOnce([
+      { id: "u-bob", email: "bob@example.com" },
+    ]);
+    mocks.workspaceFindMany.mockResolvedValueOnce([{ id: "ws-1" }]);
+    mocks.memberUpdateMany.mockResolvedValueOnce({ count: 1 });
+
+    const { raw, headers } = signed({ user_emails: ["bob@example.com"] });
+    const res = await UNFREEZE(
+      makeRequest(`/api/tenants/owner@example.com/unfreeze-members`, {
+        method: "POST",
+        headers,
+        body: raw,
+      }),
+      ctx("owner@example.com"),
+    );
+    expect(res.status).toBe(200);
+    const body = (await readJson(res)) as { tenant_id: string };
+    expect(body.tenant_id).toBe(TENANT_ID);
+    expect(mocks.tenantFindUnique).not.toHaveBeenCalled();
   });
 });

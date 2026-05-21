@@ -21,6 +21,7 @@ vi.hoisted(() => {
 
 const mocks = vi.hoisted(() => ({
   tenantFindUnique: vi.fn(),
+  tenantFindFirst: vi.fn(),
   userFindUnique: vi.fn(),
   workspaceFindMany: vi.fn(),
   memberUpdateMany: vi.fn(),
@@ -29,7 +30,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    tenant: { findUnique: mocks.tenantFindUnique },
+    tenant: {
+      findUnique: mocks.tenantFindUnique,
+      findFirst: mocks.tenantFindFirst,
+    },
     user: { findUnique: mocks.userFindUnique },
     workspace: { findMany: mocks.workspaceFindMany },
     workspaceMember: { updateMany: mocks.memberUpdateMany },
@@ -186,5 +190,33 @@ describe("POST /api/tenants/[id]/remove-member", () => {
       where: { hubUserId: HUB_USER_ID },
       select: { id: true, email: true },
     });
+  });
+
+  test("T7 — accepte tenant_id en email owner (lookup via users.email)", async () => {
+    // 1er user.findUnique = lookup owner pour résoudre tenant
+    mocks.userFindUnique.mockResolvedValueOnce({ id: OWNER_USER_ID });
+    mocks.tenantFindFirst.mockResolvedValueOnce({
+      id: TENANT_ID,
+      userId: OWNER_USER_ID,
+    });
+    // 2e user.findUnique = lookup user à retirer (par email)
+    mocks.userFindUnique.mockResolvedValueOnce({
+      id: LOCAL_USER_ID,
+      email: "bob@example.com",
+    });
+    mocks.workspaceFindMany.mockResolvedValueOnce([{ id: "ws-1" }]);
+    mocks.memberUpdateMany.mockResolvedValueOnce({ count: 1 });
+
+    const { raw, headers } = signed({ user_email: "bob@example.com" });
+    const res = await POST(req(raw, headers, "owner@example.com"), ctx("owner@example.com"));
+    expect(res.status).toBe(200);
+    const body = (await readJson(res)) as {
+      tenant_id: string;
+      affected_workspaces: number;
+    };
+    expect(body.tenant_id).toBe(TENANT_ID);
+    expect(body.affected_workspaces).toBe(1);
+    expect(mocks.tenantFindUnique).not.toHaveBeenCalled();
+    expect(mocks.tenantFindFirst).toHaveBeenCalled();
   });
 });

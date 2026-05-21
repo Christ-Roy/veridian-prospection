@@ -26,6 +26,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireHubHmac } from "@/lib/hub/auth";
 import { resolveOrCreateUserFromHub } from "@/lib/hub/identity";
+import { resolveTenantByIdOrEmail } from "@/lib/hub/tenant-lookup";
 import { logAudit } from "@/lib/audit";
 import { ROLE_RANK, type WorkspaceRole } from "@/lib/auth/roles";
 
@@ -58,19 +59,17 @@ export async function POST(
     );
   }
   const body = parsed.data;
-  const { id: tenantId } = await ctx.params;
+  const { id: tenantIdParam } = await ctx.params;
 
-  if (!z.string().uuid().safeParse(tenantId).success) {
-    return NextResponse.json({ error: "tenant_not_found" }, { status: 404 });
-  }
-
-  const tenant = await prisma.tenant.findUnique({
-    where: { id: tenantId },
-    select: { id: true },
-  });
+  // Le Hub peut envoyer soit l'UUID local soit l'email owner — historiquement
+  // `POST /api/tenants/provision` retourne `tenant_id: <owner_email>`.
+  // Cf todo/2026-05-21-tenant-id-accept-email-or-uuid.md (Option B Robert).
+  const tenant = await resolveTenantByIdOrEmail(tenantIdParam);
   if (!tenant) {
     return NextResponse.json({ error: "tenant_not_found" }, { status: 404 });
   }
+  // Toute la suite utilise l'UUID local résolu, JAMAIS `tenantIdParam`.
+  const tenantId = tenant.id;
 
   const { id: localUserId } = await resolveOrCreateUserFromHub({
     hubUserId: body.hub_user_id,

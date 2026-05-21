@@ -19,6 +19,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireHubHmac } from "@/lib/hub/auth";
+import { resolveTenantByIdOrEmail } from "@/lib/hub/tenant-lookup";
 import { logAudit } from "@/lib/audit";
 
 const FreezeMembersSchema = z.object({
@@ -40,19 +41,14 @@ export async function POST(
     );
   }
   const { user_emails } = parsed.data;
-  const { id: tenantId } = await ctx.params;
+  const { id: tenantIdParam } = await ctx.params;
 
-  if (!z.string().uuid().safeParse(tenantId).success) {
-    return NextResponse.json({ error: "tenant_not_found" }, { status: 404 });
-  }
-
-  const tenant = await prisma.tenant.findUnique({
-    where: { id: tenantId },
-    select: { id: true },
-  });
+  // Accepte UUID local OU email owner (cf todo/tenant-id-accept-email-or-uuid).
+  const tenant = await resolveTenantByIdOrEmail(tenantIdParam);
   if (!tenant) {
     return NextResponse.json({ error: "tenant_not_found" }, { status: 404 });
   }
+  const tenantId = tenant.id;
 
   const users = await prisma.user.findMany({
     where: { email: { in: user_emails } },

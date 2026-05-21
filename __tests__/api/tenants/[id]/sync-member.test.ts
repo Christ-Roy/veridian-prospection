@@ -25,6 +25,8 @@ vi.hoisted(() => {
 
 const mocks = vi.hoisted(() => ({
   tenantFindUnique: vi.fn(),
+  tenantFindFirst: vi.fn(),
+  userFindUnique: vi.fn(),
   workspaceFindFirst: vi.fn(),
   workspaceCreate: vi.fn(),
   memberFindUnique: vi.fn(),
@@ -35,7 +37,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    tenant: { findUnique: mocks.tenantFindUnique },
+    tenant: {
+      findUnique: mocks.tenantFindUnique,
+      findFirst: mocks.tenantFindFirst,
+    },
+    user: { findUnique: mocks.userFindUnique },
     workspace: {
       findFirst: mocks.workspaceFindFirst,
       create: mocks.workspaceCreate,
@@ -135,11 +141,43 @@ describe("POST /api/tenants/[id]/sync-member", () => {
     expect(body.error).toBe("invalid_body");
   });
 
-  test("404 tenant_not_found si UUID invalide (court-circuit avant DB)", async () => {
+  test("404 tenant_not_found si string ni UUID ni email connu", async () => {
+    // Comportement T7 : la route délègue à resolveTenantByIdOrEmail.
+    // Si le param n'est pas un UUID, il est interprété comme email →
+    // user lookup → null → 404.
+    mocks.userFindUnique.mockResolvedValueOnce(null);
     const { raw, headers } = signed(validBody);
     const res = await POST(req(raw, headers, "not-a-uuid"), ctx("not-a-uuid"));
     expect(res.status).toBe(404);
     expect(mocks.tenantFindUnique).not.toHaveBeenCalled();
+    expect(mocks.userFindUnique).toHaveBeenCalledOnce();
+  });
+
+  test("T7 — 200 lookup par email owner (tenant_id = email)", async () => {
+    // Le Hub envoie `tenant_id: owner@example.com` (legacy provision).
+    // resolveTenantByIdOrEmail bascule sur user.findUnique → tenant.findFirst.
+    mocks.userFindUnique.mockResolvedValueOnce({ id: "owner-uid" });
+    mocks.tenantFindFirst.mockResolvedValueOnce({
+      id: TENANT_ID,
+      userId: "owner-uid",
+    });
+    resolveOrCreateUserFromHubMock.mockResolvedValueOnce({
+      id: LOCAL_USER_ID,
+      createdByHub: false,
+      hubUserIdConflict: false,
+    });
+    mocks.workspaceFindFirst.mockResolvedValueOnce({ id: WS_ID });
+    mocks.memberFindUnique.mockResolvedValueOnce(null);
+    mocks.memberCreate.mockResolvedValueOnce({});
+
+    const { raw, headers } = signed(validBody);
+    const res = await POST(req(raw, headers, "owner@example.com"), ctx("owner@example.com"));
+    expect(res.status).toBe(200);
+    const body = (await readJson(res)) as { tenant_id: string };
+    // La response retourne l'UUID local résolu, PAS l'email reçu.
+    expect(body.tenant_id).toBe(TENANT_ID);
+    // workspaceFindFirst utilise l'UUID résolu, pas l'email
+    expect(mocks.workspaceFindFirst.mock.calls[0][0].where.tenantId).toBe(TENANT_ID);
   });
 
   test("404 tenant_not_found si tenant absent en DB", async () => {
