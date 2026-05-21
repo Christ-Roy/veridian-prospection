@@ -12,6 +12,7 @@
  *  - 200 + soft-delete tenant suspendu → previous_status="suspended"
  *  - 200 idempotent sur tenant déjà soft_deleted : pas d'update DB,
  *    pas de webhook, retour des valeurs existantes
+ *  - T13 : 200 lookup par email owner (tenant_id = email legacy Hub)
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
 import { createHmac } from "crypto";
@@ -21,10 +22,13 @@ vi.hoisted(() => {
   process.env.ACCEPT_LEGACY_BEARER = "0";
 });
 
-const { tenantFindUnique, tenantUpdate } = vi.hoisted(() => ({
-  tenantFindUnique: vi.fn(),
-  tenantUpdate: vi.fn(),
-}));
+const { tenantFindUnique, tenantFindFirst, tenantUpdate, userFindUnique } =
+  vi.hoisted(() => ({
+    tenantFindUnique: vi.fn(),
+    tenantFindFirst: vi.fn(),
+    tenantUpdate: vi.fn(),
+    userFindUnique: vi.fn(),
+  }));
 
 const { emitWebhookMock } = vi.hoisted(() => ({
   emitWebhookMock: vi.fn(),
@@ -32,7 +36,12 @@ const { emitWebhookMock } = vi.hoisted(() => ({
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    tenant: { findUnique: tenantFindUnique, update: tenantUpdate },
+    tenant: {
+      findUnique: tenantFindUnique,
+      findFirst: tenantFindFirst,
+      update: tenantUpdate,
+    },
+    user: { findUnique: userFindUnique },
   },
 }));
 
@@ -44,6 +53,10 @@ import { POST } from "@/app/api/tenants/[id]/soft-delete/route";
 import { makeRequest, readJson } from "../../_helpers";
 
 const SECRET = "test-softdelete-secret";
+const TENANT_ID = "11111111-1111-4111-8111-111111111111";
+const TENANT_ID_2 = "22222222-2222-4222-8222-222222222222";
+const TENANT_ID_3 = "33333333-3333-4333-8333-333333333333";
+const TENANT_ID_MISSING = "99999999-9999-4999-8999-999999999999";
 
 function signed(body: object) {
   const raw = JSON.stringify(body);
@@ -74,11 +87,11 @@ describe("POST /api/tenants/{id}/soft-delete", () => {
   // ───────── Auth ─────────
 
   test("401 Unauthorized si HMAC absent — pas de hit DB", async () => {
-    const r = makeRequest("/api/tenants/t-1/soft-delete", {
+    const r = makeRequest(`/api/tenants/${TENANT_ID}/soft-delete`, {
       method: "POST",
       body: { purge_eligible_at: futureDate },
     });
-    const res = await POST(r, { params: Promise.resolve({ id: "t-1" }) });
+    const res = await POST(r, { params: Promise.resolve({ id: TENANT_ID }) });
     expect(res.status).toBe(401);
     const body = (await readJson(res)) as { error: string };
     expect(body.error).toBe("Unauthorized");
@@ -87,7 +100,7 @@ describe("POST /api/tenants/{id}/soft-delete", () => {
 
   test("401 Invalid signature si HMAC bidon", async () => {
     const raw = JSON.stringify({ purge_eligible_at: futureDate });
-    const r = makeRequest("/api/tenants/t-1/soft-delete", {
+    const r = makeRequest(`/api/tenants/${TENANT_ID}/soft-delete`, {
       method: "POST",
       headers: {
         "x-veridian-timestamp": String(Date.now()),
@@ -95,7 +108,7 @@ describe("POST /api/tenants/{id}/soft-delete", () => {
       },
       body: raw,
     });
-    const res = await POST(r, { params: Promise.resolve({ id: "t-1" }) });
+    const res = await POST(r, { params: Promise.resolve({ id: TENANT_ID }) });
     expect(res.status).toBe(401);
     const body = (await readJson(res)) as { error: string };
     expect(body.error).toBe("Invalid signature");
@@ -106,7 +119,7 @@ describe("POST /api/tenants/{id}/soft-delete", () => {
     const ts = Date.now() - 10 * 60 * 1000;
     const raw = JSON.stringify({ purge_eligible_at: futureDate });
     const sig = createHmac("sha256", SECRET).update(`${ts}.${raw}`).digest("hex");
-    const r = makeRequest("/api/tenants/t-1/soft-delete", {
+    const r = makeRequest(`/api/tenants/${TENANT_ID}/soft-delete`, {
       method: "POST",
       headers: {
         "x-veridian-timestamp": String(ts),
@@ -114,7 +127,7 @@ describe("POST /api/tenants/{id}/soft-delete", () => {
       },
       body: raw,
     });
-    const res = await POST(r, { params: Promise.resolve({ id: "t-1" }) });
+    const res = await POST(r, { params: Promise.resolve({ id: TENANT_ID }) });
     expect(res.status).toBe(401);
     const body = (await readJson(res)) as { error: string };
     expect(body.error).toBe("Timestamp expired or invalid");
@@ -124,8 +137,8 @@ describe("POST /api/tenants/{id}/soft-delete", () => {
 
   test("400 invalid_payload si purge_eligible_at absent — pas de hit DB", async () => {
     const { raw, headers } = signed({});
-    const res = await POST(req("t-1", raw, headers), {
-      params: Promise.resolve({ id: "t-1" }),
+    const res = await POST(req(TENANT_ID, raw, headers), {
+      params: Promise.resolve({ id: TENANT_ID }),
     });
     expect(res.status).toBe(400);
     const body = (await readJson(res)) as { error: string; message: string };
@@ -136,8 +149,8 @@ describe("POST /api/tenants/{id}/soft-delete", () => {
 
   test("400 invalid_payload si purge_eligible_at malformé", async () => {
     const { raw, headers } = signed({ purge_eligible_at: "not-a-date" });
-    const res = await POST(req("t-1", raw, headers), {
-      params: Promise.resolve({ id: "t-1" }),
+    const res = await POST(req(TENANT_ID, raw, headers), {
+      params: Promise.resolve({ id: TENANT_ID }),
     });
     expect(res.status).toBe(400);
     const body = (await readJson(res)) as { error: string };
@@ -147,15 +160,15 @@ describe("POST /api/tenants/{id}/soft-delete", () => {
 
   // ───────── Lookup ─────────
 
-  test("404 tenant_not_found — findUnique appelé avec le bon id", async () => {
+  test("404 tenant_not_found — helper appelé avec le bon UUID", async () => {
     tenantFindUnique.mockResolvedValueOnce(null);
     const { raw, headers } = signed({ purge_eligible_at: futureDate });
-    const res = await POST(req("t-missing", raw, headers), {
-      params: Promise.resolve({ id: "t-missing" }),
+    const res = await POST(req(TENANT_ID_MISSING, raw, headers), {
+      params: Promise.resolve({ id: TENANT_ID_MISSING }),
     });
     expect(res.status).toBe(404);
     expect(tenantFindUnique).toHaveBeenCalledOnce();
-    expect(tenantFindUnique.mock.calls[0][0].where.id).toBe("t-missing");
+    expect(tenantFindUnique.mock.calls[0][0].where.id).toBe(TENANT_ID_MISSING);
     expect(tenantUpdate).not.toHaveBeenCalled();
     expect(emitWebhookMock).not.toHaveBeenCalled();
   });
@@ -163,8 +176,9 @@ describe("POST /api/tenants/{id}/soft-delete", () => {
   // ───────── Transitions illégales ─────────
 
   test("409 transition_illegal si tenant déjà purged", async () => {
-    tenantFindUnique.mockResolvedValueOnce({
-      id: "t-1",
+    tenantFindUnique.mockResolvedValue({
+      id: TENANT_ID,
+      userId: "owner-uid",
       status: "deleted",
       deletedAt: new Date("2026-01-01"),
       purgeEligibleAt: new Date("2026-04-01"),
@@ -172,8 +186,8 @@ describe("POST /api/tenants/{id}/soft-delete", () => {
       metadata: null,
     });
     const { raw, headers } = signed({ purge_eligible_at: futureDate });
-    const res = await POST(req("t-1", raw, headers), {
-      params: Promise.resolve({ id: "t-1" }),
+    const res = await POST(req(TENANT_ID, raw, headers), {
+      params: Promise.resolve({ id: TENANT_ID }),
     });
     expect(res.status).toBe(409);
     const body = (await readJson(res)) as { error: string };
@@ -185,8 +199,9 @@ describe("POST /api/tenants/{id}/soft-delete", () => {
   // ───────── Happy paths ─────────
 
   test("200 soft-delete tenant actif → deletedAt + purgeEligibleAt + reason + webhook", async () => {
-    tenantFindUnique.mockResolvedValueOnce({
-      id: "t-1",
+    tenantFindUnique.mockResolvedValue({
+      id: TENANT_ID,
+      userId: "owner-uid",
       status: "active",
       deletedAt: null,
       purgeEligibleAt: null,
@@ -198,8 +213,8 @@ describe("POST /api/tenants/{id}/soft-delete", () => {
       purge_eligible_at: futureDate,
       reason: "stripe_canceled",
     });
-    const res = await POST(req("t-1", raw, headers), {
-      params: Promise.resolve({ id: "t-1" }),
+    const res = await POST(req(TENANT_ID, raw, headers), {
+      params: Promise.resolve({ id: TENANT_ID }),
     });
     expect(res.status).toBe(200);
     const body = (await readJson(res)) as {
@@ -208,14 +223,14 @@ describe("POST /api/tenants/{id}/soft-delete", () => {
       purge_eligible_at: string;
       previous_status: string;
     };
-    expect(body.tenant_id).toBe("t-1");
+    expect(body.tenant_id).toBe(TENANT_ID);
     expect(body.soft_deleted_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(body.purge_eligible_at).toBe(futureDate);
     expect(body.previous_status).toBe("active");
 
     expect(tenantUpdate).toHaveBeenCalledOnce();
     const updateCall = tenantUpdate.mock.calls[0][0];
-    expect(updateCall.where.id).toBe("t-1");
+    expect(updateCall.where.id).toBe(TENANT_ID);
     expect(updateCall.data.deletedAt).toBeInstanceOf(Date);
     expect(updateCall.data.purgeEligibleAt).toBeInstanceOf(Date);
     expect(updateCall.data.metadata.softDeleteReason).toBe("stripe_canceled");
@@ -223,14 +238,15 @@ describe("POST /api/tenants/{id}/soft-delete", () => {
     expect(emitWebhookMock).toHaveBeenCalledOnce();
     const [event, id, data] = emitWebhookMock.mock.calls[0];
     expect(event).toBe("tenant.deleted");
-    expect(id).toBe("t-1");
+    expect(id).toBe(TENANT_ID);
     expect(data.reason).toBe("stripe_canceled");
     expect(data.purge_eligible_at).toBe(futureDate);
   });
 
   test("200 soft-delete tenant suspended → previous_status='suspended'", async () => {
-    tenantFindUnique.mockResolvedValueOnce({
-      id: "t-2",
+    tenantFindUnique.mockResolvedValue({
+      id: TENANT_ID_2,
+      userId: "owner-uid-2",
       status: "suspended",
       deletedAt: null,
       purgeEligibleAt: null,
@@ -240,8 +256,8 @@ describe("POST /api/tenants/{id}/soft-delete", () => {
     tenantUpdate.mockResolvedValueOnce({});
     const { raw, headers } = signed({ purge_eligible_at: futureDate });
     const body = (await readJson(
-      await POST(req("t-2", raw, headers), {
-        params: Promise.resolve({ id: "t-2" }),
+      await POST(req(TENANT_ID_2, raw, headers), {
+        params: Promise.resolve({ id: TENANT_ID_2 }),
       }),
     )) as { previous_status: string };
     expect(body.previous_status).toBe("suspended");
@@ -252,8 +268,9 @@ describe("POST /api/tenants/{id}/soft-delete", () => {
   });
 
   test("default reason = admin_action si non fourni", async () => {
-    tenantFindUnique.mockResolvedValueOnce({
-      id: "t-3",
+    tenantFindUnique.mockResolvedValue({
+      id: TENANT_ID_3,
+      userId: "owner-uid-3",
       status: "active",
       deletedAt: null,
       purgeEligibleAt: null,
@@ -262,8 +279,8 @@ describe("POST /api/tenants/{id}/soft-delete", () => {
     });
     tenantUpdate.mockResolvedValueOnce({});
     const { raw, headers } = signed({ purge_eligible_at: futureDate });
-    await POST(req("t-3", raw, headers), {
-      params: Promise.resolve({ id: "t-3" }),
+    await POST(req(TENANT_ID_3, raw, headers), {
+      params: Promise.resolve({ id: TENANT_ID_3 }),
     });
     expect(tenantUpdate.mock.calls[0][0].data.metadata.softDeleteReason).toBe(
       "admin_action",
@@ -276,8 +293,9 @@ describe("POST /api/tenants/{id}/soft-delete", () => {
   test("200 idempotent sur tenant déjà soft_deleted — pas d'update, pas de webhook", async () => {
     const existingDeletedAt = new Date("2026-05-01T10:00:00Z");
     const existingPurgeAt = new Date("2026-08-01T10:00:00Z");
-    tenantFindUnique.mockResolvedValueOnce({
-      id: "t-1",
+    tenantFindUnique.mockResolvedValue({
+      id: TENANT_ID,
+      userId: "owner-uid",
       status: "active",
       deletedAt: existingDeletedAt,
       purgeEligibleAt: existingPurgeAt,
@@ -285,8 +303,8 @@ describe("POST /api/tenants/{id}/soft-delete", () => {
       metadata: null,
     });
     const { raw, headers } = signed({ purge_eligible_at: futureDate });
-    const res = await POST(req("t-1", raw, headers), {
-      params: Promise.resolve({ id: "t-1" }),
+    const res = await POST(req(TENANT_ID, raw, headers), {
+      params: Promise.resolve({ id: TENANT_ID }),
     });
     expect(res.status).toBe(200);
     const body = (await readJson(res)) as {
@@ -298,5 +316,39 @@ describe("POST /api/tenants/{id}/soft-delete", () => {
     expect(body.purge_eligible_at).toBe(existingPurgeAt.toISOString());
     expect(tenantUpdate).not.toHaveBeenCalled();
     expect(emitWebhookMock).not.toHaveBeenCalled();
+  });
+
+  // ───────── T13 : lookup par email owner ─────────
+
+  test("T13 — 200 lookup par email owner (tenant_id = email legacy)", async () => {
+    // Le Hub legacy peut envoyer `tenant_id: owner@example.com` (provision).
+    // resolveTenantByIdOrEmail bascule sur user → tenant.findFirst.
+    userFindUnique.mockResolvedValueOnce({ id: "owner-uid" });
+    tenantFindFirst.mockResolvedValueOnce({
+      id: TENANT_ID,
+      userId: "owner-uid",
+    });
+    // Puis la route récupère le tenant via findUnique(UUID résolu).
+    tenantFindUnique.mockResolvedValueOnce({
+      id: TENANT_ID,
+      userId: "owner-uid",
+      status: "active",
+      deletedAt: null,
+      purgeEligibleAt: null,
+      purgedAt: null,
+      metadata: null,
+    });
+    tenantUpdate.mockResolvedValueOnce({});
+
+    const { raw, headers } = signed({ purge_eligible_at: futureDate });
+    const res = await POST(req("owner@example.com", raw, headers), {
+      params: Promise.resolve({ id: "owner@example.com" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await readJson(res)) as { tenant_id: string };
+    // Response = UUID résolu, PAS l'email reçu.
+    expect(body.tenant_id).toBe(TENANT_ID);
+    // L'update DB utilise l'UUID résolu.
+    expect(tenantUpdate.mock.calls[0][0].where.id).toBe(TENANT_ID);
   });
 });

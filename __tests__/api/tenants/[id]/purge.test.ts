@@ -15,6 +15,7 @@
  *  - 200 happy path : transaction Prisma s'exécute, status='deleted',
  *    purgedAt set, PII nulled, slug suffixé pour éviter collision,
  *    rows_deleted retourné par table, webhook tenant.deleted+purged émis
+ *  - T13 : 200 lookup par email owner (tenant_id = email legacy Hub)
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
 import { createHmac } from "crypto";
@@ -26,6 +27,8 @@ vi.hoisted(() => {
 
 const mocks = vi.hoisted(() => ({
   tenantFindUnique: vi.fn(),
+  tenantFindFirst: vi.fn(),
+  userFindUnique: vi.fn(),
   txOutreachDelete: vi.fn(),
   txOutreachEmailDelete: vi.fn(),
   txCallLogDelete: vi.fn(),
@@ -41,7 +44,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    tenant: { findUnique: mocks.tenantFindUnique },
+    tenant: {
+      findUnique: mocks.tenantFindUnique,
+      findFirst: mocks.tenantFindFirst,
+    },
+    user: { findUnique: mocks.userFindUnique },
     $transaction: mocks.prismaTransaction,
   },
 }));
@@ -54,6 +61,8 @@ import { POST } from "@/app/api/tenants/[id]/purge/route";
 import { makeRequest, readJson } from "../../_helpers";
 
 const SECRET = "test-purge-secret";
+const TENANT_ID = "11111111-1111-4111-8111-111111111111";
+const TENANT_ID_MISSING = "99999999-9999-4999-8999-999999999999";
 
 function signed(body: object) {
   const raw = JSON.stringify(body);
@@ -77,8 +86,6 @@ function req(tenantId: string, raw: string, headers: Record<string, string>) {
 }
 
 function setupTxMock(rowCounts: Record<string, number> = {}) {
-  // Le mock simule prisma.$transaction(async tx => {...}) en passant un
-  // tx qui répond aux deleteMany avec les counts mockés.
   mocks.prismaTransaction.mockImplementationOnce(async (cb) => {
     const tx = {
       outreach: { deleteMany: vi.fn().mockResolvedValue({ count: rowCounts.outreach ?? 0 }) },
@@ -103,11 +110,11 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
   // ───────── Auth ─────────
 
   test("401 Unauthorized si HMAC absent — pas de hit DB", async () => {
-    const r = makeRequest("/api/tenants/t-1/purge", {
+    const r = makeRequest(`/api/tenants/${TENANT_ID}/purge`, {
       method: "POST",
       body: { confirm_slug: "test", reason: "audit GDPR" },
     });
-    const res = await POST(r, { params: Promise.resolve({ id: "t-1" }) });
+    const res = await POST(r, { params: Promise.resolve({ id: TENANT_ID }) });
     expect(res.status).toBe(401);
     expect(mocks.tenantFindUnique).not.toHaveBeenCalled();
     expect(mocks.prismaTransaction).not.toHaveBeenCalled();
@@ -115,7 +122,7 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
 
   test("401 Invalid signature si HMAC bidon", async () => {
     const raw = JSON.stringify({ confirm_slug: "test", reason: "audit GDPR" });
-    const r = makeRequest("/api/tenants/t-1/purge", {
+    const r = makeRequest(`/api/tenants/${TENANT_ID}/purge`, {
       method: "POST",
       headers: {
         "x-veridian-timestamp": String(Date.now()),
@@ -123,7 +130,7 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
       },
       body: raw,
     });
-    const res = await POST(r, { params: Promise.resolve({ id: "t-1" }) });
+    const res = await POST(r, { params: Promise.resolve({ id: TENANT_ID }) });
     expect(res.status).toBe(401);
     expect(mocks.prismaTransaction).not.toHaveBeenCalled();
   });
@@ -132,8 +139,8 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
 
   test("400 invalid_payload si confirm_slug absent — pas de hit DB", async () => {
     const { raw, headers } = signed({ reason: "GDPR audit" });
-    const res = await POST(req("t-1", raw, headers), {
-      params: Promise.resolve({ id: "t-1" }),
+    const res = await POST(req(TENANT_ID, raw, headers), {
+      params: Promise.resolve({ id: TENANT_ID }),
     });
     expect(res.status).toBe(400);
     const body = (await readJson(res)) as { error: string; message: string };
@@ -144,8 +151,8 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
 
   test("400 invalid_payload si reason absent — pas de hit DB", async () => {
     const { raw, headers } = signed({ confirm_slug: "test" });
-    const res = await POST(req("t-1", raw, headers), {
-      params: Promise.resolve({ id: "t-1" }),
+    const res = await POST(req(TENANT_ID, raw, headers), {
+      params: Promise.resolve({ id: TENANT_ID }),
     });
     expect(res.status).toBe(400);
     const body = (await readJson(res)) as { error: string; message: string };
@@ -156,16 +163,17 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
 
   test("400 invalid_payload si reason < 3 chars (anti-bullshit GDPR)", async () => {
     const { raw, headers } = signed({ confirm_slug: "test", reason: "ok" });
-    const res = await POST(req("t-1", raw, headers), {
-      params: Promise.resolve({ id: "t-1" }),
+    const res = await POST(req(TENANT_ID, raw, headers), {
+      params: Promise.resolve({ id: TENANT_ID }),
     });
     expect(res.status).toBe(400);
     expect(mocks.tenantFindUnique).not.toHaveBeenCalled();
   });
 
   test("400 invalid_payload si confirm_slug ne matche pas tenant.slug", async () => {
-    mocks.tenantFindUnique.mockResolvedValueOnce({
-      id: "t-1",
+    mocks.tenantFindUnique.mockResolvedValue({
+      id: TENANT_ID,
+      userId: "owner-uid",
       slug: "real-slug",
       deletedAt: pastDate,
       purgeEligibleAt: pastDate,
@@ -175,8 +183,8 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
       confirm_slug: "wrong-slug",
       reason: "GDPR audit",
     });
-    const res = await POST(req("t-1", raw, headers), {
-      params: Promise.resolve({ id: "t-1" }),
+    const res = await POST(req(TENANT_ID, raw, headers), {
+      params: Promise.resolve({ id: TENANT_ID }),
     });
     expect(res.status).toBe(400);
     const body = (await readJson(res)) as { error: string; message: string };
@@ -194,8 +202,8 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
       confirm_slug: "test",
       reason: "GDPR audit",
     });
-    const res = await POST(req("t-x", raw, headers), {
-      params: Promise.resolve({ id: "t-x" }),
+    const res = await POST(req(TENANT_ID_MISSING, raw, headers), {
+      params: Promise.resolve({ id: TENANT_ID_MISSING }),
     });
     expect(res.status).toBe(404);
     expect(mocks.prismaTransaction).not.toHaveBeenCalled();
@@ -204,8 +212,9 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
   // ───────── Transitions illégales ─────────
 
   test("409 transition_illegal si tenant déjà purged", async () => {
-    mocks.tenantFindUnique.mockResolvedValueOnce({
-      id: "t-1",
+    mocks.tenantFindUnique.mockResolvedValue({
+      id: TENANT_ID,
+      userId: "owner-uid",
       slug: "test",
       deletedAt: new Date("2026-01-01"),
       purgeEligibleAt: new Date("2026-04-01"),
@@ -215,8 +224,8 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
       confirm_slug: "test",
       reason: "GDPR audit",
     });
-    const res = await POST(req("t-1", raw, headers), {
-      params: Promise.resolve({ id: "t-1" }),
+    const res = await POST(req(TENANT_ID, raw, headers), {
+      params: Promise.resolve({ id: TENANT_ID }),
     });
     expect(res.status).toBe(409);
     const body = (await readJson(res)) as { error: string };
@@ -225,8 +234,9 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
   });
 
   test("409 tenant_not_purge_eligible si tenant pas soft_deleted", async () => {
-    mocks.tenantFindUnique.mockResolvedValueOnce({
-      id: "t-1",
+    mocks.tenantFindUnique.mockResolvedValue({
+      id: TENANT_ID,
+      userId: "owner-uid",
       slug: "test",
       deletedAt: null,
       purgeEligibleAt: null,
@@ -236,8 +246,8 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
       confirm_slug: "test",
       reason: "GDPR audit",
     });
-    const res = await POST(req("t-1", raw, headers), {
-      params: Promise.resolve({ id: "t-1" }),
+    const res = await POST(req(TENANT_ID, raw, headers), {
+      params: Promise.resolve({ id: TENANT_ID }),
     });
     expect(res.status).toBe(409);
     const body = (await readJson(res)) as { error: string };
@@ -246,8 +256,9 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
   });
 
   test("409 tenant_not_purge_eligible si purgeEligibleAt dans le futur", async () => {
-    mocks.tenantFindUnique.mockResolvedValueOnce({
-      id: "t-1",
+    mocks.tenantFindUnique.mockResolvedValue({
+      id: TENANT_ID,
+      userId: "owner-uid",
       slug: "test",
       deletedAt: pastDate,
       purgeEligibleAt: futureDate, // <-- futur
@@ -257,8 +268,8 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
       confirm_slug: "test",
       reason: "GDPR audit",
     });
-    const res = await POST(req("t-1", raw, headers), {
-      params: Promise.resolve({ id: "t-1" }),
+    const res = await POST(req(TENANT_ID, raw, headers), {
+      params: Promise.resolve({ id: TENANT_ID }),
     });
     expect(res.status).toBe(409);
     const body = (await readJson(res)) as {
@@ -273,8 +284,9 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
   // ───────── Happy path ─────────
 
   test("200 purge complet : transaction OK, status=deleted, PII nulled, slug suffixé, webhook émis", async () => {
-    mocks.tenantFindUnique.mockResolvedValueOnce({
-      id: "t-1",
+    mocks.tenantFindUnique.mockResolvedValue({
+      id: TENANT_ID,
+      userId: "owner-uid",
       slug: "client-acme",
       deletedAt: pastDate,
       purgeEligibleAt: pastDate,
@@ -293,8 +305,8 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
       confirm_slug: "client-acme",
       reason: "GDPR client erasure request 2026-05-19",
     });
-    const res = await POST(req("t-1", raw, headers), {
-      params: Promise.resolve({ id: "t-1" }),
+    const res = await POST(req(TENANT_ID, raw, headers), {
+      params: Promise.resolve({ id: TENANT_ID }),
     });
     expect(res.status).toBe(200);
     const body = (await readJson(res)) as {
@@ -302,7 +314,7 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
       purged_at: string;
       rows_deleted: Record<string, number>;
     };
-    expect(body.tenant_id).toBe("t-1");
+    expect(body.tenant_id).toBe(TENANT_ID);
     expect(body.purged_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(body.rows_deleted).toEqual({
       outreach: 42,
@@ -320,7 +332,7 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
     // Update tenant avec PII nullées, status=deleted, slug suffixé
     expect(mocks.txTenantUpdate).toHaveBeenCalledOnce();
     const updateCall = mocks.txTenantUpdate.mock.calls[0][0];
-    expect(updateCall.where.id).toBe("t-1");
+    expect(updateCall.where.id).toBe(TENANT_ID);
     expect(updateCall.data.status).toBe("deleted");
     expect(updateCall.data.purgedAt).toBeInstanceOf(Date);
     expect(updateCall.data.name).toBe("[purged]");
@@ -337,9 +349,42 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
     expect(mocks.emitWebhook).toHaveBeenCalledOnce();
     const [event, id, data] = mocks.emitWebhook.mock.calls[0];
     expect(event).toBe("tenant.deleted");
-    expect(id).toBe("t-1");
+    expect(id).toBe(TENANT_ID);
     expect(data.event_subtype).toBe("purged");
     expect(data.rows_deleted).toEqual(body.rows_deleted);
     expect(data.reason).toBe("GDPR client erasure request 2026-05-19");
+  });
+
+  // ───────── T13 : lookup par email owner ─────────
+
+  test("T13 — 200 purge avec lookup par email owner (tenant_id = email legacy)", async () => {
+    // Le Hub legacy peut envoyer `tenant_id: owner@example.com` (provision).
+    mocks.userFindUnique.mockResolvedValueOnce({ id: "owner-uid" });
+    mocks.tenantFindFirst.mockResolvedValueOnce({
+      id: TENANT_ID,
+      userId: "owner-uid",
+    });
+    mocks.tenantFindUnique.mockResolvedValueOnce({
+      id: TENANT_ID,
+      userId: "owner-uid",
+      slug: "client-acme",
+      deletedAt: pastDate,
+      purgeEligibleAt: pastDate,
+      purgedAt: null,
+    });
+    setupTxMock({ outreach: 1 });
+    const { raw, headers } = signed({
+      confirm_slug: "client-acme",
+      reason: "GDPR via Hub legacy by email",
+    });
+    const res = await POST(req("owner@example.com", raw, headers), {
+      params: Promise.resolve({ id: "owner@example.com" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await readJson(res)) as { tenant_id: string };
+    // Response = UUID résolu, PAS l'email reçu.
+    expect(body.tenant_id).toBe(TENANT_ID);
+    // L'update transactionnel utilise l'UUID résolu.
+    expect(mocks.txTenantUpdate.mock.calls[0][0].where.id).toBe(TENANT_ID);
   });
 });

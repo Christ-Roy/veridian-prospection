@@ -10,7 +10,7 @@
  *  - 200 + magic_link_capable=false si tenant soft-deleted
  *  - 200 + status=suspended si tenant.status='suspended'
  *  - members_count cohérent avec le nombre de membres workspace default
- *  - plan rempli depuis prospection_plan (fallback freemium si raw query échoue)
+ *  - plan rempli depuis tenant.plan (fallback freemium si raw query échoue)
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
 import { createHmac } from "crypto";
@@ -22,6 +22,7 @@ vi.hoisted(() => {
 
 const mocks = vi.hoisted(() => ({
   tenantFindUnique: vi.fn(),
+  tenantFindFirst: vi.fn(),
   workspaceFindFirst: vi.fn(),
   userFindUnique: vi.fn(),
   queryRawUnsafe: vi.fn(),
@@ -29,7 +30,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    tenant: { findUnique: mocks.tenantFindUnique },
+    tenant: {
+      findUnique: mocks.tenantFindUnique,
+      findFirst: mocks.tenantFindFirst,
+    },
     workspace: { findFirst: mocks.workspaceFindFirst },
     user: { findUnique: mocks.userFindUnique },
     $queryRawUnsafe: mocks.queryRawUnsafe,
@@ -40,6 +44,7 @@ import { GET } from "@/app/api/tenants/[id]/health/route";
 import { makeRequest, readJson } from "../../_helpers";
 
 const SECRET = "test-health-secret";
+const TENANT_ID = "11111111-1111-4111-8111-111111111111";
 
 function signedGet(tenantId: string) {
   const raw = "";
@@ -60,7 +65,7 @@ describe("GET /api/tenants/{id}/health", () => {
 
   test("401 Unauthorized si HMAC absent — pas de query DB", async () => {
     const req = makeRequest("/api/tenants/t-1/health", { method: "GET" });
-    const res = await GET(req, { params: Promise.resolve({ id: "t-1" }) });
+    const res = await GET(req, { params: Promise.resolve({ id: TENANT_ID }) });
     expect(res.status).toBe(401);
     const body = (await readJson(res)) as { error: string };
     expect(body.error).toBe("Unauthorized");
@@ -75,7 +80,7 @@ describe("GET /api/tenants/{id}/health", () => {
         "x-veridian-hub-signature": "00".repeat(32),
       },
     });
-    const res = await GET(req, { params: Promise.resolve({ id: "t-1" }) });
+    const res = await GET(req, { params: Promise.resolve({ id: TENANT_ID }) });
     expect(res.status).toBe(401);
     const body = (await readJson(res)) as { error: string };
     expect(body.error).toBe("Invalid signature");
@@ -84,7 +89,7 @@ describe("GET /api/tenants/{id}/health", () => {
 
   test("200 + status=deleted si tenant introuvable", async () => {
     mocks.tenantFindUnique.mockResolvedValueOnce(null);
-    const { req, params } = signedGet("t-missing");
+    const { req, params } = signedGet(TENANT_ID);
     const res = await GET(req, { params });
     expect(res.status).toBe(200);
     const body = (await readJson(res)) as {
@@ -98,8 +103,11 @@ describe("GET /api/tenants/{id}/health", () => {
   });
 
   test("200 + magic_link_capable=true si owner attaché et tenant actif", async () => {
-    mocks.tenantFindUnique.mockResolvedValueOnce({
-      id: "t-1",
+    // tenant.findUnique appelé 2× (resolveTenantByIdOrEmail puis route) — mock
+    // sans Once pour servir les 2 calls avec le même tenant.
+    mocks.tenantFindUnique.mockResolvedValue({
+      id: TENANT_ID,
+      userId: "owner-uid",
       status: "active",
       deletedAt: null,
       metadata: null,
@@ -110,7 +118,7 @@ describe("GET /api/tenants/{id}/health", () => {
     });
     mocks.userFindUnique.mockResolvedValueOnce({ email: "owner@example.com" });
     mocks.queryRawUnsafe.mockResolvedValueOnce([{ plan: "pro" }]);
-    const { req, params } = signedGet("t-1");
+    const { req, params } = signedGet(TENANT_ID);
     const res = await GET(req, { params });
     const body = (await readJson(res)) as {
       status: string;
@@ -129,8 +137,9 @@ describe("GET /api/tenants/{id}/health", () => {
   });
 
   test("200 + magic_link_capable=false si pas d'owner attaché", async () => {
-    mocks.tenantFindUnique.mockResolvedValueOnce({
-      id: "t-1",
+    mocks.tenantFindUnique.mockResolvedValue({
+      id: TENANT_ID,
+      userId: "owner-uid",
       status: "active",
       deletedAt: null,
       metadata: null,
@@ -140,7 +149,7 @@ describe("GET /api/tenants/{id}/health", () => {
       members: [],
     });
     mocks.queryRawUnsafe.mockResolvedValueOnce([{ plan: "freemium" }]);
-    const { req, params } = signedGet("t-1");
+    const { req, params } = signedGet(TENANT_ID);
     const res = await GET(req, { params });
     const body = (await readJson(res)) as {
       owner_attached: boolean;
@@ -151,8 +160,9 @@ describe("GET /api/tenants/{id}/health", () => {
   });
 
   test("200 + magic_link_capable=false si tenant soft-deleted", async () => {
-    mocks.tenantFindUnique.mockResolvedValueOnce({
-      id: "t-1",
+    mocks.tenantFindUnique.mockResolvedValue({
+      id: TENANT_ID,
+      userId: "owner-uid",
       status: "active",
       deletedAt: new Date("2026-05-01T00:00:00Z"),
       metadata: null,
@@ -163,7 +173,7 @@ describe("GET /api/tenants/{id}/health", () => {
     });
     mocks.userFindUnique.mockResolvedValueOnce({ email: "owner@example.com" });
     mocks.queryRawUnsafe.mockResolvedValueOnce([{ plan: "pro" }]);
-    const { req, params } = signedGet("t-1");
+    const { req, params } = signedGet(TENANT_ID);
     const body = (await readJson(await GET(req, { params }))) as {
       status: string;
       magic_link_capable: boolean;
@@ -173,8 +183,9 @@ describe("GET /api/tenants/{id}/health", () => {
   });
 
   test("200 + status=suspended si tenant.status='suspended'", async () => {
-    mocks.tenantFindUnique.mockResolvedValueOnce({
-      id: "t-1",
+    mocks.tenantFindUnique.mockResolvedValue({
+      id: TENANT_ID,
+      userId: "owner-uid",
       status: "suspended",
       deletedAt: null,
       metadata: { suspendedAt: "2026-05-19T10:00:00Z" },
@@ -185,7 +196,7 @@ describe("GET /api/tenants/{id}/health", () => {
     });
     mocks.userFindUnique.mockResolvedValueOnce({ email: "owner@example.com" });
     mocks.queryRawUnsafe.mockResolvedValueOnce([{ plan: "pro" }]);
-    const { req, params } = signedGet("t-1");
+    const { req, params } = signedGet(TENANT_ID);
     const body = (await readJson(await GET(req, { params }))) as {
       status: string;
       magic_link_capable: boolean;
@@ -195,9 +206,52 @@ describe("GET /api/tenants/{id}/health", () => {
     expect(body.magic_link_capable).toBe(true);
   });
 
-  test("fallback plan=freemium si raw query échoue", async () => {
+  test("T13 — 200 lookup par email owner (tenant_id = email)", async () => {
+    // Le Hub legacy peut envoyer `tenant_id: owner@example.com`. La route
+    // doit basculer sur user.findUnique → tenant.findFirst (helper T7).
+    // 1. resolveTenantByIdOrEmail("owner@example.com") →
+    //    user.findUnique({email}) → {id: "owner-uid"}
+    //    puis tenant.findFirst({userId}) → {id: TENANT_ID, userId: "owner-uid"}
+    mocks.userFindUnique.mockResolvedValueOnce({ id: "owner-uid" });
+    mocks.tenantFindFirst.mockResolvedValueOnce({
+      id: TENANT_ID,
+      userId: "owner-uid",
+    });
+    // 2. La route appelle prisma.tenant.findUnique(UUID résolu) → cas standard
     mocks.tenantFindUnique.mockResolvedValueOnce({
-      id: "t-1",
+      id: TENANT_ID,
+      status: "active",
+      deletedAt: null,
+      metadata: null,
+    });
+    // 3. Workspace + lookup email owner (2e user.findUnique)
+    mocks.workspaceFindFirst.mockResolvedValueOnce({
+      id: "ws-1",
+      members: [{ userId: "owner-uid", role: "owner" }],
+    });
+    mocks.userFindUnique.mockResolvedValueOnce({ email: "owner@example.com" });
+    mocks.queryRawUnsafe.mockResolvedValueOnce([{ plan: "pro" }]);
+
+    const { req, params } = signedGet("owner@example.com");
+    const res = await GET(req, { params });
+    expect(res.status).toBe(200);
+    const body = (await readJson(res)) as {
+      tenant_id: string;
+      owner_email: string | null;
+      magic_link_capable: boolean;
+    };
+    // La response retourne l'UUID local résolu, PAS l'email reçu.
+    expect(body.tenant_id).toBe(TENANT_ID);
+    expect(body.owner_email).toBe("owner@example.com");
+    expect(body.magic_link_capable).toBe(true);
+    // workspaceFindFirst utilise l'UUID résolu, pas l'email
+    expect(mocks.workspaceFindFirst.mock.calls[0][0].where.tenantId).toBe(TENANT_ID);
+  });
+
+  test("fallback plan=freemium si raw query échoue", async () => {
+    mocks.tenantFindUnique.mockResolvedValue({
+      id: TENANT_ID,
+      userId: "owner-uid",
       status: "active",
       deletedAt: null,
       metadata: null,
@@ -207,7 +261,7 @@ describe("GET /api/tenants/{id}/health", () => {
       members: [],
     });
     mocks.queryRawUnsafe.mockRejectedValueOnce(new Error("column missing"));
-    const { req, params } = signedGet("t-1");
+    const { req, params } = signedGet(TENANT_ID);
     const body = (await readJson(await GET(req, { params }))) as { plan: string };
     expect(body.plan).toBe("freemium");
   });

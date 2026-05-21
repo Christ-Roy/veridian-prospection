@@ -9,6 +9,7 @@
  *  - activeUsers30d = 0 si aucun appointment récent, = members count sinon
  *  - domain_specific contient les bons compteurs
  *  - size_mb_estimate calculé proportionnellement
+ *  - T13 : 200 lookup par email owner (tenant_id = email legacy Hub)
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
 import { createHmac } from "crypto";
@@ -20,6 +21,8 @@ vi.hoisted(() => {
 
 const mocks = vi.hoisted(() => ({
   tenantFindUnique: vi.fn(),
+  tenantFindFirst: vi.fn(),
+  userFindUnique: vi.fn(),
   outreachCount: vi.fn(),
   callLogCount: vi.fn(),
   appointmentCount: vi.fn(),
@@ -30,7 +33,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    tenant: { findUnique: mocks.tenantFindUnique },
+    tenant: {
+      findUnique: mocks.tenantFindUnique,
+      findFirst: mocks.tenantFindFirst,
+    },
+    user: { findUnique: mocks.userFindUnique },
     outreach: { count: mocks.outreachCount },
     callLog: { count: mocks.callLogCount },
     appointment: { count: mocks.appointmentCount },
@@ -44,6 +51,8 @@ import { GET } from "@/app/api/tenants/[id]/usage-summary/route";
 import { makeRequest, readJson } from "../../_helpers";
 
 const SECRET = "test-usage-secret";
+const TENANT_ID = "11111111-1111-4111-8111-111111111111";
+const TENANT_ID_MISSING = "99999999-9999-4999-8999-999999999999";
 
 function signedGet(tenantId: string) {
   const ts = Date.now();
@@ -64,21 +73,21 @@ describe("GET /api/tenants/{id}/usage-summary", () => {
   beforeEach(() => vi.clearAllMocks());
 
   test("401 Unauthorized si HMAC absent — pas de hit DB", async () => {
-    const req = makeRequest("/api/tenants/t-1/usage-summary", { method: "GET" });
-    const res = await GET(req, { params: Promise.resolve({ id: "t-1" }) });
+    const req = makeRequest(`/api/tenants/${TENANT_ID}/usage-summary`, { method: "GET" });
+    const res = await GET(req, { params: Promise.resolve({ id: TENANT_ID }) });
     expect(res.status).toBe(401);
     expect(mocks.tenantFindUnique).not.toHaveBeenCalled();
   });
 
   test("401 Invalid signature si HMAC bidon", async () => {
-    const req = makeRequest("/api/tenants/t-1/usage-summary", {
+    const req = makeRequest(`/api/tenants/${TENANT_ID}/usage-summary`, {
       method: "GET",
       headers: {
         "x-veridian-timestamp": String(Date.now()),
         "x-veridian-hub-signature": "00".repeat(32),
       },
     });
-    const res = await GET(req, { params: Promise.resolve({ id: "t-1" }) });
+    const res = await GET(req, { params: Promise.resolve({ id: TENANT_ID }) });
     expect(res.status).toBe(401);
     const body = (await readJson(res)) as { error: string };
     expect(body.error).toBe("Invalid signature");
@@ -87,7 +96,7 @@ describe("GET /api/tenants/{id}/usage-summary", () => {
 
   test("404 tenant_not_found", async () => {
     mocks.tenantFindUnique.mockResolvedValueOnce(null);
-    const { req, params } = signedGet("t-x");
+    const { req, params } = signedGet(TENANT_ID_MISSING);
     const res = await GET(req, { params });
     expect(res.status).toBe(404);
     const body = (await readJson(res)) as { error: string };
@@ -100,8 +109,9 @@ describe("GET /api/tenants/{id}/usage-summary", () => {
   test("200 agrégats corrects + lastTouchedAt prioritaire sur lastActivityAt", async () => {
     const touchedAt = new Date("2026-05-15T10:00:00Z");
     const activityAt = new Date("2026-04-01T10:00:00Z");
-    mocks.tenantFindUnique.mockResolvedValueOnce({
-      id: "t-1",
+    mocks.tenantFindUnique.mockResolvedValue({
+      id: TENANT_ID,
+      userId: "owner-uid",
       lastActivityAt: activityAt,
       lastTouchedAt: touchedAt,
     });
@@ -114,7 +124,7 @@ describe("GET /api/tenants/{id}/usage-summary", () => {
     // recentAppointments dans les 30j : oui, on retourne members_count
     mocks.appointmentCount.mockResolvedValueOnce(3);
 
-    const { req, params } = signedGet("t-1");
+    const { req, params } = signedGet(TENANT_ID);
     const res = await GET(req, { params });
     expect(res.status).toBe(200);
     const body = (await readJson(res)) as {
@@ -126,7 +136,7 @@ describe("GET /api/tenants/{id}/usage-summary", () => {
       };
       domain_specific: Record<string, number>;
     };
-    expect(body.tenant_id).toBe("t-1");
+    expect(body.tenant_id).toBe(TENANT_ID);
     expect(body.data_volume.rows_total).toBe(120 + 30 + 15 + 8);
     expect(body.data_volume.size_mb_estimate).toBeGreaterThanOrEqual(0);
 
@@ -144,8 +154,9 @@ describe("GET /api/tenants/{id}/usage-summary", () => {
 
   test("lastTouchedAt null → fallback lastActivityAt", async () => {
     const activityAt = new Date("2026-04-01T10:00:00Z");
-    mocks.tenantFindUnique.mockResolvedValueOnce({
-      id: "t-1",
+    mocks.tenantFindUnique.mockResolvedValue({
+      id: TENANT_ID,
+      userId: "owner-uid",
       lastActivityAt: activityAt,
       lastTouchedAt: null,
     });
@@ -157,7 +168,7 @@ describe("GET /api/tenants/{id}/usage-summary", () => {
     mocks.workspaceMemberCount.mockResolvedValueOnce(0);
     mocks.appointmentCount.mockResolvedValueOnce(0);
 
-    const { req, params } = signedGet("t-1");
+    const { req, params } = signedGet(TENANT_ID);
     const body = (await readJson(await GET(req, { params }))) as {
       activity: { last_user_activity_at: string };
     };
@@ -165,8 +176,9 @@ describe("GET /api/tenants/{id}/usage-summary", () => {
   });
 
   test("aucune activité du tout → last_user_activity_at = null", async () => {
-    mocks.tenantFindUnique.mockResolvedValueOnce({
-      id: "t-1",
+    mocks.tenantFindUnique.mockResolvedValue({
+      id: TENANT_ID,
+      userId: "owner-uid",
       lastActivityAt: null,
       lastTouchedAt: null,
     });
@@ -178,7 +190,7 @@ describe("GET /api/tenants/{id}/usage-summary", () => {
     mocks.workspaceMemberCount.mockResolvedValueOnce(0);
     mocks.appointmentCount.mockResolvedValueOnce(0);
 
-    const { req, params } = signedGet("t-1");
+    const { req, params } = signedGet(TENANT_ID);
     const body = (await readJson(await GET(req, { params }))) as {
       activity: { last_user_activity_at: string | null; active_users_30d: number };
     };
@@ -187,8 +199,9 @@ describe("GET /api/tenants/{id}/usage-summary", () => {
   });
 
   test("activeUsers30d = 0 si aucun appointment dans les 30j (même si members existent)", async () => {
-    mocks.tenantFindUnique.mockResolvedValueOnce({
-      id: "t-1",
+    mocks.tenantFindUnique.mockResolvedValue({
+      id: TENANT_ID,
+      userId: "owner-uid",
       lastActivityAt: new Date(),
       lastTouchedAt: null,
     });
@@ -200,7 +213,7 @@ describe("GET /api/tenants/{id}/usage-summary", () => {
     mocks.workspaceMemberCount.mockResolvedValueOnce(3);
     mocks.appointmentCount.mockResolvedValueOnce(0); // recent dans 30j = 0
 
-    const { req, params } = signedGet("t-1");
+    const { req, params } = signedGet(TENANT_ID);
     const body = (await readJson(await GET(req, { params }))) as {
       activity: { active_users_30d: number };
     };
@@ -208,8 +221,9 @@ describe("GET /api/tenants/{id}/usage-summary", () => {
   });
 
   test("checked_at présent, format ISO8601", async () => {
-    mocks.tenantFindUnique.mockResolvedValueOnce({
-      id: "t-1",
+    mocks.tenantFindUnique.mockResolvedValue({
+      id: TENANT_ID,
+      userId: "owner-uid",
       lastActivityAt: null,
       lastTouchedAt: null,
     });
@@ -220,10 +234,41 @@ describe("GET /api/tenants/{id}/usage-summary", () => {
     mocks.workspaceCount.mockResolvedValue(0);
     mocks.workspaceMemberCount.mockResolvedValue(0);
 
-    const { req, params } = signedGet("t-1");
+    const { req, params } = signedGet(TENANT_ID);
     const body = (await readJson(await GET(req, { params }))) as {
       checked_at: string;
     };
     expect(body.checked_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+  });
+
+  test("T13 — 200 lookup par email owner (tenant_id = email legacy)", async () => {
+    // Le Hub legacy peut envoyer `tenant_id: owner@example.com` (provision).
+    mocks.userFindUnique.mockResolvedValueOnce({ id: "owner-uid" });
+    mocks.tenantFindFirst.mockResolvedValueOnce({
+      id: TENANT_ID,
+      userId: "owner-uid",
+    });
+    mocks.tenantFindUnique.mockResolvedValueOnce({
+      id: TENANT_ID,
+      userId: "owner-uid",
+      lastActivityAt: null,
+      lastTouchedAt: null,
+    });
+    mocks.outreachCount.mockResolvedValueOnce(7);
+    mocks.callLogCount.mockResolvedValueOnce(2);
+    mocks.appointmentCount.mockResolvedValueOnce(1);
+    mocks.followupCount.mockResolvedValueOnce(0);
+    mocks.workspaceCount.mockResolvedValueOnce(1);
+    mocks.workspaceMemberCount.mockResolvedValueOnce(2);
+    mocks.appointmentCount.mockResolvedValueOnce(0);
+
+    const { req, params } = signedGet("owner@example.com");
+    const res = await GET(req, { params });
+    expect(res.status).toBe(200);
+    const body = (await readJson(res)) as { tenant_id: string };
+    // Response = UUID résolu, PAS l'email reçu.
+    expect(body.tenant_id).toBe(TENANT_ID);
+    // outreachCount appelé avec l'UUID résolu (tenantId interne)
+    expect(mocks.outreachCount.mock.calls[0][0].where.tenantId).toBe(TENANT_ID);
   });
 });

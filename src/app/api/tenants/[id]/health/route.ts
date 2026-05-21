@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireHubHmac } from "@/lib/hub/auth";
 import { prisma } from "@/lib/prisma";
+import { resolveTenantByIdOrEmail } from "@/lib/hub/tenant-lookup";
 
 export async function GET(
   request: NextRequest,
@@ -24,13 +25,38 @@ export async function GET(
   const auth = await requireHubHmac<unknown>(request);
   if (!auth.ok) return auth.response;
 
-  const { id: tenantId } = await params;
-  if (!tenantId) {
+  const { id: tenantIdParam } = await params;
+  if (!tenantIdParam) {
     return NextResponse.json(
       { error: "invalid_payload", message: "tenant id is required" },
       { status: 400 },
     );
   }
+
+  // Le Hub peut envoyer soit l'UUID local soit l'email owner — historiquement
+  // `POST /api/tenants/provision` retourne `tenant_id: <owner_email>`.
+  // Cf todo/2026-05-21-tenant-id-accept-email-or-uuid.md (Option B Robert).
+  const resolved = await resolveTenantByIdOrEmail(tenantIdParam);
+  if (!resolved) {
+    return NextResponse.json(
+      {
+        tenant_id: tenantIdParam,
+        workspace_id: null,
+        status: "deleted",
+        owner_attached: false,
+        owner_email: null,
+        owner_user_id: null,
+        api_key_valid: false,
+        magic_link_capable: false,
+        members_count: 0,
+        plan: null,
+        checked_at: new Date().toISOString(),
+      },
+      { status: 200 },
+    );
+  }
+  // Toute la suite utilise l'UUID local résolu, JAMAIS `tenantIdParam`.
+  const tenantId = resolved.id;
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
@@ -42,6 +68,8 @@ export async function GET(
     },
   });
   if (!tenant) {
+    // Race condition rarissime entre resolve et findUnique — même forme
+    // "deleted" pour rester déterministe côté Hub.
     return NextResponse.json(
       {
         tenant_id: tenantId,
@@ -95,12 +123,13 @@ export async function GET(
       ? "suspended"
       : "active";
 
-  // Plan : lit la colonne legacy `prospection_plan` jusqu'à P2.6 (migration
-  // Prisma plan column). Fallback "freemium".
+  // Plan : source de vérité = colonne Prisma `plan` (model Tenant).
+  // Backfill historique migration 0004 : plan ← COALESCE(plan, prospection_plan).
+  // Fallback "freemium" si raw query échoue (DB de test sans la colonne).
   let plan: string | null = "freemium";
   try {
     const rows = await prisma.$queryRawUnsafe<{ plan: string | null }[]>(
-      `SELECT prospection_plan AS plan FROM tenants WHERE id = $1::uuid LIMIT 1`,
+      `SELECT plan FROM tenants WHERE id = $1::uuid LIMIT 1`,
       tenantId,
     );
     plan = rows[0]?.plan ?? "freemium";

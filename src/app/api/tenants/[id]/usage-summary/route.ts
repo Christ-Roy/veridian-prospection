@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireHubHmac } from "@/lib/hub/auth";
 import { prisma } from "@/lib/prisma";
+import { resolveTenantByIdOrEmail } from "@/lib/hub/tenant-lookup";
 
 export async function GET(
   request: NextRequest,
@@ -21,13 +22,21 @@ export async function GET(
   const auth = await requireHubHmac<unknown>(request);
   if (!auth.ok) return auth.response;
 
-  const { id: tenantId } = await params;
-  if (!tenantId) {
+  const { id: tenantIdParam } = await params;
+  if (!tenantIdParam) {
     return NextResponse.json(
       { error: "invalid_payload", message: "tenant id is required" },
       { status: 400 },
     );
   }
+
+  // Le Hub peut envoyer soit l'UUID local soit l'email owner (provision legacy).
+  // Cf todo/2026-05-21-tenant-id-accept-email-or-uuid.md.
+  const resolved = await resolveTenantByIdOrEmail(tenantIdParam);
+  if (!resolved) {
+    return NextResponse.json({ error: "tenant_not_found" }, { status: 404 });
+  }
+  const tenantId = resolved.id;
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
