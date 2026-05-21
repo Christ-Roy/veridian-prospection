@@ -3,8 +3,30 @@
 > **Demandeur** : agent Hub (Robert Brunon)
 > **Priorité** : 🟠 P2 — pas bloquant pour la prod actuelle, requis pour
 > activer le pricing par seat et le SSO cross-app.
-> **Spec** : `veridian-hub/docs/CONTRAT-HUB.md` v1.3 §3.5, §5.18, §5.19, §5.20,
-> §5.21 (lire intégralement avant de commencer).
+> **Spec** : `veridian-hub/docs/CONTRAT-HUB.md` **v1.5** §3.5, §5.18.3
+> (sync-member), §5.19, §5.20, §5.21 (lire intégralement avant de commencer).
+>
+> ## 🔄 MISE À JOUR v1.5 — 2026-05-21
+>
+> **§5.18.2 (admin invite-member) est DÉPRÉCIÉ** en v1.5. Le flow
+> invitation passe désormais TOUJOURS par P1 §5.22 (`POST /api/invitations/create`
+> côté Hub → `POST /api/veridian/workspaces/<id>/attach-member` côté apps).
+>
+> Ce que ce ticket couvre RÉELLEMENT en v1.5 :
+> - **§5.18.3** `POST /api/tenants/<id>/sync-member` (tenant-level, voie
+>   admin/migration, pas user-side — le user-side passe par §5.22).
+> - **§5.19.2** `POST /api/tenants/<id>/remove-member`
+> - **§5.20** `POST /api/tenants/<id>/restore-member`
+> - **§5.21** `POST /api/tenants/<id>/freeze-members` + `unfreeze-members`
+> - **§5.18.4** webhook app → Hub `tenant.member_role_changed`
+> - **Migration douce** backfill `hub_app.tenant_members` (toujours pertinente)
+>
+> **Préreq** : le ticket `2026-05-21-add-hub-user-id-column.md` (§3.7
+> colonne identité user cross-app) doit être livré avant — sync-member
+> reçoit `hub_user_id` dans son body.
+>
+> Le détail des schemas request/response est dans `CONTRAT-HUB-API-REF.md`
+> sections SYNC, RM, RESTM, FREEZE, UNFREEZE.
 > **Particularité Prospection** : tu as déjà la notion de **workspace
 > interne** + `workspace_members` avec `visibility_scope` (all/own). Ces
 > concepts restent **locaux à Prospection** — le Hub ne les voit pas et

@@ -5,6 +5,38 @@
 > **Auteur** : Agent Prospection (session 2026-05-19)
 > **Priorité** : P1 — bloque le pilotage cross-app du Hub sur Prospection
 > **Estim. globale** : 3-4 jours dev focus, ~12 sous-tâches
+>
+> ---
+>
+> ## 🎯 BILAN FINAL — 2026-05-21
+>
+> **Ticket archivé.** Le contrat a bumpé en v1.5 (2026-05-21), l'audit
+> cross-app a confirmé Prospection à **13/22 endpoints (59%)** — score parmi
+> les meilleurs cross-app. Les phases 1-6 sont **toutes livrées et en prod**.
+>
+> **Livré (phases 1-6)** :
+> - ✅ HMAC standard + legacy compat (`src/lib/hub/hmac.ts` + 19 tests)
+> - ✅ Lifecycle complet (suspend/resume/soft-delete/restore/purge/usage-summary)
+> - ✅ update-plan avec immunité plan_source `lifetime_*` + `internal`
+> - ✅ generateMagicLink Bearer api_key (§5.6)
+> - ✅ Plans offerts (lifetime_site_vitrine, lifetime_partner, internal)
+> - ✅ Webhooks de base (suspended, resumed, deleted)
+> - ✅ Mode paywall dégradé (obfuscation 33%+bullets, `<Paywall>`, `<BlurredText>`)
+> - ✅ Format erreurs standardisé (§5.10)
+>
+> **Tickets de suite** (créés/actifs pour le sprint v1.5) :
+> - 🔴 P1 `2026-05-21-hub-attach-member-endpoint.md` — §5.22 endpoint workspace-level
+> - 🔴 P1 `2026-05-21-add-hub-user-id-column.md` — §3.7 colonne identité
+> - 🟠 P2 `2026-05-19-v13-multi-membre-cross-app.md` — §5.18-5.21 multi-membre
+> - 🟡 P3 `2026-05-19-hub-contract-phase1-suite.md` — smoke prod + coupure legacy
+> - 💀 CRITIQUE `2026-05-20-dette-tech-db-destructive-sprints.md` — DROP destructifs
+>
+> **Reste obsolète dans ce ticket** (P6.5, P7, P8) → trackés ailleurs :
+> - P6.5 émission `tenant.touched` → englobé dans le ticket multi-membre v13
+> - P7 e2e integration tests → ticket à créer si besoin (pas P1)
+> - P8 observabilité + Idempotency-Key → P3 séparé (§13 du contrat)
+>
+> **Archivé dans `done/` 2026-05-21.**
 
 ---
 
