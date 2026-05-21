@@ -52,6 +52,15 @@ vi.mock("@prisma/client", () => {
   return { PrismaClient };
 });
 
+// CONTRAT-HUB v1.5 §3.7 — le helper d'identité est testé séparément
+// (__tests__/lib/hub/identity.test.ts). Ici on mocke pour isoler la route.
+const { resolveOrCreateUserFromHubMock } = vi.hoisted(() => ({
+  resolveOrCreateUserFromHubMock: vi.fn(),
+}));
+vi.mock("@/lib/hub/identity", () => ({
+  resolveOrCreateUserFromHub: resolveOrCreateUserFromHubMock,
+}));
+
 import { POST } from "@/app/api/tenants/provision/route";
 import { makeRequest, readJson } from "../_helpers";
 
@@ -92,6 +101,14 @@ function standardHeaders(
 describe("POST /api/tenants/provision", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default : le helper renvoie le hubUserId reçu en localUserId (rétrocompat).
+    resolveOrCreateUserFromHubMock.mockImplementation(
+      async ({ hubUserId }: { hubUserId: string; email: string }) => ({
+        id: hubUserId,
+        createdByHub: true,
+        hubUserIdConflict: false,
+      }),
+    );
   });
 
   test("returns 400 when email missing", async () => {
@@ -275,8 +292,7 @@ describe("POST /api/tenants/provision", () => {
         email: "test-autologin@example.com",
         user_id: uid,
         timestamp: Date.now(),
-        signature: require("crypto")
-          .createHmac("sha256", SECRET)
+        signature: createHmac("sha256", SECRET)
           .update(`test-autologin@example.com:${Date.now()}`)
           .digest("hex"),
       },
@@ -315,6 +331,33 @@ describe("POST /api/tenants/provision", () => {
     const body = (await readJson(res)) as { api_key: string };
     // api_key retournée = 64 chars hex (token mint frais, pas le placeholder)
     expect(body.api_key).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  test("CONTRAT-HUB v1.5 §3.7 — résout l'user via resolveOrCreateUserFromHub quand hub_user_id fourni", async () => {
+    const hubUserId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const email = "v15-identity@example.com";
+    resolveOrCreateUserFromHubMock.mockResolvedValueOnce({
+      id: hubUserId,
+      createdByHub: true,
+      hubUserIdConflict: false,
+    });
+
+    const bodyObj = { email, plan: "freemium", user_id: hubUserId };
+    const raw = JSON.stringify(bodyObj);
+    const req = makeRequest("/api/tenants/provision", {
+      method: "POST",
+      headers: {
+        ...standardHeaders(raw),
+        "x-forwarded-for": `10.0.60.${Math.floor(Math.random() * 250)}`,
+      },
+      body: raw,
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    expect(resolveOrCreateUserFromHubMock).toHaveBeenCalledWith({
+      hubUserId,
+      email,
+    });
   });
 
   test("rate-limits to 10 requests/min/IP (11th returns 429)", async () => {

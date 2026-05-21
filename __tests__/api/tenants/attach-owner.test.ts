@@ -48,6 +48,14 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
+// CONTRAT-HUB v1.5 §3.7 — helper identité (testé séparément).
+const { resolveOrCreateUserFromHubMock } = vi.hoisted(() => ({
+  resolveOrCreateUserFromHubMock: vi.fn(),
+}));
+vi.mock("@/lib/hub/identity", () => ({
+  resolveOrCreateUserFromHub: resolveOrCreateUserFromHubMock,
+}));
+
 import { POST } from "@/app/api/tenants/attach-owner/route";
 import { makeRequest, readJson } from "../_helpers";
 
@@ -75,7 +83,10 @@ function req(raw: string, headers: Record<string, string>) {
 }
 
 describe("POST /api/tenants/attach-owner", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resolveOrCreateUserFromHubMock.mockReset();
+  });
 
   test("401 Unauthorized si HMAC absent — pas de fuite DB", async () => {
     const r = makeRequest("/api/tenants/attach-owner", {
@@ -251,6 +262,36 @@ describe("POST /api/tenants/attach-owner", () => {
     expect(res.status).toBe(200);
     expect(mocks.memberUpdate).toHaveBeenCalledOnce();
     expect(mocks.memberUpdate.mock.calls[0][0].data.role).toBe("owner");
+  });
+
+  test("CONTRAT-HUB v1.5 §3.7 — délègue à resolveOrCreateUserFromHub quand hub_user_id fourni", async () => {
+    const hubUserId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    mocks.tenantFindUnique.mockResolvedValueOnce({ id: "t-1" });
+    resolveOrCreateUserFromHubMock.mockResolvedValueOnce({
+      id: hubUserId,
+      createdByHub: true,
+      hubUserIdConflict: false,
+    });
+    mocks.workspaceFindFirst.mockResolvedValueOnce({ id: "ws-1" });
+    mocks.memberFindUnique.mockResolvedValueOnce(null);
+    mocks.memberCreate.mockResolvedValueOnce({});
+
+    const { raw, headers } = signed({
+      tenant_id: "t-1",
+      owner_email: "v15-attach@example.com",
+      hub_user_id: hubUserId,
+    });
+    const res = await POST(req(raw, headers));
+    expect(res.status).toBe(200);
+    const body = (await readJson(res)) as { user_id: string };
+    expect(body.user_id).toBe(hubUserId);
+    expect(resolveOrCreateUserFromHubMock).toHaveBeenCalledWith({
+      hubUserId,
+      email: "v15-attach@example.com",
+    });
+    // Le path legacy match-by-email n'est PAS pris quand hub_user_id fourni.
+    expect(mocks.userFindFirst).not.toHaveBeenCalled();
+    expect(mocks.userCreate).not.toHaveBeenCalled();
   });
 
   test("additif : ne downgrade pas un owner existant si on demande admin", async () => {

@@ -16,7 +16,7 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
-import { resolveOrCreateUserFromHub } from "./identity";
+import { resolveOrCreateUserFromHub } from "@/lib/hub/identity";
 
 const HUB_ID = "11111111-1111-1111-1111-111111111111";
 const OTHER_HUB_ID = "22222222-2222-2222-2222-222222222222";
