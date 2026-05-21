@@ -165,6 +165,7 @@ jobs:
           TENANT_API_SECRET=${{ secrets.STAGING_TENANT_API_SECRET }}
           HUB_API_URL=${{ secrets.STAGING_HUB_API_URL }}
           HUB_WEBHOOK_TOKEN=${{ secrets.STAGING_HUB_WEBHOOK_TOKEN }}
+          TELNYX_PUBLIC_KEY=${{ secrets.STAGING_TELNYX_PUBLIC_KEY }}
           ENV_EOF
           chmod 600 $DEST/.env"
 

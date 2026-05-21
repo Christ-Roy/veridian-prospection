@@ -48,6 +48,9 @@ services:
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:contact@veridian.site}
+      # Telnyx Ed25519 public key — vérifie signature /api/phone/telnyx-webhook
+      # (T20 fix pentest T16 HIGH). Sans : webhook répond 500 fail-closed.
+      TELNYX_PUBLIC_KEY: ${TELNYX_PUBLIC_KEY:-}
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/api/health || exit 1"]
       interval: 30s
