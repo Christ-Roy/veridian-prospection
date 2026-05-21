@@ -100,26 +100,26 @@ describe("isGiftedPlan — détection plans offerts", () => {
   });
 });
 
-describe("getRefillUnitPriceCents — prix dégressif", () => {
-  test("Freemium 1 lead = 0,40€", () => {
-    expect(getRefillUnitPriceCents("freemium", 1)).toBe(40);
+describe("getRefillUnitPriceCents — prix dégressif (PRICING-VERIDIAN v1.1)", () => {
+  test("Freemium 1 lead = 0,50€", () => {
+    expect(getRefillUnitPriceCents("freemium", 1)).toBe(50);
   });
 
-  test("Freemium 100 leads = 0,30€/lead (tranche 100+)", () => {
-    expect(getRefillUnitPriceCents("freemium", 100)).toBe(30);
+  test("Freemium 100 leads = 0,40€/lead (tranche 100-999)", () => {
+    expect(getRefillUnitPriceCents("freemium", 100)).toBe(40);
   });
 
-  test("Freemium 1000 leads = 0,20€/lead (tranche max freemium)", () => {
-    expect(getRefillUnitPriceCents("freemium", 1000)).toBe(20);
-    expect(getRefillUnitPriceCents("freemium", 5000)).toBe(20);
+  test("Freemium 1000 leads = 0,30€/lead (tranche max freemium)", () => {
+    expect(getRefillUnitPriceCents("freemium", 1000)).toBe(30);
+    expect(getRefillUnitPriceCents("freemium", 5000)).toBe(30);
   });
 
-  test("Pro 10000 leads = 0,10€/lead (tranche max pro)", () => {
-    expect(getRefillUnitPriceCents("pro", 10000)).toBe(10);
+  test("Pro 10000 leads = 0,12€/lead (tranche max pro)", () => {
+    expect(getRefillUnitPriceCents("pro", 10000)).toBe(12);
   });
 
-  test("Business 50000 leads = 0,03€/lead (tranche max business)", () => {
-    expect(getRefillUnitPriceCents("business", 50000)).toBe(3);
+  test("Business 50000 leads = 0,04€/lead (tranche max business)", () => {
+    expect(getRefillUnitPriceCents("business", 50000)).toBe(4);
   });
 
   test("Plus le plan est haut, moins le lead coûte (à quantité égale)", () => {
@@ -132,15 +132,15 @@ describe("getRefillUnitPriceCents — prix dégressif", () => {
   });
 });
 
-describe("calculateRefillCostCents — coût total commande", () => {
-  test("Pro 500 leads = 500 × 20 cts = 10 000 cts (100€)", () => {
-    // 500 dans la tranche [100, 1000[ → 20 cts/lead
-    expect(calculateRefillCostCents("pro", 500)).toBe(500 * 20);
+describe("calculateRefillCostCents — coût total commande (PRICING-VERIDIAN v1.1)", () => {
+  test("Pro 500 leads = 500 × 25 cts = 12 500 cts (125€)", () => {
+    // 500 dans la tranche [100, 999] → 25 cts/lead
+    expect(calculateRefillCostCents("pro", 500)).toBe(500 * 25);
   });
 
-  test("Business 25000 leads = 25000 × 5 cts = 125 000 cts (1250€)", () => {
-    // 25000 dans la tranche [10000, 50000[ → 5 cts/lead
-    expect(calculateRefillCostCents("business", 25000)).toBe(25000 * 5);
+  test("Business 25000 leads = 25000 × 6 cts = 150 000 cts (1500€)", () => {
+    // 25000 dans la tranche [10000, 49999] → 6 cts/lead
+    expect(calculateRefillCostCents("business", 25000)).toBe(25000 * 6);
   });
 
   test("Quantity < 1 retourne 0 (no-op)", () => {

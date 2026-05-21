@@ -19,9 +19,25 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@veridian/shared": ["./shared/shared/index"],
+      "@veridian/shared/*": ["./shared/shared/*"]
     }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", "src/**/_archived/**"]
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", "shared/shared/**/*.ts"],
+  "exclude": [
+    "node_modules",
+    "src/**/_archived/**",
+    "shared/ci",
+    "shared/docs",
+    "shared/grafana",
+    "shared/infra",
+    "shared/pentest",
+    "shared/runbooks",
+    "shared/sites",
+    "shared/sprints",
+    "shared/todo",
+    "shared/shared/__tests__",
+    "shared/shared/node_modules"
+  ]
 }
