@@ -40,8 +40,20 @@ fi
 # Diff complet (lignes added uniquement, vs base ref). On scan ce qui sera
 # poussé (commits non encore push) + ce qui est staged localement (cas pre-push
 # avec staged uncommit, et utile pour les tests locaux).
-DIFF_PUSHED=$(git diff "$BASE_REF"...HEAD --no-color -U0 2>/dev/null | grep -E '^\+' | grep -vE '^\+\+\+' || true)
-DIFF_STAGED=$(git diff --cached --no-color -U0 2>/dev/null | grep -E '^\+' | grep -vE '^\+\+\+' || true)
+#
+# Exclusions : on ignore les fichiers qui peuvent légitimement parler de
+# secrets sans en contenir :
+#  - scripts/ci/check-secrets.sh (ce script lui-même contient les regex)
+#  - **/*.test.ts (tests qui utilisent des secrets-de-test fake)
+#  - docs/**/*.md, todo/**/*.md (documentation pricing, audit, etc.)
+EXCLUDE_PATHSPECS=(
+  ':!scripts/ci/check-secrets.sh'
+  ':!**/*.test.ts'
+  ':!docs/**/*.md'
+  ':!todo/**/*.md'
+)
+DIFF_PUSHED=$(git diff "$BASE_REF"...HEAD --no-color -U0 -- . "${EXCLUDE_PATHSPECS[@]}" 2>/dev/null | grep -E '^\+' | grep -vE '^\+\+\+' || true)
+DIFF_STAGED=$(git diff --cached --no-color -U0 -- . "${EXCLUDE_PATHSPECS[@]}" 2>/dev/null | grep -E '^\+' | grep -vE '^\+\+\+' || true)
 DIFF_ADDED=$(printf '%s\n%s' "$DIFF_PUSHED" "$DIFF_STAGED" | grep -v '^$' || true)
 
 if [ -z "$DIFF_ADDED" ]; then
