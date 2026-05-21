@@ -505,6 +505,11 @@ model User {
   // pendant la phase de migration pour traçabilité.
   supabaseUserId String? @unique @map("supabase_user_id") @db.Uuid
 
+  // Identité Hub (CONTRAT-HUB v1.5 §3.7). Nullable + backfillé au premier
+  // contact Hub (provision, attach-owner, attach-member). Source de vérité
+  // humaine côté Hub, PK locale `id` reste inchangée.
+  hubUserId String? @unique @map("hub_user_id") @db.Uuid
+
   accounts Account[]
   sessions Session[]
   mfaCodes MfaCode[]
@@ -591,23 +596,23 @@ enum TenantStatus {
 }
 
 model Tenant {
-  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   // user_id = owner (l'utilisateur qui a signé). FK vers User mais le UUID est
   // identique à l'ancien auth.users.id, donc préservé.
-  userId          String       @map("user_id") @db.Uuid
-  subscriptionId  String?      @map("subscription_id") @db.Uuid
-  name            String
-  slug            String       @unique
-  status          TenantStatus @default(pending)
+  userId         String       @map("user_id") @db.Uuid
+  subscriptionId String?      @map("subscription_id") @db.Uuid
+  name           String
+  slug           String       @unique
+  status         TenantStatus @default(pending)
 
   // Intégrations Twenty CRM
-  twentyWorkspaceId          String?   @map("twenty_workspace_id") @db.Uuid
-  twentySubdomain            String?   @map("twenty_subdomain")
-  twentyApiKey               String?   @map("twenty_api_key")
-  twentyUserEmail            String?   @map("twenty_user_email")
-  twentyUserPassword         String?   @map("twenty_user_password")
-  twentyLoginToken           String?   @map("twenty_login_token")
-  twentyLoginTokenCreatedAt  DateTime? @map("twenty_login_token_created_at") @db.Timestamptz
+  twentyWorkspaceId         String?   @map("twenty_workspace_id") @db.Uuid
+  twentySubdomain           String?   @map("twenty_subdomain")
+  twentyApiKey              String?   @map("twenty_api_key")
+  twentyUserEmail           String?   @map("twenty_user_email")
+  twentyUserPassword        String?   @map("twenty_user_password")
+  twentyLoginToken          String?   @map("twenty_login_token")
+  twentyLoginTokenCreatedAt DateTime? @map("twenty_login_token_created_at") @db.Timestamptz
 
   // Autologin SSO Veridian (couche 1 — token one-shot Hub→Prospection).
   // Le token est généré par POST /api/tenants/provision (HMAC Hub), stocké
@@ -620,28 +625,28 @@ model Tenant {
   prospectionLoginTokenUsedAt    DateTime? @map("prospection_login_token_used_at") @db.Timestamptz
 
   // Intégrations Notifuse
-  notifuseWorkspaceSlug      String?   @map("notifuse_workspace_slug")
-  notifuseApiKey             String?   @map("notifuse_api_key")
-  notifuseUserEmail          String?   @map("notifuse_user_email")
-  notifuseInvitationSentAt   DateTime? @map("notifuse_invitation_sent_at") @db.Timestamptz
+  notifuseWorkspaceSlug    String?   @map("notifuse_workspace_slug")
+  notifuseApiKey           String?   @map("notifuse_api_key")
+  notifuseUserEmail        String?   @map("notifuse_user_email")
+  notifuseInvitationSentAt DateTime? @map("notifuse_invitation_sent_at") @db.Timestamptz
 
-  metadata        Json?
+  metadata Json?
 
   // Plan SaaS — source de vérité pour le pilotage Hub (contrat §5.2).
   // Colonne `prospection_plan` legacy reste lue en fallback dans le code (cf
   // src/lib/supabase/tenant.ts) pendant la fenêtre de migration douce 30j.
   // Valeurs possibles : freemium | pro | enterprise | starter |
   // lifetime_site_vitrine | lifetime_partner | internal.
-  plan            String?      @default("freemium")
+  plan       String? @default("freemium")
   // Source de la dernière mise à jour de plan — bloque le downgrade Stripe
   // sur lifetime_* / internal (cf §3.3 immunité plan_source).
   // Valeurs : stripe | manual | lifetime_site_vitrine | lifetime_partner | internal.
-  planSource      String?      @default("stripe") @map("plan_source")
+  planSource String? @default("stripe") @map("plan_source")
 
-  provisionedAt   DateTime?    @map("provisioned_at") @db.Timestamptz
-  lastActivityAt  DateTime?    @map("last_activity_at") @db.Timestamptz
-  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt       DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  provisionedAt  DateTime? @map("provisioned_at") @db.Timestamptz
+  lastActivityAt DateTime? @map("last_activity_at") @db.Timestamptz
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   // Lifecycle v1.1 — machine à états contrat §5.7.
   //
@@ -655,12 +660,12 @@ model Tenant {
   //   purgeEligibleAt  : NOW() + SOFT_DELETE_GRACE_DAYS (90j default)
   //   lastTouchedAt    : NOW() à chaque tenant.touched (throttle 24h)
   //   purgedAt         : NOW() au purge irréversible (audit GDPR)
-  deletedAt       DateTime?    @map("deleted_at") @db.Timestamptz
-  purgeEligibleAt DateTime?    @map("purge_eligible_at") @db.Timestamptz
-  lastTouchedAt   DateTime?    @map("last_touched_at") @db.Timestamptz
-  purgedAt        DateTime?    @map("purged_at") @db.Timestamptz
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz
+  purgeEligibleAt DateTime? @map("purge_eligible_at") @db.Timestamptz
+  lastTouchedAt   DateTime? @map("last_touched_at") @db.Timestamptz
+  purgedAt        DateTime? @map("purged_at") @db.Timestamptz
 
-  planHistory     PlanHistory[]
+  planHistory PlanHistory[]
 
   @@index([userId])
   @@index([status])
@@ -672,13 +677,13 @@ model Tenant {
 /// Audit trail des changements de plan (contrat §5.2).
 /// Rétention minimale : 50 dernières lignes par tenant.
 model PlanHistory {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId    String   @map("tenant_id") @db.Uuid
-  plan        String
-  planSource  String   @map("plan_source")
-  previousPlan String? @map("previous_plan")
-  reason      String?
-  changedAt   DateTime @default(now()) @map("changed_at") @db.Timestamptz
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  plan         String
+  planSource   String   @map("plan_source")
+  previousPlan String?  @map("previous_plan")
+  reason       String?
+  changedAt    DateTime @default(now()) @map("changed_at") @db.Timestamptz
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 

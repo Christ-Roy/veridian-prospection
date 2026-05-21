@@ -7,6 +7,7 @@ import {
   verifyLegacyBearer,
 } from "@/lib/hub/hmac";
 import { generateApiKey, hashApiKey } from "@/lib/hub/apiKey";
+import { resolveOrCreateUserFromHub } from "@/lib/hub/identity";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 const prisma = globalForPrisma.prisma ?? new PrismaClient();
@@ -36,25 +37,26 @@ if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 async function ensureOwnerWorkspace(
   userId: string,
   email: string,
-): Promise<string | null> {
+): Promise<{ apiKey: string | null; localUserId: string } | null> {
   try {
-    await prisma.user.upsert({
-      where: { id: userId },
-      update: { email },
-      create: { id: userId, email, supabaseUserId: userId },
+    // CONTRAT-HUB v1.5 §3.7 — `userId` reçu EST le hub_user_id.
+    // Le helper backfille hub_user_id + préserve la rétrocompat (legacy id PK).
+    const { id: localUserId } = await resolveOrCreateUserFromHub({
+      hubUserId: userId,
+      email,
     });
 
     const slugBase = email.split("@")[0].toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40) || "tenant";
 
     let tenant = await prisma.tenant.findFirst({
-      where: { userId },
+      where: { userId: localUserId },
       select: { id: true },
     });
 
     if (!tenant) {
       tenant = await prisma.tenant.create({
         data: {
-          userId,
+          userId: localUserId,
           name: `${email.split("@")[0]}'s Workspace`,
           slug: `${slugBase}-${Date.now().toString(36)}`,
           status: "active",
@@ -73,18 +75,20 @@ async function ensureOwnerWorkspace(
           tenantId: tenant.id,
           name: "Default",
           slug: "default",
-          createdBy: userId,
+          createdBy: localUserId,
         },
         select: { id: true, apiKeyHash: true },
       });
     }
 
     await prisma.workspaceMember.upsert({
-      where: { workspaceId_userId: { workspaceId: workspace.id, userId } },
+      where: {
+        workspaceId_userId: { workspaceId: workspace.id, userId: localUserId },
+      },
       update: { role: "admin" },
       create: {
         workspaceId: workspace.id,
-        userId,
+        userId: localUserId,
         role: "admin",
         visibilityScope: "all",
       },
@@ -108,9 +112,9 @@ async function ensureOwnerWorkspace(
     }
 
     console.log(
-      `[provision] Auto-admin OK: user=${userId} tenant=${tenant.id} workspace=${workspace.id} api_key_minted=${apiKeyPlain !== null}`,
+      `[provision] Auto-admin OK: hub_user=${userId} local_user=${localUserId} tenant=${tenant.id} workspace=${workspace.id} api_key_minted=${apiKeyPlain !== null}`,
     );
-    return apiKeyPlain;
+    return { apiKey: apiKeyPlain, localUserId };
   } catch (err) {
     console.error(`[provision] auto-admin upsert failed for ${email}: ${(err as Error).message}`);
     return null;
@@ -253,9 +257,9 @@ export async function POST(request: NextRequest) {
   // skip avec warning. Le Hub doit migrer vers le contrat v1.2 §5.1 pour
   // débloquer ce flow (cf todo/2026-05-19-hub-contract-conformity.md).
   if (hubUserId) {
-    const mintedApiKey = await ensureOwnerWorkspace(hubUserId, email);
-    if (mintedApiKey) {
-      apiKey = mintedApiKey;
+    const ensured = await ensureOwnerWorkspace(hubUserId, email);
+    if (ensured?.apiKey) {
+      apiKey = ensured.apiKey;
     } else {
       // Replay sur workspace existant — placeholder, Hub utilise sa propre copie.
       apiKey = randomBytes(32).toString("hex");
@@ -268,9 +272,12 @@ export async function POST(request: NextRequest) {
     // le GET /api/auth/token?t=... qui suit ne trouvera rien et redirigera
     // sur /login → user pense que sa session ne marche pas (bug observé sur
     // staging avant ce fix).
+    // Lookup tenant par localUserId (peut différer de hubUserId dans le cas
+    // legacy email-matched, cf helper §3.7).
+    const lookupUserId = ensured?.localUserId ?? hubUserId;
     try {
       const tenant = await prisma.tenant.findFirst({
-        where: { userId: hubUserId, deletedAt: null },
+        where: { userId: lookupUserId, deletedAt: null },
         select: { id: true },
       });
       if (tenant) {

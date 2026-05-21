@@ -15,12 +15,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireHubHmac } from "@/lib/hub/auth";
 import { prisma } from "@/lib/prisma";
+import { resolveOrCreateUserFromHub } from "@/lib/hub/identity";
 import { randomUUID } from "crypto";
 
 type AttachBody = {
   tenant_id?: string;
   owner_email?: string;
   role?: "owner" | "admin";
+  hub_user_id?: string;
+  metadata?: { hub_user_id?: string };
 };
 
 const ALLOWED_ROLES = new Set(["owner", "admin"]);
@@ -30,6 +33,7 @@ export async function POST(request: NextRequest) {
   if (!auth.ok) return auth.response;
 
   const { tenant_id, owner_email, role = "owner" } = auth.body;
+  const hubUserId = auth.body.hub_user_id || auth.body.metadata?.hub_user_id;
   if (!tenant_id || !owner_email) {
     return NextResponse.json(
       {
@@ -60,16 +64,27 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 1) Upsert user — on accepte un user existant matché par email.
-  const existing = await prisma.user.findFirst({
-    where: { email: owner_email },
-    select: { id: true },
-  });
-  const userId = existing?.id ?? randomUUID();
-  if (!existing) {
-    await prisma.user.create({
-      data: { id: userId, email: owner_email, supabaseUserId: userId },
+  // 1) Résolution user — CONTRAT-HUB v1.5 §3.7.
+  //    Si le Hub envoie hub_user_id → helper unifié (backfill + rétrocompat).
+  //    Sinon (Hub legacy) → fallback historique match-by-email + UUID local.
+  let userId: string;
+  if (hubUserId) {
+    const resolved = await resolveOrCreateUserFromHub({
+      hubUserId,
+      email: owner_email,
     });
+    userId = resolved.id;
+  } else {
+    const existing = await prisma.user.findFirst({
+      where: { email: owner_email },
+      select: { id: true },
+    });
+    userId = existing?.id ?? randomUUID();
+    if (!existing) {
+      await prisma.user.create({
+        data: { id: userId, email: owner_email, supabaseUserId: userId },
+      });
+    }
   }
 
   // 2) Workspace "default" upsert
