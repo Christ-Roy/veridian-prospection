@@ -41,7 +41,7 @@ vi.mock("@/lib/audit", () => ({
 }));
 
 import { POST } from "@/app/api/tenants/[id]/remove-member/route";
-import { makeRequest, readJson } from "../_helpers";
+import { makeRequest, readJson } from "../../_helpers";
 
 const SECRET = "test-remove-secret";
 const TENANT_ID = "11111111-1111-4111-8111-111111111111";
