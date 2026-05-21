@@ -105,6 +105,9 @@ jobs:
             type=sha,prefix=staging-
             type=raw,value=staging-latest
 
+      - id: build_time
+        run: echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -119,6 +122,8 @@ jobs:
             NEXT_PUBLIC_HUB_URL=https://app.veridian.site
             NEXT_PUBLIC_SITE_URL=https://prospection.staging.veridian.site
             NEXT_PUBLIC_TRIAL_DAYS=7
+            COMMIT_SHA=${{ github.sha }}
+            BUILT_AT=${{ steps.build_time.outputs.built_at }}
 
   deploy:
     name: Deploy → dev-pub (Traefik staging-edge)

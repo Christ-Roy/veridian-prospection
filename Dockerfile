@@ -34,6 +34,15 @@ RUN npx prisma generate && npm run build
 FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+
+# Build provenance — injecté par CI via --build-arg.
+# Lu par GET /api/version pour confirmer le SHA du container actif
+# (fix race condition webhook Dokploy, cf. project_prospection_dokploy_webhook_fail).
+ARG COMMIT_SHA=unknown
+ARG BUILT_AT=unknown
+ENV COMMIT_SHA=$COMMIT_SHA
+ENV BUILT_AT=$BUILT_AT
+
 # Retire npm + corepack du runner (Next.js standalone tourne avec node server.js).
 # Eradique CVE node-pkg embarques dans /usr/local/lib/node_modules/npm/* (ex
 # CVE-2026-33671 sur picomatch 4.0.3 embedded dans npm). Cf sprint GitOps 2026-05-13.
