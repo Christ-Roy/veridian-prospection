@@ -1,17 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { handleIncomingCall } from "./incoming-handler";
+import { verifyTelnyxWebhook } from "@/lib/telnyx/verify";
 
 /**
  * POST /api/phone/telnyx-webhook
  * Receives Telnyx Call Control webhook events.
+ *
+ * Auth: signature Ed25519 Telnyx obligatoire (cf src/lib/telnyx/verify.ts).
+ * Sans `TELNYX_PUBLIC_KEY` côté serveur → 500 (fail-closed). Sans header ou
+ * signature invalide / timestamp drift > 5min → 401.
+ *
  * 2026-04-05: Refactored to SIREN-centric. The `siren` column on call_log/outreach/
  * followups/claude_activity replaces the legacy `domain` column.
+ * 2026-05-21: ajout vérif Ed25519 (T20 — fix pentest T16 HIGH).
  */
 
 export async function POST(req: NextRequest) {
+  const rawBody = await req.text();
+
+  const publicKey = process.env.TELNYX_PUBLIC_KEY;
+  if (!publicKey) {
+    console.error("[telnyx-webhook] TELNYX_PUBLIC_KEY missing — refusing all events (fail-closed)");
+    return NextResponse.json({ error: "server_misconfigured" }, { status: 500 });
+  }
+
+  const sig = req.headers.get("telnyx-signature-ed25519");
+  const ts = req.headers.get("telnyx-timestamp");
+  const v = verifyTelnyxWebhook(publicKey, ts, sig, rawBody);
+  if (!v.ok) {
+    console.warn(`[telnyx-webhook] signature rejected: ${v.reason}`);
+    return NextResponse.json({ error: "unauthorized", reason: v.reason }, { status: 401 });
+  }
+
   try {
-    const payload = await req.json();
+    const payload = rawBody ? JSON.parse(rawBody) : {};
 
     const event = payload?.data;
     if (!event) {
