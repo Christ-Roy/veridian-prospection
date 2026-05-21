@@ -25,6 +25,27 @@ if [ -x scripts/ci/check-route-safety.sh ]; then
   scripts/ci/check-route-safety.sh
 fi
 
+# 1ter. Secrets detection (Stripe, GitHub, AWS, private keys, etc.)
+# BLOCKING. Skip d'urgence : SKIP_SECRETS_CHECK=1
+# Allowlist par ligne : `# pragma: allowlist secret` ou `// pragma: ...`
+if [ -x scripts/ci/check-secrets.sh ]; then
+  scripts/ci/check-secrets.sh
+fi
+
+# 1quater. CVE check sur prod deps (mirror du CI)
+# BLOCKING si critical/high. Skip d'urgence : SKIP_DEPS_CVE=1
+# Pertinent uniquement si package.json/package-lock.json modifié.
+if [ -x scripts/ci/check-deps-cve.sh ]; then
+  scripts/ci/check-deps-cve.sh
+fi
+
+# 1quinquies. Hygiène code : gros fichiers + console.log (warning)
+# BLOCKING pour fichiers > 1MB. WARNING seulement sur console.log dans src/.
+# Skip d'urgence : SKIP_HYGIENE=1
+if [ -x scripts/ci/check-hygiene.sh ]; then
+  scripts/ci/check-hygiene.sh
+fi
+
 # 2. Rappel régénération compose si base/prod modifié
 # Note : check sémantique désactivé (formats varient entre versions compose CLI).
 # Reste à implémenter un check basé sur yq normalisé.
