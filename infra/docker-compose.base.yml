@@ -34,6 +34,20 @@ services:
       HUB_WEBHOOK_TOKEN: ${HUB_WEBHOOK_TOKEN:-}
       TRIAL_DAYS: "7"
       NEXT_PUBLIC_TRIAL_DAYS: "7"
+      # Crons OVH → /api/cron/* (notifs push pre-RDV). Sans : 401 = aucune notif.
+      CRON_SECRET: ${CRON_SECRET:-}
+      # Google OAuth (Auth.js provider — bouton UI à câbler ultérieurement).
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      # Supabase self-hosted — invitations admin generateLink (best-effort).
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      # Web Push VAPID (PWA notifications navigateur).
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:contact@veridian.site}
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/api/health || exit 1"]
       interval: 30s

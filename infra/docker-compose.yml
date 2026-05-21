@@ -9,19 +9,29 @@ services:
       APP_URL: https://prospection.app.veridian.site
       AUTH_SECRET: ${AUTH_SECRET}
       AUTH_TRUST_HOST: "true"
+      CRON_SECRET: ${CRON_SECRET:-}
       DATABASE_URL: ${DATABASE_URL}
       DEPLOY_ENV: prod
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
       HOSTNAME: 0.0.0.0
       HUB_API_URL: ${HUB_API_URL:-https://app.veridian.site}
       HUB_WEBHOOK_TOKEN: ${HUB_WEBHOOK_TOKEN:-}
       NEXT_PUBLIC_HUB_URL: https://app.veridian.site
       NEXT_PUBLIC_SITE_URL: https://prospection.app.veridian.site
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
       NEXT_PUBLIC_TRIAL_DAYS: "7"
       NEXTAUTH_URL: https://prospection.app.veridian.site
       NODE_ENV: production
       PORT: "3000"
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      SUPABASE_URL: ${SUPABASE_URL:-}
       TENANT_API_SECRET: ${TENANT_API_SECRET}
       TRIAL_DAYS: "7"
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:contact@veridian.site}
     healthcheck:
       test:
         - CMD-SHELL
