@@ -20,7 +20,16 @@ interface SectorSidebarProps {
   onSelect: (secteurs: string[], domaines: string[]) => void;
 }
 
-export function SectorSidebar({ selectedSecteurs, selectedDomaines, onSelect }: SectorSidebarProps) {
+/**
+ * Corps du filtre par secteur — liste arborescente secteur/domaine.
+ *
+ * Extrait du composant `SectorSidebar` pour être réutilisé tel quel
+ * dans le volet accordéon mobile (`MobileFilterDrawer`) sans dupliquer
+ * la logique de fetch / toggle / expand. La sidebar desktop n'est
+ * qu'un wrapper latéral autour de ce corps ; le volet mobile l'embarque
+ * dans un `AccordionContent`.
+ */
+export function SectorFilterBody({ selectedSecteurs, selectedDomaines, onSelect }: SectorSidebarProps) {
   const [tree, setTree] = useState<SectorTree | null>(null);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -72,14 +81,9 @@ export function SectorSidebar({ selectedSecteurs, selectedDomaines, onSelect }: 
 
   if (loading) {
     return (
-      <aside className="w-56 border-r bg-white flex-shrink-0 overflow-y-auto hidden md:block">
-        <div className="p-3">
-          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Secteurs</span>
-        </div>
-        <div className="px-2 space-y-1">
-          {Array.from({ length: 10 }).map((_, i) => <Skeleton key={i} className="h-7 w-full rounded" />)}
-        </div>
-      </aside>
+      <div className="space-y-1">
+        {Array.from({ length: 10 }).map((_, i) => <Skeleton key={i} className="h-7 w-full rounded" />)}
+      </div>
     );
   }
 
@@ -88,36 +92,35 @@ export function SectorSidebar({ selectedSecteurs, selectedDomaines, onSelect }: 
   const sortedSecteurs = Object.entries(tree).sort((a, b) => b[1].total - a[1].total);
 
   return (
-    <aside className="w-56 border-r bg-white flex-shrink-0 overflow-y-auto hidden md:block">
-      <div className="p-3 flex items-center justify-between">
-        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Secteurs</span>
-        {hasAnyFilter && (
+    <div>
+      {hasAnyFilter && (
+        <div className="flex justify-end pb-1">
           <button
-            className="text-[10px] text-indigo-600 hover:underline"
+            className="text-[11px] text-indigo-600 hover:underline min-h-[32px] px-1"
             onClick={() => onSelect([], [])}
           >
-            Reset
+            Reset secteurs
           </button>
-        )}
-      </div>
-      <nav className="px-1 pb-3 space-y-0.5 text-xs">
+        </div>
+      )}
+      <nav className="space-y-0.5 text-xs">
         {sortedSecteurs.map(([secteur, data]) => {
           const isExpanded = expanded.has(secteur);
           const isSecteurChecked = selectedSecteurs.includes(secteur);
           const domainesList = Object.entries(data.domaines).sort((a, b) => b[1] - a[1]);
           return (
             <div key={secteur}>
-              <div className="flex items-center gap-1 px-1 py-1 rounded hover:bg-muted/50 cursor-pointer">
+              <div className="flex items-center gap-1.5 px-1 py-1 rounded hover:bg-muted/50 cursor-pointer">
                 <Checkbox
                   checked={isSecteurChecked}
                   onCheckedChange={() => toggleSecteur(secteur)}
-                  className="h-3 w-3"
+                  className="h-4 w-4 shrink-0"
                 />
                 <button
-                  className="flex-1 flex items-center gap-1 text-left truncate"
+                  className="flex-1 flex items-center gap-1 text-left truncate min-h-[32px]"
                   onClick={() => toggleExpand(secteur)}
                 >
-                  {isExpanded ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />}
+                  {isExpanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
                   <span className="truncate font-medium">{secteur}</span>
                   <span className="ml-auto text-[10px] text-muted-foreground shrink-0">{data.total.toLocaleString()}</span>
                 </button>
@@ -127,12 +130,12 @@ export function SectorSidebar({ selectedSecteurs, selectedDomaines, onSelect }: 
                   {domainesList.map(([domaine, count]) => (
                     <label
                       key={domaine}
-                      className="flex items-center gap-1.5 px-1 py-0.5 rounded hover:bg-muted/30 cursor-pointer"
+                      className="flex items-center gap-1.5 px-1 py-0.5 rounded hover:bg-muted/30 cursor-pointer min-h-[32px]"
                     >
                       <Checkbox
                         checked={selectedDomaines.includes(domaine)}
                         onCheckedChange={() => toggleDomaine(secteur, domaine)}
-                        className="h-3 w-3"
+                        className="h-4 w-4 shrink-0"
                       />
                       <span className="truncate">{domaine}</span>
                       <span className="ml-auto text-[10px] text-muted-foreground shrink-0">{count.toLocaleString()}</span>
@@ -144,6 +147,28 @@ export function SectorSidebar({ selectedSecteurs, selectedDomaines, onSelect }: 
           );
         })}
       </nav>
+    </div>
+  );
+}
+
+/**
+ * Sidebar secteurs — desktop uniquement (`hidden md:block`).
+ * Sur mobile, le filtre par secteur passe par le volet accordéon
+ * `MobileFilterDrawer` qui réutilise `SectorFilterBody`.
+ */
+export function SectorSidebar({ selectedSecteurs, selectedDomaines, onSelect }: SectorSidebarProps) {
+  return (
+    <aside className="w-56 border-r bg-white dark:bg-gray-900 dark:border-gray-800 flex-shrink-0 overflow-y-auto hidden md:block">
+      <div className="p-3">
+        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Secteurs</span>
+      </div>
+      <div className="px-1 pb-3">
+        <SectorFilterBody
+          selectedSecteurs={selectedSecteurs}
+          selectedDomaines={selectedDomaines}
+          onSelect={onSelect}
+        />
+      </div>
     </aside>
   );
 }

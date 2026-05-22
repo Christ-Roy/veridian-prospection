@@ -18,6 +18,7 @@ import {
   type SansSiteFilterState,
 } from "./sans-site-sidebar";
 import { FilterBar } from "./filter-bar";
+import { MobileFilterDrawer } from "./mobile-filter-drawer";
 import { GeoFilterSidebar } from "./geo-filter-sidebar";
 import { SizeFilterSidebar, DEFAULT_SIZE_FILTER, type SizeFilterState } from "./size-filter-sidebar";
 import { QualityFilterSidebar, DEFAULT_QUALITY_FILTER, type QualityFilterState } from "./quality-filter-sidebar";
@@ -352,6 +353,27 @@ export function ProspectPage() {
     else if (f === "qualite") setQualityOpen(true);
   }
 
+  // Toggle "Mobile uniquement" — partagé FilterBar desktop / drawer mobile.
+  function toggleMobileOnly() {
+    setSizeFilter(prev => ({ ...prev, mobileOnly: !prev.mobileOnly }));
+    setPage(1);
+  }
+
+  // Activer le mode historique : on sauvegarde les filtres qualité courants
+  // (l'historique les remet à zéro) pour pouvoir les restaurer à la sortie.
+  function enterHistorique() {
+    savedFiltersRef.current = { ...qualityFilter };
+    setQualityFilter({ ...DEFAULT_QUALITY_FILTER });
+    setPresets(["historique"]);
+    setPage(1);
+  }
+
+  function exitHistorique() {
+    if (savedFiltersRef.current) setQualityFilter(savedFiltersRef.current);
+    setPresets(["tous"]);
+    setPage(1);
+  }
+
   const allSelected = data && data.data.length > 0 && data.data.every(l => selected.has(l.domain as string));
 
   function SortIcon({ col }: { col: string }) {
@@ -432,25 +454,37 @@ export function ProspectPage() {
             </div>
           )}
         </div>
+        {/* Desktop : barre de filtres en boutons. */}
         <FilterBar
           onOpenFilter={handleOpenFilter}
           activeFilters={activeFilterCount}
           onSearch={(term) => { setSearchTerm(term); setPage(1); }}
           searchValue={searchTerm}
           mobileOnly={sizeFilter.mobileOnly}
-          onToggleMobile={() => { setSizeFilter(prev => ({ ...prev, mobileOnly: !prev.mobileOnly })); setPage(1); }}
-          onHistorique={() => {
-            savedFiltersRef.current = { ...qualityFilter };
-            setQualityFilter({ ...DEFAULT_QUALITY_FILTER });
-            setPresets(["historique"]);
-            setPage(1);
-          }}
-          onClearHistorique={() => {
-            if (savedFiltersRef.current) setQualityFilter(savedFiltersRef.current);
-            setPresets(["tous"]);
-            setPage(1);
-          }}
+          onToggleMobile={toggleMobileOnly}
+          onHistorique={enterHistorique}
+          onClearHistorique={exitHistorique}
           isHistoriqueActive={presets.includes("historique")}
+        />
+        {/* Mobile : volet accordéon avec tous les filtres. */}
+        <MobileFilterDrawer
+          searchValue={searchTerm}
+          onSearch={(term) => { setSearchTerm(term); setPage(1); }}
+          siteMode={siteMode}
+          selectedSecteurs={selectedSecteurs}
+          selectedDomaines={selectedDomaines}
+          onSelectSecteurs={(s, d) => { setSelectedSecteurs(s); setSelectedDomaines(d); setPage(1); }}
+          sansSiteFilter={sansSiteFilter}
+          onChangeSansSite={setSansSiteFilter}
+          onOpenGeo={() => setGeoOpen(true)}
+          onOpenSize={() => setSizeOpen(true)}
+          onOpenQuality={() => setQualityOpen(true)}
+          activeFilters={activeFilterCount}
+          mobileOnly={sizeFilter.mobileOnly}
+          onToggleMobile={toggleMobileOnly}
+          isHistoriqueActive={presets.includes("historique")}
+          onHistorique={enterHistorique}
+          onClearHistorique={exitHistorique}
         />
       </div>
 

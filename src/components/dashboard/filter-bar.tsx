@@ -37,10 +37,11 @@ export function FilterBar({ onOpenFilter, activeFilters, onSearch, searchValue =
     setOpen(false);
   }
 
-  // flex-wrap : sur mobile les boutons s'enroulent sur plusieurs lignes
-  // au lieu de déborder dans un scroll horizontal mal affiché.
+  // Desktop uniquement (`hidden md:flex`). Sur mobile ces filtres sont
+  // remontés dans le volet accordéon `MobileFilterDrawer` — la FilterBar
+  // débordait en scroll horizontal sur 375px.
   return (
-    <div className="flex items-center gap-2 flex-wrap">
+    <div className="hidden md:flex items-center gap-2 flex-wrap">
       {/* Search */}
       {open ? (
         <div className="flex items-center gap-1">

@@ -43,7 +43,13 @@ const EMPTY_STATE: SansSiteFilterState = {
   qualiopiSpecialite: null,
 };
 
-export function SansSiteSidebar({ value, onChange }: SansSiteSidebarProps) {
+/**
+ * Corps du filtre "sans site" — réutilisé tel quel par la sidebar
+ * desktop (`SansSiteSidebar`) et par le volet accordéon mobile
+ * (`MobileFilterDrawer`). Pas de wrapper latéral ici : ce composant
+ * gère uniquement le fetch + la liste de catégories.
+ */
+export function SansSiteFilterBody({ value, onChange }: SansSiteSidebarProps) {
   const [data, setData] = useState<SansSiteData | null>(null);
   const [loading, setLoading] = useState(true);
   const [qualiopiExpanded, setQualiopiExpanded] = useState(false);
@@ -77,18 +83,11 @@ export function SansSiteSidebar({ value, onChange }: SansSiteSidebarProps) {
 
   if (loading) {
     return (
-      <aside className="w-56 border-r bg-white flex-shrink-0 overflow-y-auto hidden md:block">
-        <div className="p-3">
-          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-            Sans site
-          </span>
-        </div>
-        <div className="px-2 space-y-1">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-7 w-full rounded" />
-          ))}
-        </div>
-      </aside>
+      <div className="space-y-1">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Skeleton key={i} className="h-7 w-full rounded" />
+        ))}
+      </div>
     );
   }
 
@@ -120,22 +119,22 @@ export function SansSiteSidebar({ value, onChange }: SansSiteSidebarProps) {
   }
 
   return (
-    <aside className="w-56 border-r bg-white flex-shrink-0 overflow-y-auto hidden md:block">
-      <div className="p-3 flex items-center justify-between">
-        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-          Sans site · {fmt(data.total)}
+    <div>
+      <div className="flex items-center justify-between pb-1">
+        <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+          {fmt(data.total)} sans site
         </span>
         {hasAnyFilter && (
           <button
-            className="text-[10px] text-muted-foreground underline hover:text-foreground"
+            className="text-[11px] text-indigo-600 hover:underline min-h-[32px] px-1"
             onClick={() => onChange(EMPTY_STATE)}
           >
-            reset
+            Reset
           </button>
         )}
       </div>
 
-      <ul className="px-2 pb-4 space-y-0.5 text-sm">
+      <ul className="space-y-0.5 text-sm">
         <SansSiteItem
           label="RGE"
           count={data.categories.rge}
@@ -146,14 +145,14 @@ export function SansSiteSidebar({ value, onChange }: SansSiteSidebarProps) {
         <li>
           <div className="flex items-center gap-1">
             <button
-              className="p-0.5 text-muted-foreground hover:text-foreground"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
               onClick={() => setQualiopiExpanded((v) => !v)}
               aria-label="toggle Qualiopi subtree"
             >
               {qualiopiExpanded ? (
-                <ChevronDown className="h-3 w-3" />
+                <ChevronDown className="h-3.5 w-3.5" />
               ) : (
-                <ChevronRight className="h-3 w-3" />
+                <ChevronRight className="h-3.5 w-3.5" />
               )}
             </button>
             <SansSiteItemBody
@@ -168,7 +167,7 @@ export function SansSiteSidebar({ value, onChange }: SansSiteSidebarProps) {
               {data.qualiopiSpecialites.map((s) => (
                 <li key={s.specialite}>
                   <button
-                    className={`w-full text-left text-xs py-0.5 px-1 rounded hover:bg-muted flex justify-between items-center ${
+                    className={`w-full min-h-[32px] text-left text-xs py-1.5 px-1 rounded hover:bg-muted flex justify-between items-center ${
                       value.qualiopiSpecialite === s.specialite
                         ? "bg-muted font-medium"
                         : ""
@@ -212,6 +211,26 @@ export function SansSiteSidebar({ value, onChange }: SansSiteSidebarProps) {
           onToggle={() => toggle("nonIdentifieAvecTel")}
         />
       </ul>
+    </div>
+  );
+}
+
+/**
+ * Sidebar "sans site" — desktop uniquement (`hidden md:block`).
+ * Sur mobile, ces filtres passent par le volet accordéon
+ * `MobileFilterDrawer` qui réutilise `SansSiteFilterBody`.
+ */
+export function SansSiteSidebar({ value, onChange }: SansSiteSidebarProps) {
+  return (
+    <aside className="w-56 border-r bg-white dark:bg-gray-900 dark:border-gray-800 flex-shrink-0 overflow-y-auto hidden md:block">
+      <div className="p-3">
+        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+          Sans site
+        </span>
+      </div>
+      <div className="px-2 pb-4">
+        <SansSiteFilterBody value={value} onChange={onChange} />
+      </div>
     </aside>
   );
 }
@@ -252,8 +271,8 @@ function SansSiteItemBody({
 }) {
   const fmt = (n: number) => new Intl.NumberFormat("fr-FR").format(n);
   return (
-    <label className="flex items-center gap-2 py-1 px-1 rounded hover:bg-muted cursor-pointer flex-1">
-      <Checkbox checked={checked} onCheckedChange={onToggle} />
+    <label className="flex min-h-[36px] items-center gap-2.5 py-1.5 px-1 rounded hover:bg-muted cursor-pointer flex-1">
+      <Checkbox checked={checked} onCheckedChange={onToggle} className="h-4 w-4 shrink-0" />
       <span className="flex-1 truncate">{label}</span>
       <span className="text-muted-foreground text-xs tabular-nums">{fmt(count)}</span>
     </label>
