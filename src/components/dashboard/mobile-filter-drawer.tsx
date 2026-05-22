@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Sheet,
+  SheetClose,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
@@ -149,13 +151,26 @@ export function MobileFilterDrawer({
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent
           side="left"
-          className="w-[88vw] !max-w-[340px] p-0 flex flex-col gap-0"
+          showCloseButton={false}
+          className="w-full sm:w-[400px] sm:max-w-[400px] p-0 flex flex-col gap-0"
         >
-          <SheetHeader className="border-b px-4 py-3">
+          {/* Header custom : titre + bouton close à 44×44 (le close shadcn
+              par défaut fait 16×16, sous WCAG 2.5.5 = 24×24 et sous la
+              cible tactile pratique 44×44). */}
+          <SheetHeader className="border-b px-4 py-3 flex-row items-center justify-between gap-2 space-y-0">
             <SheetTitle className="flex items-center gap-2 text-base">
               <SlidersHorizontal className="h-4 w-4" />
               Filtres
             </SheetTitle>
+            <SheetDescription className="sr-only">
+              Filtres de recherche des prospects — secteur, géographie, taille, qualité, recherche libre.
+            </SheetDescription>
+            <SheetClose
+              aria-label="Fermer les filtres"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <X className="h-5 w-5" />
+            </SheetClose>
           </SheetHeader>
 
           <div className="flex-1 overflow-y-auto">
@@ -328,7 +343,7 @@ function SheetLauncherItem({
       <button
         type="button"
         onClick={onClick}
-        className="flex min-h-[52px] w-full items-center justify-between gap-4 py-3.5 text-left text-sm font-medium transition-colors hover:bg-muted/40"
+        className="flex min-h-[52px] w-full items-center justify-between gap-4 py-3.5 text-left text-sm font-medium transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:rounded-md"
       >
         <span className="flex items-center gap-2">
           {icon}
@@ -362,6 +377,7 @@ function ToggleRow({
       aria-pressed={active}
       className={cn(
         "flex min-h-[44px] w-full items-center gap-2.5 rounded-md border px-3 text-sm transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         active
           ? "border-indigo-600 bg-indigo-50 font-medium text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300"
           : "border-border text-muted-foreground hover:bg-muted/50",
