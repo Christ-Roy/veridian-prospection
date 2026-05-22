@@ -47,3 +47,35 @@ describe("pipeline-board.tsx — anti-régression Claude+email cleanup 2026-05-2
     expect(source).toMatch(/from\s+"@\/components\/ui\/badge"/);
   });
 });
+
+describe("pipeline-board.tsx — responsive mobile (sprint UI 2026-05-22)", () => {
+  let source = "";
+
+  test("setup : lecture du source", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    source = await fs.readFile(
+      path.resolve(process.cwd(), "src/components/dashboard/pipeline-board.tsx"),
+      "utf-8",
+    );
+    expect(source.length).toBeGreaterThan(0);
+  });
+
+  // Fix #2 — sur mobile, le board Kanban horizontal est remplacé par un
+  // accordéon vertical (8 stades empilés). Régression si le rendu mobile
+  // disparaît.
+  test("rend une vue accordéon mobile via le composant Accordion", () => {
+    expect(source).toMatch(/from\s+"@\/components\/ui\/accordion"/);
+  });
+
+  test("dédouble le rendu board horizontal / accordéon par breakpoint md", () => {
+    // Le board horizontal est masqué sous md, l'accordéon masqué à partir de md.
+    expect(source).toMatch(/md:hidden|hidden md:/);
+  });
+
+  // Fix #2 — toutes les tailles de police arbitraires < 12px ont été
+  // remplacées par text-xs (12px, minimum lisible du design system).
+  test("aucune taille de police arbitraire sous 12px", () => {
+    expect(source).not.toMatch(/text-\[(9|10|11)px\]/);
+  });
+});

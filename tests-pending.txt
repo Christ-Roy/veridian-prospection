@@ -5,7 +5,6 @@ src/components/dashboard/admin-members.tsx
 src/components/dashboard/appointment-calendar.tsx
 src/components/dashboard/calendar-dialog.tsx
 src/components/dashboard/domain-sidebar.tsx
-src/components/dashboard/filter-bar.tsx
 src/components/dashboard/france-map.tsx
 src/components/dashboard/geo-filter-sidebar.tsx
 src/components/dashboard/guide-commercial.tsx
@@ -18,7 +17,6 @@ src/components/dashboard/lead-sheet/stage-transition.tsx
 src/components/dashboard/notification-preferences-form.tsx
 src/components/dashboard/outreach-form.tsx
 src/components/dashboard/pipeline-view.tsx
-src/components/dashboard/prospect-page.tsx
 src/components/dashboard/quality-filter-sidebar.tsx
 src/components/dashboard/quality-tabs.tsx
 src/components/dashboard/sans-site-sidebar.tsx
@@ -37,7 +35,6 @@ src/components/dashboard/stats-cards.tsx
 src/components/dashboard/status-badge.tsx
 src/components/dashboard/upcoming-appointments.tsx
 src/components/keyboard-shortcuts-help.tsx
-src/components/layout/app-nav.tsx
 src/components/layout/notification-bell.tsx
 src/components/layout/onboarding.tsx
 src/components/layout/paywall.tsx
