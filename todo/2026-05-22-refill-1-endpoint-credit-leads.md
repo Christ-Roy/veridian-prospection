@@ -10,20 +10,28 @@
 >   - `todo/2026-05-21-business-plan-pricing-features.md` §2.3, §2.6
 > **Lié** : tickets refill 2/3 (welcome leads) et 3/3 (Hub Stripe Checkout)
 
-## ⚠️ DÉCISION REQUISE AVANT DE CODER — quota visible ou invisible ?
+## ✅ DÉCISION TRANCHÉE (Robert, 2026-05-22) — solde visible, ton positif
 
-Le refill leads introduit un **quota de leads** par tenant. La doctrine
-pricing Veridian dit « jamais de compteur visible, pas de mur béton »
-(`PRICING-VERIDIAN.md`). MAIS le refill leads EST un produit metered —
-le client doit pouvoir savoir combien il lui reste pour avoir envie de
-recharger.
+Le solde de leads achetés **est visible** — mais formulé comme un acquis,
+jamais comme une menace. La doctrine « pas de compteur visible » vise les
+**limites de plan** (Free/Pro/Business), qui punissent le client de ne
+pas avoir payé plus. Le solde de leads, lui, est ce que le client **a
+déjà payé** : le lui cacher n'est pas « généreux », c'est lui cacher ce
+qu'il possède. Les deux ne sont pas en conflit.
 
-**Robert doit trancher** (le ticket UI du refill en dépend) :
-- **Option A — invisible tant qu'il en reste** : quota en base, aucun
-  compteur affiché tant que > 0. Mur seulement à épuisement. Cohérent
-  doctrine, mais le client ne sait pas qu'il faut recharger.
-- **Option B — compteur visible assumé** : « X leads restants » affiché.
-  Le refill est metered, le compteur est assumé ici (≠ limites de plan).
+Règles d'implémentation UI (pour le ticket UI du refill) :
+- **Indicateur discret** du solde (ex. « 4 200 leads » dans un coin),
+  ton neutre. PAS de barre de progression qui se vide, PAS de rouge
+  anxiogène, PAS de « plus que X ! ».
+- **Pas de mur brutal à 0.** Stock bas → invitation douce à recharger.
+  Stock à 0 → on ne grise pas l'app, on propose de recharger. Jamais un
+  blocage sec.
+- Le bouton « acheter des leads » est une **action positive offerte**,
+  pas une rançon.
+
+→ Le backend de ce ticket (endpoint, quota, décompte) est neutre
+vis-à-vis de l'UX et se code tel quel. Cette décision cadre uniquement
+le futur ticket UI du refill.
 
 Tant que ce n'est pas tranché : coder le backend (neutre vis-à-vis de
 l'UX), laisser l'affichage au ticket UI dédié.
