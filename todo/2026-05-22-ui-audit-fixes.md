@@ -1,5 +1,13 @@
 # [PROSPECTION] Fixes UI — ce qui compte (audit T18)
 
+> **MISE À JOUR 2026-05-22** — 2 des 3 priorités LIVRÉES en prod :
+> - ✅ #1 Mobile cassé /prospects + /pipeline — fait (vue carte, accordéon Kanban)
+> - ⏳ #2 /pipeline charge en 17s — **RESTE À FAIRE** (lazy-load FullCalendar
+>   déjà câblé via pipeline-view.tsx, mesurer l'effet, traiter le reste)
+> - ✅ #3 /api/status leak — fait (compteurs → /api/admin/stats authed)
+> Ce ticket reste ouvert UNIQUEMENT pour #2.
+
+
 > **Type** : Dette UI/perf
 > **Sévérité** : 🟡 P1 (le 80%) → 🔵 backlog (le 20%)
 > **Owner** : agent Prospection

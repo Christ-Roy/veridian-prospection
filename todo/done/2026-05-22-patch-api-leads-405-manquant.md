@@ -58,3 +58,5 @@ prospection est cassé**. P0 à confirmer/corriger d'urgence.
 L'échec silencieux (pas de toast) est un défaut UI séparé — la team
 ui-polish ajoute le feedback succès/erreur sur les boutons concernés.
 Mais même avec le toast, l'action restera KO tant que ce PATCH n'existe pas.
+
+## ✅ Archivé 2026-05-22 — livré et vérifié en prod

@@ -197,3 +197,5 @@ attendent la promo) :
 
 **Reste à faire** : promo prod du bundle (go Robert requis pour les tier 💀
 DROP COLUMN) + réconciliation `_prisma_migrations` prod (désynchronisé à 0010).
+
+## ✅ Archivé 2026-05-22 — livré et vérifié en prod

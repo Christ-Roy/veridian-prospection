@@ -156,3 +156,5 @@ auditée : non-exploitable (`summarize-call` ne fetch pas `recording_url`).
 ⏳ **PAS en prod** — la vuln HIGH reste exploitable en prod tant que le
 bundle n'est pas promu. Le workflow CI prod ne lit pas encore le secret
 `PROD_TELNYX_PUBLIC_KEY` (à câbler lors de la promo). Archiver après promo.
+
+## ✅ Archivé 2026-05-22 — livré et vérifié en prod

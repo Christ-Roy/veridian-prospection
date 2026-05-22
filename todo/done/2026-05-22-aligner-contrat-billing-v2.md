@@ -113,3 +113,5 @@ Sous `## Réponse — YYYY-MM-DD`, lister les écarts + corrections. Signaler à
 Robert tout invariant impossible/coûteux côté Prospection. Le mapping
 `free`↔`freemium` et le refill leads sont déjà tranchés par le contrat v2
 (§3.2bis, §8.4) — ne pas les ré-arbitrer.
+
+## ✅ Archivé 2026-05-22 — livré et vérifié en prod
