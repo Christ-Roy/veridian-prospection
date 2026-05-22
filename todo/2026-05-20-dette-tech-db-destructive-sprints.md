@@ -89,3 +89,31 @@ prod n'applique pas `prisma migrate deploy` automatiquement, cf
 Aucun de ces sprints n'est bloquant pour la prod. C'est du polish dette
 qui peut attendre une fenêtre maintenance dédiée. Robert peut valider
 1 sprint à la fois, pas besoin de tout faire d'un coup.
+
+---
+
+## État — 2026-05-22 (session giga-sprint)
+
+Avancement des sprints :
+
+- ✅ **Sprint A** (DROP TABLE `outreach_emails`) — livré STAGING, commit
+  `9da2b0c`, migration 0012 appliquée DB staging. PAS en prod.
+- ✅ **Sprint B** (DROP COLUMN `tenants.subscription_id`) — livré STAGING,
+  commit `c6df1d7`, migration 0013 appliquée DB staging. PAS en prod.
+- ✅ **Sprint C** (DROP COLUMN `tenants.prospection_plan`) — livré STAGING,
+  commits `4bc9f3a`+`842c8a9`, migration 0014 appliquée DB staging.
+  Cleanup readers (`getTenantProspectLimit`, `health`) fait avant le drop.
+  PAS en prod.
+- ⏳ **Sprint D** (DROP `twenty_*` + `notifuse_*`) — PAS commencé.
+- ⏳ **Sprint E** (tables orphelines) — audit fait, cf ticket dédié
+  `2026-05-21-sprint-e-audit-tables-orphelines.md` : 12 tables (vs 39
+  annoncées), 5 vides à DROP, 5 staging massives à arbitrer, 2 actives
+  (`results`, `segment_catalog`) à déclarer dans Prisma.
+
+Pattern `BANNED_FIELDS` invariant créé (T11) dans
+`__tests__/api/db-schema-invariants.test.ts` — anti-régression réutilisable.
+
+**Bloquant promo prod** : `_prisma_migrations` prod est désynchronisé
+(s'arrête à 0010 alors que 0010 EST appliquée). Avant de promo les
+migrations 0011-0014, il faut réconcilier l'état migrations prod
+(baseline propre). Sinon `prisma migrate deploy` prod va échouer.

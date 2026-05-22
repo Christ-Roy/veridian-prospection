@@ -172,3 +172,28 @@ Indépendant de Prospection.
 test bout-en-bout est passé en prod.
 
 Une fois validé, archiver dans `done/` avec un bilan final court.
+
+---
+
+## État — 2026-05-22 (session giga-sprint)
+
+**Sprint v1.5 livré sur STAGING, PAS encore en prod.** Bundle de 27 commits
+staging non promus (`origin/main..origin/staging`).
+
+- ✅ T1 hub_user_id + helper — **EN PROD** (promu tôt)
+- ✅ T2 attach-member — **EN PROD** (promu tôt)
+- ✅ T6 webhook ENV — **EN PROD**
+- 🟡 T3 multi-membre (5 endpoints + webhook) — staging vert, smoke 11/11
+- 🟡 T7 tenant email-or-UUID — staging vert (cf ticket dédié)
+- 🟡 T13 patch routes tenants/[id]/* — staging vert
+- ⏳ T4 smoke prod + coupure legacy — bloqué tant que T3/T7/T13 pas en prod
+
+**Bombes prod détectées par audit T17** (toutes corrigées par le bundle staging,
+attendent la promo) :
+1. `/health` avec email → 500 (fix = T7)
+2. 0/21 users ont hub_user_id (backfill cron à faire post-promo)
+3. `frozen_at` absent DB prod (fix = migration 0011 à apply)
+4. `push_subscriptions`/`audit_log` tables absentes prod (`/api/push/subscribe` crashe P2021)
+
+**Reste à faire** : promo prod du bundle (go Robert requis pour les tier 💀
+DROP COLUMN) + réconciliation `_prisma_migrations` prod (désynchronisé à 0010).

@@ -142,3 +142,17 @@ T16 a déjà DELETE les 3 call_log forgés en DB staging. Pas de leftover.
 - Script reproductible : `/tmp/pentest-staging.sh`
 - Doc Telnyx signature : https://developers.telnyx.com/docs/v2/api/webhook-events#webhook-signatures
 - Tier sécu : 🔴 HIGH — bloque promo prod
+
+---
+
+## État — 2026-05-22
+
+✅ **Livré sur STAGING** — commits `8829eb1` (verify Ed25519 + drift 5min,
+`src/lib/telnyx/verify.ts` via crypto natif Node 22) + `1379497` (28 tests)
++ `8263193` (ENV `TELNYX_PUBLIC_KEY`). PoC pentest re-testé → 401. SSRF H2
+auditée : non-exploitable (`summarize-call` ne fetch pas `recording_url`).
+`TELNYX_PUBLIC_KEY` posée en ENV Dokploy staging + prod.
+
+⏳ **PAS en prod** — la vuln HIGH reste exploitable en prod tant que le
+bundle n'est pas promu. Le workflow CI prod ne lit pas encore le secret
+`PROD_TELNYX_PUBLIC_KEY` (à câbler lors de la promo). Archiver après promo.

@@ -137,3 +137,14 @@ récupérer le workspace UUID via le flow d'invitation (Hub a la table
 ## Effort
 
 - 0.5j (helper + câblage 5 routes + tests + smoke)
+
+---
+
+## État — 2026-05-22
+
+✅ **Livré sur STAGING** — commits `a334a0d` (T7, 5 routes T3) + `30961af`
+(T13, 5 routes tenants/[id]/* additionnelles). Helper `src/lib/hub/tenant-lookup.ts`.
+Smoke staging vert (UUID + email). Tests 87/87.
+
+⏳ **PAS en prod.** Bug `/health` avec email → 500 toujours actif en prod
+tant que ce bundle n'est pas promu. Archiver dans `done/` après promo prod.

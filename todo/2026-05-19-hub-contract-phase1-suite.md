@@ -143,3 +143,16 @@ Tests sabotage-test ajoutés (auth.test.ts + by-email.test.ts) : casser le warn 
 **Nouvelle fenêtre d'observation** : 7j à partir du déploiement prod du commit `e823297` (≈ 2026-05-27). Si toujours 0 occurrence dans Loki, flipper `ACCEPT_LEGACY_BEARER=0` + `ACCEPT_LEGACY_HMAC=0` en ENV Dokploy compose `0mJI-sSt6jcOMr_2QJ1iI` via API `compose.update` puis `compose.deploy`.
 
 À ce moment-là, archiver ce ticket dans `todo/done/` + ping agent Hub pour la matrice §10.
+
+## État — 2026-05-22
+
+Ce ticket (T4 du sprint v1.5) = smoke prod cross-app + coupure legacy.
+**Bloqué** : dépend de T3 + T7 + T13 en prod. Or le bundle staging de
+27 commits n'est pas encore promu.
+
+Séquence à dérouler quand Robert ouvre la fenêtre promo :
+1. Promo bundle staging → main (go explicite requis pour tier 💀 DROPs)
+2. Réconcilier `_prisma_migrations` prod + apply 0011-0014
+3. Smoke prod cross-app complet (refaire le smoke T14 contre prod)
+4. Observer 7j Loki sans `legacy_*` → flip `ACCEPT_LEGACY_*=0`
+5. Archiver ce ticket + ping Hub matrice §10

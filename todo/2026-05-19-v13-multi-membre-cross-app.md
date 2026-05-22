@@ -232,3 +232,17 @@ de workspace interne à mapper.
 
 Sous `## Réponse — YYYY-MM-DD` en fin de ce fichier, puis `done/` une fois
 mergé.
+
+## Réponse — 2026-05-22
+
+✅ **Livré sur STAGING** — commit `2877073` : 5 endpoints tenant-level
+(sync-member, remove-member, restore-member, freeze-members, unfreeze-members)
++ webhook `tenant.member_role_changed` + migration 0011 `frozen_at`.
+Smoke staging 11/11 vert (T14). Tests unit complets.
+
+⚠️ **Drift contrat détecté** : le webhook émet `occurred_at` (conforme
+CONTRAT-HUB.md) mais le Hub attend `emitted_at`. Ticket déposé côté Hub :
+`veridian-hub/todo/2026-05-21-webhook-payload-field-name-occurred-at.md`.
+
+⏳ **PAS en prod.** Migration 0011 à appliquer DB prod lors de la promo.
+Archiver dans `done/` après promo.
