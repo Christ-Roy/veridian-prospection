@@ -15,6 +15,11 @@ import {
   getRefillUnitPriceCents,
   hasFeature,
   isGiftedPlan,
+  CANONICAL_PLANS_V2,
+  PLAN_SOURCES_V2,
+  isCanonicalPlan,
+  isPlanSourceV2,
+  mapCanonicalPlanToLocal,
   type PlanId,
 } from "@/lib/billing/plans";
 
@@ -174,5 +179,81 @@ describe("Cohérence ratio prix bundles cross-app (futur Hub)", () => {
 
   test("Welcome leads Pro (2000) = 20× Welcome Freemium (100) [garde-fou ratio]", () => {
     expect(PLANS.pro.welcomeLeads).toBe(PLANS.freemium.welcomeLeads * 20);
+  });
+});
+
+describe("Contrat billing v2 — enums canoniques cross-app (CONTRAT-BILLING §3)", () => {
+  test("CANONICAL_PLANS_V2 = les 4 valeurs figées du fil", () => {
+    expect([...CANONICAL_PLANS_V2]).toEqual([
+      "free",
+      "pro",
+      "business",
+      "enterprise",
+    ]);
+  });
+
+  test("PLAN_SOURCES_V2 = les 4 plan_source figés", () => {
+    expect([...PLAN_SOURCES_V2]).toEqual([
+      "stripe",
+      "stripe_trial",
+      "grant_manual",
+      "downgrade_auto",
+    ]);
+  });
+
+  test("isCanonicalPlan : true sur l'enum, false sinon (dont le nom local)", () => {
+    expect(isCanonicalPlan("free")).toBe(true);
+    expect(isCanonicalPlan("enterprise")).toBe(true);
+    // `freemium` est le nom LOCAL — il ne doit jamais passer pour canonique.
+    expect(isCanonicalPlan("freemium")).toBe(false);
+    expect(isCanonicalPlan("")).toBe(false);
+    expect(isCanonicalPlan(null)).toBe(false);
+    expect(isCanonicalPlan(42)).toBe(false);
+  });
+
+  test("isPlanSourceV2 : distingue stripe de stripe_trial, rejette le reste", () => {
+    expect(isPlanSourceV2("stripe")).toBe(true);
+    expect(isPlanSourceV2("stripe_trial")).toBe(true);
+    expect(isPlanSourceV2("grant_manual")).toBe(true);
+    // valeurs v1 legacy — ne doivent plus passer en v2.
+    expect(isPlanSourceV2("manual")).toBe(false);
+    expect(isPlanSourceV2("internal")).toBe(false);
+    expect(isPlanSourceV2(undefined)).toBe(false);
+  });
+});
+
+describe("mapCanonicalPlanToLocal — mapping contrat → nom local (§3.2bis)", () => {
+  test("free → freemium (le tier gratuit s'appelle freemium côté Prospection)", () => {
+    expect(mapCanonicalPlanToLocal("free")).toEqual({
+      localPlan: "freemium",
+      enterpriseDowngraded: false,
+    });
+  });
+
+  test("pro et business : mapping identité, pas de downgrade", () => {
+    expect(mapCanonicalPlanToLocal("pro")).toEqual({
+      localPlan: "pro",
+      enterpriseDowngraded: false,
+    });
+    expect(mapCanonicalPlanToLocal("business")).toEqual({
+      localPlan: "business",
+      enterpriseDowngraded: false,
+    });
+  });
+
+  test("enterprise → business + enterpriseDowngraded=true (Prosp n'a pas ce tier)", () => {
+    // L'enum est valide (pas un 400), mais Prospection plafonne à business
+    // et le flag signale au caller qu'un warn est attendu (§3.2bis).
+    expect(mapCanonicalPlanToLocal("enterprise")).toEqual({
+      localPlan: "business",
+      enterpriseDowngraded: true,
+    });
+  });
+
+  test("tout localPlan retourné est un PlanId valide de PLANS", () => {
+    for (const p of CANONICAL_PLANS_V2) {
+      const { localPlan } = mapCanonicalPlanToLocal(p);
+      expect(PLANS[localPlan]).toBeDefined();
+    }
   });
 });
