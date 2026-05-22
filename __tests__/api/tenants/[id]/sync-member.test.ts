@@ -15,7 +15,7 @@
  *  - visibility_scope=own par défaut sur nouveau membre
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
-import { createHmac, randomUUID } from "crypto";
+import { createHmac } from "crypto";
 
 vi.hoisted(() => {
   process.env.HUB_API_SECRET = "test-sync-secret";

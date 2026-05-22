@@ -12,9 +12,6 @@
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
 
-const queryMock = vi.fn().mockResolvedValue([{ count: BigInt(0) }]);
-const dataQueryMock = vi.fn().mockResolvedValue([]);
-
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     $queryRawUnsafe: vi.fn(),

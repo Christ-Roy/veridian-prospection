@@ -14,7 +14,7 @@
     "test:integration": "vitest run e2e/integration/",
     "test:isolation": "vitest run e2e/integration/tenant-isolation.test.ts",
     "test:unit": "vitest run src/",
-    "test:all": "npx tsc --noEmit && npx eslint src/ --quiet && vitest run src/",
+    "test:all": "npx tsc --noEmit && npx eslint src/ __tests__/ --quiet && vitest run src/ __tests__/",
     "db:fresh:siren": "bash scripts/db-fresh-siren.sh",
     "db:fresh:siren:seed": "SEED=1 bash scripts/db-fresh-siren.sh",
     "prepare": "husky",
