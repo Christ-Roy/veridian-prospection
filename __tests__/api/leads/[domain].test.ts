@@ -26,6 +26,7 @@ const {
     getLeadDetail: vi.fn(),
     recordVisit: vi.fn(),
     patchOutreach: vi.fn(),
+    consumeLead: vi.fn(),
   },
 }));
 
@@ -51,6 +52,9 @@ describe("GET /api/leads/[domain]", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     isRateLimitedMock.mockReturnValue(false);
+    // consumeLead est appelée en fire-and-forget après recordVisit : doit
+    // toujours renvoyer une promesse (sinon le `.catch()` du handler throw).
+    queriesMock.consumeLead.mockResolvedValue(true);
   });
 
   test("returns 401 when unauthenticated", async () => {
@@ -107,6 +111,39 @@ describe("GET /api/leads/[domain]", () => {
     const res = await GET(makeRequest("/api/leads/123456789"), params);
     expect(res.status).toBe(200);
     expect(isUserFrozenMock).not.toHaveBeenCalled();
+  });
+
+  test("consomme 1 lead à la consultation (décompte quota refill)", async () => {
+    requireAuthMock.mockResolvedValue({ user: { id: "u-1", email: "u@v.site" } });
+    getTenantIdMock.mockResolvedValue("tenant-1");
+    getTenantProspectLimitMock.mockResolvedValue(99999);
+    getWorkspaceScopeMock.mockResolvedValue({ insertId: "ws-1" });
+    queriesMock.getLeadDetail.mockResolvedValue({ siren: "123456789" });
+    queriesMock.recordVisit.mockResolvedValue(undefined);
+
+    const res = await GET(makeRequest("/api/leads/123456789"), params);
+    expect(res.status).toBe(200);
+    // consumeLead reçoit siren, tenantId, workspaceId — l'idempotence
+    // par (workspace, siren) est gérée côté lib, pas ici.
+    expect(queriesMock.consumeLead).toHaveBeenCalledWith(
+      "123456789",
+      "tenant-1",
+      "ws-1",
+    );
+  });
+
+  test("un échec du décompte ne casse pas la consultation (fail-safe)", async () => {
+    requireAuthMock.mockResolvedValue({ user: { id: "u-1", email: "u@v.site" } });
+    getTenantIdMock.mockResolvedValue("tenant-1");
+    getTenantProspectLimitMock.mockResolvedValue(99999);
+    getWorkspaceScopeMock.mockResolvedValue({ insertId: "ws-1" });
+    queriesMock.getLeadDetail.mockResolvedValue({ siren: "123456789" });
+    queriesMock.recordVisit.mockResolvedValue(undefined);
+    // consumeLead rejette : la fiche doit quand même être servie.
+    queriesMock.consumeLead.mockRejectedValue(new Error("db down"));
+
+    const res = await GET(makeRequest("/api/leads/123456789"), params);
+    expect(res.status).toBe(200);
   });
 });
 

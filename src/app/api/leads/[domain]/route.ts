@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getLeadDetail, recordVisit, patchOutreach } from "@/lib/queries";
+import { getLeadDetail, recordVisit, patchOutreach, consumeLead } from "@/lib/queries";
 import { requireAuth } from "@/lib/auth/api-auth";
 import { getTenantId, getTenantProspectLimit } from "@/lib/supabase/tenant";
 import { getWorkspaceScope } from "@/lib/auth/user-context";
@@ -39,6 +39,14 @@ export async function GET(
   if (!lead) return NextResponse.json({ error: "not found" }, { status: 404 });
   await recordVisit(siren, tenantId, workspaceId, userId);
   lead.last_visited = new Date().toISOString().replace("T", " ").split(".")[0];
+
+  // Décompte du quota refill : consulter une fiche consomme 1 lead, idempotent
+  // par (workspace, siren). Fail-safe — un échec du décompte ne doit JAMAIS
+  // bloquer la consultation (doctrine pricing : pas de mur béton). On consomme
+  // après que la fiche soit confirmée servie.
+  consumeLead(siren, tenantId, workspaceId).catch((err) => {
+    console.error(`[leads] consumeLead failed siren=${siren}:`, err);
+  });
 
   // Obfuscation des champs sensibles : 2 déclencheurs cumulatifs.
   //  1) Freemium expiré (logique trial historique)
