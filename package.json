@@ -70,6 +70,7 @@
     "eslint": "^9",
     "eslint-config-next": "15.3.3",
     "husky": "^9.1.7",
+    "jsdom": "^29.1.1",
     "prisma": "^6.19.2",
     "shadcn": "^3.8.5",
     "tailwindcss": "^4",

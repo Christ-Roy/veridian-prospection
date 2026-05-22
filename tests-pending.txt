@@ -2,11 +2,8 @@ src/components/client-error-boundary.tsx
 src/components/command-palette.tsx
 src/components/dashboard/admin-kpi.tsx
 src/components/dashboard/admin-members.tsx
-src/components/dashboard/appointment-calendar.tsx
-src/components/dashboard/calendar-dialog.tsx
 src/components/dashboard/domain-sidebar.tsx
 src/components/dashboard/france-map.tsx
-src/components/dashboard/geo-filter-sidebar.tsx
 src/components/dashboard/guide-commercial.tsx
 src/components/dashboard/lead-sheet/appointments-section.tsx
 src/components/dashboard/lead-sheet/auto-save-notes.tsx
@@ -16,11 +13,7 @@ src/components/dashboard/lead-sheet/quick-notes.tsx
 src/components/dashboard/lead-sheet/stage-transition.tsx
 src/components/dashboard/notification-preferences-form.tsx
 src/components/dashboard/outreach-form.tsx
-src/components/dashboard/pipeline-view.tsx
-src/components/dashboard/quality-filter-sidebar.tsx
 src/components/dashboard/quality-tabs.tsx
-src/components/dashboard/sans-site-sidebar.tsx
-src/components/dashboard/sector-sidebar.tsx
 src/components/dashboard/segment-page.tsx
 src/components/dashboard/segment-table.tsx
 src/components/dashboard/settings-ai-storage.tsx
@@ -30,10 +23,8 @@ src/components/dashboard/settings-form.tsx
 src/components/dashboard/settings-reference.tsx
 src/components/dashboard/settings-tabs.tsx
 src/components/dashboard/settings-telephony.tsx
-src/components/dashboard/size-filter-sidebar.tsx
 src/components/dashboard/stats-cards.tsx
 src/components/dashboard/status-badge.tsx
-src/components/dashboard/upcoming-appointments.tsx
 src/components/keyboard-shortcuts-help.tsx
 src/components/layout/notification-bell.tsx
 src/components/layout/onboarding.tsx
