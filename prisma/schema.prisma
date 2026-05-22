@@ -678,14 +678,20 @@ model Tenant {
 
 /// Audit trail des changements de plan (contrat §5.2).
 /// Rétention minimale : 50 dernières lignes par tenant.
+///
+/// `idempotencyKey` : clé de dédup du payload `update-plan` v2
+/// (CONTRAT-BILLING.md §3.4.3). Index UNIQUE partiel — un replay du même
+/// key viole la contrainte, le handler renvoie alors un 200 no-op. Nullable :
+/// les lignes pré-v2 n'ont pas de clé.
 model PlanHistory {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId     String   @map("tenant_id") @db.Uuid
-  plan         String
-  planSource   String   @map("plan_source")
-  previousPlan String?  @map("previous_plan")
-  reason       String?
-  changedAt    DateTime @default(now()) @map("changed_at") @db.Timestamptz
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  plan           String
+  planSource     String   @map("plan_source")
+  previousPlan   String?  @map("previous_plan")
+  reason         String?
+  idempotencyKey String?  @unique @map("idempotency_key")
+  changedAt      DateTime @default(now()) @map("changed_at") @db.Timestamptz
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 

@@ -154,6 +154,89 @@ export const PLANS: Record<PlanId, PlanDefinition> = {
   },
 };
 
+// ─── Contrat billing v2 — enum canonique cross-app ──────────────────────────
+
+/**
+ * Enum `plan` canonique du payload `update-plan` (CONTRAT-BILLING.md §3.2).
+ *
+ * 🔒 Enum FERMÉ, identique cross-app. Le Hub envoie toujours une de ces 4
+ * valeurs sur le fil — jamais le nom local Prospection (`freemium`).
+ */
+export const CANONICAL_PLANS_V2 = [
+  "free",
+  "pro",
+  "business",
+  "enterprise",
+] as const;
+export type CanonicalPlan = (typeof CANONICAL_PLANS_V2)[number];
+
+/**
+ * Enum `plan_source` v2 (CONTRAT-BILLING.md §3.3) — 4 valeurs figées.
+ *
+ *  - `stripe`         : subscription Stripe payante active.
+ *  - `stripe_trial`   : trial Pro 15j activé par la state machine Hub, pas
+ *                       de CB / pas de débit. À distinguer de `stripe` (§7.2).
+ *  - `grant_manual`   : plan offert assigné par un admin Hub (lifetime,
+ *                       internal). Immune au downgrade Stripe (§3.4.4).
+ *  - `downgrade_auto` : downgrade décidé par le Hub (sub annulée, trial
+ *                       expiré). Déclenche le mode dégradé paywall (§5.3).
+ */
+export const PLAN_SOURCES_V2 = [
+  "stripe",
+  "stripe_trial",
+  "grant_manual",
+  "downgrade_auto",
+] as const;
+export type PlanSourceV2 = (typeof PLAN_SOURCES_V2)[number];
+
+export function isCanonicalPlan(value: unknown): value is CanonicalPlan {
+  return (
+    typeof value === "string" &&
+    (CANONICAL_PLANS_V2 as readonly string[]).includes(value)
+  );
+}
+
+export function isPlanSourceV2(value: unknown): value is PlanSourceV2 {
+  return (
+    typeof value === "string" &&
+    (PLAN_SOURCES_V2 as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * Mappe l'enum `plan` canonique du contrat vers le nom de plan LOCAL stocké
+ * dans `tenants.plan` (CONTRAT-BILLING.md §3.2bis).
+ *
+ * La DB Prospection et ses consommateurs (`lead-quota.ts`, `PLAN_LIMITS`)
+ * raisonnent en noms locaux — c'est le nom local qui doit être persisté,
+ * jamais l'enum canonique du fil.
+ *
+ *   free       → freemium   (le tier gratuit s'appelle "Freemium" côté Prosp)
+ *   pro        → pro
+ *   business   → business
+ *   enterprise → business   (Prospection N'A PAS de tier Enterprise — on
+ *                            retombe sur le tier le plus élevé. Le caller
+ *                            DOIT logguer un warn, cf §3.2bis.)
+ *
+ * `enterpriseDowngraded` permet au caller de savoir qu'un warn est attendu.
+ */
+export function mapCanonicalPlanToLocal(plan: CanonicalPlan): {
+  localPlan: PlanId;
+  enterpriseDowngraded: boolean;
+} {
+  switch (plan) {
+    case "free":
+      return { localPlan: "freemium", enterpriseDowngraded: false };
+    case "pro":
+      return { localPlan: "pro", enterpriseDowngraded: false };
+    case "business":
+      return { localPlan: "business", enterpriseDowngraded: false };
+    case "enterprise":
+      // Prospection plafonne à `business` — l'enum est valide, pas un 400.
+      return { localPlan: "business", enterpriseDowngraded: true };
+  }
+}
+
 // ─── Plans offerts (gifted) ─────────────────────────────────────────────────
 
 /**
