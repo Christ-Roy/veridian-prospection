@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Accordion, AccordionContent, AccordionItem, AccordionTrigger,
+} from "@/components/ui/accordion";
 import { LeadSheet } from "./lead-sheet";
 import { formatCA, PIPELINE_STAGES, INTEREST_SCALE } from "@/lib/types";
 import { StageTransitionModal, type StageData } from "./lead-sheet/stage-transition";
@@ -296,6 +299,26 @@ export function PipelineBoard() {
     setDropCardTarget(null);
   }
 
+  // Rendu des cartes d'un stade — partagé par le board horizontal (desktop)
+  // et l'accordéon (mobile) pour ne pas dupliquer la logique drag + handlers.
+  function renderStageCards(stage: (typeof PIPELINE_STAGES)[number], leads: PipelineLead[]) {
+    return leads.map((lead, i) => (
+      <PipelineCard
+        key={lead.domain}
+        lead={lead}
+        stage={stage}
+        isDragging={dragCardSource?.domain === lead.domain}
+        isDropBefore={dropCardTarget?.column === stage.id && dropCardTarget?.index === i}
+        onClick={() => setSelectedDomain(lead.domain)}
+        onArchive={() => handleArchive(lead)}
+        onDragStart={(e) => handleCardDragStart(e, lead.domain, stage.id)}
+        onDragOver={(e) => handleCardDragOverCard(e, stage.id, i)}
+        onDragEnd={resetDrag}
+        onDrop={(e) => handleCardDrop(e, stage.id, i)}
+      />
+    ));
+  }
+
   // Pipeline value calculations
   const allLeads = Object.values(pipeline).flat();
   // Estimated = sum of estimated_value across active pipeline (site_demo + acompte + finition)
@@ -360,8 +383,11 @@ export function PipelineBoard() {
         </div>
       </div>
 
-      {/* Kanban — fills remaining height, columns scroll internally */}
-      <div className="flex gap-2 overflow-x-auto flex-1 min-h-0 pb-2">
+      {/* Kanban horizontal — desktop (≥md). Colonnes côte à côte, scroll
+          horizontal calé colonne par colonne (snap-x) quand la fenêtre est
+          étroite. Sous md, on bascule sur l'accordéon vertical plus bas :
+          8 colonnes de 220px sur un téléphone = 8 écrans à balayer, illisible. */}
+      <div className="hidden md:flex gap-2 overflow-x-auto flex-1 min-h-0 pb-2 snap-x snap-proximity">
         {PIPELINE_STAGES.map(stage => {
           const rawLeads = pipeline[stage.id] || [];
           const leads = sortLeads(rawLeads);
@@ -371,7 +397,7 @@ export function PipelineBoard() {
           return (
             <div
               key={stage.id}
-              className={`flex flex-col min-w-[220px] flex-1 min-h-0 rounded-lg border transition-all ${
+              className={`flex flex-col min-w-[220px] flex-1 min-h-0 rounded-lg border transition-all snap-start ${
                 isCardDropColumn ? "border-primary/30 bg-primary/5" : "bg-muted/30"
               }`}
               onDragOver={(e) => handleCardDragOverColumn(e, stage.id)}
@@ -381,34 +407,64 @@ export function PipelineBoard() {
               <div className="flex items-center gap-2 px-2.5 py-2 border-b bg-white rounded-t-lg shrink-0">
                 <div className={`h-2.5 w-2.5 rounded-full ${stage.color}`} />
                 <span className="text-xs font-semibold">{stage.label}</span>
-                <Badge variant="secondary" className="text-[10px] h-4 px-1 ml-auto">{leads.length}</Badge>
-                {colValue > 0 && <span className="text-[9px] font-mono text-muted-foreground">{formatCA(colValue)}</span>}
+                <Badge variant="secondary" className="text-xs h-4 px-1 ml-auto">{leads.length}</Badge>
+                {colValue > 0 && <span className="text-xs font-mono text-muted-foreground">{formatCA(colValue)}</span>}
               </div>
 
               {/* Cards */}
               <div className="flex-1 overflow-y-auto p-1.5 space-y-1.5">
-                {leads.map((lead, i) => (
-                  <PipelineCard
-                    key={lead.domain}
-                    lead={lead}
-                    stage={stage}
-                    isDragging={dragCardSource?.domain === lead.domain}
-                    isDropBefore={dropCardTarget?.column === stage.id && dropCardTarget?.index === i}
-                    onClick={() => setSelectedDomain(lead.domain)}
-                    onArchive={() => handleArchive(lead)}
-                    onDragStart={(e) => handleCardDragStart(e, lead.domain, stage.id)}
-                    onDragOver={(e) => handleCardDragOverCard(e, stage.id, i)}
-                    onDragEnd={resetDrag}
-                    onDrop={(e) => handleCardDrop(e, stage.id, i)}
-                  />
-                ))}
+                {renderStageCards(stage, leads)}
                 {leads.length === 0 && (
-                  <div className="text-[10px] text-muted-foreground text-center py-8 italic">Deposer ici</div>
+                  <div className="text-xs text-muted-foreground text-center py-8 italic">Deposer ici</div>
                 )}
               </div>
             </div>
           );
         })}
+      </div>
+
+      {/* Kanban accordéon — mobile (<md). Les 8 stages empilés verticalement :
+          le trigger montre label + nombre de leads + valeur du stade pour une
+          vue d'ensemble immédiate du tunnel ; on déplie le stade à travailler.
+          Le DnD HTML5 natif ne fonctionne pas au tactile — rien n'est perdu,
+          la transition de stade se fait via la fiche (clic carte → modal). */}
+      <div className="md:hidden flex-1 min-h-0 overflow-y-auto pb-2">
+        <Accordion
+          type="multiple"
+          defaultValue={PIPELINE_STAGES.filter(s => (pipeline[s.id]?.length || 0) > 0).map(s => s.id)}
+          className="space-y-2"
+        >
+          {PIPELINE_STAGES.map(stage => {
+            const rawLeads = pipeline[stage.id] || [];
+            const leads = sortLeads(rawLeads);
+            const colValue = leads.reduce((s, l) => s + (l.estimated_value || l.real_value || 0), 0);
+
+            return (
+              <AccordionItem
+                key={stage.id}
+                value={stage.id}
+                className="rounded-lg border bg-muted/30 last:border-b"
+              >
+                <AccordionTrigger className="px-3 py-2.5 hover:no-underline">
+                  <span className="flex items-center gap-2 flex-1">
+                    <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${stage.color}`} />
+                    <span className="text-sm font-semibold">{stage.label}</span>
+                    <Badge variant="secondary" className="text-xs h-4 px-1">{leads.length}</Badge>
+                    {colValue > 0 && (
+                      <span className="text-xs font-mono text-muted-foreground ml-auto mr-1">{formatCA(colValue)}</span>
+                    )}
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent className="px-1.5 pb-1.5 space-y-1.5">
+                  {renderStageCards(stage, leads)}
+                  {leads.length === 0 && (
+                    <div className="text-xs text-muted-foreground text-center py-6 italic">Aucun lead a ce stade</div>
+                  )}
+                </AccordionContent>
+              </AccordionItem>
+            );
+          })}
+        </Accordion>
       </div>
 
       {/* Archives panel */}
@@ -423,7 +479,7 @@ export function PipelineBoard() {
                 className="text-left bg-slate-50 border rounded px-2.5 py-1.5 hover:bg-slate-100 transition-colors"
               >
                 <span className="text-xs font-medium truncate block">{lead.nom_entreprise || lead.domain}</span>
-                {lead.ville && <span className="text-[9px] text-muted-foreground">{lead.ville}</span>}
+                {lead.ville && <span className="text-xs text-muted-foreground">{lead.ville}</span>}
               </button>
             ))}
           </div>
@@ -527,7 +583,7 @@ function PipelineCard({
         <div className="flex items-start gap-1 min-w-0">
           <span className="text-sm font-semibold truncate flex-1 leading-tight">{name}</span>
           {(lead.estimated_value || lead.real_value || lead.acompte_amount) && (
-            <span className="text-[10px] font-mono text-emerald-600 shrink-0 font-bold">
+            <span className="text-xs font-mono text-emerald-600 shrink-0 font-bold">
               {formatCA(lead.real_value || lead.acompte_amount || lead.estimated_value || 0)}
             </span>
           )}
@@ -542,7 +598,7 @@ function PipelineCard({
 
         {/* Row 2: Dirigeant */}
         {lead.dirigeant && (
-          <div className="text-[11px] text-muted-foreground truncate mt-0.5">{lead.dirigeant}</div>
+          <div className="text-xs text-muted-foreground truncate mt-0.5">{lead.dirigeant}</div>
         )}
 
         {/* Row 3: Stage-specific data */}
@@ -551,7 +607,7 @@ function PipelineCard({
           {lead.deadline && (
             <div className="flex items-center gap-1">
               <Calendar className="h-3 w-3 text-purple-500 shrink-0" />
-              <span className={`text-[11px] font-medium ${
+              <span className={`text-xs font-medium ${
                 new Date(lead.deadline) < new Date() ? "text-red-600" : "text-purple-600"
               }`}>
                 {new Date(lead.deadline).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })}
@@ -573,15 +629,15 @@ function PipelineCard({
                     style={{ width: `${pct}%` }}
                   />
                 </div>
-                <span className="text-[10px] font-bold font-mono w-8 text-right">{pct}%</span>
+                <span className="text-xs font-bold font-mono w-8 text-right">{pct}%</span>
               </div>
-              <p className="text-[9px] text-muted-foreground mt-0.5">{interestLabel(pct)}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{interestLabel(pct)}</p>
             </div>
           )}
 
           {/* Acompte / pricing info */}
           {stage.id === "acompte" && lead.site_price != null && (
-            <div className="flex gap-2 text-[10px]">
+            <div className="flex gap-2 text-xs">
               <span className="text-muted-foreground">Devis: <span className="font-mono font-semibold text-foreground">{formatCA(lead.site_price)}</span></span>
               {lead.acompte_amount != null && (
                 <span className="text-green-600 font-semibold">Acompte: {formatCA(lead.acompte_amount)}</span>
@@ -591,7 +647,7 @@ function PipelineCard({
 
           {/* Monthly recurring */}
           {lead.monthly_recurring != null && lead.monthly_recurring > 0 && (
-            <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-mono">{lead.monthly_recurring}€/mois</span>
+            <span className="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-mono">{lead.monthly_recurring}€/mois</span>
           )}
         </div>
 
@@ -599,14 +655,14 @@ function PipelineCard({
         <div className="flex items-center gap-1 mt-1.5 pt-1 border-t border-slate-100">
           {lead.phone && <Phone className="h-2.5 w-2.5 text-green-500 shrink-0" />}
           {(lead.email || lead.dirigeant_email) && <Mail className="h-2.5 w-2.5 text-blue-400 shrink-0" />}
-          {lead.ville && <span className="text-[9px] text-muted-foreground/60 truncate">{lead.ville}</span>}
+          {lead.ville && <span className="text-xs text-muted-foreground/60 truncate">{lead.ville}</span>}
           <div className="flex items-center gap-1 ml-auto">
             {lead.outreach_notes && <MessageSquare className="h-2.5 w-2.5 text-rose-400" />}
             {lead.pending_followups > 0 && (
-              <span className="text-[9px] text-amber-500 flex items-center gap-px"><Clock className="h-2 w-2" />{lead.pending_followups}</span>
+              <span className="text-xs text-amber-500 flex items-center gap-px"><Clock className="h-2 w-2" />{lead.pending_followups}</span>
             )}
             {archiveDays && (
-              <span className={`text-[9px] ${isUrgent ? "text-red-600 font-bold" : "text-muted-foreground/40"}`}>{days}j</span>
+              <span className={`text-xs ${isUrgent ? "text-red-600 font-bold" : "text-muted-foreground/40"}`}>{days}j</span>
             )}
           </div>
         </div>
