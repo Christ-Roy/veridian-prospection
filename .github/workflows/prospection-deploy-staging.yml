@@ -305,10 +305,19 @@ jobs:
           retention-days: 7
 
   cleanup:
-    name: Cleanup containers/images obsolètes (staging-edge)
-    needs: smoke
+    name: Cleanup images Prospection obsolètes (dev-pub)
+    needs: [build, deploy, smoke]
     if: always() && needs.deploy.result == 'success'
     runs-on: ubuntu-latest
+    # GHCR est la source de vérité des images (rétention illimitée côté
+    # registry). dev-pub ne garde QUE l'image staging actuellement servie
+    # — toute image staging-<sha> antérieure est re-pullable depuis GHCR
+    # en cas de rollback. Le filtre `label=com.veridian.env=staging` de
+    # l'ancien job ne matchait AUCUNE image (les images portent les labels
+    # OCI standard `org.opencontainers.image.*`, pas ce label custom) :
+    # le cleanup tournait à vide et le disque dev-pub se remplissait.
+    env:
+      KEEP_TAG: staging-${{ needs.build.outputs.sha7 }}
     steps:
       - name: Install SSH key
         run: |
@@ -317,19 +326,28 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H 37.187.199.185 >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Prune containers staging exited > 24h
+      - name: Prune containers Prospection exited
         run: |
           ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 '
             docker container prune -f \
-              --filter "label=com.veridian.env=staging" \
-              --filter "until=24h"'
+              --filter "name=prospection-staging" || true'
 
-      - name: Prune images staging untagged > 7j
+      - name: Remove old Prospection images (keep current + latest)
         run: |
-          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 '
-            docker image prune -af \
-              --filter "label=com.veridian.env=staging" \
-              --filter "until=168h"'
+          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 "
+            set -e
+            KEEP_TAG='${KEEP_TAG}'
+            REPO=ghcr.io/christ-roy/prospection
+            echo \"Image servie à conserver : \$REPO:\$KEEP_TAG (+ :staging-latest)\"
+            # Liste toutes les images Prospection, supprime celles qui ne sont
+            # ni le SHA déployé ni le tag mouvant staging-latest. GHCR garde tout.
+            docker images \"\$REPO\" --format '{{.Repository}}:{{.Tag}}' \
+              | grep -v \":\$KEEP_TAG\$\" \
+              | grep -v ':staging-latest\$' \
+              | grep -v ':<none>\$' \
+              | xargs -r -I{} docker rmi {} 2>/dev/null || true
+            echo '--- images Prospection restantes ---'
+            docker images \"\$REPO\" --format '{{.Repository}}:{{.Tag}} {{.Size}}'"
 
       - name: Prune dangling images globales
         run: |
