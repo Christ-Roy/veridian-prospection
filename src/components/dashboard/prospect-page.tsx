@@ -22,7 +22,7 @@ import { GeoFilterSidebar } from "./geo-filter-sidebar";
 import { SizeFilterSidebar, DEFAULT_SIZE_FILTER, type SizeFilterState } from "./size-filter-sidebar";
 import { QualityFilterSidebar, DEFAULT_QUALITY_FILTER, type QualityFilterState } from "./quality-filter-sidebar";
 import { formatCA, formatEffectifs } from "@/lib/types";
-import { webHref } from "@/lib/utils";
+import { webHref, cn } from "@/lib/utils";
 import { toast } from "sonner";
 import type { ProspectPreset } from "@/lib/domains";
 import {
@@ -388,17 +388,28 @@ export function ProspectPage() {
                 onChange={(e) => {
                   const status = e.target.value;
                   if (!status) return;
+                  const count = selected.size;
                   Promise.all(
                     Array.from(selected).map(siren =>
                       fetch(`/api/leads/${siren}`, {
                         method: "PATCH",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ status }),
-                      })
+                      }).then(r => r.ok).catch(() => false)
                     )
-                  ).then(() => {
+                  ).then((results) => {
                     setSelected(new Set());
                     fetchData();
+                    // Feedback explicite : un changement groupé qui échoue
+                    // (partiellement ou totalement) ne doit pas être silencieux.
+                    const ok = results.filter(Boolean).length;
+                    if (ok === count) {
+                      toast.success(`${ok} prospect${ok > 1 ? "s" : ""} mis a jour`);
+                    } else if (ok === 0) {
+                      toast.error("Echec de la mise a jour du statut");
+                    } else {
+                      toast.warning(`${ok}/${count} mis a jour — ${count - ok} en echec`);
+                    }
                   });
                   e.target.value = "";
                 }}
@@ -455,8 +466,10 @@ export function ProspectPage() {
         )}
 
         <main className="flex-1 p-3 md:p-4 space-y-4 min-w-0 overflow-auto">
-          {/* Table */}
-          <div className="border rounded-lg bg-white dark:bg-gray-900 dark:border-gray-800 overflow-x-auto shadow-sm">
+          {/* Table — desktop only. Sous md, une table de ~1200px coincée dans
+              un viewport de 375px est inutilisable : on bascule sur la vue
+              carte (ProspectCardList) plus bas. */}
+          <div className="hidden md:block border rounded-lg bg-white dark:bg-gray-900 dark:border-gray-800 overflow-x-auto shadow-sm">
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/40 hover:bg-muted/40">
@@ -542,6 +555,44 @@ export function ProspectPage() {
                 )}
               </TableBody>
             </Table>
+          </div>
+
+          {/* Card list — mobile only (sous md). Même données que la table,
+              une carte tappable par prospect, lisible sans scroll horizontal. */}
+          <div className="md:hidden space-y-2">
+            {loading && Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="border rounded-lg bg-white dark:bg-gray-900 dark:border-gray-800 p-3 shadow-sm space-y-2">
+                <Skeleton className="h-4 w-2/3" />
+                <Skeleton className="h-3 w-1/2" />
+                <Skeleton className="h-3 w-1/3" />
+              </div>
+            ))}
+            {!loading && data?.data.map((lead) => {
+              const dom = lead.domain as string;
+              const ds = dismissState[dom];
+              return (
+                <ProspectCard
+                  key={dom}
+                  lead={lead}
+                  isSelected={selected.has(dom)}
+                  dismissPhase={ds?.phase}
+                  todayCount={todayCount}
+                  onSelect={() => toggleSelect(dom)}
+                  onClick={() => {
+                    if (trialState.isExpired) { setShowPaywall(true); return; }
+                    if (ds) { cancelDismiss(dom); } else { setSelectedDomain(dom); }
+                  }}
+                />
+              );
+            })}
+            {!loading && data?.data.length === 0 && (
+              <div className="border rounded-lg bg-white dark:bg-gray-900 dark:border-gray-800 py-12 text-center">
+                <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                  <ClipboardList className="h-8 w-8 opacity-20" />
+                  <p className="font-medium">Aucun prospect dans cette selection</p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Pagination */}
@@ -768,14 +819,19 @@ function ProspectRow({ lead, isSelected, dismissPhase, todayCount, onSelect, onC
                   method: "PATCH",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ status: "fiche_ouverte" }),
-                }).then(r => {
-                  if (r.ok) {
-                    // Optimistic update — change the status locally
-                    (l as Record<string, unknown>).outreach_status = "fiche_ouverte";
-                    // Force re-render by triggering a minor state change
-                    window.dispatchEvent(new Event("prospect-status-changed"));
-                  }
-                });
+                })
+                  .then(r => {
+                    if (r.ok) {
+                      // Optimistic update — change the status locally
+                      (l as Record<string, unknown>).outreach_status = "fiche_ouverte";
+                      // Force re-render by triggering a minor state change
+                      window.dispatchEvent(new Event("prospect-status-changed"));
+                      toast.success("Ajoute au pipeline");
+                    } else {
+                      toast.error("Echec de l'ajout au pipeline");
+                    }
+                  })
+                  .catch(() => toast.error("Erreur reseau — ajout au pipeline"));
               }}
               className="h-5 w-5 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-xs font-bold flex items-center justify-center transition-colors"
               title="Ajouter au pipeline"
@@ -786,6 +842,167 @@ function ProspectRow({ lead, isSelected, dismissPhase, todayCount, onSelect, onC
         </div>
       </TableCell>
     </TableRow>
+  );
+}
+
+// --- Card sub-component — mobile layout (sous md) ---
+// Même données qu'une ProspectRow, présentées en carte tappable. Garde la
+// sélection, l'ouverture de la fiche au clic, et l'état d'archivage animé.
+
+function ProspectCard({ lead, isSelected, dismissPhase, todayCount, onSelect, onClick }: {
+  lead: Record<string, unknown>;
+  isSelected: boolean;
+  dismissPhase?: "waiting" | "collapsing" | "paused" | "cancelled";
+  todayCount?: number;
+  onSelect: () => void;
+  onClick: () => void;
+}) {
+  const l = lead as Record<string, string | number | null>;
+  const isArchiving = dismissPhase === "waiting" || dismissPhase === "paused";
+  const isCollapsing = dismissPhase === "collapsing";
+  const company = (l.nom_entreprise as string) || (l.web_domain as string) || "-";
+  const email = (l.dirigeant_email || l.email) as string | null;
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label={`Ouvrir la fiche de ${company}`}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        // Carte cliquable = doit être actionnable au clavier (Enter / Espace).
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      className={cn(
+        "relative border rounded-lg bg-white dark:bg-gray-900 dark:border-gray-800 p-3 shadow-sm cursor-pointer transition-all",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        isCollapsing
+          ? "opacity-0 max-h-0 overflow-hidden py-0 my-0 border-0 duration-500"
+          : isArchiving
+            ? "bg-green-50 dark:bg-green-950/30 duration-300"
+            : "active:bg-muted/40 duration-150",
+        isSelected && !isArchiving ? "ring-1 ring-primary/40" : "",
+      )}
+    >
+      {/* Header: checkbox + company name + scores */}
+      <div className="flex items-start gap-1">
+        {/* Zone tactile élargie autour de la checkbox (cible ≥32px) — la
+            Checkbox elle-même fait 16px, trop petit pour le tactile. */}
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="-m-1 p-1 min-h-[32px] min-w-[32px] flex items-center justify-center shrink-0"
+        >
+          {isArchiving ? (
+            <Archive className="h-4 w-4 text-green-600" />
+          ) : (
+            <Checkbox checked={isSelected} onCheckedChange={onSelect} aria-label={`Sélectionner ${company}`} />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <BlurredText className="text-sm font-semibold truncate">{company}</BlurredText>
+            {l.prospect_tier && (
+              <span
+                className={cn(
+                  "text-xs px-1 py-0.5 rounded font-medium shrink-0",
+                  l.prospect_tier === "gold" ? "bg-yellow-100 text-yellow-800" :
+                  l.prospect_tier === "silver" ? "bg-gray-100 text-gray-600" :
+                  "bg-amber-50 text-amber-700",
+                )}
+              >
+                {(l.prospect_tier as string).toUpperCase()}
+              </span>
+            )}
+          </div>
+          {(l.web_domain as string) ? (
+            <a
+              href={webHref(l.web_domain as string)}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="text-xs text-primary truncate hover:underline inline-block max-w-full"
+            >
+              <BlurredText>{l.web_domain as string}</BlurredText>
+            </a>
+          ) : (
+            <span className="text-xs italic text-muted-foreground">sans site</span>
+          )}
+          {l.dirigeant && (l.dirigeant as string).trim() !== "" && (
+            <div className="truncate text-xs text-muted-foreground">
+              <BlurredText>{l.dirigeant as string}</BlurredText>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          {l.small_biz_score != null ? (
+            <SmallBizBadge score={l.small_biz_score as number} />
+          ) : (
+            <TechScoreBadge score={l.tech_score as number} />
+          )}
+          <EclateBadge score={l.eclate_score as number} />
+        </div>
+      </div>
+
+      {/* Contact + localisation */}
+      <div className="mt-2 pl-7 flex flex-col gap-1 text-xs text-muted-foreground">
+        {l.phone && (
+          <div className="flex items-center gap-1.5">
+            <Phone className="h-3 w-3 shrink-0" />
+            <BlurredText className="truncate">{l.phone as string}</BlurredText>
+          </div>
+        )}
+        {email && (
+          <div className="flex items-center gap-1.5">
+            <Mail className="h-3 w-3 shrink-0" />
+            <BlurredText className="truncate">{email}</BlurredText>
+          </div>
+        )}
+        {(l.ville || l.departement) && (
+          <div className="flex items-center gap-1.5">
+            <BlurredText className="truncate">{(l.ville as string) || ""}</BlurredText>
+            {l.departement && <span className="font-mono">({l.departement as string})</span>}
+          </div>
+        )}
+        {l.secteur_final && (
+          <span className="text-xs text-indigo-600 truncate">{l.secteur_final as string}</span>
+        )}
+      </div>
+
+      {/* Footer: status + add-to-pipeline */}
+      <div className="mt-2 pl-7 flex items-center gap-2">
+        <StatusBadge status={l.outreach_status as string} ficheOuverteCount={todayCount} />
+        {(l.outreach_status === "a_contacter" || !l.outreach_status) && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              fetch(`/api/leads/${l.domain}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status: "fiche_ouverte" }),
+              })
+                .then(r => {
+                  if (r.ok) {
+                    (l as Record<string, unknown>).outreach_status = "fiche_ouverte";
+                    window.dispatchEvent(new Event("prospect-status-changed"));
+                    toast.success("Ajoute au pipeline");
+                  } else {
+                    // Une action qui échoue ne doit jamais passer inaperçue.
+                    toast.error("Echec de l'ajout au pipeline");
+                  }
+                })
+                .catch(() => toast.error("Erreur reseau — ajout au pipeline"));
+            }}
+            className="h-8 px-2.5 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-xs font-medium flex items-center gap-1 transition-colors"
+            title="Ajouter au pipeline"
+          >
+            <span className="text-sm font-bold leading-none">+</span> Pipeline
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
