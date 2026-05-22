@@ -7,6 +7,7 @@ import { describe, expect, test } from "vitest";
 import {
   applyStatusTransition,
   pipelineStageForStatus,
+  isKnownStatus,
 } from "@/lib/outreach/status";
 
 describe("applyStatusTransition — cohérence status/pipeline_stage", () => {
@@ -91,5 +92,35 @@ describe("pipelineStageForStatus — mapping sans anti-régression", () => {
 
   test("status inconnu → fallback fiche_ouverte (safe)", () => {
     expect(pipelineStageForStatus("status_qui_existe_pas_xyz")).toBe("fiche_ouverte");
+  });
+});
+
+describe("isKnownStatus — validation des status métier", () => {
+  test("accepte les status canoniques et legacy connus", () => {
+    expect(isKnownStatus("fiche_ouverte")).toBe(true);
+    expect(isKnownStatus("a_contacter")).toBe(true);
+    expect(isKnownStatus("appele")).toBe(true);
+    expect(isKnownStatus("hors_cible")).toBe(true);
+    expect(isKnownStatus("client")).toBe(true);
+    expect(isKnownStatus("en_observation")).toBe(true);
+  });
+
+  test("rejette un status inconnu", () => {
+    expect(isKnownStatus("n_importe_quoi")).toBe(false);
+    expect(isKnownStatus("")).toBe(false);
+  });
+
+  test("rejette les valeurs non-string (body API non fiable)", () => {
+    expect(isKnownStatus(undefined)).toBe(false);
+    expect(isKnownStatus(null)).toBe(false);
+    expect(isKnownStatus(42)).toBe(false);
+    expect(isKnownStatus({ status: "fiche_ouverte" })).toBe(false);
+  });
+
+  test("ne se laisse pas piéger par les props héritées d'Object.prototype", () => {
+    // `"toString" in obj` serait true sur un Record naïf — le guard doit
+    // rester strict sur les clés métier réelles.
+    expect(isKnownStatus("toString")).toBe(false);
+    expect(isKnownStatus("constructor")).toBe(false);
   });
 });

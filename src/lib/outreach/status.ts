@@ -152,6 +152,22 @@ export function pipelineStageForStatus(status: string): string {
 }
 
 /**
+ * Vérifie qu'un status est une valeur métier connue (clé propre de la table
+ * de mapping `STATUS_TO_PIPELINE`). À utiliser pour valider un body API avant
+ * écriture : un status inconnu doit partir en 400, jamais atterrir en DB.
+ *
+ * `hasOwnProperty` (et non l'opérateur `in`) : un body API n'est pas fiable,
+ * `"toString"` / `"constructor"` ne doivent pas être acceptés via le
+ * prototype d'Object.
+ */
+export function isKnownStatus(status: unknown): status is string {
+  return (
+    typeof status === "string" &&
+    Object.prototype.hasOwnProperty.call(STATUS_TO_PIPELINE, status)
+  );
+}
+
+/**
  * Construit le fragment SQL `SET ... ` à appliquer dans un UPDATE outreach
  * pour écrire de façon atomique `status` + `pipeline_stage` + `updated_at`
  * + `last_interaction_at`.

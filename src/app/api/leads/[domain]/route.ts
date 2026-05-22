@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getLeadDetail, recordVisit } from "@/lib/queries";
+import { getLeadDetail, recordVisit, patchOutreach } from "@/lib/queries";
 import { requireAuth } from "@/lib/auth/api-auth";
 import { getTenantId, getTenantProspectLimit } from "@/lib/supabase/tenant";
 import { getWorkspaceScope } from "@/lib/auth/user-context";
 import { isRateLimited } from "@/lib/rate-limit";
 import { isUserFrozen } from "@/lib/auth/freeze";
+import { isKnownStatus } from "@/lib/outreach/status";
 
 // Anti-scraping: max 30 lead detail views per minute per user
 const LEADS_RATE_LIMIT = 30;
@@ -72,4 +73,49 @@ export async function GET(
   return NextResponse.json(lead, {
     headers: { "Cache-Control": "private, max-age=60" },
   });
+}
+
+/**
+ * PATCH /api/leads/[domain] — mise à jour partielle d'un lead.
+ *
+ * Verbe appelé par le front pour le changement de statut prospect
+ * (sélection groupée, bouton « + Pipeline » table + carte mobile,
+ * cf prospect-page.tsx). Avant ce handler, l'endpoint ne répondait
+ * qu'en GET → tous ces appels partaient en 405 silencieux.
+ *
+ * Body attendu : `{ status }` — `status` doit être une valeur métier
+ * connue (cf STATUS_TO_PIPELINE). L'écriture est scopée au tenant courant
+ * via `patchOutreach`, qui synchronise aussi `pipeline_stage`.
+ */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ domain: string }> }
+) {
+  const auth = await requireAuth();
+  if (auth.error) return auth.error;
+
+  const userId = auth.user.id;
+  const tenantId = await getTenantId(userId);
+  const { insertId: workspaceId } = await getWorkspaceScope();
+  // URL param named `domain` for back-compat but now carries a SIREN.
+  const { domain: siren } = await params;
+
+  // Pattern Veridian : .catch fallback objet vide → pas de 500 sur JSON
+  // malformé, la validation explicite ci-dessous rejette proprement.
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+
+  // `status` est obligatoire et doit être une valeur métier connue : un
+  // status libre atterrirait en DB et désyncerait le funnel.
+  if (!isKnownStatus(body.status)) {
+    return NextResponse.json(
+      { error: "Champ 'status' invalide ou manquant." },
+      { status: 400 }
+    );
+  }
+
+  // Update scopé au tenant courant (multi-tenant) : patchOutreach filtre
+  // toujours sur tenant_id, impossible de toucher un lead d'un autre tenant.
+  await patchOutreach(siren, { status: body.status }, tenantId, workspaceId, userId);
+
+  return NextResponse.json({ ok: true });
 }
