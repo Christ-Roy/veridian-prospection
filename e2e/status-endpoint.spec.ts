@@ -1,17 +1,22 @@
 /**
  * /api/status smoke — Playwright API test (no browser JS needed, just
- * HTTP assertions). Validates the shape and the performance of the new
- * detailed health endpoint introduced in commit cfa47a2.
+ * HTTP assertions). Validates the shape and the performance of the
+ * detailed health endpoint.
  *
- * Le endpoint est public (ajouté à isPublicRoute dans middleware.ts),
- * donc pas besoin d'auth.
+ * Le endpoint est public (isPublicRoute dans middleware.ts), pas d'auth.
+ *
+ * SÉCURITÉ : /api/status est public — il NE DOIT PAS exposer les volumes
+ * business (entreprises, outreach…). Ces compteurs ont été déplacés vers
+ * /api/admin/stats (authed) — pentest T16 finding L1. Ce test vérifie
+ * qu'ils ne réapparaissent pas.
  *
  * Couverture:
- *  - 200 OK (ou 503 si unhealthy — on vérifie les 2 cas)
- *  - Shape JSON complète (status, db, entreprises_count, checks_ms, ...)
- *  - entreprises_count > 0 sur staging (DB peuplée)
- *  - checks_ms.db < 5000 (perf sanity check)
- *  - timestamp est un ISO valide récent (< 60s)
+ *  - 200 OK (ou 503 si unhealthy) — même shape dans les 2 cas
+ *  - Shape JSON : status, db, auth, version, uptime_s, checks_ms…
+ *  - AUCUN compteur business dans le payload (anti-régression sécu)
+ *  - checks_ms.db < 5000 (perf sanity)
+ *  - timestamp ISO valide récent (< 60s)
+ *  - joignable sans cookie d'auth
  */
 import { test, expect } from "@playwright/test";
 
@@ -32,17 +37,8 @@ test.describe("/api/status endpoint", () => {
     expect(["healthy", "degraded", "unhealthy"]).toContain(body.status);
     expect(body).toHaveProperty("db");
     expect(["ok", "fail"]).toContain(body.db);
-    expect(body).toHaveProperty("supabase");
-    expect(["ok", "fail", "not_configured"]).toContain(body.supabase);
-    expect(body).toHaveProperty("twenty");
-    expect(["ok", "fail", "not_configured"]).toContain(body.twenty);
-
-    // Counts (may be null if table not found, -1 if query failed)
-    expect(body).toHaveProperty("entreprises_count");
-    expect(body).toHaveProperty("outreach_count");
-    expect(body).toHaveProperty("followups_count");
-    expect(body).toHaveProperty("claude_activity_count");
-    expect(body).toHaveProperty("workspaces_count");
+    expect(body).toHaveProperty("auth");
+    expect(["ok", "fail"]).toContain(body.auth);
 
     // Meta
     expect(body).toHaveProperty("version");
@@ -52,6 +48,17 @@ test.describe("/api/status endpoint", () => {
     expect(body).toHaveProperty("checks_ms");
     expect(body.checks_ms).toHaveProperty("db");
     expect(typeof body.checks_ms.db).toBe("number");
+  });
+
+  test("ne fuite AUCUN compteur business (route publique — pentest T16 L1)", async ({ request }) => {
+    const res = await request.get(`${PROSPECTION_URL}/api/status`);
+    const body = await res.json();
+    // Les volumes business sont sur /api/admin/stats (authed), jamais ici.
+    expect(body).not.toHaveProperty("entreprises_count");
+    expect(body).not.toHaveProperty("outreach_count");
+    expect(body).not.toHaveProperty("followups_count");
+    expect(body).not.toHaveProperty("claude_activity_count");
+    expect(body).not.toHaveProperty("workspaces_count");
   });
 
   test("timestamp is recent (< 60s old)", async ({ request }) => {
@@ -71,18 +78,6 @@ test.describe("/api/status endpoint", () => {
         body.checks_ms.db,
         `db check took ${body.checks_ms.db}ms, expected < 5000`
       ).toBeLessThan(5000);
-    }
-  });
-
-  test("entreprises_count > 0 on healthy staging (SIREN refactor sanity)", async ({ request }) => {
-    const res = await request.get(`${PROSPECTION_URL}/api/status`);
-    const body = await res.json();
-    // Only assert when the DB is healthy and the count is not an error marker
-    if (body.status !== "unhealthy" && typeof body.entreprises_count === "number" && body.entreprises_count >= 0) {
-      expect(
-        body.entreprises_count,
-        "post-SIREN refactor staging should have ~996K entreprises"
-      ).toBeGreaterThan(10_000);
     }
   });
 

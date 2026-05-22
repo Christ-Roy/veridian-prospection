@@ -5,16 +5,16 @@
  * (/opt/veridian/monitoring/prod-healthcheck.sh) to surface more signal
  * than the minimal /api/health route.
  *
+ * SÉCURITÉ — cette route est PUBLIQUE : elle NE DOIT PAS exposer les
+ * volumes business (entreprises, outreach, workspaces…). Ça divulgue la
+ * taille du business à n'importe qui (pentest T16 finding L1). Les
+ * compteurs sont servis par GET /api/admin/stats, derrière requireAdmin().
+ *
  * Shape:
  *   {
  *     status: 'healthy' | 'degraded' | 'unhealthy',
  *     db: 'ok' | 'fail',
  *     auth: 'ok' | 'fail',
- *     entreprises_count: number,
- *     outreach_count: number,
- *     followups_count: number,
- *     claude_activity_count: number,
- *     workspaces_count: number,
  *     version: string,
  *     commit: string | null,
  *     uptime_s: number,
@@ -27,42 +27,11 @@ import { prisma } from "@/lib/prisma";
 
 const STARTED_AT = Date.now();
 
-async function checkDb(): Promise<{ ok: boolean; ms: number; counts?: Record<string, number> }> {
+async function checkDb(): Promise<{ ok: boolean; ms: number }> {
   const start = Date.now();
   try {
     const ping = await prisma.$queryRaw<[{ ok: number }]>`SELECT 1 as ok`;
-    if (ping[0]?.ok !== 1) return { ok: false, ms: Date.now() - start };
-
-    // Batched counts in parallel
-    const [entreprises, outreach, followups, claude, workspaces] = await Promise.all([
-      prisma.$queryRaw<[{ c: bigint }]>`SELECT COUNT(*) as c FROM entreprises`.catch(
-        () => [{ c: BigInt(-1) }] as const
-      ),
-      prisma.$queryRaw<[{ c: bigint }]>`SELECT COUNT(*) as c FROM outreach`.catch(
-        () => [{ c: BigInt(-1) }] as const
-      ),
-      prisma.$queryRaw<[{ c: bigint }]>`SELECT COUNT(*) as c FROM followups`.catch(
-        () => [{ c: BigInt(-1) }] as const
-      ),
-      prisma.$queryRaw<[{ c: bigint }]>`SELECT COUNT(*) as c FROM claude_activity`.catch(
-        () => [{ c: BigInt(-1) }] as const
-      ),
-      prisma.$queryRaw<[{ c: bigint }]>`SELECT COUNT(*) as c FROM workspaces`.catch(
-        () => [{ c: BigInt(-1) }] as const
-      ),
-    ]);
-
-    return {
-      ok: true,
-      ms: Date.now() - start,
-      counts: {
-        entreprises: Number(entreprises[0].c),
-        outreach: Number(outreach[0].c),
-        followups: Number(followups[0].c),
-        claude_activity: Number(claude[0].c),
-        workspaces: Number(workspaces[0].c),
-      },
-    };
+    return { ok: ping[0]?.ok === 1, ms: Date.now() - start };
   } catch {
     return { ok: false, ms: Date.now() - start };
   }
@@ -94,11 +63,6 @@ export async function GET() {
     status,
     db: db.ok ? "ok" : "fail",
     auth: auth.ok ? "ok" : "fail",
-    entreprises_count: db.counts?.entreprises ?? null,
-    outreach_count: db.counts?.outreach ?? null,
-    followups_count: db.counts?.followups ?? null,
-    claude_activity_count: db.counts?.claude_activity ?? null,
-    workspaces_count: db.counts?.workspaces ?? null,
     version: process.env.NEXT_PUBLIC_APP_VERSION || process.env.npm_package_version || "unknown",
     commit: process.env.GIT_SHA || process.env.NEXT_PUBLIC_COMMIT_SHA || null,
     uptime_s: Math.round((Date.now() - STARTED_AT) / 1000),

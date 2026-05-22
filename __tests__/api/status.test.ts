@@ -81,4 +81,20 @@ describe("GET /api/status", () => {
     expect(body).not.toHaveProperty("supabase");
     expect((body.checks_ms as Record<string, unknown>)).not.toHaveProperty("supabase");
   });
+
+  // ── Sécurité : pas de fuite de volumes business (pentest T16 L1) ───────
+  // /api/status est PUBLIC. Les compteurs (entreprises, outreach, etc.)
+  // divulguent la taille du business — ils ont été déplacés vers
+  // /api/admin/stats (authed). Si quelqu'un les ré-ajoute ici, ça casse.
+  test("ne fuite AUCUN compteur business (route publique)", async () => {
+    prismaMock.$queryRaw.mockResolvedValue([{ ok: 1 }]);
+    prismaMock.user.count.mockResolvedValue(0);
+
+    const body = (await readJson(await GET())) as Record<string, unknown>;
+    expect(body).not.toHaveProperty("entreprises_count");
+    expect(body).not.toHaveProperty("outreach_count");
+    expect(body).not.toHaveProperty("followups_count");
+    expect(body).not.toHaveProperty("claude_activity_count");
+    expect(body).not.toHaveProperty("workspaces_count");
+  });
 });
