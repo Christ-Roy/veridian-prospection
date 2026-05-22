@@ -58,6 +58,9 @@ describe("@/lib/queries — surface du barrel", () => {
     "getSetting",
     "setSetting",
     "getAllSettings",
+    // refill leads (ticket refill 1/3)
+    "consumeLead",
+    "getLeadBalance",
   ] as const;
 
   test.each(EXPECTED_FUNCTIONS)("exporte la fonction %s", (name) => {
