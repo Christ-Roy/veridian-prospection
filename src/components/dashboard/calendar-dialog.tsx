@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
+import { Label } from "@/components/ui/label";
 import {
   Popover,
   PopoverContent,
@@ -154,7 +155,7 @@ export function CalendarDialog({ lead, defaultType }: CalendarDialogProps) {
 
   function handleCreate() {
     if (!date) {
-      toast.error("Veuillez selectionner une date");
+      toast.error("Veuillez sélectionner une date");
       return;
     }
 
@@ -251,14 +252,15 @@ export function CalendarDialog({ lead, defaultType }: CalendarDialogProps) {
           )}
 
           {/* Date picker */}
-          <div>
-            <label className="text-sm font-medium">Date</label>
+          <div className="space-y-1.5">
+            <Label htmlFor="calendar-date-trigger">Date</Label>
             <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
               <PopoverTrigger asChild>
                 <Button
+                  id="calendar-date-trigger"
                   variant="outline"
                   className={cn(
-                    "mt-1 w-full justify-start text-left font-normal",
+                    "w-full justify-start text-left font-normal",
                     !date && "text-muted-foreground"
                   )}
                 >
@@ -285,13 +287,13 @@ export function CalendarDialog({ lead, defaultType }: CalendarDialogProps) {
 
           {/* Time and Duration */}
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-sm font-medium flex items-center gap-1.5">
+            <div className="space-y-1.5">
+              <Label htmlFor="calendar-time" className="flex items-center gap-1.5">
                 <Clock className="h-3.5 w-3.5 text-muted-foreground" />
                 Heure
-              </label>
+              </Label>
               <Select value={time} onValueChange={setTime}>
-                <SelectTrigger className="mt-1 w-full">
+                <SelectTrigger id="calendar-time" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent position="popper">
@@ -304,10 +306,10 @@ export function CalendarDialog({ lead, defaultType }: CalendarDialogProps) {
               </Select>
             </div>
 
-            <div>
-              <label className="text-sm font-medium">Duree</label>
+            <div className="space-y-1.5">
+              <Label htmlFor="calendar-duration">Durée</Label>
               <Select value={duration} onValueChange={setDuration}>
-                <SelectTrigger className="mt-1 w-full">
+                <SelectTrigger id="calendar-duration" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent position="popper">
@@ -322,13 +324,14 @@ export function CalendarDialog({ lead, defaultType }: CalendarDialogProps) {
           </div>
 
           {/* Notes */}
-          <div>
-            <label className="text-sm font-medium">Notes</label>
+          <div className="space-y-1.5">
+            <Label htmlFor="calendar-notes">Notes</Label>
             <Textarea
+              id="calendar-notes"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={isRappel ? 4 : 6}
-              className="mt-1 text-xs"
+              className="text-xs"
               placeholder={isRappel ? "Motif du rappel..." : "Contexte du rendez-vous..."}
             />
           </div>
@@ -340,7 +343,7 @@ export function CalendarDialog({ lead, defaultType }: CalendarDialogProps) {
           </Button>
           <Button onClick={handleCreate} disabled={!isValid} className="gap-1.5">
             <ExternalLink className="h-4 w-4" />
-            {isRappel ? "Creer le rappel" : "Creer le RDV"}
+            {isRappel ? "Créer le rappel" : "Créer le RDV"}
           </Button>
         </DialogFooter>
       </DialogContent>
