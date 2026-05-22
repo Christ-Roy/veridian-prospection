@@ -295,7 +295,18 @@ model Workspace {
   tenantId   String    @map("tenant_id") @db.Uuid
   name       String
   slug       String
+  // LEGACY — cap de plan jamais branché (1 ref read-only dans admin/kpi).
+  // Conservé tel quel (le drop = migration destructive). Le quota refill
+  // vit désormais dans leadsCredited/leadsConsumed ci-dessous.
   leadsLimit Int?      @map("leads_limit")
+  // Quota refill leads (ticket refill 1/3, CONTRAT-BILLING §8.4).
+  //   solde = leadsCredited - leadsConsumed
+  // - leadsCredited : cumul des crédits (achats Stripe one-shot + welcome).
+  //   Incrémenté SEULEMENT par POST /api/tenants/{id}/credit-leads.
+  // - leadsConsumed : cumul des leads consommés (1 fiche entreprise débloquée).
+  //   Incrémenté par la consultation d'une fiche, idempotent par (ws, siren).
+  leadsCredited Int    @default(0) @map("leads_credited")
+  leadsConsumed Int    @default(0) @map("leads_consumed")
   createdBy  String?   @map("created_by") @db.Uuid
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
@@ -309,12 +320,60 @@ model Workspace {
   apiKeyHash      String?   @unique @map("api_key_hash")
   apiKeyCreatedAt DateTime? @map("api_key_created_at") @db.Timestamptz
 
-  members WorkspaceMember[]
+  members          WorkspaceMember[]
+  leadCreditEvents LeadCreditEvent[]
+  leadConsumptions LeadConsumption[]
 
   @@unique([tenantId, slug])
   @@index([tenantId])
   @@index([tenantId, deletedAt])
   @@map("workspaces")
+}
+
+// ============================================================================
+// REFILL LEADS — quota + historique (ticket refill 1/3, CONTRAT-BILLING §8.4)
+// ============================================================================
+
+// Registre append-only de chaque crédit de leads appliqué à un workspace.
+// Double rôle :
+//  1. Idempotence — `idempotencyKey @unique` : un signal Hub rejoué (retry
+//     Stripe, replay) ne crédite qu'une fois. Même garde que PlanHistory.
+//  2. Audit / compta — montant, source, Stripe payment id, date : tout
+//     l'historique des achats reste traçable pour le support et la compta.
+model LeadCreditEvent {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId     String   @map("workspace_id") @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  quantity        Int
+  // 'purchase' (Stripe Checkout one-shot) | 'welcome' (leads offerts).
+  source          String
+  idempotencyKey  String   @unique @map("idempotency_key")
+  stripePaymentId String?  @map("stripe_payment_id")
+  contractVersion String?  @map("contract_version")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@index([tenantId])
+  @@map("lead_credit_events")
+}
+
+// Une ligne = une fiche entreprise consommée par un workspace. La clé
+// composite (workspaceId, siren) rend le décompte idempotent : reconsulter
+// la même fiche ne recrée pas de ligne → le client ne paie jamais 2× la
+// même boîte.
+model LeadConsumption {
+  workspaceId String   @map("workspace_id") @db.Uuid
+  siren       String
+  tenantId    String   @map("tenant_id") @db.Uuid
+  consumedAt  DateTime @default(now()) @map("consumed_at") @db.Timestamptz
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@id([workspaceId, siren])
+  @@index([tenantId])
+  @@map("lead_consumption")
 }
 
 model WorkspaceMember {
