@@ -43,17 +43,24 @@ DROP en 1 migration :
 
 **Tier 💀 par règle §20, risque réel 🟢** (0 rows partout).
 
-### 🟡 5 tables enrichissement massif — décision business
+### 🟡 5 tables enrichissement massif — DÉCISION PRISE (2026-05-22)
 
-`staging_*` (1.5M+ rows chacune) + `inpi_history` (3.5M) = 5.5M rows total.
+`staging_*` + `inpi_history`.
 
-**Questions à arbitrer** :
-1. Sont-elles encore alimentées (cron scraper toujours actif) ?
-2. Si oui, par quel job ? Cron sur dev-pub ? Container scraping ?
-3. Si non, peut-on les archiver vers R2 + DROP ? Économie disque ~5-10 GB.
-4. `inpi_history` 3.5M rows — vraie source de vérité bilans INPI ou cache régénérable ?
+⚠️ **Correction de l'estimation initiale** : ce ticket annonçait « économie
+disque ~5-10 GB ». **Faux.** Diagnostic DB prod du 2026-05-22 (base
+`prospection` = 2,4 GB au total) : les `staging_*` pèsent **~370 MB**
+(master_enrich 163 MB, sirene_src 151 MB, ca_trust 55 MB, bodacc 1 MB),
+`inpi_history` 657 MB. Aucun gain disque significatif à les dropper, et
+la DB n'a aucun problème de poids.
 
-**Pas d'action sans réponse Robert.**
+**Décision Robert (2026-05-22)** : **on GARDE tout.** À terme, ré-enrichissement
+périodique nécessaire pour garder la data entreprises à jour — les `staging_*`
+sont la matière première de ce pipeline.
+
+→ Pas de DROP. Action de suivi déplacée dans le ticket dédié
+`2026-05-22-p5-reenrichissement-staging-tables.md` (P5) : déclarer ces tables
+proprement dans Prisma + ré-armer le pipeline d'enrichissement le moment venu.
 
 ### 🟢 2 tables actives — bug schema Prisma
 
