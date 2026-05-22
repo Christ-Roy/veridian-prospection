@@ -46,3 +46,7 @@ export {
 // Prospects (new navigation)
 export { getProspects, getDomainCounts, getPresetCounts, getSetting, setSetting, getAllSettings } from "./prospects";
 export type { ProspectFilters } from "./prospects";
+
+// Refill leads — quota / décompte (ticket refill 1/3)
+export { consumeLead, getLeadBalance } from "./lead-credits";
+export type { LeadBalance } from "./lead-credits";
