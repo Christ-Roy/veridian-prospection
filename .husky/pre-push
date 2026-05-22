@@ -52,6 +52,46 @@ if [ -x scripts/ci/check-env-sync.sh ]; then
   scripts/ci/check-env-sync.sh
 fi
 
+# 1septies. Garde-fou « l'app boote » — check-ui-build.sh
+#
+# Les tests unitaires Vitest/jsdom montent les composants depuis le code
+# SOURCE — ils ne voient jamais le `next build` réel. Un composant peut
+# passer 100 % des tests unitaires et casser le build de prod. check-ui-
+# build.sh lance `npm run build` et vérifie l'intégrité du .next/
+# (manifests App Router, chunks référencés présents, routes critiques
+# compilées). BLOCKING.
+#
+# Lancé UNIQUEMENT si le push touche du frontend (composants, pages,
+# next.config.ts, globals.css, package.json) — un push purement backend
+# ne rebuild pas l'UI pour rien (le build dure ~2-4 min).
+#
+# Skip d'urgence : SKIP_UI_BUILD=1 git push (à NE JAMAIS faire en CI).
+# Fail-safe : script absent/non exécutable alors qu'un fichier frontend
+# est modifié = push refusé (pas exit 0 silencieux).
+UI_CHECK="scripts/ci/check-ui-build.sh"
+FRONTEND_CHANGES=$(git diff --name-only "$BASE_REF"...HEAD 2>/dev/null \
+  | grep -E '^src/(components|app)/|^next\.config\.ts$|^src/app/globals\.css$|^package\.json$' || true)
+
+if [ -n "$FRONTEND_CHANGES" ]; then
+  if [ "${SKIP_UI_BUILD:-0}" = "1" ]; then
+    echo "⚠ check-ui-build.sh skipped via SKIP_UI_BUILD=1"
+  else
+    echo "── Husky pre-push : frontend modifié → check build UI ──"
+    if [ ! -x "$UI_CHECK" ]; then
+      echo "✗ $UI_CHECK introuvable ou non exécutable — push refusé."
+      echo "  Run: chmod +x $UI_CHECK"
+      exit 1
+    fi
+    if ! "$UI_CHECK"; then
+      echo
+      echo "✗ Push refusé : le build de l'app est cassé ou structurellement risqué."
+      echo "  Une app qui ne boote pas = prod morte. Corrige avant de pousser."
+      echo "  Skip d'urgence (à éviter) : SKIP_UI_BUILD=1 git push"
+      exit 1
+    fi
+  fi
+fi
+
 # 2. Rappel régénération compose si base/prod modifié
 # Note : check sémantique désactivé (formats varient entre versions compose CLI).
 # Reste à implémenter un check basé sur yq normalisé.

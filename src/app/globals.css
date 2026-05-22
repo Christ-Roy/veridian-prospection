@@ -139,3 +139,277 @@
 .badge-fiche-ouverte {
   animation: badge-stroke-pulse var(--badge-speed, 2s) ease-in-out infinite;
 }
+
+/* === FullCalendar theming === */
+/*
+ * Habille FullCalendar v6 avec les tokens du design system (OKLCH).
+ * Scopé à `.fc-veridian` — le wrapper du composant AppointmentCalendar —
+ * pour ne jamais fuiter sur le date-picker shadcn (`ui/calendar.tsx`).
+ *
+ * FullCalendar v6 expose ses couleurs via des variables `--fc-*` : on les
+ * remappe ici sur les tokens de l'app. Le reste (typo, radius, états) passe
+ * par des sélecteurs ciblés sur les classes `.fc-*`.
+ */
+.fc-veridian {
+  /* Couleurs des événements selon le stage de pipeline source. */
+  --fc-appt-default-bg: oklch(0.95 0.03 240);
+  --fc-appt-default-border: oklch(0.62 0.16 240);
+  --fc-appt-rappel-bg: oklch(0.95 0.05 75);
+  --fc-appt-rappel-border: oklch(0.68 0.16 60);
+  --fc-appt-demo-bg: oklch(0.95 0.04 300);
+  --fc-appt-demo-border: oklch(0.6 0.18 300);
+
+  /* Variables natives FullCalendar mappées sur le design system. */
+  --fc-border-color: var(--border);
+  --fc-page-bg-color: var(--card);
+  --fc-neutral-bg-color: var(--muted);
+  --fc-neutral-text-color: var(--muted-foreground);
+  --fc-today-bg-color: color-mix(in oklch, var(--primary) 6%, transparent);
+  --fc-now-indicator-color: var(--destructive);
+  --fc-event-text-color: var(--foreground);
+  --fc-list-event-hover-bg-color: var(--accent);
+  --fc-highlight-color: color-mix(in oklch, var(--primary) 10%, transparent);
+
+  font-family: var(--font-sans);
+  font-size: 0.8125rem;
+  color: var(--foreground);
+}
+
+.dark .fc-veridian {
+  --fc-appt-default-bg: oklch(0.32 0.06 240);
+  --fc-appt-default-border: oklch(0.6 0.13 240);
+  --fc-appt-rappel-bg: oklch(0.34 0.07 70);
+  --fc-appt-rappel-border: oklch(0.68 0.13 65);
+  --fc-appt-demo-bg: oklch(0.33 0.07 300);
+  --fc-appt-demo-border: oklch(0.62 0.14 300);
+}
+
+/* Barre d'outils */
+.fc-veridian .fc-toolbar.fc-header-toolbar {
+  margin-bottom: 0.75rem;
+  padding: 0.625rem 0.625rem 0;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.fc-veridian .fc-toolbar-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  color: var(--foreground);
+}
+
+/* Boutons de la toolbar — alignés sur les variants shadcn */
+.fc-veridian .fc-button {
+  background: var(--background);
+  border: 1px solid var(--border);
+  color: var(--foreground);
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: capitalize;
+  padding: 0.3125rem 0.625rem;
+  height: 2rem;
+  border-radius: var(--radius-md);
+  box-shadow: none;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.fc-veridian .fc-button:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  border-color: var(--border);
+}
+.fc-veridian .fc-button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+  box-shadow: none;
+}
+.fc-veridian .fc-button:disabled {
+  opacity: 0.5;
+  background: var(--background);
+  color: var(--muted-foreground);
+}
+.fc-veridian .fc-button-primary:not(:disabled).fc-button-active,
+.fc-veridian .fc-button-primary:not(:disabled):active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+}
+/* Groupes de boutons : coins internes plats */
+.fc-veridian .fc-button-group > .fc-button:not(:first-child) {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  margin-left: -1px;
+}
+.fc-veridian .fc-button-group > .fc-button:not(:last-child) {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+/* Icônes prev/next nettes à la bonne taille */
+.fc-veridian .fc-icon {
+  font-size: 1.25rem;
+  vertical-align: middle;
+}
+
+/* Grille : entêtes de jours */
+.fc-veridian .fc-col-header-cell {
+  background: var(--muted);
+  padding: 0.5rem 0;
+}
+.fc-veridian .fc-col-header-cell-cushion {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted-foreground);
+  padding: 0.25rem 0.375rem;
+}
+.fc-veridian .fc-timegrid-axis-cushion,
+.fc-veridian .fc-timegrid-slot-label-cushion {
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+}
+
+/* Numéros de jour (vue mois) */
+.fc-veridian .fc-daygrid-day-number {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--foreground);
+  padding: 0.25rem 0.375rem;
+}
+.fc-veridian .fc-day-today .fc-daygrid-day-number {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-radius: 999px;
+  min-width: 1.375rem;
+  text-align: center;
+  margin: 0.25rem;
+  padding: 0.125rem 0;
+}
+.fc-veridian .fc-day-other .fc-daygrid-day-number {
+  color: var(--muted-foreground);
+  opacity: 0.6;
+}
+
+/* Événements (vues grille) */
+.fc-veridian .fc-event {
+  border-radius: var(--radius-sm);
+  border-width: 1px;
+  border-left-width: 3px;
+  padding: 0;
+  cursor: pointer;
+  box-shadow: none;
+  transition: filter 0.12s ease;
+}
+.fc-veridian .fc-event:hover {
+  filter: brightness(0.97);
+}
+.dark .fc-veridian .fc-event:hover {
+  filter: brightness(1.12);
+}
+.fc-veridian .fc-event:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+.fc-veridian .fc-appt-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.0625rem;
+  padding: 0.1875rem 0.375rem;
+  overflow: hidden;
+  line-height: 1.25;
+}
+.fc-veridian .fc-appt-time {
+  font-size: 0.625rem;
+  font-weight: 600;
+  opacity: 0.85;
+}
+.fc-veridian .fc-appt-name {
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Événements courts (≤ ~30 min) : heure + titre sur une seule ligne */
+.fc-veridian .fc-timegrid-event-short .fc-appt-block {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0.3125rem;
+  padding-block: 0.0625rem;
+}
+.fc-veridian .fc-timegrid-event-short .fc-appt-time {
+  flex-shrink: 0;
+}
+/* Pastille « +N » de débordement */
+.fc-veridian .fc-daygrid-more-link {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+/* Indicateur d'heure courante */
+.fc-veridian .fc-timegrid-now-indicator-arrow {
+  border-color: var(--destructive);
+}
+
+/* Vue liste (mobile) */
+.fc-veridian .fc-list {
+  border-radius: var(--radius-md);
+  border: none;
+}
+.fc-veridian .fc-list-day-cushion {
+  background: var(--muted);
+  padding: 0.5rem 0.875rem;
+}
+.fc-veridian .fc-list-day-text,
+.fc-veridian .fc-list-day-side-text {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  color: var(--foreground);
+}
+.fc-veridian .fc-list-event {
+  cursor: pointer;
+}
+.fc-veridian .fc-list-event:hover td {
+  background: var(--accent);
+}
+.fc-veridian .fc-list-event-time {
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  padding: 0.625rem 0.875rem;
+}
+.fc-veridian .fc-list-event-dot {
+  border-width: 5px;
+}
+.fc-veridian .fc-appt-list-title {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--foreground);
+  padding: 0.625rem 0.875rem;
+}
+.fc-veridian .fc-list-empty {
+  background: var(--card);
+}
+
+/* Cellules cliquables — curseur cohérent */
+.fc-veridian .fc-timegrid-slot,
+.fc-veridian .fc-daygrid-day {
+  transition: background-color 0.1s ease;
+}
+
+/* Compacité sur mobile */
+@media (max-width: 767px) {
+  .fc-veridian .fc-toolbar.fc-header-toolbar {
+    margin-bottom: 0.5rem;
+  }
+  .fc-veridian .fc-toolbar-title {
+    font-size: 0.875rem;
+  }
+  .fc-veridian .fc-list-event-time,
+  .fc-veridian .fc-appt-list-title {
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
+  }
+}

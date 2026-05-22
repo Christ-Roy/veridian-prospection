@@ -350,10 +350,15 @@ model LeadCreditEvent {
   idempotencyKey  String   @unique @map("idempotency_key")
   stripePaymentId String?  @map("stripe_payment_id")
   contractVersion String?  @map("contract_version")
+  // Palier de plan (freemium|pro|business) pour un crédit welcome. NULL pour
+  // un crédit 'purchase' (un achat n'a pas de palier). L'index partiel
+  // unique ci-dessous garantit l'invariant "welcome offert 1× par palier".
+  welcomePlan     String?  @map("welcome_plan")
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
+  @@unique([workspaceId, welcomePlan], name: "welcome_plan_unique")
   @@index([workspaceId, createdAt(sort: Desc)])
   @@index([tenantId])
   @@map("lead_credit_events")

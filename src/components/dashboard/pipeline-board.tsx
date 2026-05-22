@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
-import { LeadSheet } from "./lead-sheet";
 import { formatCA, PIPELINE_STAGES, INTEREST_SCALE } from "@/lib/types";
 import { StageTransitionModal, type StageData } from "./lead-sheet/stage-transition";
 import { toast } from "sonner";
@@ -21,6 +21,15 @@ import {
   TrendingUp,
   Calendar,
 } from "lucide-react";
+
+// LeadSheet (~2885 lignes avec ses sous-sections) ne sert qu'au clic sur
+// un lead — sorti du bundle initial de /pipeline via code-split. Monté
+// une seule fois, à la première ouverture, puis gardé monté pour
+// préserver l'animation de fermeture Radix du <Sheet>.
+const LeadSheet = dynamic(
+  () => import("./lead-sheet").then((m) => m.LeadSheet),
+  { ssr: false },
+);
 
 interface PipelineLead {
   domain: string;
@@ -92,6 +101,9 @@ export function PipelineBoard() {
   const [pipeline, setPipeline] = useState<Record<string, PipelineLead[]>>({});
   const [loading, setLoading] = useState(true);
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
+  // Une fois ouvert, on garde LeadSheet monté (chunk déjà chargé) pour
+  // que l'animation de fermeture du <Sheet> Radix joue normalement.
+  const [leadSheetOpened, setLeadSheetOpened] = useState(false);
 
   // Stage transition modal from pipeline
   const [transitionOpen, setTransitionOpen] = useState(false);
@@ -117,6 +129,11 @@ export function PipelineBoard() {
   }, []);
 
   useEffect(() => { fetchPipeline(); }, [fetchPipeline]);
+
+  // Première sélection d'un lead → on monte LeadSheet (charge son chunk).
+  useEffect(() => {
+    if (selectedDomain && !leadSheetOpened) setLeadSheetOpened(true);
+  }, [selectedDomain, leadSheetOpened]);
 
   // --- Card drag ---
   function handleCardDragStart(e: React.DragEvent, domain: string, column: string) {
@@ -486,12 +503,14 @@ export function PipelineBoard() {
         </div>
       )}
 
-      {/* Lead sheet */}
-      <LeadSheet
-        domain={selectedDomain}
-        onClose={() => setSelectedDomain(null)}
-        onUpdated={() => {}}
-      />
+      {/* Lead sheet — monté lazy à la première ouverture (code-split) */}
+      {leadSheetOpened && (
+        <LeadSheet
+          domain={selectedDomain}
+          onClose={() => setSelectedDomain(null)}
+          onUpdated={() => {}}
+        />
+      )}
 
       {/* Stage transition modal */}
       <StageTransitionModal

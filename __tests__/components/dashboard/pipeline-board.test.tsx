@@ -79,3 +79,45 @@ describe("pipeline-board.tsx — responsive mobile (sprint UI 2026-05-22)", () =
     expect(source).not.toMatch(/text-\[(9|10|11)px\]/);
   });
 });
+
+describe("pipeline-board.tsx — code-split LeadSheet (perf sprint 2026-05-22)", () => {
+  let source = "";
+
+  test("setup : lecture du source", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    source = await fs.readFile(
+      path.resolve(process.cwd(), "src/components/dashboard/pipeline-board.tsx"),
+      "utf-8",
+    );
+    expect(source.length).toBeGreaterThan(0);
+  });
+
+  // LeadSheet pèse ~2885 lignes (sous-sections incluses) — l'inclure dans
+  // le bundle initial de /pipeline le faisait grossir de plusieurs centaines
+  // de Ko. Le sort en next/dynamic + ssr:false l'isole en chunk lazy chargé
+  // au premier clic. Régression si on re-importe LeadSheet en statique.
+  test("LeadSheet est importé via next/dynamic (pas en import statique)", () => {
+    expect(source).toMatch(/import\s+dynamic\s+from\s+"next\/dynamic"/);
+    expect(source).toMatch(
+      /const\s+LeadSheet\s*=\s*dynamic\s*\(\s*\(\)\s*=>\s*import\s*\(\s*"\.\/lead-sheet"\s*\)/,
+    );
+  });
+
+  test("aucun import statique de ./lead-sheet (sinon le code-split casse)", () => {
+    // Le pattern à éviter : `import { LeadSheet } from "./lead-sheet"`
+    // qui ramène tout le module dans le bundle initial.
+    expect(source).not.toMatch(/^import\s+\{[^}]*LeadSheet[^}]*\}\s+from\s+"\.\/lead-sheet"/m);
+  });
+
+  test("LeadSheet monté en `ssr: false` (chunk client-only)", () => {
+    expect(source).toMatch(/ssr:\s*false/);
+  });
+
+  // Conserve l'animation de fermeture du <Sheet> Radix en gardant le
+  // composant monté après la première ouverture.
+  test("conserve l'animation de fermeture via state `leadSheetOpened`", () => {
+    expect(source).toMatch(/leadSheetOpened/);
+    expect(source).toMatch(/setLeadSheetOpened/);
+  });
+});

@@ -5,6 +5,7 @@ import { Calendar, Clock, Phone, ExternalLink, CheckCircle2, X, RotateCcw } from
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { appointmentPalette, resolveStageKey } from "@/lib/appointment-colors";
 
 type Appointment = {
   id: string;
@@ -38,15 +39,15 @@ function formatDate(iso: string) {
 }
 
 function stageIcon(stage: string | null) {
-  if (stage === "a_rappeler") return <Phone className="h-3.5 w-3.5 text-amber-500" />;
-  if (stage === "site_demo") return <Calendar className="h-3.5 w-3.5 text-purple-500" />;
-  return <Clock className="h-3.5 w-3.5 text-blue-500" />;
+  const palette = appointmentPalette(stage);
+  const key = resolveStageKey(stage);
+  if (key === "a_rappeler") return <Phone className={cn("h-3.5 w-3.5", palette.icon)} />;
+  if (key === "site_demo") return <Calendar className={cn("h-3.5 w-3.5", palette.icon)} />;
+  return <Clock className={cn("h-3.5 w-3.5", palette.icon)} />;
 }
 
 function stageColor(stage: string | null) {
-  if (stage === "a_rappeler") return "border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950";
-  if (stage === "site_demo") return "border-purple-200 bg-purple-50 dark:border-purple-800 dark:bg-purple-950";
-  return "border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950";
+  return appointmentPalette(stage).surface;
 }
 
 function urgencyLabel(iso: string) {
@@ -143,7 +144,7 @@ export function UpcomingAppointments() {
         <Calendar className="h-4 w-4 text-muted-foreground" />
         <h3 className="text-sm font-semibold">
           Prochains RDV
-          <span className="ml-1.5 rounded-full bg-blue-100 dark:bg-blue-900 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:text-blue-300">
+          <span className="ml-1.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
             {appointments.length}
           </span>
         </h3>
