@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
-  FolderOpen, Kanban, History, BookOpen, Settings, Clock, Menu, X, Globe, PhoneCall, Shield,
+  FolderOpen, Kanban, History, BookOpen, Settings, Clock, Menu, X, Globe, PhoneCall, Shield, List,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NotificationBell } from "@/components/layout/notification-bell";
@@ -109,57 +109,69 @@ export function AppNav({ initialIsAdmin = false }: { initialIsAdmin?: boolean })
               <Link
                 key={href}
                 href={href}
+                title={label}
                 className={cn(
-                  "px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1.5",
+                  "px-2 lg:px-3 py-2 min-h-[36px] text-sm rounded-md transition-colors flex items-center gap-1 lg:gap-1.5",
                   isActive
                     ? "font-medium text-indigo-600 bg-indigo-50"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted"
                 )}
               >
-                <Icon className="h-3.5 w-3.5" />
-                {label}
+                <Icon className="h-3.5 w-3.5 shrink-0" />
+                {/* Labels masqués entre md et lg (icônes seules) pour que la
+                    nav tienne dans le viewport tablette ; reviennent à lg. */}
+                <span className="hidden lg:inline">{label}</span>
               </Link>
             );
           })}
 
-          {/* Toggle avec site / sans site — only when on /prospects */}
+          {/* Toggle avec site / sans site — only when on /prospects.
+              Entre md et lg, les libellés sont masqués (icônes seules) pour
+              que le header tienne dans le viewport tablette ; les labels
+              reviennent à lg où il y a la place. */}
           {onProspects && (
-            <div className="ml-3 pl-3 border-l flex items-center gap-0.5" data-testid="site-toggle">
+            <div className="ml-2 pl-2 lg:ml-3 lg:pl-3 border-l flex items-center gap-0.5" data-testid="site-toggle">
               <Link
                 href={buildProspectsHref("all")}
                 title="Tous les prospects"
+                data-testid="site-toggle-all"
                 className={cn(
-                  "px-2.5 py-1.5 text-xs rounded-md transition-colors flex items-center gap-1",
+                  "px-2 lg:px-2.5 py-2 min-h-[36px] text-xs rounded-md transition-colors flex items-center gap-1",
                   currentSite === "all"
                     ? "font-semibold text-indigo-600 bg-indigo-50"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted"
                 )}
               >
-                Tous
+                <List className="h-3.5 w-3.5 shrink-0" />
+                <span className="hidden lg:inline">Tous</span>
               </Link>
               <Link
                 href={buildProspectsHref("with")}
                 title="Prospects avec site web"
+                data-testid="site-toggle-with"
                 className={cn(
-                  "px-2.5 py-1.5 text-xs rounded-md transition-colors flex items-center gap-1",
+                  "px-2 lg:px-2.5 py-2 min-h-[36px] text-xs rounded-md transition-colors flex items-center gap-1",
                   currentSite === "with"
                     ? "font-semibold text-emerald-700 bg-emerald-50"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted"
                 )}
               >
-                <Globe className="h-3 w-3" /> Avec site
+                <Globe className="h-3.5 w-3.5 shrink-0" />
+                <span className="hidden lg:inline">Avec site</span>
               </Link>
               <Link
                 href={buildProspectsHref("without")}
                 title="Prospects sans site web (RGE, Qualiopi, etc.)"
+                data-testid="site-toggle-without"
                 className={cn(
-                  "px-2.5 py-1.5 text-xs rounded-md transition-colors flex items-center gap-1",
+                  "px-2 lg:px-2.5 py-2 min-h-[36px] text-xs rounded-md transition-colors flex items-center gap-1",
                   currentSite === "without"
                     ? "font-semibold text-orange-700 bg-orange-50"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted"
                 )}
               >
-                <PhoneCall className="h-3 w-3" /> Sans site
+                <PhoneCall className="h-3.5 w-3.5 shrink-0" />
+                <span className="hidden lg:inline">Sans site</span>
               </Link>
             </div>
           )}
