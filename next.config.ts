@@ -1,5 +1,11 @@
 import type { NextConfig } from "next";
 import path from "path";
+import withBundleAnalyzerInit from "@next/bundle-analyzer";
+
+// Analyse de bundle activée via ANALYZE=true (npm run build).
+const withBundleAnalyzer = withBundleAnalyzerInit({
+  enabled: process.env.ANALYZE === "true",
+});
 
 const nextConfig: NextConfig = {
   output: "standalone",
@@ -20,4 +26,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withBundleAnalyzer(nextConfig);

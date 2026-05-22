@@ -1,11 +1,28 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import { PipelineBoard } from "@/components/dashboard/pipeline-board";
 import { UpcomingAppointments } from "@/components/dashboard/upcoming-appointments";
-import { AppointmentCalendar } from "@/components/dashboard/appointment-calendar";
 import { Button } from "@/components/ui/button";
-import { LayoutList, CalendarDays } from "lucide-react";
+import { LayoutList, CalendarDays, Loader2 } from "lucide-react";
+
+// FullCalendar (~5 packages @fullcalendar/*) ne charge que sur la vue
+// "Calendrier" — sorti du bundle initial de /pipeline via code-split.
+const AppointmentCalendar = dynamic(
+  () =>
+    import("@/components/dashboard/appointment-calendar").then(
+      (m) => m.AppointmentCalendar,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full items-center justify-center text-muted-foreground">
+        <Loader2 className="h-5 w-5 animate-spin" />
+      </div>
+    ),
+  },
+);
 
 type View = "list" | "calendar";
 
