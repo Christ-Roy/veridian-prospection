@@ -209,6 +209,60 @@ export function AppNav({ initialIsAdmin = false }: { initialIsAdmin?: boolean })
               </Link>
             );
           })}
+
+          {/* Toggle avec/sans site — sur /prospects uniquement. La nav
+              desktop l'expose en barre de segments ; en mobile il est
+              inaccessible sans cette section, le filtre par site serait
+              perdu sur téléphone. */}
+          {onProspects && (
+            <div className="mt-1 pt-2 border-t flex flex-col gap-1" data-testid="site-toggle-mobile">
+              <span className="px-3 pb-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Filtrer par site
+              </span>
+              <Link
+                href={buildProspectsHref("all")}
+                data-testid="site-toggle-mobile-all"
+                onClick={() => setMobileOpen(false)}
+                className={cn(
+                  "px-3 py-2 text-sm rounded-md transition-colors flex items-center gap-2",
+                  currentSite === "all"
+                    ? "font-medium text-indigo-600 bg-indigo-50"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                )}
+              >
+                <List className="h-4 w-4" />
+                Tous les prospects
+              </Link>
+              <Link
+                href={buildProspectsHref("with")}
+                data-testid="site-toggle-mobile-with"
+                onClick={() => setMobileOpen(false)}
+                className={cn(
+                  "px-3 py-2 text-sm rounded-md transition-colors flex items-center gap-2",
+                  currentSite === "with"
+                    ? "font-medium text-emerald-700 bg-emerald-50"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                )}
+              >
+                <Globe className="h-4 w-4" />
+                Avec site
+              </Link>
+              <Link
+                href={buildProspectsHref("without")}
+                data-testid="site-toggle-mobile-without"
+                onClick={() => setMobileOpen(false)}
+                className={cn(
+                  "px-3 py-2 text-sm rounded-md transition-colors flex items-center gap-2",
+                  currentSite === "without"
+                    ? "font-medium text-orange-700 bg-orange-50"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                )}
+              >
+                <PhoneCall className="h-4 w-4" />
+                Sans site
+              </Link>
+            </div>
+          )}
         </nav>
       )}
     </header>
