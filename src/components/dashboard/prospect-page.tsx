@@ -361,9 +361,10 @@ export function ProspectPage() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Filter bar */}
-      <div className="flex items-center justify-between border-b bg-white dark:bg-gray-900 dark:border-gray-800 px-3 md:px-4 py-1.5 gap-2 overflow-x-auto">
-        <div className="flex items-center gap-2 md:gap-3 shrink-0">
+      {/* Filter bar — empilée en colonne sur mobile (compteur au-dessus,
+          filtres en dessous qui wrappent), en ligne à partir de md. */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between border-b bg-white dark:bg-gray-900 dark:border-gray-800 px-3 md:px-4 py-1.5 gap-2">
+        <div className="flex items-center gap-2 md:gap-3 shrink-0 flex-wrap">
           <span className="text-xs text-muted-foreground">
             <strong>{data ? data.total.toLocaleString() : "..."}</strong> prospects
           </span>
