@@ -296,9 +296,19 @@ jobs:
         # (avec lock), schema Prisma + migrations (pour le seed via helper),
         # le spec crawler et le helper auth. Le `dist` complet de l'app n'est
         # pas nécessaire — le container Playwright tape l'app via HTTPS public.
+        #
+        # Garde-fou anti-saturation disque (cf 2026-05-23 cleanup ticket) :
+        # un sweep préemptif des résidus > 1h avant chaque run. Si la CI
+        # précédente a été cancelled, ses fichiers (root-owned via container
+        # Playwright) restent dans /tmp ; on les vire via un container alpine
+        # (root) avant de bosser, pour ne pas accumuler.
         run: |
           DEST=/tmp/prosp-crawler-${{ github.run_id }}
-          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 "rm -rf $DEST && mkdir -p $DEST"
+          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 "
+            docker run --rm -v /tmp:/tmp alpine sh -c \
+              'find /tmp -maxdepth 1 -name \"prosp-crawler-*\" -type d -mmin +60 -exec rm -rf {} + 2>/dev/null || true'
+            rm -rf $DEST && mkdir -p $DEST
+          "
           rsync -az -e "ssh -i ~/.ssh/id_ed25519" \
             --include='package.json' \
             --include='package-lock.json' \
@@ -349,11 +359,20 @@ jobs:
             ubuntu@37.187.199.185:$DEST/playwright-report/ playwright-report/ 2>/dev/null || true
 
       - name: Cleanup crawler payload on dev-pub
+        # Le container Playwright tourne en root et crée node_modules en
+        # root-owned dans $DEST. Un `rm -rf` en ubuntu (via SSH) échoue avec
+        # "Permission denied" → le `|| true` masquait l'erreur et le dir
+        # restait résiduel (~3 GB par run). Fix : passer par un container
+        # alpine root qui monte /tmp et peut effacer les fichiers root-owned.
+        # Cf todo/2026-05-23-dev-pub-cleanup-crawler-tmp-residuels.md.
         if: always()
         env:
           DEST: /tmp/prosp-crawler-${{ github.run_id }}
         run: |
-          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 "rm -rf $DEST" || true
+          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 "
+            docker run --rm -v /tmp:/tmp alpine sh -c 'rm -rf $DEST' 2>&1 || \
+              echo '::warning::Cleanup container failed, dir may persist'
+          " || true
 
       - name: Upload crawler artifacts (screenshots/traces si fail)
         if: failure()
