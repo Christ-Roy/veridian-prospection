@@ -47,7 +47,7 @@ describe("sendInvitationEmail", () => {
 
     expect(result).toEqual({ ok: true, messageId: "msg-123", status: 200 });
     expect(fetchSpy).toHaveBeenCalledOnce();
-    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://notifuse.test.local/api/transactional.send");
     expect(init.method).toBe("POST");
     const headers = init.headers as Record<string, string>;
@@ -80,7 +80,7 @@ describe("sendInvitationEmail", () => {
 
     await sendInvitationEmail({ ...BASE_INPUT });
 
-    expect((fetchSpy.mock.calls[0] as [string, RequestInit])[0]).toBe(
+    expect((fetchSpy.mock.calls[0] as unknown as [string, RequestInit])[0]).toBe(
       "https://notifuse.test.local/api/transactional.send",
     );
   });
