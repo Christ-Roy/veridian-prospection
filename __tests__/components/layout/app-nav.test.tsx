@@ -80,3 +80,41 @@ describe("app-nav.tsx — responsive header + toggle mobile (2026-05-22)", () =>
     expect(source).toMatch(/Se d[ée]connecter/);
   });
 });
+
+describe("app-nav.tsx — guard défensif setSettings (audit setters 2026-05-23)", () => {
+  let source = "";
+
+  test("setup : lecture du source", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    source = await fs.readFile(
+      path.resolve(process.cwd(), "src/components/layout/app-nav.tsx"),
+      "utf-8",
+    );
+    expect(source.length).toBeGreaterThan(0);
+  });
+
+  // Bug latent identique au ticket bug-intermittent : si /api/settings
+  // renvoie 401/500/HTML, `setSettings(Response)` ou `setSettings(undefined)`
+  // casserait `settings[item.settingKey] === "true"` au render. Le pattern
+  // doit aller chercher r.ok puis .json() puis .catch.
+  test("fetch /api/settings appelle .json() (jamais setSettings sur Response brute)", () => {
+    // Le pattern dangereux historique : .then(setSettings) direct sur Response.
+    expect(source).not.toMatch(/fetch\(\s*["']\/api\/settings["']\s*\)\s*\.then\(\s*setSettings\s*\)/);
+    // Le pattern attendu : .then(r => r.ok ? r.json() : {}).then(setSettings)
+    expect(source).toMatch(/fetch\(\s*["']\/api\/settings["']\s*\)\s*\.then\(\s*\(r\)\s*=>\s*r\.ok\s*\?\s*r\.json\(\)\s*:\s*\{\}\s*\)/);
+  });
+
+  test("le fetch /api/settings a un .catch fallback pour ne pas bruiter unhandledrejection", () => {
+    // Extrait la chaîne fetch("/api/settings")...; jusqu'au prochain ; et
+    // vérifie qu'elle contient .catch.
+    const m = source.match(/fetch\(\s*["']\/api\/settings["']\s*\)[\s\S]*?;/);
+    expect(m).not.toBeNull();
+    expect(m![0]).toMatch(/\.catch\(/);
+  });
+
+  // Sabotage-check : retirer le .catch ou le guard r.ok casserait ces tests.
+  test("aucun setSettings non-gardé sur la Response brute", () => {
+    expect(source).not.toMatch(/\.then\(\s*setSettings\s*\)(?![\s\S]*\.then)/);
+  });
+});
