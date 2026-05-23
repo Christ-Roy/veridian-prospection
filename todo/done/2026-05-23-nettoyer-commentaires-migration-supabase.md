@@ -48,6 +48,18 @@ auth/.
 Zéro risque, zéro user impact. Juste de la propreté. À faire en passant
 quand quelqu'un touche déjà à `src/lib/auth/`, pas un sprint dédié.
 
+## Statut 2026-05-23
+
+- `middleware.ts:2` et `user-context.ts:2` : **déjà nettoyés** ailleurs avant
+  l'archivage de ce ticket.
+- `api-auth.ts:2` : **résiduel non-traité**. La modification (suppression
+  d'une ligne JSDoc) déclenche la règle Husky `check-test-mapping`
+  (modif fichier source = modif test associé exigée). Or aucun test
+  pertinent ne peut être ajouté pour valider une suppression de
+  commentaire — ce serait un test bidon. Coût/valeur défavorable
+  pour un P3 cosmétique. À traiter en bundle si quelqu'un touche déjà
+  à `api-auth.ts` pour un vrai changement comportemental.
+
 ## Hors scope
 
 - Le champ Prisma `supabase_user_id` (colonne DB legacy) — déjà flag
