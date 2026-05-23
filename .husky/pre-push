@@ -172,6 +172,31 @@ if [ -n "$PRISMA_CHANGES" ]; then
   fi
 fi
 
+# 1undecies. Garde-fou TS strict + ESLint — mirror CI quality gate.
+#
+# Évite le yo-yo CI : un test qui passe Vitest local (transpilé permissif
+# via tsx) peut casser tsc --noEmit strict ou eslint --quiet de la CI.
+# Incident 2026-05-23 : 3 push consécutifs pour 1 test livré (commits
+# 01233a6, ba71dd9, 6450f55), tous TS/ESLint que le hook n'attrapait pas.
+#
+# BLOCKING. Coût ~15-30s sur warm cache npm.
+# Skip d'urgence : SKIP_TYPECHECK_LINT=1
+TC_LINT_CHECK="scripts/ci/check-typecheck-lint.sh"
+SRC_OR_TEST_CHANGES=$(git diff --name-only "$BASE_REF"...HEAD 2>/dev/null \
+  | grep -E '^(src|__tests__|e2e)/' || true)
+
+if [ -n "$SRC_OR_TEST_CHANGES" ]; then
+  if [ "${SKIP_TYPECHECK_LINT:-0}" = "1" ]; then
+    echo "⚠ check-typecheck-lint.sh skipped via SKIP_TYPECHECK_LINT=1"
+  else
+    if [ ! -x "$TC_LINT_CHECK" ]; then
+      echo "✗ $TC_LINT_CHECK introuvable et code/tests modifiés — push refusé"
+      exit 1
+    fi
+    "$TC_LINT_CHECK"
+  fi
+fi
+
 # 2. Rappel régénération compose si base/prod modifié
 # Note : check sémantique désactivé (formats varient entre versions compose CLI).
 # Reste à implémenter un check basé sur yq normalisé.
