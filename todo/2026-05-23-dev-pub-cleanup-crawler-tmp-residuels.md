@@ -41,3 +41,19 @@ dev-pub saturera à intervalles réguliers (~10-15 runs CI staging). Bloque hot 
 - Workflow concerné : `.github/workflows/prospection-deploy-staging.yml` step `Sync crawler payload` + `Cleanup payload`
 - Découverte : agent e2e-skip-vide 2026-05-23 (Phase validation E2E)
 - 3 dirs nettoyés manuellement pour pouvoir bosser (mmin +120, anciens)
+
+## Update 2026-05-23 — Cron court terme installé
+
+Suite à seconde saturation disque (CI staging run `26340882134` échoué sur
+`npm error nospc`), le cron court terme est posé sur dev-pub :
+
+```
+0 4 * * * find /tmp -maxdepth 1 -name 'prosp-crawler-*' -mmin +60 -type d -exec rm -rf {} +
+```
+
+Fixe le symptôme (saturation récurrente). La cause racine (workflow
+CI qui ne cleanup pas en cas de cancel / failure intermédiaire) reste à
+traiter en sprint dédié.
+
+Cleanup manuel immédiat fait : 3,6 GB libérés (4 dirs résiduels).
+Disque dev-pub 90% → 84%.
