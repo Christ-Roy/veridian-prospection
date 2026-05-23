@@ -122,30 +122,32 @@ export function SettingsTabs() {
   }
 
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-3xl w-full min-w-0">
       <Tabs defaultValue="display">
-        <TabsList className="mb-4">
-          <TabsTrigger value="display" className="gap-1.5">
-            <Monitor className="h-3.5 w-3.5" />
-            Affichage
-          </TabsTrigger>
-          <TabsTrigger value="telephony" className="gap-1.5 opacity-50" onClick={(e) => { e.preventDefault(); toast("Prochainement...", { duration: 1500 }); }}>
-            <Phone className="h-3.5 w-3.5" />
-            Telephonie
-          </TabsTrigger>
-          <TabsTrigger value="call-routing" className="gap-1.5 opacity-50" onClick={(e) => { e.preventDefault(); toast("Prochainement...", { duration: 1500 }); }}>
-            <PhoneForwarded className="h-3.5 w-3.5" />
-            Renvoi &amp; Messagerie
-          </TabsTrigger>
-          <TabsTrigger value="ai-storage" className="gap-1.5 opacity-50" onClick={(e) => { e.preventDefault(); toast("Prochainement...", { duration: 1500 }); }}>
-            <Brain className="h-3.5 w-3.5" />
-            IA &amp; Stockage
-          </TabsTrigger>
-          <TabsTrigger value="reference" className="gap-1.5">
-            <BookOpen className="h-3.5 w-3.5" />
-            Reference technique
-          </TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto mb-4">
+          <TabsList className="w-max">
+            <TabsTrigger value="display" className="gap-1.5">
+              <Monitor className="h-3.5 w-3.5" />
+              Affichage
+            </TabsTrigger>
+            <TabsTrigger value="telephony" className="gap-1.5 opacity-50" onClick={(e) => { e.preventDefault(); toast("Prochainement...", { duration: 1500 }); }}>
+              <Phone className="h-3.5 w-3.5" />
+              Telephonie
+            </TabsTrigger>
+            <TabsTrigger value="call-routing" className="gap-1.5 opacity-50" onClick={(e) => { e.preventDefault(); toast("Prochainement...", { duration: 1500 }); }}>
+              <PhoneForwarded className="h-3.5 w-3.5" />
+              Renvoi &amp; Messagerie
+            </TabsTrigger>
+            <TabsTrigger value="ai-storage" className="gap-1.5 opacity-50" onClick={(e) => { e.preventDefault(); toast("Prochainement...", { duration: 1500 }); }}>
+              <Brain className="h-3.5 w-3.5" />
+              IA &amp; Stockage
+            </TabsTrigger>
+            <TabsTrigger value="reference" className="gap-1.5">
+              <BookOpen className="h-3.5 w-3.5" />
+              Reference technique
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="display">
           <SettingsDisplay settings={settings} update={update} />
