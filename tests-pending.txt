@@ -77,8 +77,6 @@ src/lib/filters.ts
 src/lib/freeswitch.ts
 src/lib/google-calendar.test.ts
 src/lib/google-calendar.ts
-src/lib/invitations.test.ts
-src/lib/invitations.ts
 src/lib/mode.ts
 src/lib/naf.ts
 src/lib/prisma.ts

@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
+import { signOut, useSession } from "next-auth/react";
 import {
-  FolderOpen, Kanban, History, BookOpen, Settings, Clock, Menu, X, Globe, PhoneCall, Shield, List,
+  FolderOpen, Kanban, History, BookOpen, Settings, Clock, Menu, X, Globe, PhoneCall, Shield, List, LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NotificationBell } from "@/components/layout/notification-bell";
@@ -22,9 +23,17 @@ export function AppNav({ initialIsAdmin = false }: { initialIsAdmin?: boolean })
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { daysLeft, isExpired } = useTrial();
+  const { data: session } = useSession();
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [isAdmin, setIsAdmin] = useState(initialIsAdmin);
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Logout : signOut Auth.js + redirect login. Le bouton est exposé dans la
+  // nav (desktop + mobile) — sinon l'utilisateur n'a aucun moyen visible de
+  // changer de compte (ex : démo, machine partagée, switch tenant via Hub).
+  async function handleSignOut() {
+    await signOut({ callbackUrl: "/login", redirect: true });
+  }
 
   // "Avec site" / "sans site" toggle: persist via URL param `site` on /prospects.
   // Default "all" (no filter). Values: "all" | "with" | "without".
@@ -179,6 +188,19 @@ export function AppNav({ initialIsAdmin = false }: { initialIsAdmin?: boolean })
 
                 <NotificationBell />
 
+        {/* Logout (desktop seulement — mobile l'a dans le burger) */}
+        {session?.user && (
+          <button
+            type="button"
+            onClick={handleSignOut}
+            title={`Se déconnecter (${session.user.email ?? ""})`}
+            aria-label="Se déconnecter"
+            className="hidden md:inline-flex items-center justify-center p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
+        )}
+
         {/* Mobile hamburger */}
         <button
           className="md:hidden p-1.5 rounded-md hover:bg-muted transition-colors"
@@ -261,6 +283,26 @@ export function AppNav({ initialIsAdmin = false }: { initialIsAdmin?: boolean })
                 <PhoneCall className="h-4 w-4" />
                 Sans site
               </Link>
+            </div>
+          )}
+
+          {/* Logout — toujours visible en bas du burger mobile, avec email
+              affiché pour identifier le compte courant. */}
+          {session?.user && (
+            <div className="mt-1 pt-2 border-t flex flex-col gap-1">
+              {session.user.email && (
+                <span className="px-3 pb-0.5 text-[11px] text-muted-foreground truncate">
+                  Connecté : {session.user.email}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="px-3 py-2 text-sm rounded-md transition-colors flex items-center gap-2 text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 text-left"
+              >
+                <LogOut className="h-4 w-4" />
+                Se déconnecter
+              </button>
             </div>
           )}
         </nav>

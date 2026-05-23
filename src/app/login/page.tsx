@@ -1,18 +1,20 @@
 "use client";
 
 import { Suspense, useState } from "react";
-import { signIn } from "next-auth/react";
+import { signIn, signOut, useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 function LoginForm() {
   const hubUrl = process.env.NEXT_PUBLIC_HUB_URL || "";
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { data: session, status } = useSession();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -42,6 +44,16 @@ function LoginForm() {
     }
   }
 
+  async function handleSignOut() {
+    setSigningOut(true);
+    // redirect:false → on reste sur /login pour permettre login direct
+    // sur un autre compte sans rechargement (un router.refresh suffit pour
+    // que useSession reflète l'état déconnecté).
+    await signOut({ redirect: false });
+    router.refresh();
+    setSigningOut(false);
+  }
+
   return (
     <div className="max-w-sm w-full p-8 bg-white rounded-xl shadow-lg space-y-6">
       <div className="text-center">
@@ -51,6 +63,32 @@ function LoginForm() {
         <h1 className="text-xl font-bold">Prospection</h1>
         <p className="text-sm text-muted-foreground">Connectez-vous a votre compte</p>
       </div>
+
+      {status === "authenticated" && session?.user?.email && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+          <p className="text-sm text-amber-900">
+            Déjà connecté en tant que{" "}
+            <span className="font-medium">{session.user.email}</span>
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => router.push(searchParams.get("redirect") || "/prospects")}
+              className="flex-1 py-2 text-xs font-medium text-amber-900 bg-white border border-amber-300 rounded-md hover:bg-amber-100 transition"
+            >
+              Continuer
+            </button>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              disabled={signingOut}
+              className="flex-1 py-2 text-xs font-medium text-white bg-amber-700 rounded-md hover:bg-amber-800 transition disabled:opacity-50"
+            >
+              {signingOut ? "Déconnexion..." : "Changer de compte"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="bg-red-50 text-red-700 text-sm p-3 rounded-lg">{error}</div>

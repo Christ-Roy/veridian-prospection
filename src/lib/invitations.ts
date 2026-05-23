@@ -1,22 +1,22 @@
 /**
- * Invitation flow helpers (Prospection standalone).
+ * Invitation flow helpers (Prospection standalone, Auth.js v5).
  *
- * Pure-ish functions consumed by `src/app/api/admin/invitations/**` and
- * `src/app/api/invitations/**`. Designed to be unit-tested with Prisma + fetch
- * mocks (see `invitations.test.ts`).
+ * Migré 2026-05-23 : Supabase Auth (gotrue) → Prisma + Auth.js v5 credentials
+ * (bcrypt). L'ancien flow appelait /auth/v1/admin/* de Supabase, mort depuis
+ * la migration Auth.js. Le helper crée maintenant User + Account(credentials)
+ * + WorkspaceMember directement en Prisma. Le client appelle ensuite
+ * signIn("credentials") côté front pour ouvrir la session Auth.js.
  *
  * Shape of what each function returns — used by the route handlers:
  *
  *   createInvitation  → { id, token, inviteUrl, expiresAt, emailSent }
  *   getInvitationByToken → Invitation row (snake_case) | null
- *   acceptInvitation  → { session: {access_token, refresh_token, ...}, userId, redirectTo }
+ *   acceptInvitation  → { userId, email, redirectTo }
  *   revokeInvitation  → void
  *   listInvitationsByTenant → Invitation[]
- *
- * Supabase admin API (auth.users create/update/list) is called via raw fetch
- * instead of the SDK, so it is trivially mockable via `vi.stubGlobal('fetch', …)`.
  */
 import { randomBytes } from "crypto";
+import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 
 export type InvitationStatus = "pending" | "accepted" | "revoked" | "expired" | "all";
@@ -60,24 +60,14 @@ function getInviteBaseUrl(): string {
   );
 }
 
-function getSupabaseAdminConfig(): { url: string; serviceKey: string } | null {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceKey) return null;
-  return { url, serviceKey };
-}
-
-function getSupabasePublicConfig(): { url: string; anonKey: string } | null {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) return null;
-  return { url, anonKey };
-}
-
 /**
- * Create an invitation row and (best-effort) send the email via Supabase
- * admin generateLink. `emailSent` is `false` if Supabase is not configured,
- * `SUPABASE_SMTP_CONFIGURED=false`, or generateLink throws.
+ * Create an invitation row. Le lien d'invitation est dans `inviteUrl` —
+ * l'admin doit aujourd'hui copier-coller manuellement, on n'envoie plus le
+ * mail via Supabase (GoTrue mort). TODO : brancher Notifuse pour automatiser
+ * l'envoi du mail d'invitation (cf todo/2026-05-23-invitations-notifuse-email.md).
+ *
+ * `emailSent` reste dans le retour pour ne pas casser le contrat API, mais
+ * vaut toujours `false` tant que Notifuse n'est pas branché.
  */
 export async function createInvitation(
   input: CreateInvitationInput,
@@ -111,39 +101,7 @@ export async function createInvitation(
 
   const inviteUrl = `${getInviteBaseUrl()}/invite/${token}`;
 
-  // Best-effort email: Supabase admin generateLink (type:invite).
-  let emailSent = false;
-  if (process.env.SUPABASE_SMTP_CONFIGURED !== "false") {
-    const cfg = getSupabaseAdminConfig();
-    if (cfg) {
-      try {
-        const res = await fetch(`${cfg.url}/auth/v1/admin/generate_link`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            apikey: cfg.serviceKey,
-            Authorization: `Bearer ${cfg.serviceKey}`,
-          },
-          body: JSON.stringify({
-            type: "invite",
-            email,
-            options: { redirect_to: inviteUrl },
-          }),
-        });
-        emailSent = res.ok;
-        if (!res.ok) {
-          console.warn(
-            `[invitations] generateLink failed (${res.status}): ${await res.text().catch(() => "")}`,
-          );
-        }
-      } catch (err) {
-        console.warn(`[invitations] generateLink threw:`, err);
-        emailSent = false;
-      }
-    }
-  }
-
-  return { id, token, inviteUrl, expiresAt, emailSent };
+  return { id, token, inviteUrl, expiresAt, emailSent: false };
 }
 
 /**
@@ -175,20 +133,23 @@ export interface AcceptInvitationInput {
 }
 
 export interface AcceptInvitationResult {
-  session: {
-    access_token: string;
-    refresh_token: string;
-    token_type: string;
-    expires_in?: number;
-  };
   userId: string;
+  email: string;
   redirectTo: string;
 }
 
 /**
- * Accept an invitation: ensure a Supabase user exists (create or update
- * password), upsert workspace membership, upsert tenant mapping, sign the user
- * in and mark the invitation accepted.
+ * Accept an invitation : crée le User + Account(credentials, bcrypt) si
+ * absent, upsert le WorkspaceMember, marque l'invitation accepted. Le client
+ * ouvre ensuite la session Auth.js via signIn("credentials").
+ *
+ * Migration 2026-05-23 (Supabase → Auth.js v5) :
+ * - L'ancien flow appelait /auth/v1/admin/users (GoTrue, mort) pour
+ *   create/update user + signin password — tout ça est remplacé par Prisma.
+ * - Pattern aligné sur ensureCanonicalUser() du helper E2E
+ *   (e2e/helpers/auth.ts) et sur le provider Credentials de src/lib/auth.ts.
+ * - Account.access_token stocke le bcrypt du password (clé unique
+ *   provider+providerAccountId=email).
  */
 export async function acceptInvitation(
   input: AcceptInvitationInput,
@@ -201,67 +162,48 @@ export async function acceptInvitation(
     throw new Error("password must be at least 8 characters");
   }
 
-  const adminCfg = getSupabaseAdminConfig();
-  const publicCfg = getSupabasePublicConfig();
-  if (!adminCfg || !publicCfg) {
-    throw new Error("Supabase is not configured on this environment");
-  }
-  const adminHeaders = {
-    "Content-Type": "application/json",
-    apikey: adminCfg.serviceKey,
-    Authorization: `Bearer ${adminCfg.serviceKey}`,
-  };
+  const email = invitation.email.toLowerCase();
+  const passwordHash = await bcrypt.hash(input.password, 10);
 
-  // 1) Look up existing user by email
-  const listRes = await fetch(
-    `${adminCfg.url}/auth/v1/admin/users?email=${encodeURIComponent(invitation.email)}`,
-    { method: "GET", headers: adminHeaders },
-  );
-  if (!listRes.ok) {
-    throw new Error(`Supabase admin list users failed: ${listRes.status}`);
-  }
-  const listData = (await listRes.json()) as { users?: Array<{ id: string; email?: string }> };
-  const existing = (listData.users ?? []).find(
-    (u) => (u.email ?? "").toLowerCase() === invitation.email,
-  );
+  // 1) User — upsert par email (clé unique). Si existe déjà (pré-créé par
+  //    le Hub via provision ou par un autre flow), on garde son id et on
+  //    rafraîchit le nom si fourni.
+  const user = await prisma.user.upsert({
+    where: { email },
+    update: input.fullName ? { name: input.fullName, deletedAt: null } : { deletedAt: null },
+    create: {
+      email,
+      name: input.fullName ?? null,
+      emailVerified: new Date(),
+    },
+    select: { id: true },
+  });
 
-  let userId: string;
-  if (existing) {
-    // 2a) Update password for the existing user
-    const updRes = await fetch(`${adminCfg.url}/auth/v1/admin/users/${existing.id}`, {
-      method: "PUT",
-      headers: adminHeaders,
-      body: JSON.stringify({
-        password: input.password,
-        email_confirm: true,
-        user_metadata: input.fullName ? { full_name: input.fullName } : undefined,
-      }),
-    });
-    if (!updRes.ok) {
-      throw new Error(`Supabase admin update user failed: ${updRes.status}`);
-    }
-    userId = existing.id;
-  } else {
-    // 2b) Create the user with email_confirm:true
-    const createRes = await fetch(`${adminCfg.url}/auth/v1/admin/users`, {
-      method: "POST",
-      headers: adminHeaders,
-      body: JSON.stringify({
-        email: invitation.email,
-        password: input.password,
-        email_confirm: true,
-        user_metadata: input.fullName ? { full_name: input.fullName } : {},
-      }),
-    });
-    if (!createRes.ok) {
-      throw new Error(`Supabase admin create user failed: ${createRes.status}`);
-    }
-    const created = (await createRes.json()) as { id?: string; user?: { id: string } };
-    userId = created.id ?? created.user?.id ?? "";
-    if (!userId) throw new Error("Supabase admin create user returned no id");
-  }
+  // 2) Account credentials — upsert sur la clé unique (provider,
+  //    providerAccountId). On utilise l'email comme providerAccountId
+  //    (stable, unique, aligné avec le pattern E2E + login form).
+  //    access_token = bcrypt hash du password (consommé par le provider
+  //    Credentials de src/lib/auth.ts → bcrypt.compare).
+  await prisma.account.upsert({
+    where: {
+      provider_providerAccountId: {
+        provider: "credentials",
+        providerAccountId: email,
+      },
+    },
+    update: { userId: user.id, access_token: passwordHash },
+    create: {
+      userId: user.id,
+      type: "credentials",
+      provider: "credentials",
+      providerAccountId: email,
+      access_token: passwordHash,
+    },
+  });
 
-  // 3) Upsert workspace_members if a workspace is targeted
+  // 3) WorkspaceMember — si l'invitation cible un workspace, upsert le
+  //    membership avec le rôle prévu. Sinon (invitation tenant-level
+  //    legacy), on skippe.
   if (invitation.workspace_id) {
     await prisma.$executeRawUnsafe(
       `
@@ -271,56 +213,18 @@ export async function acceptInvitation(
       DO UPDATE SET role = EXCLUDED.role
       `,
       invitation.workspace_id,
-      userId,
+      user.id,
       invitation.role,
     );
   }
 
-  // 4) Upsert tenant mapping in Supabase public.tenants (best-effort).
-  //    Prospection doesn't own `tenants`; the hub does. We insert a row if
-  //    none exists for this user so the user can resolve to a tenant on next
-  //    login. Failure is logged but not fatal — the invite flow should still
-  //    succeed (the hub can reconcile later).
-  try {
-    const tenantRes = await fetch(
-      `${adminCfg.url}/rest/v1/tenants?user_id=eq.${encodeURIComponent(userId)}&select=id`,
-      { method: "GET", headers: adminHeaders },
-    );
-    if (tenantRes.ok) {
-      const existingTenants = (await tenantRes.json()) as Array<{ id: string }>;
-      if (existingTenants.length === 0) {
-        await fetch(`${adminCfg.url}/rest/v1/tenants`, {
-          method: "POST",
-          headers: { ...adminHeaders, Prefer: "resolution=merge-duplicates" },
-          body: JSON.stringify({ id: invitation.tenant_id, user_id: userId }),
-        });
-      }
-    }
-  } catch (err) {
-    console.warn(`[invitations] tenant upsert skipped:`, err);
-  }
-
-  // 5) Sign in with the chosen password to produce a session
-  const signInRes = await fetch(`${publicCfg.url}/auth/v1/token?grant_type=password`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      apikey: publicCfg.anonKey,
-    },
-    body: JSON.stringify({ email: invitation.email, password: input.password }),
-  });
-  if (!signInRes.ok) {
-    throw new Error(`Supabase signin failed: ${signInRes.status}`);
-  }
-  const session = (await signInRes.json()) as AcceptInvitationResult["session"];
-
-  // 6) Mark invitation accepted
+  // 4) Marquer l'invitation acceptée (one-shot).
   await prisma.$executeRawUnsafe(
     `UPDATE invitations SET accepted_at = now() WHERE id = $1`,
     invitation.id,
   );
 
-  return { session, userId, redirectTo: "/prospects" };
+  return { userId: user.id, email, redirectTo: "/prospects" };
 }
 
 /**
