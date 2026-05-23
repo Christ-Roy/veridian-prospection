@@ -35,7 +35,7 @@ describe("GET /api/stats/today", () => {
     requireAuthMock.mockResolvedValue({ user: { id: "u-1", email: "u@v.site" } });
     getTenantIdMock.mockResolvedValue("t-1");
     // prisma.$queryRaw retourne [{ count: bigint }] — la route fait Number(rows[0].count)
-    prismaMock.$queryRaw.mockResolvedValue([{ count: 17n }]);
+    prismaMock.$queryRaw.mockResolvedValue([{ count: BigInt(17) }]);
 
     const res = await GET();
     expect(res.status).toBe(200);
@@ -48,7 +48,7 @@ describe("GET /api/stats/today", () => {
   test("retourne { today: 0 } quand aucun outreach visité aujourd'hui", async () => {
     requireAuthMock.mockResolvedValue({ user: { id: "u-2", email: "x@v.site" } });
     getTenantIdMock.mockResolvedValue("t-2");
-    prismaMock.$queryRaw.mockResolvedValue([{ count: 0n }]);
+    prismaMock.$queryRaw.mockResolvedValue([{ count: BigInt(0) }]);
 
     const res = await GET();
     expect(res.status).toBe(200);

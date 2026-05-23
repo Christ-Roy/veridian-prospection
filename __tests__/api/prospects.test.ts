@@ -199,7 +199,7 @@ describe("GET /api/prospects", () => {
   test("BigInt depuis Prisma est sérialisé en Number dans le body JSON", async () => {
     defaultAuthCtx();
     queriesMock.getProspects.mockResolvedValue({
-      data: [{ siren: "111111111", ca: 50000n }], // bigint Prisma
+      data: [{ siren: "111111111", ca: BigInt(50000) }], // bigint Prisma
       total: 1,
     });
 
