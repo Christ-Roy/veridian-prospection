@@ -20,7 +20,7 @@ import { test, expect, type ConsoleMessage, type Request } from "@playwright/tes
 import { loginAsE2EUser } from "../helpers/auth";
 
 const PROSPECTION_URL =
-  process.env.PROSPECTION_URL || "https://saas-prospection.staging.veridian.site";
+  process.env.PROSPECTION_URL || "https://prospection.staging.veridian.site";
 
 let consoleErrors: string[] = [];
 

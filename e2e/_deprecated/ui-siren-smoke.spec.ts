@@ -7,7 +7,7 @@
  *  - un élément distinctif est visible (table, heading, etc.)
  *  - les URL externes utilisent web_domain, pas un SIREN brut
  *
- * Lancé contre le staging: https://saas-prospection.staging.veridian.site
+ * Lancé contre le staging: https://prospection.staging.veridian.site
  * Override avec PROSPECTION_URL=... si besoin.
  *
  * Créé dans le cadre du refactor SIREN-centric 2026-04-05 pour prouver
@@ -16,7 +16,7 @@
 import { test, expect, type ConsoleMessage, type Page } from "@playwright/test";
 
 const PROSPECTION_URL =
-  process.env.PROSPECTION_URL || "https://saas-prospection.staging.veridian.site";
+  process.env.PROSPECTION_URL || "https://prospection.staging.veridian.site";
 const SUPABASE_URL =
   process.env.SUPABASE_URL || "https://saas-api.staging.veridian.site";
 const ANON_KEY = process.env.SUPABASE_ANON_KEY || "";

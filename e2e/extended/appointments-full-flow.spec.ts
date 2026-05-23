@@ -15,7 +15,7 @@ import { test, expect } from "@playwright/test";
 import { loginAsE2EUser } from "../helpers/auth";
 
 const PROSPECTION_URL =
-  process.env.PROSPECTION_URL || "https://saas-prospection.staging.veridian.site";
+  process.env.PROSPECTION_URL || "https://prospection.staging.veridian.site";
 
 test.describe("Appointments API (tenant existant)", () => {
   test("create → list → patch → cancel cycle", async ({ page, request }) => {

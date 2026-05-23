@@ -15,7 +15,7 @@
 import { test, expect, type ConsoleMessage, type Page } from "@playwright/test";
 
 const PROSPECTION_URL =
-  process.env.PROSPECTION_URL || "https://saas-prospection.staging.veridian.site";
+  process.env.PROSPECTION_URL || "https://prospection.staging.veridian.site";
 const ROBERT_EMAIL = process.env.ROBERT_EMAIL || "robert.brunon@veridian.site";
 const ROBERT_PASSWORD = process.env.ROBERT_PASSWORD || "Mincraft5*55";
 

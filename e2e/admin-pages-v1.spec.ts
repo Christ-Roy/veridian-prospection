@@ -24,7 +24,7 @@ import { test, expect, type ConsoleMessage, type Page } from "@playwright/test";
 import { loginAsE2EUser } from "./helpers/auth";
 
 const PROSPECTION_URL =
-  process.env.PROSPECTION_URL || "https://saas-prospection.staging.veridian.site";
+  process.env.PROSPECTION_URL || "https://prospection.staging.veridian.site";
 
 const ADMIN_PAGES = [
   { path: "/admin", label: "dashboard V1" },

@@ -21,7 +21,7 @@
 import { test, expect } from "@playwright/test";
 
 const PROSPECTION_URL =
-  process.env.PROSPECTION_URL || "https://saas-prospection.staging.veridian.site";
+  process.env.PROSPECTION_URL || "https://prospection.staging.veridian.site";
 
 test.describe("/api/status endpoint", () => {
   test("returns well-formed JSON with all expected fields", async ({ request }) => {
