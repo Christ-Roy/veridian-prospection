@@ -66,8 +66,10 @@ describe("POST /api/checkout", () => {
     const res = await POST(req);
     expect(res.status).toBe(400);
     const body = (await readJson(res)) as { error: string; plans: string[] };
-    expect(body.error).toContain("Invalid plan");
-    expect(body.plans).toEqual(expect.arrayContaining(["geo", "full"]));
+    expect(body).toEqual({
+      error: "Invalid plan. Use: geo, full",
+      plans: expect.arrayContaining(["geo", "full"]),
+    });
   });
 
   test("returns 400 when plan is unknown", async () => {
@@ -80,6 +82,9 @@ describe("POST /api/checkout", () => {
     });
     const res = await POST(req);
     expect(res.status).toBe(400);
+    const body = (await readJson(res)) as { error: string; plans: string[] };
+    expect(body.error).toBe("Invalid plan. Use: geo, full");
+    expect(body.plans).toEqual(expect.arrayContaining(["geo", "full"]));
   });
 
   test("returns Stripe checkout URL on valid plan", async () => {
@@ -99,7 +104,11 @@ describe("POST /api/checkout", () => {
     expect(res.status).toBe(200);
 
     const body = (await readJson(res)) as { url: string };
-    expect(body.url).toContain("checkout.stripe.com");
+    // Assertion forte sur la VALEUR retournée — détecte tout changement de shape
+    // ou de mapping session.url → body.url (bug invitations 2026-05-23).
+    expect(body).toEqual({
+      url: "https://checkout.stripe.com/c/pay/cs_test_123",
+    });
 
     expect(stripeMock.checkout.sessions.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -131,6 +140,53 @@ describe("POST /api/checkout", () => {
     const res = await POST(req);
     expect(res.status).toBe(500);
     const body = (await readJson(res)) as { error: string };
-    expect(body.error).toBe("Stripe down");
+    expect(body).toEqual({ error: "Stripe down" });
+  });
+
+  // Anti-régression : la branche 503 "Stripe not configured" est la première
+  // `return X;` du source — donc la cible du sabotage-test. Si elle devient
+  // `return null`, ce test crashe (res.status undefined). Il force l'import du
+  // module avec STRIPE_KEY absente via vi.resetModules + delete env.
+  test("returns 503 when Stripe key not configured (anti-régression sabotage L22)", async () => {
+    vi.resetModules();
+    const prev = {
+      preprod: process.env.STRIPE_SECRET_KEY_PREPROD,
+      test: process.env.STRIPE_SECRET_KEY_TEST,
+    };
+    delete process.env.STRIPE_SECRET_KEY_PREPROD;
+    delete process.env.STRIPE_SECRET_KEY_TEST;
+
+    vi.doMock("@/lib/auth/api-auth", () => ({ requireAuth: requireAuthMock }));
+    vi.doMock("@/lib/auth/tenant", () => ({ getTenantId: getTenantIdMock }));
+    vi.doMock("stripe", () => {
+      class StripeCtor {
+        checkout = stripeMock.checkout;
+        constructor(_key: string) {
+          void _key;
+        }
+      }
+      return { default: StripeCtor };
+    });
+
+    try {
+      const { POST: POSTreloaded } = await import("@/app/api/checkout/route");
+      const req = makeRequest("/api/checkout", {
+        method: "POST",
+        body: { plan: "full" },
+      });
+      const res = await POSTreloaded(req);
+      expect(res.status).toBe(503);
+      const body = (await readJson(res)) as { error: string };
+      expect(body).toEqual({ error: "Stripe not configured" });
+    } finally {
+      if (prev.preprod !== undefined)
+        process.env.STRIPE_SECRET_KEY_PREPROD = prev.preprod;
+      if (prev.test !== undefined)
+        process.env.STRIPE_SECRET_KEY_TEST = prev.test;
+      vi.doUnmock("@/lib/auth/api-auth");
+      vi.doUnmock("@/lib/auth/tenant");
+      vi.doUnmock("stripe");
+      vi.resetModules();
+    }
   });
 });
