@@ -36,7 +36,7 @@ describe("requireAuth — fail-closed (toute session incomplète = 401)", () => 
     const result = await requireAuth();
 
     expect("error" in result).toBe(true);
-    if ("error" in result) {
+    if (result.error) {
       expect(result.error.status).toBe(401);
       const body = await result.error.json();
       expect(body).toEqual({ error: "Unauthorized" });
@@ -49,7 +49,7 @@ describe("requireAuth — fail-closed (toute session incomplète = 401)", () => 
     const result = await requireAuth();
 
     expect("error" in result).toBe(true);
-    if ("error" in result) {
+    if (result.error) {
       expect(result.error.status).toBe(401);
     }
   });
@@ -71,7 +71,7 @@ describe("requireAuth — fail-closed (toute session incomplète = 401)", () => 
     const result = await requireAuth();
 
     expect("error" in result).toBe(true);
-    if ("error" in result) {
+    if (result.error) {
       expect(result.error.status).toBe(401);
     }
   });
@@ -85,7 +85,7 @@ describe("requireAuth — fail-closed (toute session incomplète = 401)", () => 
     const result = await requireAuth();
 
     expect("error" in result).toBe(true);
-    if ("error" in result) {
+    if (result.error) {
       expect(result.error.status).toBe(401);
     }
   });
