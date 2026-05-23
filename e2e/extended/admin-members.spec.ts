@@ -51,10 +51,14 @@ test.describe("Admin members — drawer + visibility scope", () => {
 
     const rows = page.getByTestId("admin-member-row");
     const rowCount = await rows.count();
-    if (rowCount === 0) {
-      test.skip(true, "No members in this tenant — nothing to test");
-      return;
-    }
+    // Le compte canonique seede 1 owner + 1 membre invité (helpers/auth.ts §6).
+    // Skip silencieux interdit : si rowCount==0, le seed est cassé ou la DB
+    // pointe sur un autre tenant — il faut un échec rouge, pas un test vert
+    // sans assertion exécutée.
+    expect(
+      rowCount,
+      "admin/members vide — le seed canonique doit poser ≥ 1 row (owner + invité)",
+    ).toBeGreaterThan(0);
 
     await rows.first().click();
     const drawer = page.getByTestId("admin-member-drawer");
@@ -76,10 +80,15 @@ test.describe("Admin members — drawer + visibility scope", () => {
     const member = (listBody.members ?? []).find(
       (m: { memberships: unknown[] }) => (m.memberships ?? []).length > 0
     );
-    if (!member) {
-      test.skip(true, "No member with a workspace membership to patch");
-      return;
-    }
+    // Le seed canonique pose 1 WorkspaceMember (owner) + 1 invité, donc
+    // members[].memberships ne peut pas être vide sur le tenant E2E. Skip
+    // silencieux interdit : un membre sans membership = seed cassé, on
+    // doit voir le rouge.
+    expect(
+      member,
+      "aucun membre avec workspaceMember — le seed canonique doit poser owner+invité avec memberships",
+    ).toBeDefined();
+    if (!member) return; // narrow TS — l'expect ci-dessus a déjà rougi
     const ms = member.memberships[0];
     const patchRes = await request.patch(`${PROSPECTION_URL}/api/admin/members`, {
       headers: {

@@ -123,13 +123,27 @@ test.describe("Keyboard shortcuts", () => {
     await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
     await page.waitForTimeout(1500);
 
-    // Find any input on the page (search bar, filter, etc.)
-    const firstInput = page.locator("input").first();
-    const hasInput = await firstInput.isVisible({ timeout: 5000 }).catch(() => false);
-    if (!hasInput) {
-      test.skip(true, "No input visible on /prospects to test focus guard");
-      return;
-    }
+    // Révèle l'input search en cliquant le bouton "Rechercher" de la
+    // FilterBar (refactor 2026-05 : search compacte derrière un toggle).
+    // Sans ce clic, l'input n'existe pas dans le DOM. Si le bouton lui-
+    // même est invisible, c'est une régression rendu réelle — rouge,
+    // pas skip silencieux.
+    const searchToggle = page
+      .getByRole("button", { name: /Rechercher/ })
+      .first();
+    await expect(
+      searchToggle,
+      "bouton Rechercher invisible — régression rendu toolbar",
+    ).toBeVisible({ timeout: 5000 });
+    await searchToggle.click();
+
+    const firstInput = page
+      .getByPlaceholder(/domaine.*entreprise.*tel/i)
+      .first();
+    await expect(
+      firstInput,
+      "input search invisible après clic Rechercher — FilterBar cassée",
+    ).toBeVisible({ timeout: 3000 });
     await firstInput.focus();
 
     const urlBefore = page.url();

@@ -62,13 +62,14 @@ test.describe("Lead detail interactions", () => {
     await page.waitForTimeout(2000);
 
     const rowCount = await page.locator("table tbody tr").count();
-    if (rowCount === 0) {
-      // Fresh user sans workspace — skip gracefully
-      console.log("[lead-detail] 0 rows in /prospects (fresh user) — skipping interaction tests");
-      assertNoConsoleErrors("/prospects empty");
-      test.skip(true, "No rows in /prospects for fresh user");
-      return;
-    }
+    // Skip silencieux interdit : le helper canonique seede 1 Entreprise +
+    // Outreach (helpers/auth.ts §7), et la DB staging contient la dump
+    // INSEE de ~417k entreprises prospectables. Si rowCount==0, c'est un
+    // bug de query/visibility, pas un "fresh user normal" — il faut le rouge.
+    expect(
+      rowCount,
+      "/prospects vide — le seed canonique doit poser >=1 lead visible pour le tenant E2E",
+    ).toBeGreaterThan(0);
 
     // Click on the first row
     await page.locator("table tbody tr").first().click();
@@ -89,10 +90,10 @@ test.describe("Lead detail interactions", () => {
     await page.waitForTimeout(2000);
 
     const rowCount = await page.locator("table tbody tr").count();
-    if (rowCount === 0) {
-      test.skip(true, "No rows for fresh user");
-      return;
-    }
+    expect(
+      rowCount,
+      "/prospects vide — seed canonique cassé, doit poser >=1 lead pour ce tenant",
+    ).toBeGreaterThan(0);
 
     await page.locator("table tbody tr").first().click();
     await page.waitForTimeout(2000);
@@ -124,10 +125,10 @@ test.describe("Lead detail interactions", () => {
     await page.waitForTimeout(2000);
 
     const rowCount = await page.locator("table tbody tr").count();
-    if (rowCount === 0) {
-      test.skip(true, "No rows for fresh user");
-      return;
-    }
+    expect(
+      rowCount,
+      "/prospects vide — seed canonique cassé, doit poser >=1 lead pour ce tenant",
+    ).toBeGreaterThan(0);
 
     await page.locator("table tbody tr").first().click();
     await page.waitForTimeout(2000);

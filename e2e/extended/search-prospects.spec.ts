@@ -66,18 +66,32 @@ test.describe("Search & filters on /prospects", () => {
       }
     });
 
-    // Fill search box and wait for debounce + fetch
-    const searchInput = page.getByPlaceholder(/Rechercher.*domaine.*tel/i).first();
-    const hasSearch = await searchInput.isVisible({ timeout: 5000 }).catch(() => false);
-    if (!hasSearch) {
-      console.log("[search] Search input not visible — UI may have changed, skipping");
-      assertNoConsoleErrors("no-search-input");
-      test.skip(true, "Search input not visible");
-      return;
-    }
+    // La search est masquée derrière un bouton "Rechercher" dans FilterBar
+    // (refactor 2026-05 : compactage toolbar desktop). Il faut cliquer le
+    // bouton pour révéler l'input. Si le bouton est absent c'est une
+    // régression UI réelle qui doit rougir, pas skip.
+    const searchToggle = page
+      .getByRole("button", { name: /Rechercher/ })
+      .first();
+    await expect(
+      searchToggle,
+      "bouton Rechercher invisible — régression toolbar FilterBar (composant compactage)",
+    ).toBeVisible({ timeout: 5000 });
+    await searchToggle.click();
 
+    const searchInput = page
+      .getByPlaceholder(/domaine.*entreprise.*tel/i)
+      .first();
+    await expect(
+      searchInput,
+      "input search invisible après clic Rechercher — composant FilterBar cassé",
+    ).toBeVisible({ timeout: 3000 });
+
+    // FilterBar n'a pas de debounce onChange — le submit se fait sur Enter
+    // (cf src/components/dashboard/filter-bar.tsx submit()). Taper + Enter
+    // déclenche le onSearch parent qui pousse `q=` dans l'URL et refetch.
     await searchInput.fill("bou");
-    await page.waitForTimeout(1500); // debounce
+    await searchInput.press("Enter");
     await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
 
     // At least one request should contain q=bou
@@ -103,12 +117,15 @@ test.describe("Search & filters on /prospects", () => {
       if (req.url().includes("/api/prospects")) prospectRequests.push(req.url());
     });
 
-    // Click the CA column header
+    // Click the CA column header. Le seed canonique + la dump INSEE
+    // garantissent >=1 row, donc le header CA est rendu — son absence
+    // signale une régression de la table (column toggle, build cassé,
+    // CSS qui masque). Rouge attendu, pas skip.
     const caHeader = page.getByRole("columnheader", { name: /^CA/i }).first();
-    if (!(await caHeader.isVisible({ timeout: 5000 }).catch(() => false))) {
-      test.skip(true, "CA column header not visible (maybe 0 rows, no header rendered)");
-      return;
-    }
+    await expect(
+      caHeader,
+      "header colonne CA invisible — régression rendu table ou config colonnes",
+    ).toBeVisible({ timeout: 5000 });
     await caHeader.click();
     await page.waitForTimeout(1500);
     await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
