@@ -92,6 +92,86 @@ if [ -n "$FRONTEND_CHANGES" ]; then
   fi
 fi
 
+# 1octies. Sabotage-test — un test qui n'observe rien d'utile DOIT mourir
+# au sabotage léger de sa source. Le bug invitations 2026-05-23 (Supabase
+# mort 5 jours en silence) a passé tous les filtres parce que le test
+# mockait fetch — ce check le détecterait.
+# BLOCKING. Skip d'urgence : SKIP_SABOTAGE_TEST=1 git push
+# Fail-safe : script absent/non exécutable alors qu'on a des tests modifiés
+# = push refusé (pas exit 0 silencieux).
+SABOTAGE_CHECK="scripts/ci/check-sabotage-test.sh"
+TEST_CHANGES=$(git diff --name-only "$BASE_REF"...HEAD 2>/dev/null | grep -E '\.test\.(ts|tsx)$' || true)
+if [ -n "$TEST_CHANGES" ]; then
+  if [ "${SKIP_SABOTAGE_TEST:-0}" = "1" ]; then
+    echo "⚠ check-sabotage-test.sh skipped via SKIP_SABOTAGE_TEST=1"
+  else
+    if [ ! -x "$SABOTAGE_CHECK" ]; then
+      echo "✗ $SABOTAGE_CHECK introuvable ou non exécutable — push refusé."
+      echo "  Run: chmod +x $SABOTAGE_CHECK"
+      exit 1
+    fi
+    if ! "$SABOTAGE_CHECK"; then
+      echo
+      echo "✗ Push refusé : au moins un test ne prouve pas qu'il détecte."
+      echo "  Cf bug invitations 2026-05-23 (test vert sur Supabase mort)."
+      echo "  Skip d'urgence (à éviter) : SKIP_SABOTAGE_TEST=1 git push"
+      exit 1
+    fi
+  fi
+fi
+
+# 1nonies. Smoke contractuel cross-app — chaque endpoint Veridian appelé
+# en runtime DOIT exister en staging. Anti-régression directe du bug
+# invitations 2026-05-23 : l'URL /auth/v1/admin/users était littérale,
+# Supabase mort, aucun test ne le détectait. Ce check curl HEAD chaque
+# endpoint cross-app extrait du code et bloque sur 404.
+# BLOCKING. Skip d'urgence : SKIP_CROSS_APP_CONTRACTS=1 git push
+# Fail-safe : script absent alors qu'on a du code applicatif modifié
+# = push refusé.
+CROSSAPP_CHECK="scripts/ci/check-cross-app-contracts.sh"
+APP_CODE_CHANGES=$(git diff --name-only "$BASE_REF"...HEAD 2>/dev/null \
+  | grep -E '^src/(lib|app|components)/' | grep -v '\.test\.' || true)
+if [ -n "$APP_CODE_CHANGES" ]; then
+  if [ "${SKIP_CROSS_APP_CONTRACTS:-0}" = "1" ]; then
+    echo "⚠ check-cross-app-contracts.sh skipped via SKIP_CROSS_APP_CONTRACTS=1"
+  else
+    if [ ! -x "$CROSSAPP_CHECK" ]; then
+      echo "✗ $CROSSAPP_CHECK introuvable ou non exécutable — push refusé."
+      echo "  Run: chmod +x $CROSSAPP_CHECK"
+      exit 1
+    fi
+    if ! "$CROSSAPP_CHECK"; then
+      echo
+      echo "✗ Push refusé : un endpoint cross-app référencé est mort."
+      echo "  Cf bug invitations 2026-05-23 (Supabase mort 5 jours)."
+      echo "  Skip d'urgence (à éviter) : SKIP_CROSS_APP_CONTRACTS=1 git push"
+      exit 1
+    fi
+  fi
+fi
+
+# 1decies. Drift Prisma — schema.prisma doit refléter la DB réelle.
+# WARN ONLY en v1 — on observe avant de durcir (drifts connus :
+# results, segment_catalog, before_enrich, staging_*).
+# Le script lui-même ne renvoie jamais exit ≠ 0 sauf erreur technique,
+# donc on capture pour ne PAS bloquer le push en v1.
+# Skip d'urgence : SKIP_PRISMA_DRIFT=1 git push
+DRIFT_CHECK="scripts/ci/check-prisma-drift.sh"
+PRISMA_CHANGES=$(git diff --name-only "$BASE_REF"...HEAD 2>/dev/null \
+  | grep -E '^prisma/(schema\.prisma|migrations/)' || true)
+if [ -n "$PRISMA_CHANGES" ]; then
+  if [ "${SKIP_PRISMA_DRIFT:-0}" = "1" ]; then
+    echo "⚠ check-prisma-drift.sh skipped via SKIP_PRISMA_DRIFT=1"
+  else
+    if [ ! -x "$DRIFT_CHECK" ]; then
+      echo "⚠ $DRIFT_CHECK introuvable — drift Prisma non vérifié (warn only)."
+    else
+      # WARN only en v1 — on ignore l'exit code pour ne PAS bloquer
+      "$DRIFT_CHECK" || true
+    fi
+  fi
+fi
+
 # 2. Rappel régénération compose si base/prod modifié
 # Note : check sémantique désactivé (formats varient entre versions compose CLI).
 # Reste à implémenter un check basé sur yq normalisé.
