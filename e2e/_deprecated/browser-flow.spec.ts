@@ -11,7 +11,7 @@
  */
 import { test, expect, type ConsoleMessage } from "@playwright/test";
 
-const PROSPECTION_URL = process.env.PROSPECTION_URL || "https://saas-prospection.staging.veridian.site";
+const PROSPECTION_URL = process.env.PROSPECTION_URL || "https://prospection.staging.veridian.site";
 const HUB_URL = process.env.HUB_URL || "https://saas-hub.staging.veridian.site";
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://saas-api.staging.veridian.site";
 const TWENTY_URL = process.env.TWENTY_URL || "https://saas-twenty.staging.veridian.site";

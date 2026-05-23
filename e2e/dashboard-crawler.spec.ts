@@ -62,24 +62,37 @@ test.describe("Dashboard crawler — détection batch erreurs UI", () => {
       request,
     }) => {
       const consoleErrors: string[] = [];
-      browserPage.on("console", (msg: ConsoleMessage) => {
+      const errorListener = (msg: ConsoleMessage) => {
         if (msg.type() === "error") {
           const text = msg.text();
           if (!shouldIgnoreConsoleError(text)) {
             consoleErrors.push(text);
           }
         }
-      });
+      };
 
-      // Login canonical user (idempotent)
+      // Login canonical user (idempotent). On ne listen PAS encore les console
+      // errors : pendant le passage sur /login, les composants du layout racine
+      // (AppNav, TrialContext) sont déjà montés et lancent leurs useEffect →
+      // fetch /api/me /api/trial /api/settings → 401 légitimes (pas de session
+      // avant submit du form). Ce sont des faux positifs UI, pas un vrai bug.
+      // Cf incident 2026-05-23 (todo/done/2026-05-23-fix-401-api-routes-clientside-auth.md).
       await loginAsE2EUser(browserPage, request);
 
-      // Navigate to target page. waitUntil networkidle = laisse le temps aux
-      // server components de finir leurs RPC. Max 10s (vs default 30s).
+      // À partir d'ici la session est établie : tout console.error qui survient
+      // pendant la navigation cible est un vrai signal.
+      browserPage.on("console", errorListener);
+
+      // Navigate to target page. waitUntil "load" = HTML + assets prêts,
+      // mais on n'attend PAS "networkidle" : useSession Auth.js refresh
+      // périodiquement (cookie + 1 fetch /api/auth/session toutes les ~30s)
+      // et certaines pages admin font du polling, donc networkidle n'arrive
+      // jamais. On preferr un attendu déterministe : `<main>` rendu.
       const response = await browserPage.goto(page.path, {
-        waitUntil: "networkidle",
-        timeout: 10_000,
+        waitUntil: "load",
+        timeout: 15_000,
       });
+      await browserPage.waitForSelector("main", { timeout: 10_000 });
 
       // HTTP status check
       expect(

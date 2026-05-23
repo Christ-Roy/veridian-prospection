@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getStats } from "@/lib/queries";
 import { cached } from "@/lib/cache";
 import { requireAuth } from "@/lib/auth/api-auth";
-import { getTenantId } from "@/lib/supabase/tenant";
+import { getTenantId } from "@/lib/auth/tenant";
 
 export async function GET() {
   const auth = await requireAuth();

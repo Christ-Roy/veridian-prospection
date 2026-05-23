@@ -1,18 +1,8 @@
 /**
- * Auth.js v5 user context resolution — remplace src/lib/supabase/user-context.ts
- *
- * Stratégie : expose la MÊME API que l'ancien module Supabase pour permettre
- * un refactor progressif des 73 fichiers consumers (lots A/B/C).
- *
- * Différences vs version Supabase :
- *  - Lit la session via `auth()` Auth.js v5 (cookies JWT) au lieu de Supabase cookies
- *  - Résout le tenant via la table locale `Tenant` (Prisma) au lieu de
- *    `admin.from("tenants")` Supabase
- *  - Pas de Supabase admin client → plus de risque rate-limit
- *
- * Cache 30s identique à l'original.
+ * Résolution du UserContext (user + tenant + workspaces + role) via
+ * Auth.js v5 (session JWT) et Prisma. Cache mémoire 30s par userId.
  */
-import { auth } from "@/lib/auth";
+import { auth } from "@/lib/auth-config";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";

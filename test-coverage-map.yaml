@@ -36,3 +36,143 @@
     mockent Prisma + bcrypt, asserent qu'aucun fetch Supabase n'est
     appelé, et valident le contrat Auth.js v5 (User+Account+WorkspaceMember
     + anti-double-grant). Hotfix 2026-05-23.
+
+# ── Tests colocalisés src/lib/ (passe robustesse 2026-05-23) ────────────
+# Pattern : test colocalisé `src/lib/<X>.test.ts` couvre `src/lib/<X>.ts`.
+# Le check-test-mapping canonique cherche `__tests__/lib/<X>.test.test.ts`
+# (double .test), ce qui est un faux positif inhérent à la colocalisation.
+# On déclare ici les paires pour qu'elles soient acceptées.
+
+- sources:
+    - src/lib/audit.ts
+    - src/lib/audit.test.ts
+  covered_by:
+    - src/lib/audit.test.ts
+  reason: |
+    Test colocalisé (passe 2026-05-23 lib-tests-coverage). 9 tests
+    Vitest mocks Prisma + Next/headers, couvre logAudit fail-safe
+    (P2021 warn-une-fois, DB down, non-Error catché) + payload Prisma
+    exact. Sabotage-test : casser le mapping payload → tests rouges.
+
+- sources:
+    - src/lib/cache.ts
+    - src/lib/cache.test.ts
+  covered_by:
+    - src/lib/cache.test.ts
+  reason: |
+    Test colocalisé. 9 tests : TTL sync/async, isolation par clé,
+    promise rejetée non-cachée, invalidate/invalidatePrefix.
+
+- sources:
+    - src/lib/auth/api-auth.ts
+    - src/lib/auth/api-auth.test.ts
+  covered_by:
+    - src/lib/auth/api-auth.test.ts
+  reason: |
+    Test colocalisé. 8 tests : requireAuth fail-closed sur session
+    incomplète, shape stricte `{id,email}` anti-leak. Hot path auth.
+
+- sources:
+    - src/lib/auth/user-context.ts
+    - src/lib/auth/user-context.test.ts
+  covered_by:
+    - src/lib/auth/user-context.test.ts
+  reason: |
+    Test colocalisé. 34 tests : résolution multi-tenant
+    owner+invité, isolation cross-tenant (filtre workspaces), isAdmin,
+    activeWorkspaceId anti-spoof, cache 30s, requireUser/requireAdmin
+    401/403, getWorkspaceFilter/getUserFilter/resolveInsertWorkspaceId.
+
+- sources:
+    - src/lib/auth/middleware.ts
+    - src/lib/auth/middleware.test.ts
+  covered_by:
+    - src/lib/auth/middleware.test.ts
+  reason: |
+    Test colocalisé. 22 tests : bypass 13 routes publiques, API sans
+    session → next() (délègue 401 handler), pages → redirect
+    `/login?redirect=`, session OK → passe.
+
+- sources:
+    - src/lib/auth/roles.ts
+    - src/lib/auth/roles.test.ts
+  covered_by:
+    - src/lib/auth/roles.test.ts
+  reason: |
+    Test colocalisé. 19 tests : matrice RBAC owner/admin/member/viewer
+    × 13 actions, type guard, normalize fail-safe vers viewer.
+    Sabotage-test : `workspace.delete: owner → viewer` (fail-OPEN
+    catastrophique) → 2 tests rouges immédiatement.
+
+- sources:
+    - src/lib/notifuse/client.ts
+    - src/lib/notifuse/client.test.ts
+  covered_by:
+    - src/lib/notifuse/client.test.ts
+  reason: |
+    Test colocalisé (passe 2026-05-23 notifuse-mail). 11 tests Vitest
+    couvrent l'envoi transactional best-effort : 8 reasons explicites
+    (sent / missing_template / auth_failed / timeout / etc.), contrat
+    POST exact, jamais bloquant pour le call parent.
+
+# ── Renames + modifs ciblées passe 2026-05-23 (seconde passe) ────────────
+
+- sources:
+    - src/lib/auth-config.ts
+    - src/app/api/auth/[...nextauth]/route.ts
+    - src/app/api/auth/token/route.ts
+  covered_by:
+    - src/lib/auth/api-auth.test.ts
+    - src/lib/auth/user-context.test.ts
+  reason: |
+    Le fichier auth-config.ts (rename depuis lib/auth.ts) exporte
+    NextAuth { auth, handlers, signIn, signOut } consommés par
+    [...nextauth]/route.ts et auth/token/route.ts. Le contrat (cookies
+    session-token, callbacks JWT) est validé indirectement par les
+    tests colocalisés api-auth.test.ts (8 tests requireAuth) et
+    user-context.test.ts (34 tests resolution multi-tenant), qui
+    mockent @/lib/auth-config et testent le comportement de session.
+    Pas de test direct du provider Credentials (bcrypt) car testé en
+    E2E via le helper canonique e2e/helpers/auth.ts.
+
+# Composants /settings — refonte responsive 2026-05-23 (settings-overflow)
+- sources:
+    - src/components/dashboard/settings-tabs.tsx
+    - src/components/dashboard/settings-display.tsx
+    - src/components/dashboard/settings-reference.tsx
+  covered_by:
+    - e2e/extended/mobile-viewport.spec.ts
+  reason: |
+    Fix overflow horizontal iPhone SE 375px (commit 67eaa4c). Le test
+    mobile-viewport.spec.ts:84 mesure document.scrollWidth -
+    window.innerWidth ≤ 20px sur /settings. C'est le test qui a détecté
+    le bug initial (overflow 382px), il valide aussi le fix.
+    Tests source-level non requis : refonte responsive pure (wrapper
+    overflow-x-auto + collapse layout grid-cols-1 sm:grid-cols-2 + tables
+    wrappées défensivement). Le smoke E2E couvre l'invariant cible.
+
+# Headers JSDoc nettoyés — modifs cosmétiques (nettoyer-comments)
+- sources:
+    - src/lib/auth/middleware.ts
+    - src/lib/invitations.ts
+  covered_by:
+    - src/lib/auth/middleware.test.ts
+    - src/lib/invitations.test.ts
+  reason: |
+    Commit da370d6 (nettoyer-comments) ne touche QUE les commentaires
+    JSDoc (retire les références Supabase mortes). Aucun changement
+    runtime. Tests colocalisés (22 tests middleware + 16 tests
+    invitations) restent verts et continuent à couvrir le comportement.
+
+- sources:
+    - src/lib/errors/dedupe.ts
+    - src/lib/errors/dedupe.test.ts
+  covered_by:
+    - src/lib/errors/dedupe.test.ts
+  reason: |
+    Test colocalisé src/lib/errors/dedupe.test.ts (pattern repo,
+    cf src/lib/invitations.test.ts). 8 tests Vitest : computeDedupeKey
+    (4 cas : stabilité, sensibilité 3 champs, null safe) +
+    bucketToHour (3 cas : ramène HH:00 UTC, idempotent, bucket différent
+    par heure). Sabotage-test : retirer le param `lineno` du hash
+    casse "sensible au lineno" + retirer Date.UTC casse les 2 derniers.

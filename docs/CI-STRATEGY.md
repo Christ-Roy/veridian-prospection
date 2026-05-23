@@ -34,7 +34,7 @@ Workflow : `.github/workflows/ci.yml` job `e2e-staging-full` (post-deploy, ne bl
 Budget temps : jusqu'à 10 min.
 
 Contenu :
-- Les 14+ specs Playwright browser chromium actuels (`e2e/ui-siren-smoke.spec.ts`, `e2e/admin-pages-smoke.spec.ts`, `e2e/lead-detail-interactions.spec.ts`, `e2e/status-endpoint.spec.ts`, `e2e/search-prospects.spec.ts`, `e2e/client-error-boundary.spec.ts`, `e2e/segments-filter.spec.ts`, `e2e/keyboard-shortcuts-help.spec.ts`, `e2e/historique-page.spec.ts`, `e2e/filters-persistence.spec.ts`, `e2e/settings-page.spec.ts`, `e2e/mobile-viewport.spec.ts`, + les nouveaux de la démo invite-flow).
+- Les 14+ specs Playwright browser chromium actuels (`e2e/ui-siren-smoke.spec.ts`, `e2e/extended/admin-pages-smoke.spec.ts`, `e2e/extended/lead-detail-interactions.spec.ts`, `e2e/core/status-endpoint.spec.ts`, `e2e/extended/search-prospects.spec.ts`, `e2e/extended/client-error-boundary.spec.ts`, `e2e/extended/segments-filter.spec.ts`, `e2e/extended/keyboard-shortcuts-help.spec.ts`, `e2e/extended/historique-page.spec.ts`, `e2e/extended/filters-persistence.spec.ts`, `e2e/extended/settings-page.spec.ts`, `e2e/extended/mobile-viewport.spec.ts`, + les nouveaux de la démo invite-flow).
 - `scripts/test-dashboard-api.ts` (smoke API authentifié 15 routes métier).
 - `scripts/test-invite-api.ts` (smoke API invitation flow, post-démo).
 - `scripts/test-admin-routes.ts` (admin API vitest).

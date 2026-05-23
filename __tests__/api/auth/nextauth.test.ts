@@ -14,7 +14,7 @@ const { handlersMock } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@/lib/auth", () => ({
+vi.mock("@/lib/auth-config", () => ({
   handlers: handlersMock,
 }));
 

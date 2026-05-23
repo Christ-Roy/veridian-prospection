@@ -73,10 +73,19 @@ export function SegmentTable({ segment }: SegmentTableProps) {
       sortDir,
     });
 
-    const res = await fetch(`/api/segments/${segment}?${params}`);
-    const json = await res.json();
-    setData(json);
-    setLoading(false);
+    try {
+      const res = await fetch(`/api/segments/${segment}?${params}`);
+      if (!res.ok) {
+        setData(null);
+        return;
+      }
+      const json = await res.json();
+      setData(json && Array.isArray(json.data) ? json : null);
+    } catch {
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
   }, [page, sort, sortDir, segment]);
 
   useEffect(() => { fetchData(); }, [fetchData]);

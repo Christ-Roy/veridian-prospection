@@ -17,7 +17,7 @@ const {
 }));
 
 vi.mock("@/lib/auth/api-auth", () => ({ requireAuth: requireAuthMock }));
-vi.mock("@/lib/supabase/tenant", () => ({ getTenantId: getTenantIdMock }));
+vi.mock("@/lib/auth/tenant", () => ({ getTenantId: getTenantIdMock }));
 vi.mock("@/lib/cache", () => ({ cached: cachedMock }));
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
 

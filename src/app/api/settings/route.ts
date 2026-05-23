@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAllSettings, setSetting } from "@/lib/queries";
 import { requireAuth } from "@/lib/auth/api-auth";
-import { getTenantId } from "@/lib/supabase/tenant";
+import { getTenantId } from "@/lib/auth/tenant";
 
 // GET /api/settings — read all settings from pipeline_config
 export async function GET() {

@@ -30,8 +30,9 @@ export function StatsCards() {
 
   useEffect(() => {
     fetch("/api/stats")
-      .then((r) => r.json())
-      .then(setStats);
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setStats(d && typeof d === "object" && !Array.isArray(d) ? d : null))
+      .catch(() => {});
   }, []);
 
   return (

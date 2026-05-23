@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getHistoryLeads } from "@/lib/queries";
 import { requireAuth } from "@/lib/auth/api-auth";
-import { getTenantId } from "@/lib/supabase/tenant";
+import { getTenantId } from "@/lib/auth/tenant";
 import { getUserContext } from "@/lib/auth/user-context";
 
 export async function GET(request: NextRequest) {

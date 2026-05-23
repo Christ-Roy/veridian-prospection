@@ -118,7 +118,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Crée la session Auth.js. On signe un JWT compatible avec ce qu'attend
-  // le middleware Auth.js (cf src/lib/auth.ts callbacks `jwt` + `session`
+  // le middleware Auth.js (cf src/lib/auth-config.ts callbacks `jwt` + `session`
   // qui mettent `uid` sur token, puis `user.id` sur session).
   const secret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
   if (!secret) {

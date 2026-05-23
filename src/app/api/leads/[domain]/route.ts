@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getLeadDetail, recordVisit, patchOutreach, consumeLead } from "@/lib/queries";
 import { requireAuth } from "@/lib/auth/api-auth";
-import { getTenantId, getTenantProspectLimit } from "@/lib/supabase/tenant";
+import { getTenantId, getTenantProspectLimit } from "@/lib/auth/tenant";
 import { getWorkspaceScope } from "@/lib/auth/user-context";
 import { isRateLimited } from "@/lib/rate-limit";
 import { isUserFrozen } from "@/lib/auth/freeze";

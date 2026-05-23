@@ -61,6 +61,23 @@ export const E2E_USER_PASSWORD = "E2ePersistent2026!";
 export const E2E_TENANT_NAME = "e2e-persistent";
 
 /**
+ * Compte invité canonique — second user, member du workspace de E2E_USER avec
+ * scope "own". Utilisé par invited-member-flow.spec.ts (membre invité visant
+ * /prospects + /pipeline sans privilèges admin).
+ */
+export const E2E_INVITED_EMAIL = "e2e-invited@yopmail.com";
+export const E2E_INVITED_PASSWORD = "E2eInvited2026!";
+
+/**
+ * Lead canonique — Entreprise + Outreach posés dans le tenant E2E. Sert de
+ * garantie qu'une table /prospects renvoie ≥ 1 row même dans une DB fraîche.
+ * SIREN choisi hors plage SIRENE réelle (commence par 9 puis 8 zéros — n'est
+ * pas attribué par l'INSEE) pour ne jamais entrer en collision avec la dump
+ * INSEE de 996K entreprises présente en staging/prod.
+ */
+const E2E_CANONICAL_SIREN = "900000001";
+
+/**
  * UUIDs fixes du compte canonique. Posés en dur (pas générés) pour que le
  * seed soit strictement idempotent entre runs et entre environnements, et
  * pour que les lignes soient identifiables en DB (`SELECT ... WHERE id = ...`).
@@ -70,6 +87,7 @@ export const E2E_TENANT_NAME = "e2e-persistent";
 const E2E_USER_ID = "e2e0e2e0-0000-4000-8000-000000000001";
 const E2E_TENANT_ID = "e2e0e2e0-0000-4000-8000-000000000002";
 const E2E_TENANT_SLUG = "e2e-persistent-canonical";
+const E2E_INVITED_USER_ID = "e2e0e2e0-0000-4000-8000-000000000003";
 
 function env(name: string, fallback = ""): string {
   return process.env[name] || fallback;
@@ -107,7 +125,7 @@ function getPrisma(): PrismaClient {
  * Idempotent : tous les writes sont des upsert ou des create gardés par un
  * findFirst. Rejouer cette fonction 100× ne crée qu'un seul jeu de lignes.
  */
-async function ensureCanonicalUser(): Promise<void> {
+export async function ensureCanonicalUser(): Promise<void> {
   const prisma = getPrisma();
   const passwordHash = await bcrypt.hash(E2E_USER_PASSWORD, 10);
 
@@ -208,6 +226,138 @@ async function ensureCanonicalUser(): Promise<void> {
       userId: user.id,
       role: "admin",
       visibilityScope: "all",
+    },
+  });
+
+  // 6) User invité canonique — seedé pour invited-member-flow.spec.ts. Member
+  //    du workspace avec scope "own" (non-admin, visibilité restreinte). Même
+  //    chaîne User + Account credentials que l'owner.
+  const invitedPasswordHash = await bcrypt.hash(E2E_INVITED_PASSWORD, 10);
+  const invitedUser = await prisma.user.upsert({
+    where: { email: E2E_INVITED_EMAIL },
+    update: { name: "E2E Invited", deletedAt: null },
+    create: {
+      id: E2E_INVITED_USER_ID,
+      email: E2E_INVITED_EMAIL,
+      name: "E2E Invited",
+      emailVerified: new Date(),
+    },
+    select: { id: true },
+  });
+  const existingInvitedAccount = await prisma.account.findUnique({
+    where: {
+      provider_providerAccountId: {
+        provider: "credentials",
+        providerAccountId: E2E_INVITED_EMAIL,
+      },
+    },
+    select: { id: true },
+  });
+  if (existingInvitedAccount) {
+    await prisma.account.update({
+      where: { id: existingInvitedAccount.id },
+      data: { userId: invitedUser.id, access_token: invitedPasswordHash },
+    });
+  } else {
+    await prisma.account.create({
+      data: {
+        userId: invitedUser.id,
+        type: "credentials",
+        provider: "credentials",
+        providerAccountId: E2E_INVITED_EMAIL,
+        access_token: invitedPasswordHash,
+      },
+    });
+  }
+  await prisma.workspaceMember.upsert({
+    where: {
+      workspaceId_userId: { workspaceId: workspace.id, userId: invitedUser.id },
+    },
+    update: { role: "member", visibilityScope: "own", deletedAt: null },
+    create: {
+      workspaceId: workspace.id,
+      userId: invitedUser.id,
+      role: "member",
+      visibilityScope: "own",
+    },
+  });
+
+  // 7) Lead canonique — Entreprise (SIREN hors plage SIRENE) + Outreach
+  //    rattaché au tenant E2E. Garantit qu'une DB fraîche (env neuf, clone
+  //    vierge) renvoie ≥ 1 row sur /prospects pour le tenant canonique.
+  //    SQL brut : la table `entreprises` est gérée hors Prisma (ETL INSEE),
+  //    le client TypeScript n'expose pas toutes ses colonnes ; un upsert
+  //    Prisma typé refuserait des champs nécessaires aux filtres /prospects.
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO entreprises
+       (siren, denomination, code_naf, naf_libelle, commune, departement,
+        code_postal, tranche_effectifs, chiffre_affaires, best_phone_e164,
+        best_email_normalized, web_domain, web_domain_normalized,
+        is_registrar, ca_suspect, is_prospectable, prospect_score,
+        prospect_tier, secteur_final, master_updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+             false, false, true, 75, 'tier1', 'services', now())
+     ON CONFLICT (siren) DO UPDATE SET
+       denomination = EXCLUDED.denomination,
+       best_phone_e164 = EXCLUDED.best_phone_e164,
+       best_email_normalized = EXCLUDED.best_email_normalized,
+       is_registrar = false,
+       ca_suspect = false,
+       is_prospectable = true,
+       prospect_score = 75,
+       master_updated_at = now()`,
+    E2E_CANONICAL_SIREN,
+    "E2E Canonical Lead",
+    "6201Z",
+    "Programmation informatique",
+    "Paris",
+    "75",
+    "75001",
+    "00",
+    BigInt(500000),
+    "+33123456789",
+    "contact@e2e-canonical.example.fr",
+    "e2e-canonical.example.fr",
+    "e2e-canonical.example.fr",
+  );
+
+  await prisma.outreach.upsert({
+    where: {
+      siren_tenantId: { siren: E2E_CANONICAL_SIREN, tenantId: tenant.id },
+    },
+    update: { status: "a_contacter", userId: user.id, workspaceId: workspace.id },
+    create: {
+      siren: E2E_CANONICAL_SIREN,
+      tenantId: tenant.id,
+      workspaceId: workspace.id,
+      userId: user.id,
+      status: "a_contacter",
+      position: 0,
+    },
+  });
+
+  // 8) Invitation pending — couvre le drawer pipeline + historique côté
+  //    admin-members et toute spec qui inspecte la liste des invitations en
+  //    cours. Token déterministe pour idempotence + identification en DB.
+  const invitationToken = "e2e-invitation-token-canonical-do-not-rotate";
+  await prisma.invitation.upsert({
+    where: { token: invitationToken },
+    update: {
+      email: "e2e-pending-invite@yopmail.com",
+      invitedBy: user.id,
+      tenantId: tenant.id,
+      workspaceId: workspace.id,
+      role: "member",
+      acceptedAt: null,
+      revokedAt: null,
+    },
+    create: {
+      email: "e2e-pending-invite@yopmail.com",
+      invitedBy: user.id,
+      tenantId: tenant.id,
+      workspaceId: workspace.id,
+      role: "member",
+      token: invitationToken,
     },
   });
 }

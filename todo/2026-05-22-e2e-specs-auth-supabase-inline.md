@@ -1,10 +1,41 @@
-# [PROSPECTION] 2 specs E2E font leur propre auth Supabase inline (morte)
+# [PROSPECTION] Specs E2E avec auth Supabase inline (morte)
 
-> **Type** : Dette technique — tests E2E inopérants
-> **Sévérité** : 🟡 P1 — pas de prod en danger, mais 2 specs E2E ne testent plus rien
+> **Type** : Dette technique — tests E2E inopérants (couverture surévaluée)
+> **Sévérité** : 🔴 P0 (en réalité) — la couverture E2E annoncée est largement surévaluée. La plupart des specs concernées se `test.skip(true, "SUPABASE_KEYS required")` SILENCIEUSEMENT en CI, donc on croit qu'elles passent mais elles ne testent RIEN.
 > **Owner** : agent Prospection
 > **Créé** : 2026-05-22
 > **Découvert par** : agent e2e-fix (en réparant `e2e/helpers/auth.ts`)
+> **Maj 2026-05-23** : agent e2e-specs-supabase a migré les 2 premières
+> specs (ui-siren-smoke + browser-flow, commit `ab99c40`). Mais a découvert
+> que **17 AUTRES specs** ont le même bug — sous-estimation x10.
+
+## État après passe 2026-05-23
+
+### ✅ Migrées (commit `ab99c40`)
+
+- `e2e/ui-siren-smoke.spec.ts`
+- `e2e/browser-flow.spec.ts`
+
+### ❌ Restent à migrer (17 specs identifiées par e2e-specs-supabase 2026-05-23)
+
+```
+e2e/admin-members.spec.ts                  e2e/extended/admin-members.spec.ts
+e2e/admin-pages-smoke.spec.ts              e2e/extended/admin-pages-smoke.spec.ts
+e2e/core/regression.spec.ts                e2e/extended/existing-accounts.spec.ts
+e2e/existing-accounts.spec.ts              e2e/extended/invite-flow-demo.spec.ts
+e2e/invite-flow-demo.spec.ts               e2e/extended/invite-flow.spec.ts
+e2e/invite-flow.spec.ts                    e2e/extended/mobile-viewport.spec.ts
+e2e/mobile-viewport.spec.ts                e2e/extended/saas-flow.spec.ts
+e2e/regression.spec.ts                     e2e/extended/scenario-invite-teammate.spec.ts
+e2e/saas-flow.spec.ts
+e2e/scenario-invite-teammate.spec.ts
+```
+
+### ⚠️ Question méta — doublons e2e/ ↔ e2e/extended/
+
+La plupart des 17 specs ont un doublon entre `e2e/X.spec.ts` et `e2e/extended/X.spec.ts`. **Avant de migrer, trancher** : `e2e/` est-il obsolète ? `e2e/extended/` est-il la vraie source ? Sinon on migre 2× le même contenu pour rien.
+
+Recommandation agent : **investiguer + supprimer les doublons obsolètes** AVANT de lancer la migration des 17. Risque de tout faire en double sinon.
 
 ## Contexte
 

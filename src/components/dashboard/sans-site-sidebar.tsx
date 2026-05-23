@@ -162,9 +162,9 @@ export function SansSiteFilterBody({ value, onChange }: SansSiteSidebarProps) {
               onToggle={() => toggle("qualiopi")}
             />
           </div>
-          {qualiopiExpanded && data.qualiopiSpecialites.length > 0 && (
+          {qualiopiExpanded && (data.qualiopiSpecialites?.length ?? 0) > 0 && (
             <ul className="ml-5 mt-0.5 space-y-0.5 border-l pl-2 max-h-64 overflow-y-auto">
-              {data.qualiopiSpecialites.map((s) => (
+              {(data.qualiopiSpecialites ?? []).map((s) => (
                 <li key={s.specialite}>
                   <button
                     className={`w-full min-h-[32px] text-left text-xs py-1.5 px-1 rounded hover:bg-muted flex justify-between items-center ${

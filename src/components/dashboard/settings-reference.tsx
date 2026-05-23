@@ -21,7 +21,7 @@ export function SettingsReference() {
             Somme lineaire de signaux d&apos;obsolescence. Plus le score est eleve, plus le site a
             besoin d&apos;une refonte.
           </p>
-          <table className="w-full text-left">
+          <div className="overflow-x-auto"><table className="w-full text-left">
             <thead>
               <tr className="border-b">
                 <th className="py-1 pr-2">Signal</th>
@@ -48,7 +48,7 @@ export function SettingsReference() {
               <tr><td className="py-0.5 pr-2 font-mono">copyright &lt;= 2018</td><td className="pr-2 text-red-500">+10</td><td>Site de 8+ ans</td></tr>
               <tr><td className="py-0.5 pr-2 font-mono">copyright 2019-2021</td><td className="pr-2 text-orange-500">+5</td><td>Site de 5-7 ans</td></tr>
             </tbody>
-          </table>
+          </table></div>
           <p className="text-muted-foreground">Max theorique = 106. Moyenne observee ~15-25.</p>
         </div>
       </details>
@@ -76,7 +76,7 @@ export function SettingsReference() {
           NAF par preset — Prefixes sectoriels
         </summary>
         <div className="px-3 pb-3 text-xs space-y-2">
-          <table className="w-full text-left text-muted-foreground">
+          <div className="overflow-x-auto"><table className="w-full text-left text-muted-foreground">
             <thead><tr className="border-b"><th className="py-1 pr-2">Preset</th><th className="py-1">Prefixes NAF</th></tr></thead>
             <tbody>
               <tr><td className="py-0.5 font-semibold text-amber-600">Top Prospects</td><td>Tous (eclate &gt;= 2 + telephone)</td></tr>
@@ -86,7 +86,7 @@ export function SettingsReference() {
               <tr><td className="py-0.5 font-semibold text-gray-600">Tous</td><td>Tous (telephone requis)</td></tr>
               <tr><td className="py-0.5 font-semibold text-indigo-600">Historique</td><td>Deja consultes (last_visited not null)</td></tr>
             </tbody>
-          </table>
+          </table></div>
         </div>
       </details>
 
@@ -96,7 +96,7 @@ export function SettingsReference() {
           Codes effectifs INSEE — Tranches salariales
         </summary>
         <div className="px-3 pb-3 text-xs">
-          <table className="w-full text-left text-muted-foreground">
+          <div className="overflow-x-auto"><table className="w-full text-left text-muted-foreground">
             <thead><tr className="border-b"><th className="py-1 pr-4">Code</th><th className="py-1 pr-4">Tranche</th><th className="py-1">Nb dans la DB</th></tr></thead>
             <tbody>
               <tr><td className="py-0.5 font-mono">00</td><td>0 salarie</td><td>~4K</td></tr>
@@ -113,7 +113,7 @@ export function SettingsReference() {
               <tr><td className="py-0.5 font-mono">42</td><td>1000-1999 salaries</td><td>~8.6K</td></tr>
               <tr><td className="py-0.5 font-mono">NN</td><td>Non renseigne</td><td>~162K</td></tr>
             </tbody>
-          </table>
+          </table></div>
         </div>
       </details>
 
@@ -123,7 +123,7 @@ export function SettingsReference() {
           Qualite des donnees — Distribution enrichissement
         </summary>
         <div className="px-3 pb-3 text-xs space-y-1 text-muted-foreground">
-          <table className="w-full text-left">
+          <div className="overflow-x-auto"><table className="w-full text-left">
             <thead><tr className="border-b"><th className="py-1 pr-4">Source</th><th className="py-1 pr-4">Signification</th><th className="py-1">Volume</th></tr></thead>
             <tbody>
               <tr><td className="py-0.5 font-mono">enriched_via = siren</td><td>Match exact par SIREN via API gouv</td><td>~254K (9%)</td></tr>
@@ -132,7 +132,7 @@ export function SettingsReference() {
               <tr><td className="py-0.5 font-mono">enriched_via = name_blacklisted</td><td>Nom trop generique (blacklist)</td><td>~14K</td></tr>
               <tr><td className="py-0.5 font-mono">enriched_via IS NULL</td><td>Jamais enrichi</td><td>~2.2M (76%)</td></tr>
             </tbody>
-          </table>
+          </table></div>
           <p className="mt-2">Fiabilite : SIREN = 100%, name_cp = ~50%, non enrichi = 0%. Seuls les SIREN et name_cp sont utilises pour les presets sectoriels.</p>
         </div>
       </details>
@@ -143,7 +143,7 @@ export function SettingsReference() {
           Domaines metier — Regroupement des 18 secteurs
         </summary>
         <div className="px-3 pb-3 text-xs space-y-1 text-muted-foreground">
-          <table className="w-full text-left">
+          <div className="overflow-x-auto"><table className="w-full text-left">
             <thead><tr className="border-b"><th className="py-1 pr-2">Domaine</th><th className="py-1">Prefixes NAF</th></tr></thead>
             <tbody>
               <tr><td className="py-0.5">BTP / Construction</td><td className="font-mono">41.*, 43.*</td></tr>
@@ -165,7 +165,7 @@ export function SettingsReference() {
               <tr><td className="py-0.5">Industrie / Fabrication</td><td className="font-mono">10-32.*</td></tr>
               <tr><td className="py-0.5">Assurance / Finance</td><td className="font-mono">64.*, 65.*, 66.*</td></tr>
             </tbody>
-          </table>
+          </table></div>
         </div>
       </details>
 
@@ -175,7 +175,7 @@ export function SettingsReference() {
           Lead flags — Tags calcules par domaine
         </summary>
         <div className="px-3 pb-3 text-xs space-y-1 text-muted-foreground">
-          <table className="w-full text-left">
+          <div className="overflow-x-auto"><table className="w-full text-left">
             <thead><tr className="border-b"><th className="py-1 pr-2">Flag</th><th className="py-1">Condition</th></tr></thead>
             <tbody>
               <tr><td className="py-0.5 font-mono">has_phone</td><td>phone_principal renseigne</td></tr>
@@ -191,7 +191,7 @@ export function SettingsReference() {
               <tr><td className="py-0.5 font-mono">has_email_dir</td><td>email dirigeant trouve par SMTP</td></tr>
               <tr><td className="py-0.5 font-mono">phone_shared</td><td>numero partage par plusieurs entreprises</td></tr>
             </tbody>
-          </table>
+          </table></div>
         </div>
       </details>
 

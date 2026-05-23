@@ -11,7 +11,7 @@ const { requireAuthMock, getTenantIdMock, prismaMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth/api-auth", () => ({ requireAuth: requireAuthMock }));
-vi.mock("@/lib/supabase/tenant", () => ({ getTenantId: getTenantIdMock }));
+vi.mock("@/lib/auth/tenant", () => ({ getTenantId: getTenantIdMock }));
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
 
 import { GET } from "@/app/api/stats/overview/route";

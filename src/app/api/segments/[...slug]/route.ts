@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSegmentLeads, addToSegment, removeFromSegment } from "@/lib/queries";
 import { invalidate } from "@/lib/cache";
 import { requireAuth } from "@/lib/auth/api-auth";
-import { getTenantId } from "@/lib/supabase/tenant";
+import { getTenantId } from "@/lib/auth/tenant";
 
 function slugToId(slug: string[]): string {
   return slug.join("/");

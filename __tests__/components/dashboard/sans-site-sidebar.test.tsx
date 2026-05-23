@@ -72,4 +72,16 @@ describe("sans-site-sidebar.tsx — extraction `SansSiteFilterBody` (sprint 2026
   test("rangs cliquables expose une cible tactile ≥ 36px (min-h-[36px])", () => {
     expect(source).toMatch(/min-h-\[36px\]/);
   });
+
+  // ─── Anti-régression bug intermittent /prospects (2026-05-23, commit d5ae9e8) ──
+  // bug-intermittent a posé un guard défensif sur qualiopiSpecialites.length
+  // pour éviter TypeError 'Cannot read properties of undefined (reading length)'
+  // au 1er render quand l'API renvoie un shape inattendu. Si quelqu'un retire
+  // le guard, ce test rougit.
+  test("garde défensif sur qualiopiSpecialites?.length (anti-régression)", () => {
+    // soit le optional chaining ?. soit fallback ?? []
+    const hasOptionalChaining = /qualiopiSpecialites\?\.length/.test(source);
+    const hasNullishFallback = /qualiopiSpecialites\s*\?\?\s*\[\]/.test(source);
+    expect(hasOptionalChaining || hasNullishFallback).toBe(true);
+  });
 });

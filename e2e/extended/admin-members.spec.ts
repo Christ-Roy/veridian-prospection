@@ -2,25 +2,19 @@
  * Admin members page — spec ciblée sur le drawer pipeline + historique
  * et le switch visibility_scope.
  *
- * Prérequis : staging accessible avec Robert (tenant owner, admin).
+ * Auth via le compte canonique `e2e-persistent` (owner → isAdmin=true).
  *
  * Couvre :
- *  - Login admin → /admin/members
+ *  - Login → /admin/members
  *  - Table visible
  *  - Click sur une ligne → drawer avec Pipeline + Historique
  *  - Change du scope (all → own → all) → PATCH 200 + toast succès
  */
-import { test, expect, type ConsoleMessage, type Page, type APIRequestContext } from "@playwright/test";
+import { test, expect, type ConsoleMessage } from "@playwright/test";
+import { loginAsE2EUser } from "../helpers/auth";
 
 const PROSPECTION_URL =
-  process.env.PROSPECTION_URL || "http://100.92.215.42:3000";
-const SUPABASE_URL =
-  process.env.SUPABASE_URL || "https://saas-api.staging.veridian.site";
-const ANON_KEY = process.env.SUPABASE_ANON_KEY || "";
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-
-const ADMIN_EMAIL = process.env.ROBERT_EMAIL || "robert.brunon@veridian.site";
-const ADMIN_PASSWORD = process.env.ROBERT_PASSWORD || "";
+  process.env.PROSPECTION_URL || "https://prospection.staging.veridian.site";
 
 let consoleErrors: string[] = [];
 
@@ -40,88 +34,42 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-async function loginAsAdmin(page: Page, request: APIRequestContext) {
-  let password = ADMIN_PASSWORD;
-
-  // Si pas de password fourni, essayer via admin API Supabase (comme admin-pages-smoke)
-  if (!password) {
-    if (!ANON_KEY || !SERVICE_KEY) {
-      test.skip(true, "ROBERT_PASSWORD or SUPABASE_*_KEY required");
-      return;
-    }
-    password = `Tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}!`;
-    const listRes = await request.get(
-      `${SUPABASE_URL}/auth/v1/admin/users?email=${encodeURIComponent(ADMIN_EMAIL)}`,
-      { headers: { apikey: ANON_KEY, Authorization: `Bearer ${SERVICE_KEY}` } }
-    );
-    if (!listRes.ok()) {
-      test.skip(true, `admin list failed: ${listRes.status()}`);
-      return;
-    }
-    const body = await listRes.json();
-    const user = body.users?.find((u: { email?: string }) => u.email === ADMIN_EMAIL);
-    if (!user?.id) {
-      test.skip(true, `admin user ${ADMIN_EMAIL} not found`);
-      return;
-    }
-    await request.put(`${SUPABASE_URL}/auth/v1/admin/users/${user.id}`, {
-      headers: {
-        apikey: ANON_KEY,
-        Authorization: `Bearer ${SERVICE_KEY}`,
-        "Content-Type": "application/json",
-      },
-      data: { password, email_confirm: true },
-    });
-  }
-
-  await page.goto(`${PROSPECTION_URL}/login`);
-  await page.locator("#email").fill(ADMIN_EMAIL);
-  await page.locator("#password").fill(password);
-  await page.locator('button[type="submit"]').click();
-  await page.waitForURL(/\/(prospects|admin|$)/, { timeout: 20000 }).catch(() => {});
-  if (page.url().includes("/login")) {
-    throw new Error(`Admin login failed, still on ${page.url()}`);
-  }
-}
-
 test.describe("Admin members — drawer + visibility scope", () => {
   test.setTimeout(90_000);
 
   test("table visible, drawer opens, scope PATCH succeeds", async ({ page, request }) => {
-    await loginAsAdmin(page, request);
+    await loginAsE2EUser(page, request);
 
-    // Goto members
     await page.goto(`${PROSPECTION_URL}/admin/members`);
     await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
 
-    // Table visible
     await expect(page.getByRole("heading", { name: /membres/i })).toBeVisible({
       timeout: 10000,
     });
     const table = page.getByTestId("admin-members-table");
     await expect(table).toBeVisible();
 
-    // At least one row
     const rows = page.getByTestId("admin-member-row");
     const rowCount = await rows.count();
-    if (rowCount === 0) {
-      test.skip(true, "No members in this tenant — nothing to test");
-      return;
-    }
+    // Le compte canonique seede 1 owner + 1 membre invité (helpers/auth.ts §6).
+    // Skip silencieux interdit : si rowCount==0, le seed est cassé ou la DB
+    // pointe sur un autre tenant — il faut un échec rouge, pas un test vert
+    // sans assertion exécutée.
+    expect(
+      rowCount,
+      "admin/members vide — le seed canonique doit poser ≥ 1 row (owner + invité)",
+    ).toBeGreaterThan(0);
 
-    // Click first row → drawer opens
     await rows.first().click();
     const drawer = page.getByTestId("admin-member-drawer");
     await expect(drawer).toBeVisible({ timeout: 10000 });
     await expect(drawer.getByText(/pipeline/i)).toBeVisible();
     await expect(drawer.getByText(/historique/i)).toBeVisible();
 
-    // Close drawer (escape)
     await page.keyboard.press("Escape");
     await expect(drawer).not.toBeVisible({ timeout: 5000 }).catch(() => {});
 
-    // Test the PATCH visibility_scope via direct API call (avoid UI Select flakiness).
-    // On récupère un member id depuis l'UI via l'API admin.
+    // PATCH visibility_scope via API directe (évite flakiness du Select UI).
     const listRes = await request.get(`${PROSPECTION_URL}/api/admin/members`, {
       headers: { cookie: (await page.context().cookies())
         .map((c) => `${c.name}=${c.value}`)
@@ -132,10 +80,15 @@ test.describe("Admin members — drawer + visibility scope", () => {
     const member = (listBody.members ?? []).find(
       (m: { memberships: unknown[] }) => (m.memberships ?? []).length > 0
     );
-    if (!member) {
-      test.skip(true, "No member with a workspace membership to patch");
-      return;
-    }
+    // Le seed canonique pose 1 WorkspaceMember (owner) + 1 invité, donc
+    // members[].memberships ne peut pas être vide sur le tenant E2E. Skip
+    // silencieux interdit : un membre sans membership = seed cassé, on
+    // doit voir le rouge.
+    expect(
+      member,
+      "aucun membre avec workspaceMember — le seed canonique doit poser owner+invité avec memberships",
+    ).toBeDefined();
+    if (!member) return; // narrow TS — l'expect ci-dessus a déjà rougi
     const ms = member.memberships[0];
     const patchRes = await request.patch(`${PROSPECTION_URL}/api/admin/members`, {
       headers: {

@@ -19,7 +19,7 @@ export function SettingsDisplay({ settings, update }: Props) {
       <Card className="p-6 space-y-4">
         <h2 className="text-lg font-semibold">Affichage</h2>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label className="text-sm">Taille de page</Label>
             <div className="flex gap-2">
@@ -67,7 +67,7 @@ export function SettingsDisplay({ settings, update }: Props) {
       <Card className="p-6 space-y-4">
         <h2 className="text-lg font-semibold">Filtres par defaut</h2>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label className="text-sm">Departements par defaut</Label>
             <Input

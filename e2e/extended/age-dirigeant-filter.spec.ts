@@ -15,7 +15,7 @@ import { test, expect, type Request } from "@playwright/test";
 import { loginAsE2EUser } from "../helpers/auth";
 
 const PROSPECTION_URL =
-  process.env.PROSPECTION_URL || "https://saas-prospection.staging.veridian.site";
+  process.env.PROSPECTION_URL || "https://prospection.staging.veridian.site";
 
 async function openQualitySidebar(page: import("@playwright/test").Page) {
   // The Quality button is in the top filter bar

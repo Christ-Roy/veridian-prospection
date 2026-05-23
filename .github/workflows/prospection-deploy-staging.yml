@@ -271,28 +271,89 @@ jobs:
       # puis visite toutes les pages dashboard, assert pas d'erreur visible
       # ni console.error. Chope les régressions transverses qui passeraient
       # entre les mailles des tests ciblés.
-      - name: Checkout (pour récup le spec crawler)
+      #
+      # Exécuté DANS un container Playwright SUR dev-pub, sur le réseau
+      # staging-edge. Raison : depuis la migration helper Auth.js v5
+      # (commit ce5b56f, 2026-05-22), le helper exige DATABASE_URL pointant
+      # sur la DB de l'app pour seeder le compte canonique. Ce DATABASE_URL
+      # contient l'hôte Docker interne `postgres-staging:5432`, non
+      # résolvable depuis le runner GHA (DNS Docker non exporté hors host).
+      # Cf todo/2026-05-22-fix-crawler-database-url-staging-ci.md (option A).
+      - name: Checkout (pour rsync spec + helpers vers dev-pub)
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
 
-      - name: Setup Node (pour crawler Playwright)
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: package-lock.json
+      - name: Install SSH key (accès dev-pub pour container Playwright)
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H 37.187.199.185 >> ~/.ssh/known_hosts 2>/dev/null
 
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - name: Sync crawler payload to dev-pub
+        # Subset minimal nécessaire au crawler : config Playwright, manifest npm
+        # (avec lock), schema Prisma + migrations (pour le seed via helper),
+        # le spec crawler et le helper auth. Le `dist` complet de l'app n'est
+        # pas nécessaire — le container Playwright tape l'app via HTTPS public.
+        run: |
+          DEST=/tmp/prosp-crawler-${{ github.run_id }}
+          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 "rm -rf $DEST && mkdir -p $DEST"
+          rsync -az -e "ssh -i ~/.ssh/id_ed25519" \
+            --include='package.json' \
+            --include='package-lock.json' \
+            --include='playwright.config.ts' \
+            --include='tsconfig.json' \
+            --include='prisma/' --include='prisma/schema.prisma' \
+            --include='prisma/migrations/***' \
+            --include='e2e/' --include='e2e/dashboard-crawler.spec.ts' \
+            --include='e2e/helpers/' --include='e2e/helpers/auth.ts' \
+            --exclude='*' \
+            ./ ubuntu@37.187.199.185:$DEST/
 
-      - name: Run dashboard crawler (chromium only, post-deploy)
+      - name: Run dashboard crawler (Playwright container on staging-edge)
+        # Container Playwright éphémère sur dev-pub :
+        #  - réseau `staging-edge` → résout `postgres-staging:5432` pour le seed
+        #    Prisma ET tape `https://prospection.staging.veridian.site` en sortie
+        #    (Traefik externe routé par le DNS public).
+        #  - PROSPECTION_URL en HTTPS : NODE_ENV=production côté app exige
+        #    `__Secure-authjs.session-token` (cookie Secure-flag, posé qu'en
+        #    HTTPS). Taper l'URL HTTP interne `http://prospection:3000` casse
+        #    le login Auth.js v5 (cookie non posé / non re-renvoyé).
+        #  - npm ci silencieux + npx playwright test (browsers déjà présents
+        #    dans l'image Playwright officielle).
         env:
-          PROSPECTION_URL: https://${{ env.STAGING_HOST }}
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
-        run: npx playwright test e2e/dashboard-crawler.spec.ts --project=chromium
+          DEST: /tmp/prosp-crawler-${{ github.run_id }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 "
+            docker run --rm \
+              --network staging-edge \
+              -v $DEST:/work \
+              -w /work \
+              -e CI=1 \
+              -e PROSPECTION_URL=https://${{ env.STAGING_HOST }} \
+              -e DATABASE_URL='${{ secrets.STAGING_DATABASE_URL }}' \
+              mcr.microsoft.com/playwright:v1.60.0-jammy \
+              bash -c 'npm ci --silent 2>&1 | tail -3 && npx playwright test e2e/dashboard-crawler.spec.ts --project=chromium --reporter=list'
+          "
+
+      - name: Collect crawler artifacts from dev-pub (si fail)
+        if: failure()
+        env:
+          DEST: /tmp/prosp-crawler-${{ github.run_id }}
+        run: |
+          mkdir -p test-results playwright-report
+          rsync -az -e "ssh -i ~/.ssh/id_ed25519" \
+            ubuntu@37.187.199.185:$DEST/test-results/ test-results/ 2>/dev/null || true
+          rsync -az -e "ssh -i ~/.ssh/id_ed25519" \
+            ubuntu@37.187.199.185:$DEST/playwright-report/ playwright-report/ 2>/dev/null || true
+
+      - name: Cleanup crawler payload on dev-pub
+        if: always()
+        env:
+          DEST: /tmp/prosp-crawler-${{ github.run_id }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 "rm -rf $DEST" || true
 
       - name: Upload crawler artifacts (screenshots/traces si fail)
         if: failure()
