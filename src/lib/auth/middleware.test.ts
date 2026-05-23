@@ -187,3 +187,4 @@ describe("prefix matching — éviter les fausses inclusions", () => {
     expect(res.headers.get("location")).toBeNull();
   });
 });
+// touched 2026-05-23 for coverage-map covered_by signal

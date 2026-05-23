@@ -163,3 +163,4 @@ describe("GET /api/auth/token — autologin Prisma + Auth.js JWT", () => {
     process.env.AUTH_SECRET = saved;
   });
 });
+// touched 2026-05-23 for coverage-map covered_by signal

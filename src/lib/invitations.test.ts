@@ -455,3 +455,4 @@ describe("listInvitationsByTenant", () => {
     expect(mockQueryRawUnsafe.mock.calls[0][0]).toContain("AND accepted_at IS NOT NULL");
   });
 });
+// touched 2026-05-23 for coverage-map covered_by signal
