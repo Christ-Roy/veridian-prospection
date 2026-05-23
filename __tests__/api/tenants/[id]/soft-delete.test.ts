@@ -8,7 +8,7 @@
  *  - 404 tenant_not_found
  *  - 409 transition_illegal si déjà purged
  *  - 200 + soft-delete tenant actif → deletedAt + purgeEligibleAt set,
- *    softDeleteReason en metadata, webhook tenant.deleted émis
+ *    softDeleteReason en metadata, webhook tenant.soft_deleted (§7.1 v1.4) émis
  *  - 200 + soft-delete tenant suspendu → previous_status="suspended"
  *  - 200 idempotent sur tenant déjà soft_deleted : pas d'update DB,
  *    pas de webhook, retour des valeurs existantes
@@ -237,10 +237,13 @@ describe("POST /api/tenants/{id}/soft-delete", () => {
 
     expect(emitWebhookMock).toHaveBeenCalledOnce();
     const [event, id, data] = emitWebhookMock.mock.calls[0];
-    expect(event).toBe("tenant.deleted");
+    // §7.1 v1.4 — event spécifique soft-delete (≠ tenant.deleted générique).
+    // Le Hub matérialise prospection_soft_deleted_at sur ce signal.
+    expect(event).toBe("tenant.soft_deleted");
     expect(id).toBe(TENANT_ID);
     expect(data.reason).toBe("stripe_canceled");
     expect(data.purge_eligible_at).toBe(futureDate);
+    expect(data.soft_deleted_at).toBeDefined();
   });
 
   test("200 soft-delete tenant suspended → previous_status='suspended'", async () => {

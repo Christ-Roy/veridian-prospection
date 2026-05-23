@@ -124,6 +124,7 @@
   covered_by:
     - src/lib/auth/api-auth.test.ts
     - src/lib/auth/user-context.test.ts
+    - __tests__/lib/hub/discovery-client.test.ts
   reason: |
     Le fichier auth-config.ts (rename depuis lib/auth.ts) exporte
     NextAuth { auth, handlers, signIn, signOut } consommés par
@@ -134,6 +135,15 @@
     mockent @/lib/auth-config et testent le comportement de session.
     Pas de test direct du provider Credentials (bcrypt) car testé en
     E2E via le helper canonique e2e/helpers/auth.ts.
+
+    Ajout 2026-05-23 : le callback `events.signIn` ajouté dans
+    auth-config.ts appelle `fetchHubDiscovery` (Hub Discovery cross-app)
+    en fire-and-forget best-effort. La fonction appelée est exhaustivement
+    couverte par __tests__/lib/hub/discovery-client.test.ts (12 tests :
+    env manquante, signature HMAC `${ts}.`, parsing 200/401/503/network,
+    timeout AbortController, JSON malformé). Le callback dans auth-config
+    se limite à appeler cette fonction + un log structuré — pas de logique
+    métier propre qui justifierait un mock NextAuth complet.
 
 # Composants /settings — refonte responsive 2026-05-23 (settings-overflow)
 - sources:

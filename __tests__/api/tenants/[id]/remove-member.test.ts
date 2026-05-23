@@ -44,6 +44,13 @@ vi.mock("@/lib/audit", () => ({
   logAudit: mocks.auditLog,
 }));
 
+const { emitWebhookMock } = vi.hoisted(() => ({
+  emitWebhookMock: vi.fn(),
+}));
+vi.mock("@/lib/hub/webhooks", () => ({
+  emitHubWebhookAsync: emitWebhookMock,
+}));
+
 import { POST } from "@/app/api/tenants/[id]/remove-member/route";
 import { makeRequest, readJson } from "../../_helpers";
 
@@ -166,6 +173,35 @@ describe("POST /api/tenants/[id]/remove-member", () => {
     expect(args.where.userId).toBe(LOCAL_USER_ID);
     expect(args.where.workspaceId.in).toEqual(["ws-1", "ws-2"]);
     expect(args.data.deletedAt).toBeInstanceOf(Date);
+
+    // §7.1 v1.4 — tenant.member_removed émis seulement si au moins une
+    // membership a bien été retirée (skip si already-removed).
+    expect(emitWebhookMock).toHaveBeenCalledOnce();
+    const [event, id, data] = emitWebhookMock.mock.calls[0];
+    expect(event).toBe("tenant.member_removed");
+    expect(id).toBe(TENANT_ID);
+    expect(data.user_id).toBe(LOCAL_USER_ID);
+    expect(data.email).toBe("bob@example.com");
+    expect(data.affected_workspaces).toBe(2);
+  });
+
+  test("§7.1 v1.4 — pas d'event si already-removed (count=0)", async () => {
+    mocks.tenantFindUnique.mockResolvedValueOnce({
+      id: TENANT_ID,
+      userId: OWNER_USER_ID,
+    });
+    mocks.userFindUnique.mockResolvedValueOnce({
+      id: LOCAL_USER_ID,
+      email: "bob@example.com",
+    });
+    mocks.workspaceFindMany.mockResolvedValueOnce([{ id: "ws-1" }]);
+    mocks.memberUpdateMany.mockResolvedValueOnce({ count: 0 });
+
+    const { raw, headers } = signed({ user_email: "bob@example.com" });
+    const res = await POST(req(raw, headers), ctx());
+    expect(res.status).toBe(200);
+    // Aucun event : already-removed = noop côté Hub.
+    expect(emitWebhookMock).not.toHaveBeenCalled();
   });
 
   test("priorité hub_user_id sur email", async () => {

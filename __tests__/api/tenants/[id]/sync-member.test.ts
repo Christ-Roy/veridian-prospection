@@ -65,6 +65,13 @@ vi.mock("@/lib/audit", () => ({
   logAudit: mocks.auditLog,
 }));
 
+const { emitWebhookMock } = vi.hoisted(() => ({
+  emitWebhookMock: vi.fn(),
+}));
+vi.mock("@/lib/hub/webhooks", () => ({
+  emitHubWebhookAsync: emitWebhookMock,
+}));
+
 import { POST } from "@/app/api/tenants/[id]/sync-member/route";
 import { makeRequest, readJson } from "../../_helpers";
 
@@ -214,6 +221,38 @@ describe("POST /api/tenants/[id]/sync-member", () => {
     expect(mocks.memberCreate).toHaveBeenCalledOnce();
     expect(mocks.memberCreate.mock.calls[0][0].data.visibilityScope).toBe("own");
     expect(mocks.workspaceCreate).not.toHaveBeenCalled();
+
+    // §7.1 v1.4 — sur création, tenant.member_added doit être émis.
+    expect(emitWebhookMock).toHaveBeenCalledOnce();
+    const [event, id, data] = emitWebhookMock.mock.calls[0];
+    expect(event).toBe("tenant.member_added");
+    expect(id).toBe(TENANT_ID);
+    expect(data.workspace_id).toBe(WS_ID);
+    expect(data.user_id).toBe(LOCAL_USER_ID);
+    expect(data.hub_user_id).toBe(HUB_USER_ID);
+    expect(data.email).toBe("bob@example.com");
+    expect(data.role).toBe("member");
+    expect(data.action).toBe("created");
+  });
+
+  test("200 idempotent — déjà membre même role : pas d'event webhook (skip noop)", async () => {
+    mocks.tenantFindUnique.mockResolvedValueOnce({ id: TENANT_ID });
+    resolveOrCreateUserFromHubMock.mockResolvedValueOnce({
+      id: LOCAL_USER_ID,
+      createdByHub: false,
+      hubUserIdConflict: false,
+    });
+    mocks.workspaceFindFirst.mockResolvedValueOnce({ id: WS_ID });
+    mocks.memberFindUnique.mockResolvedValueOnce({
+      role: "member",
+      deletedAt: null,
+    });
+
+    const { raw, headers } = signed(validBody);
+    const res = await POST(req(raw, headers), ctx());
+    expect(res.status).toBe(200);
+    // Pas d'event member_added sur action=noop (le membre existait déjà).
+    expect(emitWebhookMock).not.toHaveBeenCalled();
   });
 
   test("200 create — workspace absent → crée 'default' avec ce user", async () => {

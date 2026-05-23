@@ -14,7 +14,7 @@
  * Plus :
  *  - 200 happy path : transaction Prisma s'exécute, status='deleted',
  *    purgedAt set, PII nulled, slug suffixé pour éviter collision,
- *    rows_deleted retourné par table, webhook tenant.deleted+purged émis
+ *    rows_deleted retourné par table, webhook tenant.purged (§7.1 v1.4) émis
  *  - T13 : 200 lookup par email owner (tenant_id = email legacy Hub)
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
@@ -345,14 +345,15 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
       "GDPR client erasure request 2026-05-19",
     );
 
-    // Webhook tenant.deleted émis avec subtype=purged
+    // §7.1 v1.4 — event spécifique tenant.purged (≠ tenant.deleted générique).
+    // Le Hub matérialise prospection_purged_at + prospection_purged_rows.
     expect(mocks.emitWebhook).toHaveBeenCalledOnce();
     const [event, id, data] = mocks.emitWebhook.mock.calls[0];
-    expect(event).toBe("tenant.deleted");
+    expect(event).toBe("tenant.purged");
     expect(id).toBe(TENANT_ID);
-    expect(data.event_subtype).toBe("purged");
     expect(data.rows_deleted).toEqual(body.rows_deleted);
     expect(data.reason).toBe("GDPR client erasure request 2026-05-19");
+    expect(data.purged_at).toBeDefined();
   });
 
   // ───────── T13 : lookup par email owner ─────────
