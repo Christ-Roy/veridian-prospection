@@ -50,4 +50,33 @@ describe("app-nav.tsx — responsive header + toggle mobile (2026-05-22)", () =>
     expect(source).toMatch(/export function AppNav/);
     expect(source).toMatch(/md:hidden/);
   });
+
+  // Anti-régression hotfix 2026-05-23 : bug prod où un user arrivé via
+  // token Hub n'avait aucun moyen visible de se déconnecter pour utiliser
+  // un autre compte. Le bouton signOut doit rester accessible — sinon la
+  // pratique démo / machine partagée / switch tenant est bloquée.
+  test("expose un bouton signOut (LogOut + handleSignOut)", () => {
+    // L'import explicite de signOut Auth.js v5 prouve qu'on utilise le bon
+    // mécanisme, pas un fetch maison.
+    expect(source).toMatch(/import\s+{[^}]*signOut[^}]*}\s+from\s+["']next-auth\/react["']/);
+    // L'icône LogOut de lucide identifie le bouton dans la nav.
+    expect(source).toMatch(/import\s+{[^}]*\bLogOut\b/);
+    // Le handler doit appeler signOut avec callbackUrl /login pour ne pas
+    // laisser l'user sur une page authentifiée après déconnexion.
+    expect(source).toMatch(/signOut\(\s*\{[^}]*callbackUrl:\s*["']\/login["']/);
+  });
+
+  test("expose le bouton signOut en desktop (à côté de NotificationBell)", () => {
+    // Reconnaît la zone : <LogOut /> wrappée dans un button avec hidden md:inline-flex
+    // (desktop only — mobile l'a dans le burger).
+    expect(source).toMatch(/hidden md:inline-flex/);
+    expect(source).toMatch(/<LogOut className/);
+  });
+
+  test("expose le bouton signOut dans le menu mobile (burger) avec l'email", () => {
+    // Le menu mobile doit afficher l'email courant ("Connecté : X")
+    // et un bouton "Se déconnecter".
+    expect(source).toMatch(/Connect[ée]\s*:/);
+    expect(source).toMatch(/Se d[ée]connecter/);
+  });
 });

@@ -21,3 +21,18 @@
 # ce fichier. Reviewable comme du code.
 
 # Aucune couverture non-canonique déclarée pour le moment.
+
+- sources:
+    - src/lib/invitations.ts
+    - src/lib/invitations.test.ts
+  covered_by:
+    - src/lib/invitations.test.ts
+  reason: |
+    Le test du helper invitations est COLOCALISÉ à côté de la source
+    (`src/lib/invitations.test.ts`), pas dans __tests__/lib/. Pattern
+    historique repris depuis la version Supabase pré-migration Auth.js v5.
+    La convention canonique (__tests__/lib/invitations.test.ts) n'est pas
+    appliquée ici, mais la couverture EST réelle : 16 tests Vitest
+    mockent Prisma + bcrypt, asserent qu'aucun fetch Supabase n'est
+    appelé, et valident le contrat Auth.js v5 (User+Account+WorkspaceMember
+    + anti-double-grant). Hotfix 2026-05-23.
