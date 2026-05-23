@@ -163,3 +163,16 @@
     JSDoc (retire les références Supabase mortes). Aucun changement
     runtime. Tests colocalisés (22 tests middleware + 16 tests
     invitations) restent verts et continuent à couvrir le comportement.
+
+- sources:
+    - src/lib/errors/dedupe.ts
+    - src/lib/errors/dedupe.test.ts
+  covered_by:
+    - src/lib/errors/dedupe.test.ts
+  reason: |
+    Test colocalisé src/lib/errors/dedupe.test.ts (pattern repo,
+    cf src/lib/invitations.test.ts). 8 tests Vitest : computeDedupeKey
+    (4 cas : stabilité, sensibilité 3 champs, null safe) +
+    bucketToHour (3 cas : ramène HH:00 UTC, idempotent, bucket différent
+    par heure). Sabotage-test : retirer le param `lineno` du hash
+    casse "sensible au lineno" + retirer Date.UTC casse les 2 derniers.

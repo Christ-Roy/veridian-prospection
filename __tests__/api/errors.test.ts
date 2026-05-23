@@ -166,7 +166,7 @@ describe("POST /api/errors — error cases", () => {
 
 describe("helpers exportés (sabotage-test bait)", () => {
   test("computeDedupeKey retourne 16 chars hex stables + sensible aux 3 champs", async () => {
-    const { computeDedupeKey } = await import("@/app/api/errors/route");
+    const { computeDedupeKey } = await import("@/lib/errors/dedupe");
     const k = computeDedupeKey("hello", "x.js", 10);
     expect(k).toMatch(/^[a-f0-9]{16}$/);
     expect(computeDedupeKey("hello", "x.js", 10)).toBe(k);
@@ -176,7 +176,7 @@ describe("helpers exportés (sabotage-test bait)", () => {
   });
 
   test("bucketToHour ramène à HH:00:00.000 UTC", async () => {
-    const { bucketToHour } = await import("@/app/api/errors/route");
+    const { bucketToHour } = await import("@/lib/errors/dedupe");
     const d = new Date("2026-05-23T14:37:42.123Z");
     expect(bucketToHour(d).toISOString()).toBe("2026-05-23T14:00:00.000Z");
   });

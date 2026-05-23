@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createHash } from "node:crypto";
+import { computeDedupeKey, bucketToHour } from "@/lib/errors/dedupe";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -37,28 +37,7 @@ function asString(v: unknown, max: number): string | null {
   return trimmed.length > max ? trimmed.slice(0, max) : trimmed;
 }
 
-export function computeDedupeKey(
-  message: string,
-  filename: string | null,
-  lineno: number | null,
-): string {
-  return createHash("sha1")
-    .update(`${message}|${filename ?? ""}|${lineno ?? ""}`)
-    .digest("hex")
-    .slice(0, 16);
-}
 
-export function bucketToHour(d: Date): Date {
-  return new Date(Date.UTC(
-    d.getUTCFullYear(),
-    d.getUTCMonth(),
-    d.getUTCDate(),
-    d.getUTCHours(),
-    0,
-    0,
-    0,
-  ));
-}
 
 export async function POST(request: NextRequest) {
   const ip = request.headers.get("x-forwarded-for") || "unknown";
