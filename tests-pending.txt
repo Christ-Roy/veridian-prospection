@@ -63,14 +63,8 @@ src/components/ui/tooltip.tsx
 src/hooks/use-keyboard-shortcuts.ts
 src/hooks/use-local-storage-persist.test.ts
 src/hooks/use-local-storage-persist.ts
-src/lib/audit.ts
-src/lib/auth/api-auth.ts
 src/lib/auth.config.ts
-src/lib/auth/middleware.ts
-src/lib/auth/roles.ts
 src/lib/auth.ts
-src/lib/auth/user-context.ts
-src/lib/cache.ts
 src/lib/departments.ts
 src/lib/domains.ts
 src/lib/filters.ts
