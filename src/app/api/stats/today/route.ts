@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/auth/api-auth";
-import { getTenantId } from "@/lib/supabase/tenant";
+import { getTenantId } from "@/lib/auth/tenant";
 
 // GET /api/stats/today — count of prospects visited/contacted today
 export async function GET() {

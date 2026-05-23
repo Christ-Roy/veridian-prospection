@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth/api-auth";
-import { getTenantId } from "@/lib/supabase/tenant";
+import { getTenantId } from "@/lib/auth/tenant";
 
 const TELNYX_API_KEY = process.env.TELNYX_API_KEY ?? "";
 const TELNYX_CREDENTIAL_ID = process.env.TELNYX_CREDENTIAL_ID ?? "";

@@ -18,7 +18,7 @@ import {
   getTenantProspectLimit,
   isGiftedPlan,
   GIFTED_PLANS,
-} from "@/lib/supabase/tenant";
+} from "@/lib/auth/tenant";
 
 describe("isGiftedPlan", () => {
   test("retourne true pour lifetime_site_vitrine", () => {

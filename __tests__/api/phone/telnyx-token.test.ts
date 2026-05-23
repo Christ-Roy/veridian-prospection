@@ -15,7 +15,7 @@ const { requireAuthMock, getTenantIdMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth/api-auth", () => ({ requireAuth: requireAuthMock }));
-vi.mock("@/lib/supabase/tenant", () => ({ getTenantId: getTenantIdMock }));
+vi.mock("@/lib/auth/tenant", () => ({ getTenantId: getTenantIdMock }));
 
 import { POST } from "@/app/api/phone/telnyx-token/route";
 

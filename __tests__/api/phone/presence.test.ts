@@ -11,7 +11,7 @@ const { requireAuthMock, getTenantIdMock, queriesMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth/api-auth", () => ({ requireAuth: requireAuthMock }));
-vi.mock("@/lib/supabase/tenant", () => ({ getTenantId: getTenantIdMock }));
+vi.mock("@/lib/auth/tenant", () => ({ getTenantId: getTenantIdMock }));
 vi.mock("@/lib/queries", () => queriesMock);
 
 import { GET, POST } from "@/app/api/phone/presence/route";

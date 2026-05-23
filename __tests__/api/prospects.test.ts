@@ -32,7 +32,7 @@ const {
 }));
 
 vi.mock("@/lib/auth/api-auth", () => ({ requireAuth: requireAuthMock }));
-vi.mock("@/lib/supabase/tenant", () => ({
+vi.mock("@/lib/auth/tenant", () => ({
   getTenantId: getTenantIdMock,
   getTenantProspectLimit: getTenantProspectLimitMock,
 }));

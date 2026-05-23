@@ -21,7 +21,7 @@ const {
 }));
 
 vi.mock("@/lib/auth/api-auth", () => ({ requireAuth: requireAuthMock }));
-vi.mock("@/lib/supabase/tenant", () => ({ getTenantId: getTenantIdMock }));
+vi.mock("@/lib/auth/tenant", () => ({ getTenantId: getTenantIdMock }));
 vi.mock("@/lib/queries", () => queriesMock);
 vi.mock("@/lib/cache", () => ({ invalidate: invalidateMock }));
 

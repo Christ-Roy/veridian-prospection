@@ -4,7 +4,7 @@ import { cached } from "@/lib/cache";
 import type { ProspectPreset } from "@/lib/domains";
 import type { ProspectFilters } from "@/lib/queries/prospects";
 import { requireAuth } from "@/lib/auth/api-auth";
-import { getTenantId, getTenantProspectLimit } from "@/lib/supabase/tenant";
+import { getTenantId, getTenantProspectLimit } from "@/lib/auth/tenant";
 import { getUserContext } from "@/lib/auth/user-context";
 import { resolveVisibilityMode, type VisibilityScope } from "@/lib/queries/visibility";
 import { isRateLimited } from "@/lib/rate-limit";

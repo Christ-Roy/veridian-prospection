@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { updateOutreach, patchOutreach } from "@/lib/queries";
 import { invalidate } from "@/lib/cache";
 import { requireAuth } from "@/lib/auth/api-auth";
-import { getTenantId } from "@/lib/supabase/tenant";
+import { getTenantId } from "@/lib/auth/tenant";
 import { getWorkspaceScope } from "@/lib/auth/user-context";
 
 export async function PUT(
