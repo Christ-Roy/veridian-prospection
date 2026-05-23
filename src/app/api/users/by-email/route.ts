@@ -37,6 +37,7 @@ type WorkspaceCard = {
   workspace_name: string;
   role: string;
   plan: string;
+  status: "active" | "suspended" | "deleted";
   magic_link_capable: boolean;
   fallback_url: string;
 };
@@ -127,7 +128,7 @@ export async function GET(request: NextRequest) {
   const tenantByID = new Map(tenants.map((t) => [t.id, t]));
 
   const workspaces: WorkspaceCard[] = memberships
-    .map((m) => {
+    .map((m): WorkspaceCard | null => {
       const tenant = tenantByID.get(m.workspace.tenantId);
       // tenant absent = soft-deleted (filtré par la query deletedAt: null
       // ci-dessus) → on cache le workspace
@@ -139,6 +140,7 @@ export async function GET(request: NextRequest) {
         workspace_name: m.workspace.name,
         role: m.role,
         plan: tenant.plan ?? "freemium",
+        status: "active",
         // Prospection supporte l'autologin via /api/auth/token (cf
         // src/app/api/tenants/provision/route.ts génération prospection_login_token).
         magic_link_capable: true,

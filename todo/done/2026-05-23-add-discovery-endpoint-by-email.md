@@ -63,3 +63,17 @@ affichée (dégradation gracieuse, pas de cassure).
 - Pattern parent : `veridian-hub/todo/2026-05-20-hub-discovery-by-email-pattern.md`
 - Contrat HMAC : `veridian-hub/docs/CONTRAT-HUB.md` §3
 - Conformité actuelle : `CONTRAT-HUB.md` §10.1 row 22 (0/4)
+
+## Résolution — 2026-05-23 (agent G prosp-vague1)
+
+**Dupe du ticket `2026-05-20-add-discovery-endpoint-by-email.md`** déjà livré
+en prod le 2026-05-20 (commit `0fa56c7`).
+
+Endpoint `GET /api/users/by-email` opérationnel avec HMAC standard, 15 tests
+Vitest, smoke prod live OK.
+
+**Ajout 2026-05-23** : le champ `status: "active"` ajouté au payload pour
+conformité totale avec le ticket actuel et le consommateur Hub
+(`veridian-hub/lib/sync/discovery.ts` ligne 195 attend `w.status`). Filtrage
+des tenants suspended/deleted reste actif côté Prospection (ils ne sont pas
+remontés) → l'API ne renvoie donc que `status: "active"`.

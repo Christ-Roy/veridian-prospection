@@ -204,10 +204,12 @@ describe("GET /api/users/by-email — Hub Discovery", () => {
       workspace_name: "Acme",
       role: "owner",
       plan: "pro",
+      status: "active",
       magic_link_capable: true,
       fallback_url: "https://prospection.app.veridian.site/login",
     });
     expect(body.workspaces[1].role).toBe("member");
+    expect(body.workspaces[1].status).toBe("active");
   });
 
   test("plan fallback freemium si tenant.plan null", async () => {
