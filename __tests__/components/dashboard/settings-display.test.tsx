@@ -23,7 +23,12 @@ describe("settings-display.tsx — collapse grid mobile 2026-05-23", () => {
 
   test("aucun grid-cols-2 brut sans variant responsive (anti overflow mobile)", () => {
     // Pattern attendu : grid-cols-1 sm:grid-cols-2 ; PAS grid-cols-2 nu
-    expect(source).not.toMatch(/className="[^"]*\bgrid-cols-2\b(?![^"]* sm:)/);
+    // Cherche `grid-cols-2` qui n'est PAS précédé de `sm:` (ou md:/lg:/xl:)
+    // Match toute occurrence de grid-cols-2 puis filtre celles qui ont
+    // un prefix responsive immédiat.
+    const matches = source.match(/\b(?:[a-z]+:)?grid-cols-2\b/g) ?? [];
+    const bareGridCols2 = matches.filter((m) => !/:grid-cols-2/.test(m));
+    expect(bareGridCols2).toEqual([]);
   });
 
   test("au moins une déclaration grid-cols-1 sm:grid-cols-2 (le fix)", () => {
