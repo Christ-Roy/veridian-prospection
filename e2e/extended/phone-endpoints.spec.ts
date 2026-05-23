@@ -15,8 +15,9 @@
  *  - POST /api/phone/call-log     (initiation event)
  *
  * Auth : on utilise le helper cross-app (provision tenant + autologin via
- * /api/auth/token) plutôt que loginAsE2EUser, parce que Supabase n'est pas
- * configuré en staging (SUPABASE_URL vide côté container).
+ * /api/auth/token) plutôt que loginAsE2EUser, parce que ce spec cible
+ * spécifiquement le flow autologin Hub→Prospection (génération de token
+ * via /api/tenants/provision et consommation via /api/auth/token).
  */
 import { test, expect, type BrowserContext } from "@playwright/test";
 import { provisionAndLogin } from "../helpers/cross-app-login";

@@ -14,9 +14,8 @@
  * workspace) → skip proprement.
  *
  * Usage:
- *   CI=1 PROSPECTION_URL=... SUPABASE_URL=... SUPABASE_ANON_KEY=... \
- *   SUPABASE_SERVICE_ROLE_KEY=... TENANT_API_SECRET=... \
- *   npx playwright test e2e/lead-detail-interactions.spec.ts
+ *   CI=1 PROSPECTION_URL=... DATABASE_URL=... \
+ *   npx playwright test e2e/extended/lead-detail-interactions.spec.ts
  */
 import { test, expect, type ConsoleMessage } from "@playwright/test";
 import { loginAsE2EUser } from "../helpers/auth";
