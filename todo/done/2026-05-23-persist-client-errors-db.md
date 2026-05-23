@@ -4,6 +4,41 @@
 > **Sévérité** : 🟡 P1 — sans ça, les bugs intermittents prod restent invisibles
 > **Owner** : agent Prospection
 > **Créé** : 2026-05-23
+> **Statut** : ✅ LIVRÉ 2026-05-23 (archivage 2026-05-23 agent-E)
+
+## Résolution — 2026-05-23 (agent-E)
+
+Vérification du repo : tout le scope du ticket est déjà sur `main`.
+
+- ✅ Migration `prisma/migrations/0018_add_client_errors/` + modèle Prisma
+  `ClientError` (table `client_errors`) — commit `35257d6`
+- ✅ `POST /api/errors` persiste via `prisma.clientError.upsert` avec
+  `dedupeKey` (sha1 16 chars sur `message|filename|lineno`), bucket horaire
+  `occurredHour`, rate-limit 10/min/IP, truncation PII, best-effort
+  (204 même si DB down) — commit `3a831c9`
+- ✅ Helpers extraits `src/lib/errors/dedupe.ts` (`computeDedupeKey`,
+  `bucketToHour`) — commit `a489474`
+- ✅ `GET /api/admin/client-errors` (au lieu de `/api/admin/errors` —
+  cohérence URL avec la table) — `requireAdmin`, parsing `since=7d|12h|30m|ISO`,
+  `groupBy` dedupeKey + samples par groupe, clamp limit 1..100 (défaut 50) —
+  commit `3a831c9`
+- ✅ Tests Vitest exhaustifs :
+  - `__tests__/api/errors.test.ts` (15 tests : happy path, dedupe stable,
+    truncation, rate-limit, best-effort DB down)
+  - `__tests__/api/admin/client-errors.test.ts` (10 tests : auth gate,
+    aggrégation, parsing since, clamp limit)
+  - `src/lib/errors/dedupe.test.ts` (8 tests : stabilité, sensibilité,
+    null-safety, bucket UTC idempotent)
+
+Commits clés : `35257d6` (migration + modèle) → `3a831c9` (route POST +
+admin) → `a489474` (refacto dedupe lib).
+
+Seul écart minuscule avec le ticket : path admin = `/api/admin/client-errors`
+au lieu de `/api/admin/errors`. Le path retenu est plus parlant
+(cohérent avec le nom de table) et UI admin l'utilise déjà.
+
+Ticket archivé sans modif code.
+
 
 ## Contexte
 
