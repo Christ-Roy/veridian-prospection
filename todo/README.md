@@ -90,6 +90,34 @@ Bouger les fichiers physiquement (au lieu de modifier un `status:` dans le heade
 - `ls todo/staging/ | wc -l` = backlog "à valider" instantané
 - Pas besoin de parser le markdown pour connaître l'état
 
+## 🚨 Règles de travail pour les agents (durcies 2026-05-23)
+
+### Pas de build local, pas de hot reload sur la machine de Robert
+
+La machine locale (mail) est chroniquement saturée. **Aucun agent ne lance** :
+
+- `npm run build` / `npm run dev` en local
+- `next dev` en local
+- Tests Vitest en local (sauf valider 1 fichier ponctuel < 30s)
+- Playwright en local (interdit, ça met la machine à genoux)
+- Docker compose up en local
+
+**Tout passe par** :
+
+1. **CI staging** (`prospection-deploy-staging.yml`) : c'est elle qui tranche vert/rouge. L'agent push staging, attend, lit le résultat. Point.
+2. **Container Playwright sur dev-pub** : pour les E2E lourds, pattern éprouvé (cf `2026-05-23-maj-mega-battery-e2e-staging.md`).
+3. **Hot reload `ui-dev.staging.veridian.site`** sur dev-pub : pour les revues UI uniquement (skill `ui-polish-team`), pas pour le travail quotidien des agents.
+
+### Les agents ne re-testent pas en boucle leur propre code
+
+L'agent code, push staging, **lit le retour CI**. Si rouge → fix → re-push. Pas de boucle locale `npm test` / `playwright test` en attendant que ça passe. La CI staging est l'autorité.
+
+**Sanction** : un agent qui met la machine locale à genoux (load > 8, RAM > 7G) parce qu'il a lancé un build/test local en boucle = faute, je l'arrête et je redirige sur dev-pub.
+
+### Plus aucun push prod sans mega battery E2E à jour
+
+Toute feature livrée DOIT étendre `e2e/staging-full/critical-journeys.spec.ts` (ou équivalent dans `e2e/core/`) avec sa couverture avant promo prod. Le team-lead refuse toute promo `staging → main` qui ne passe pas le gate. Cf `2026-05-23-maj-mega-battery-e2e-staging.md`.
+
 ## Mise à jour de l'index racine
 
 Après chaque déplacement, exécuter depuis la racine `veridian-platform/` :

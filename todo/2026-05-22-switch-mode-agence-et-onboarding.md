@@ -5,7 +5,11 @@
 > **Owner** : agent Prospection
 > **Créé** : 2026-05-22
 > **Demandeur** : Robert (vision produit, session 2026-05-22)
-> **Statut** : 🟡 À cadrer — idée capturée, pas encore spécifiée
+> **Statut** : ✅ Cadrage tranché 2026-05-23 — prêt à exécuter
+>
+> **Directions arbitrées par Robert 2026-05-23** :
+> - **Switch agence/générique = TRI SEUL** (mêmes leads visibles dans les deux modes, seul l'ordre change). Mode générique trie par CA/effectif, mode agence trie par dette technique. Pas de filtre, pas de duplication d'app, juste un toggle dans les paramètres qui change l'ORDER BY côté query. La base 996K reste accessible aux deux modes.
+> - **Onboarding = FILTRES PAR DÉFAUT MODIFIABLES** (les choix géo/secteur du parcours d'onboarding pré-remplissent les sidebars existantes — pas un verrou, pas une modale de friction si l'user veut changer). Persistence : sur le compte (table `tenants` ou `workspaces` selon le bon scope), pas dans un cookie.
 
 ## Contexte
 

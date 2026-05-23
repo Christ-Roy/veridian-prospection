@@ -15,8 +15,31 @@ sonde avant push main**. Si elle passe verte contre staging :
 - Stripe + billing + invitations + tous les flows critiques tournent
 - Aucune régression silencieuse n'est passée
 
-**Critère de promo prod post-commercialisation** : mega battery 100% verte
-contre staging OU justification explicite pour chaque cas hors-couverture.
+**🚨 GATE DE PROMO PROD — durci 2026-05-23**
+
+Robert (2026-05-23) : « **pas de push prod avant mise à jour de la giga
+batterie de test e2e lourde et le passage de ces tests sur staging quand
+livré.** »
+
+Concrètement :
+
+1. **Toute livraison de feature** (mail, refill UI, switch agence, onboarding,
+   timeline prospect, pipeline stages custom, view-as member, etc.) **DOIT**
+   ajouter sa couverture E2E dans la mega battery AVANT que la feature ne
+   soit candidate à la promo prod.
+2. **La mega battery DOIT passer verte 100% contre staging** avec la
+   feature livrée, sinon promo prod **interdite**.
+3. **Le team-lead refuse toute promo `staging → main`** tant que :
+   - La feature livrée n'a pas son extension de mega battery
+   - La mega battery complète n'a pas passé verte sur staging avec le
+     SHA candidat
+4. **Pas d'exception** sauf tier 💀 CRITIQUE arbitré par Robert
+   directement (rollback hotfix, rotation secret en urgence).
+
+Cette règle remplace l'ancienne politique "auto-promote tier 🟢 BAS"
+quand la livraison touche du périmètre fonctionnel. Les commits doc-only
+(todo/*, README.md, .md) restent en auto-promote `[risk:low]` sans
+gating mega battery — ils ne touchent pas le code applicatif.
 
 ## Flows critiques à couvrir EN PRIORITÉ (commercialisation)
 

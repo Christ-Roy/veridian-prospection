@@ -50,28 +50,31 @@ L'incident invitations 2026-05-23 (Supabase mort 5 jours en silence) a prouvé q
 4. **Aucun check de drift Prisma vs DB réelle** — `results` et `segment_catalog` existent en prod prosp mais pas dans `schema.prisma` (cf ticket P5).
 5. **Aucun E2E flow entier** — invitation, login Hub→Prosp, switch compte, provision, welcome leads — testés bout en bout uniquement à la main.
 
-## Plan robustesse — 4 chantiers parallélisables
+## Plan robustesse — état 2026-05-23 22h
 
-Chacun a son ticket dédié et son agent. Ce ticket cadre lie le tout.
+### ✅ Chantier 1 — `src/lib/` couverture business — LIVRÉ
+→ `todo/done/2026-05-23-tests-lib-business-coverage.md`
+Helpers auth, queries, billing, cache, audit couverts. Voir archive.
 
-### Chantier 1 — `src/lib/` 35 fichiers sans test
-→ `todo/2026-05-23-tests-lib-business-coverage.md`
-**P0**. Auth, queries, billing, cache, audit — c'est là que vivent les bombes. Agent dédié écrit des tests Vitest sur les helpers critiques + retire de `tests-pending.txt` au fur et à mesure.
-
-### Chantier 2 — E2E flows entiers cross-app
-→ `todo/2026-05-23-e2e-coverage-flows-entiers.md` (déjà déposé)
+### ⏳ Chantier 2 — E2E flows entiers cross-app — EN COURS
+→ `todo/2026-05-23-e2e-coverage-flows-entiers.md`
 **P1**. 7 flows (invitation, login Hub→Prosp, switch compte, provision, welcome leads, login direct, dashboard crawler). Container Playwright sur dev-pub, contre DB staging réelle. Anti-régression directe du bug 2026-05-23.
+**C'est le SEUL chantier robustesse encore ouvert.** Tout le reste a atterri en `done/`.
 
-### Chantier 3 — Nouveaux checks Husky
-→ `todo/2026-05-23-husky-nouveaux-checks-robustesse.md`
-**P1**. 3 nouveaux scripts pre-push :
-- `check-sabotage-test.sh` — détecte les tests qui ne FAIL PAS sur sabotage évident (ex : si tu remplaces le body d'une fonction par `return null`, le test correspondant doit rougir)
-- `check-cross-app-contracts.sh` — pour chaque appel HTTP sortant vers un service Veridian (Hub, Notifuse, CMS, Analytics), vérifie que l'URL cible existe et accepte le payload type documenté (smoke contractuel léger)
-- `check-prisma-drift.sh` — `prisma db pull --print` vs `schema.prisma` — diff doit être vide (sinon on a du schema drift silencieux)
+### ✅ Chantier 3 — Nouveaux checks Husky — LIVRÉ
+→ `todo/done/2026-05-23-husky-nouveaux-checks-robustesse.md`
+Les 3 nouveaux scripts pre-push sont câblés. Voir archive.
 
-### Chantier 4 — Crawler CI réparation
-→ `todo/2026-05-22-fix-crawler-database-url-staging-ci.md` (déjà déposé, agent `crawler-fix` en cours)
-**P1**. Refactor crawler post-deploy pour tourner dans container Playwright sur dev-pub (Option A du ticket).
+### ✅ Chantier 4 — Crawler CI réparation — LIVRÉ
+→ `todo/done/2026-05-22-fix-crawler-database-url-staging-ci.md`
+Crawler tourne dans container Playwright sur dev-pub avec accès DB. Voir archive.
+
+## Chantiers connexes ajoutés post-cadre (suite incident 2026-05-23)
+
+- `todo/2026-05-23-maj-mega-battery-e2e-staging.md` — **GATE de toute promo prod post-commercialisation** (10 zones à couvrir)
+- `todo/2026-05-23-persist-client-errors-db.md` — observability frontend (savoir si un fix défensif marche en prod)
+- `todo/2026-05-23-audit-defensif-setters-async.md` — 3 patterns suspects identiques au bug fixé
+- `todo/2026-05-23-renforcer-11-tests-routes-api-faibles.md` — sabotage VERT sur 11 routes critiques
 
 ## Métriques de succès
 

@@ -5,6 +5,10 @@
 > **Owner** : agent Prospection
 > **Créé** : 2026-05-23
 > **Demandeur** : Robert
+> **Cadrage 2026-05-23** : découpé en v1 / v2 sur arbitrage Robert
+>   - **v1 (à livrer)** : SMTP envoi + bouton "Envoyer mail" sur fiche lead + templates pré-définis (variables liquid). Pas d'IMAP, pas d'inbox réception, pas de worker background.
+>   - **v2 (bonus, ticket dérivé)** : IMAP réception → alimente la **page historique prospect 360** (cf `todo/2026-05-23-fiche-historique-prospect-360.md`). Pas une inbox cross-prospects standalone, mais une timeline mails par prospect dans sa fiche historique.
+>   - Pas de copie cross-prospect/inbox globale dans la v1. La timeline mail vit dans la fiche historique du prospect concerné.
 
 ## Vision
 
