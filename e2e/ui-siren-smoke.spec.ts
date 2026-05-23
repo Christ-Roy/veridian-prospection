@@ -2,27 +2,23 @@
  * UI SIREN Smoke — post-refactor validation
  *
  * Charge toutes les pages principales du dashboard dans un VRAI browser
- * (chromium via Playwright) avec JS exécuté, et vérifie:
+ * (chromium via Playwright) avec JS exécuté, et vérifie :
  *  - pas de crash JS (console.error ou pageerror)
  *  - un élément distinctif est visible (table, heading, etc.)
  *  - les URL externes utilisent web_domain, pas un SIREN brut
  *
- * Lancé contre le staging: https://saas-prospection.staging.veridian.site
- * Override avec PROSPECTION_URL=... si besoin.
- *
- * Créé dans le cadre du refactor SIREN-centric 2026-04-05 pour prouver
- * que l'UI ne crashe pas après le passage results/domain → entreprises/siren.
+ * Auth via le helper canonique `loginAsE2EUser` (Auth.js v5 + compte
+ * persistant). Auparavant le spec créait/confirmait son propre user via
+ * Supabase GoTrue inline (`/auth/v1/signup` + admin `email_confirm`) sur
+ * `saas-api.staging.veridian.site` — service mort depuis la sortie de
+ * Supabase. Migration 2026-05-22 (cf todo
+ * `2026-05-22-e2e-specs-auth-supabase-inline.md`).
  */
 import { test, expect, type ConsoleMessage, type Page } from "@playwright/test";
+import { loginAsE2EUser } from "./helpers/auth";
 
 const PROSPECTION_URL =
-  process.env.PROSPECTION_URL || "https://saas-prospection.staging.veridian.site";
-const SUPABASE_URL =
-  process.env.SUPABASE_URL || "https://saas-api.staging.veridian.site";
-const ANON_KEY = process.env.SUPABASE_ANON_KEY || "";
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-const TEST_EMAIL = `siren-smoke-${Date.now()}@yopmail.com`;
-const TEST_PASSWORD = "SirenSmoke2026!!";
+  process.env.PROSPECTION_URL || "https://prospection.staging.veridian.site";
 
 // POLLEN SCOP — diamond garanti, cas canonique post-refactor
 const CANONICAL_SIREN = "439076563";
@@ -60,63 +56,8 @@ function assertNoConsoleErrors(context: string) {
   ).toHaveLength(0);
 }
 
-let sharedUserId: string | null = null;
-
-async function ensureTestUser(request: import("@playwright/test").APIRequestContext) {
-  if (sharedUserId) return;
-  if (!ANON_KEY || !SERVICE_KEY) {
-    throw new Error("SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY must be set for smoke tests");
-  }
-  // 1. Signup
-  const signup = await request.post(`${SUPABASE_URL}/auth/v1/signup`, {
-    headers: { apikey: ANON_KEY, "Content-Type": "application/json" },
-    data: { email: TEST_EMAIL, password: TEST_PASSWORD },
-  });
-  if (!signup.ok()) {
-    throw new Error(`Signup failed: ${signup.status()} ${await signup.text()}`);
-  }
-  const body = await signup.json();
-  sharedUserId = body.user?.id || body.id;
-  if (!sharedUserId) throw new Error("No user id returned from signup");
-
-  // 2. Confirm email via admin API
-  const confirm = await request.put(`${SUPABASE_URL}/auth/v1/admin/users/${sharedUserId}`, {
-    headers: {
-      apikey: ANON_KEY,
-      Authorization: `Bearer ${SERVICE_KEY}`,
-      "Content-Type": "application/json",
-    },
-    data: { email_confirm: true },
-  });
-  if (!confirm.ok()) {
-    throw new Error(`Confirm failed: ${confirm.status()} ${await confirm.text()}`);
-  }
-
-  // 3. Provision tenant côté prospection (pour avoir tenant_id + workspace)
-  const TENANT_SECRET = process.env.TENANT_API_SECRET || "staging-prospection-secret-2026";
-  await request.post(`${PROSPECTION_URL}/api/tenants/provision`, {
-    headers: {
-      Authorization: `Bearer ${TENANT_SECRET}`,
-      "Content-Type": "application/json",
-    },
-    data: { email: TEST_EMAIL, name: "siren-smoke", plan: "freemium" },
-  });
-}
-
 async function loginViaUI(page: Page, request: import("@playwright/test").APIRequestContext) {
-  await ensureTestUser(request);
-  await page.goto(`${PROSPECTION_URL}/login`);
-  await page.locator("#email").fill(TEST_EMAIL);
-  await page.locator("#password").fill(TEST_PASSWORD);
-  await page.locator('button[type="submit"]').click();
-  // Attendre la redirection vers /prospects
-  await page
-    .waitForURL(/\/(prospects|$)/, { timeout: 20000 })
-    .catch(() => {});
-  if (page.url().includes("/login")) {
-    const body = await page.locator("body").innerText().catch(() => "");
-    throw new Error(`Login failed, still on ${page.url()}. Body snippet: ${body.slice(0, 200)}`);
-  }
+  await loginAsE2EUser(page, request);
 }
 
 test.describe("SIREN Refactor — UI Smoke", () => {
