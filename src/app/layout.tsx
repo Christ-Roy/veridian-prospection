@@ -10,6 +10,7 @@ import { ClientErrorBoundary } from "@/components/client-error-boundary";
 import { KeyboardShortcutsHelp } from "@/components/keyboard-shortcuts-help";
 import { CommandPalette } from "@/components/command-palette";
 import { PwaManager } from "@/components/pwa-manager";
+import { SessionProviderClient } from "@/components/auth/session-provider-client";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
 
@@ -48,6 +49,7 @@ export default async function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
       <body className={`${geistSans.variable} font-sans antialiased bg-gray-50 dark:bg-gray-950`}>
+        <SessionProviderClient>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
         <ClientErrorBoundary />
         <KeyboardShortcutsHelp />
@@ -63,6 +65,7 @@ export default async function RootLayout({
         <PwaManager />
         <Toaster richColors position="bottom-left" />
         </ThemeProvider>
+        </SessionProviderClient>
       </body>
     </html>
   );
