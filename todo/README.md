@@ -114,9 +114,13 @@ L'agent code, push staging, **lit le retour CI**. Si rouge → fix → re-push. 
 
 **Sanction** : un agent qui met la machine locale à genoux (load > 8, RAM > 7G) parce qu'il a lancé un build/test local en boucle = faute, je l'arrête et je redirige sur dev-pub.
 
-### Plus aucun push prod sans mega battery E2E à jour
+### 🔒 Plus aucune promo prod sans mega battery E2E verte (durci 2026-05-23 passe 2)
 
-Toute feature livrée DOIT étendre `e2e/staging-full/critical-journeys.spec.ts` (ou équivalent dans `e2e/core/`) avec sa couverture avant promo prod. Le team-lead refuse toute promo `staging → main` qui ne passe pas le gate. Cf `2026-05-23-maj-mega-battery-e2e-staging.md`.
+**TOUTE promo `staging → main`**, peu importe le contenu (doc-only, source maps, tests, feature, refactor, rename), **DOIT être précédée** d'un run mega battery E2E lourd vert sur le SHA staging candidat. **Aucune exception tier 🟢 BAS** : même les commits doc-only passent par le gate. C'est moins cher de lancer la mega battery que de risquer un mauvais merge silencieux.
+
+Seule exception 💀 CRITIQUE : rollback hotfix d'urgence, rotation secret prod, ou ordre explicite de Robert ("force promo" / "skip mega battery"). Sinon : gate inviolable.
+
+Cf `2026-05-23-maj-mega-battery-e2e-staging.md` pour le wording complet et la commande de lancement.
 
 ## Mise à jour de l'index racine
 

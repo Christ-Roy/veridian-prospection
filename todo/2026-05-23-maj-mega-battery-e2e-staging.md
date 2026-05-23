@@ -15,31 +15,47 @@ sonde avant push main**. Si elle passe verte contre staging :
 - Stripe + billing + invitations + tous les flows critiques tournent
 - Aucune régression silencieuse n'est passée
 
-**🚨 GATE DE PROMO PROD — durci 2026-05-23**
+**🚨 GATE DE PROMO PROD — durci 2026-05-23 (passe 2)**
 
-Robert (2026-05-23) : « **pas de push prod avant mise à jour de la giga
-batterie de test e2e lourde et le passage de ces tests sur staging quand
-livré.** »
+Robert (2026-05-23, après vague 2) : « **la promo prod ce serait bien
+de la faire après le giga test E2E Playwright pour être sûr après.** »
 
 Concrètement :
 
-1. **Toute livraison de feature** (mail, refill UI, switch agence, onboarding,
-   timeline prospect, pipeline stages custom, view-as member, etc.) **DOIT**
-   ajouter sa couverture E2E dans la mega battery AVANT que la feature ne
-   soit candidate à la promo prod.
-2. **La mega battery DOIT passer verte 100% contre staging** avec la
-   feature livrée, sinon promo prod **interdite**.
-3. **Le team-lead refuse toute promo `staging → main`** tant que :
-   - La feature livrée n'a pas son extension de mega battery
-   - La mega battery complète n'a pas passé verte sur staging avec le
-     SHA candidat
-4. **Pas d'exception** sauf tier 💀 CRITIQUE arbitré par Robert
-   directement (rollback hotfix, rotation secret en urgence).
+1. **TOUTE promo `staging → main`**, peu importe le contenu (doc-only,
+   source maps, tests, feature, refactor, rename), **DOIT être précédée**
+   d'un run mega battery E2E lourd vert sur le SHA staging candidat.
+2. **Aucune exception tier 🟢 BAS** — même les commits doc-only passent
+   par le gate. C'est moins cher de lancer la mega battery que de
+   risquer un mauvais merge silencieux.
+3. **Le team-lead refuse toute promo** tant que :
+   - La feature livrée (si feature) n'a pas son extension de mega battery
+   - La mega battery complète n'a pas passé **verte 100%** sur staging
+     avec le SHA candidat
+4. **Seule exception 💀 CRITIQUE** : rollback hotfix d'urgence, rotation
+   secret prod, ou ordre explicite de Robert (mots-clés "force promo"
+   ou "skip mega battery"). Sinon : gate inviolable.
 
-Cette règle remplace l'ancienne politique "auto-promote tier 🟢 BAS"
-quand la livraison touche du périmètre fonctionnel. Les commits doc-only
-(todo/*, README.md, .md) restent en auto-promote `[risk:low]` sans
-gating mega battery — ils ne touchent pas le code applicatif.
+Ancien comportement (révoqué 2026-05-23) :
+- ~~auto-promote tier 🟢 BAS sans gate~~
+- ~~exception doc-only (todo/*, README.md, .md)~~
+
+Cette règle remplace TOUTES les politiques antérieures de promo
+graduée. §20 CI-ARCHITECTURE reste valide pour le classement risque
+côté agent (informationnel), mais la promo elle-même est gated par
+la mega battery, pas par le tier.
+
+**Comment lancer la mega battery** (cf section "Méthode" plus bas) :
+```bash
+ssh dev-pub 'docker run --rm --network staging-edge \
+  -v /tmp/prosp-megabattery:/work -w /work \
+  -e DATABASE_URL="..." -e PROSPECTION_URL="https://prospection.staging.veridian.site" \
+  -e CI="1" \
+  mcr.microsoft.com/playwright:v1.60.0-jammy \
+  bash -c "npm ci --silent && npx playwright test e2e/core/ e2e/staging-full/ --project=chromium --reporter=list --workers=1"'
+```
+
+Doit passer 51/51 (ou plus, selon les extensions livrées).
 
 ## Flows critiques à couvrir EN PRIORITÉ (commercialisation)
 
