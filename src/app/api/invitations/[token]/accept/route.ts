@@ -1,18 +1,16 @@
 /**
- * Public API — Accept an invitation.
+ * Public API — Accept an invitation (Auth.js v5, depuis migration 2026-05-23).
  *
  * POST /api/invitations/[token]/accept
  *   body: { password: string (>= 8), fullName?: string }
- *   → 200 {
- *       session: { access_token, refresh_token, token_type, expires_in? },
- *       userId: string,
- *       redirectTo: '/prospects'
- *     }
- *   → 400 { error } on invalid input / expired invitation / Supabase failure
- *   → 429 { error } on rate limit
+ *   → 200 { userId: string, email: string, redirectTo: '/prospects' }
+ *     → le client ouvre ensuite la session via signIn("credentials") côté React
+ *   → 404 { error } si invitation expirée / inconnue
+ *   → 400 { error } si payload invalide
+ *   → 429 { error } sur rate limit
  *
- * Rate limit: 10 requests / minute / client IP.
- * No auth required — the token in the path is the credential.
+ * Rate limit : 10 requests / minute / client IP.
+ * No auth required — le token dans le path est le credential.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { acceptInvitation } from "@/lib/invitations";

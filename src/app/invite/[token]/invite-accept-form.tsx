@@ -51,15 +51,14 @@ export function InviteAcceptForm({
         return;
       }
       const data = (await res.json()) as {
-        session?: { access_token: string; refresh_token: string };
+        userId?: string;
+        email?: string;
         redirectTo?: string;
       };
 
-      // TODO(authjs-migration): l'endpoint /api/invitations/[token]/accept
-      // doit retourner OK après création du User + Account credentials côté
-      // Prisma. La session Auth.js est ensuite ouverte via signIn ci-dessous
-      // (credentials provider). Tant que l'endpoint accept n'est pas migré,
-      // le user devra peut-être se relogguer manuellement.
+      // Migration Auth.js v5 (2026-05-23) : l'endpoint accept a créé
+      // User + Account(credentials, bcrypt) en Prisma — on ouvre maintenant
+      // la session via signIn("credentials") avec le password fourni.
       const signInResult = await signIn("credentials", {
         email,
         password,
