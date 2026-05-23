@@ -3,7 +3,7 @@
  * Vérifie la session pour les routes API. Retourne user ou 401.
  */
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { auth } from "@/lib/auth-config";
 
 export async function requireAuth(): Promise<
   | { user: { id: string; email: string }; error?: never }

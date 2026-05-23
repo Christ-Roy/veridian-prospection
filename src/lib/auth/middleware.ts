@@ -1,9 +1,6 @@
 /**
- * Auth.js v5 — équivalent edge-safe de src/lib/supabase/middleware.ts
- *
- * Auth.js v5 fournit son propre middleware via NextAuth(authConfig).
- * Ce fichier expose une fonction `updateSession` à appeler depuis
- * `src/middleware.ts` pour gérer les redirects login.
+ * Middleware edge-safe Auth.js v5 — appelé depuis `src/middleware.ts`
+ * pour gérer les redirects login sur les routes protégées.
  */
 import { type NextRequest, NextResponse } from "next/server";
 import { authConfig } from "@/lib/auth.config";

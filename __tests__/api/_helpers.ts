@@ -20,10 +20,11 @@
  *
  *   Sinon le module capture `undefined` et tous les tests partent en short-circuit.
  *
- * IMPORTANT — chaînes Supabase :
- *   `supabase.from(table).select(...).eq(...).maybeSingle()` vs
- *   `supabase.from(table).update(...).eq(...)` (awaité direct) demandent deux
- *   builders distincts. Voir `__tests__/api/auth/token.test.ts` pour le pattern.
+ * IMPORTANT — mocks Prisma :
+ *   Utiliser la factory `mockPrisma()` ci-dessous pour set up les modèles
+ *   utilisés par la route, puis `vi.mock("@/lib/prisma", () => ({ prisma: m }))`.
+ *   Chaque méthode (`findFirst`, `update`, etc.) est un `vi.fn()` à configurer
+ *   par test avec `mockResolvedValue(...)`.
  */
 import { NextRequest } from "next/server";
 import { vi } from "vitest";
