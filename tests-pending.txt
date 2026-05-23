@@ -14,7 +14,6 @@ src/components/dashboard/lead-sheet/stage-transition.tsx
 src/components/dashboard/notification-preferences-form.tsx
 src/components/dashboard/outreach-form.tsx
 src/components/dashboard/quality-tabs.tsx
-src/components/dashboard/segment-page.tsx
 src/components/dashboard/segment-table.tsx
 src/components/dashboard/settings-ai-storage.tsx
 src/components/dashboard/settings-call-routing.tsx
