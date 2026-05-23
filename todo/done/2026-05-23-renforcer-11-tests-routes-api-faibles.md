@@ -5,6 +5,23 @@
 > **Owner** : agent Prospection
 > **Créé** : 2026-05-23
 > **Détection** : check-sabotage-test au push staging `b8b33e9`
+> **Statut** : ✅ LIVRÉ 2026-05-23 (Agent I — vague 3)
+
+## Livraison
+
+Le travail s'est fait en 4 vagues de commits, tous `[risk:low]` :
+
+- `0dc6378` — renforce checkout / leads / stats-today (assert body retourné)
+- `cf421ac` — renforce prospects / segments / summarize-call
+- `0f2ab51` — renforce phone/call-log / presence / server-call / telnyx-token
+- `172f5d5` — durcit prospects / server-call sur les lignes sabotage restantes
+- vague 3 (Agent I 2026-05-23) — ajoute 3 tests `sortDir` à `leads.test.ts`
+  pour faire rougir le sabotage `===` → `!==` (L16 route.ts).
+
+Vérif finale : `BASE_REF=ef61e7e^ scripts/ci/check-sabotage-test.sh` ne
+reporte plus qu'un seul fail résiduel sur `settings-reference.test.tsx`
+(test source-level qui n'est pas un faux positif côté ticket — hors
+périmètre, à traiter via un autre cycle si besoin).
 
 ## Constat
 

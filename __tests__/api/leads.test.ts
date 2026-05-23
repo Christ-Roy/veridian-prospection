@@ -117,4 +117,62 @@ describe("GET /api/leads", () => {
     expect(body.data).toEqual([]);
     expect(body.limitReached).toBe(true);
   });
+
+  // Anti-régression sabotage L16 (sortDir === "desc" → !==) : la route doit
+  // propager exactement "desc"/"asc" à getLeads selon la query string. Si
+  // quelqu'un inverse la comparaison stricte, ces deux tests rougissent.
+  test("propage sortDir='desc' à getLeads quand ?sortDir=desc", async () => {
+    requireAuthMock.mockResolvedValue({ user: { id: "u-1", email: "u@v.site" } });
+    getTenantIdMock.mockResolvedValue("t-1");
+    getTenantProspectLimitMock.mockResolvedValue(100000);
+    queriesMock.getLeads.mockResolvedValue({
+      data: [],
+      total: 0,
+      page: 1,
+      pageSize: 50,
+      totalPages: 1,
+    });
+    await GET(makeRequest("/api/leads?sortDir=desc"));
+    expect(queriesMock.getLeads).toHaveBeenCalledWith(
+      expect.objectContaining({ sortDir: "desc" }),
+      "t-1",
+    );
+  });
+
+  test("default sortDir='asc' quand ?sortDir absent (et !== 'desc')", async () => {
+    requireAuthMock.mockResolvedValue({ user: { id: "u-1", email: "u@v.site" } });
+    getTenantIdMock.mockResolvedValue("t-1");
+    getTenantProspectLimitMock.mockResolvedValue(100000);
+    queriesMock.getLeads.mockResolvedValue({
+      data: [],
+      total: 0,
+      page: 1,
+      pageSize: 50,
+      totalPages: 1,
+    });
+    // sortDir absent → "asc" par défaut (sp.get retourne null, null === "desc" est false)
+    await GET(makeRequest("/api/leads"));
+    expect(queriesMock.getLeads).toHaveBeenCalledWith(
+      expect.objectContaining({ sortDir: "asc" }),
+      "t-1",
+    );
+  });
+
+  test("sortDir='asc' explicite (anti-régression sabotage === → !==)", async () => {
+    requireAuthMock.mockResolvedValue({ user: { id: "u-1", email: "u@v.site" } });
+    getTenantIdMock.mockResolvedValue("t-1");
+    getTenantProspectLimitMock.mockResolvedValue(100000);
+    queriesMock.getLeads.mockResolvedValue({
+      data: [],
+      total: 0,
+      page: 1,
+      pageSize: 50,
+      totalPages: 1,
+    });
+    await GET(makeRequest("/api/leads?sortDir=asc"));
+    expect(queriesMock.getLeads).toHaveBeenCalledWith(
+      expect.objectContaining({ sortDir: "asc" }),
+      "t-1",
+    );
+  });
 });
