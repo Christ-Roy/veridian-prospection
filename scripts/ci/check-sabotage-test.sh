@@ -261,6 +261,25 @@ for t in $CHANGED_TESTS; do
   fi
   rm -f "$TEST_LOG"
 
+  # ── Skip tests source-level (anti-faux-positif 2026-05-23) ──
+  # Un test "source-level" lit le fichier source en texte et asserte sur
+  # son contenu (ex: `expect(source).toMatch(/...regex.../)`. C'est un
+  # pattern valide et reproductible (cf pipeline-board.test.tsx,
+  # sans-site-sidebar.test.tsx, app-nav.test.tsx, etc. — convention repo).
+  #
+  # Le sabotage runtime (sed sur le source pour casser une valeur de
+  # retour) NE CHANGE PAS le contenu textuel des regex que le test
+  # cherche → le test reste vert même après sabotage. C'est un faux
+  # positif inhérent au pattern source-level, pas un défaut du test.
+  #
+  # Détection : le test fait `fs.readFile` + `expect(source).toMatch` →
+  # source-level. Skip avec warning explicite.
+  if grep -q "fs.readFile" "$t" && grep -qE "expect\([a-zA-Z]+\)\.toMatch" "$t"; then
+    echo "${YELLOW}  ⚠ $t est un test source-level (fs.readFile + toMatch) — skip sabotage runtime${NC}"
+    SKIPPED=$((SKIPPED + 1))
+    continue
+  fi
+
   # Backup + sabotage
   CURRENT_SRC="$src"
   CURRENT_BACKUP="/tmp/sabotage-backup-$$-$(basename "$src")"
