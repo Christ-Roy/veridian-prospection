@@ -156,3 +156,59 @@ Séquence à dérouler quand Robert ouvre la fenêtre promo :
 3. Smoke prod cross-app complet (refaire le smoke T14 contre prod)
 4. Observer 7j Loki sans `legacy_*` → flip `ACCEPT_LEGACY_*=0`
 5. Archiver ce ticket + ping Hub matrice §10
+
+## Réponse — 2026-05-23 (agent hub-contract — passe Phase 1+2 redo)
+
+### Phase 1 — Smoke prod refait, OK
+
+Smoke direct HMAC standard contre `prospection.app.veridian.site/api/tenants/provision`
+avec un vrai UUID (le `smoke-uuid-2026-05-23` initial avait échoué côté
+`ensureOwnerWorkspace` car le Prisma exige UUID) :
+
+```
+TS=$(date +%s)000  # 1779528240000
+BODY={"email":"smoke-<UUID>@veridian.test", ..., "user_id":"<UUID>", "metadata":{"hub_user_id":"<UUID>"}}
+SIG=HMAC-SHA256(secret, "${TS}.${BODY}")
+```
+
+Réponse 200 : `{tenant_id, api_key, login_url, plan:freemium, created:true}`.
+DB prod vérifiée :
+- `workspaces` : `id=25866595-634a-4550-93d5-84fb70c744eb`, `created_by=<UUID>`
+- `workspace_members` : `user_id=<UUID>`, `role=admin`
+
+Cleanup post-smoke : DELETE des 4 rows (users, tenants, workspaces, workspace_members) du test.
+
+**Conclusion** : contrat HMAC standard `{ts}.{body}` accepté en prod + idempotence ensureOwnerWorkspace OK.
+
+### Phase 2 — Audit logs prod 7j
+
+`docker logs compose-connect-redundant-firewall-l5fmki-prospection-1 --since 168h | grep -iE "legacy"`
+→ **0 occurrence**.
+
+### Phase 3 — Pas encore le moment de flipper
+
+Re-check de la fenêtre 7j :
+- `e823297` (warn observability) committé 2026-05-20 22:47
+- Mais arrivé en prod via merge `bbd6d74` (sprint 2026-05-22) le **2026-05-23 01:24** (SHA prod actuel `36ac917`, build 2026-05-23T09:17)
+- Donc le warning observability est en prod depuis ~10h seulement
+
+→ Fenêtre 7j réelle = **jusqu'au 2026-05-30** (et non 2026-05-27 comme estimé initialement).
+
+Note ENV Dokploy compose `0mJI-sSt6jcOMr_2QJ1iI` : `ACCEPT_LEGACY_BEARER` et
+`ACCEPT_LEGACY_HMAC` ne sont **pas définis explicitement**. Le code applique
+le défaut `process.env.VAR !== "0"` → `true` (legacy accepté). Pour flipper,
+il faudra **ajouter** les 2 lignes `ACCEPT_LEGACY_BEARER=0` et
+`ACCEPT_LEGACY_HMAC=0` à l'ENV via `compose.update`.
+
+### Action — reschedule au 2026-05-30
+
+À reprendre le 2026-05-30 :
+1. Re-audit logs prod sur 7j (`--since 168h`) — doit toujours être 0 occurrence
+2. Si OK → ajouter `ACCEPT_LEGACY_BEARER=0` + `ACCEPT_LEGACY_HMAC=0` à l'ENV Dokploy compose `0mJI-sSt6jcOMr_2QJ1iI` via `POST /api/compose.update` puis `POST /api/compose.deploy`
+3. Monitor 10 min post-deploy (auto-rollback si 3 fails)
+4. Smoke prod HMAC standard de nouveau (round-trip complet) — doit toujours marcher
+5. Update `docs/hub-contract.md` (retirer section legacy)
+6. Dépose ticket Hub `~/Bureau/veridian-platform/veridian-hub/todo/2026-05-30-patch-matrice-section-10-contrat.md`
+7. Archive ce ticket dans `todo/done/`
+
+Le ticket reste dans `todo/` (pas archivé) jusqu'au 2026-05-30.
