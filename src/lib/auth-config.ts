@@ -16,6 +16,7 @@ import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
 import { authConfig } from "./auth.config";
+import { fetchHubDiscovery } from "./hub/discovery-client";
 
 const credentialsSchema = z.object({
   email: z.string().email(),
@@ -91,6 +92,33 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         session.user.id = token.uid as string;
       }
       return session;
+    },
+  },
+  events: {
+    // Hub Discovery best-effort : au signIn, on interroge le Hub pour
+    // savoir si l'user a d'autres apps. Le résultat est loggé pour
+    // observabilité — un consumer applicatif (page dashboard, redirect
+    // post-login) pourra le ré-interroger via fetchHubDiscovery côté
+    // serveur si besoin. Fire-and-forget : aucun await ne bloque le login.
+    async signIn({ user }) {
+      if (!user?.email) return;
+      void fetchHubDiscovery(user.email).then((result) => {
+        if (!result) {
+          return;
+        }
+        if (result.found) {
+          const apps = result.workspaces
+            .map((w) => `${w.workspace_name}(${w.role}/${w.plan})`)
+            .join(",");
+          console.log(
+            `[hub-discovery:signin] email=${user.email} found=true apps=${apps}`,
+          );
+        } else {
+          console.log(
+            `[hub-discovery:signin] email=${user.email} found=false`,
+          );
+        }
+      });
     },
   },
 });

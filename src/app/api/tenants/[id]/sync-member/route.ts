@@ -29,6 +29,7 @@ import { resolveOrCreateUserFromHub } from "@/lib/hub/identity";
 import { resolveTenantByIdOrEmail } from "@/lib/hub/tenant-lookup";
 import { logAudit } from "@/lib/audit";
 import { ROLE_RANK, type WorkspaceRole } from "@/lib/auth/roles";
+import { emitHubWebhookAsync } from "@/lib/hub/webhooks";
 
 const SyncMemberSchema = z.object({
   user_email: z.string().email().max(254),
@@ -170,6 +171,20 @@ export async function POST(
     `[sync-member] tenant=${tenantId} workspace=${workspace.id} ` +
       `user=${localUserId} role=${appRole} action=${roleAction}`,
   );
+
+  // §7.1 v1.4 — émettre tenant.member_added lors d'une vraie addition (création
+  // ou restauration). Skip sur upgrade/noop : la mutation rôle est déjà
+  // tracée par `tenant.member_role_changed` côté admin endpoint.
+  if (roleAction === "created" || roleAction === "restored") {
+    emitHubWebhookAsync("tenant.member_added", tenantId, {
+      workspace_id: workspace.id,
+      user_id: localUserId,
+      hub_user_id: body.hub_user_id,
+      email: body.user_email,
+      role: appRole,
+      action: roleAction,
+    });
+  }
 
   return NextResponse.json({
     tenant_id: tenantId,

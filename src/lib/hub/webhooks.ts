@@ -20,12 +20,23 @@ import { randomUUID } from "crypto";
 export type HubWebhookEvent =
   | "tenant.suspended"
   | "tenant.resumed"
-  | "tenant.deleted"
+  | "tenant.deleted" // legacy — préfère tenant.soft_deleted / tenant.purged
+  | "tenant.soft_deleted" // §7.1 v1.4 (Niveau 2 sync) — Tenant marqué deleted en soft
+  | "tenant.purged" // §7.1 v1.4 — purge physique des données
   | "tenant.touched"
   | "tenant.owner_changed"
   | "tenant.quota_exceeded"
   // §5.18.4 — admin Prospection change le rôle ou visibility_scope d'un member
-  | "tenant.member_role_changed";
+  | "tenant.member_role_changed"
+  | "tenant.member_added" // §7.1 v1.4 — ajout de membre dans un workspace
+  | "tenant.member_removed"; // §7.1 v1.4 — retrait de membre
+
+/**
+ * Version du contrat webhook §7.1 (CONTRAT-HUB.md). Inclus dans tous les
+ * payloads sortants pour permettre au Hub de dispatcher vers le bon handler
+ * (v1.4 vs legacy). Cf veridian-hub/lib/webhooks/prospection-handlers.ts.
+ */
+export const HUB_WEBHOOK_CONTRACT_VERSION = "1.4";
 
 export interface HubWebhookPayload {
   event: HubWebhookEvent;
@@ -33,6 +44,7 @@ export interface HubWebhookPayload {
   occurred_at: string; // ISO8601
   data: Record<string, unknown>;
   idempotency_key: string;
+  contract_version: typeof HUB_WEBHOOK_CONTRACT_VERSION;
 }
 
 const HUB_BASE_DELAY_MS = 1000;
@@ -89,6 +101,7 @@ export async function emitHubWebhook(
     occurred_at: new Date().toISOString(),
     data,
     idempotency_key: idempotencyKey,
+    contract_version: HUB_WEBHOOK_CONTRACT_VERSION,
   };
 
   const body = JSON.stringify(payload);

@@ -132,7 +132,9 @@ export async function POST(
     `[soft-delete] tenant=${tenantId} reason=${reason} purge_eligible_at=${purgeEligibleDate.toISOString()}`,
   );
 
-  emitHubWebhookAsync("tenant.deleted", tenantId, {
+  // §7.1 v1.4 — event spécifique au soft-delete (≠ purge). Le Hub
+  // matérialise `prospection_status='deleted'` + `prospection_soft_deleted_at`.
+  emitHubWebhookAsync("tenant.soft_deleted", tenantId, {
     soft_deleted_at: now.toISOString(),
     purge_eligible_at: purgeEligibleDate.toISOString(),
     reason,

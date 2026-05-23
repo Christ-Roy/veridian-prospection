@@ -19,6 +19,7 @@ import { prisma } from "@/lib/prisma";
 import { requireHubHmac } from "@/lib/hub/auth";
 import { resolveTenantByIdOrEmail } from "@/lib/hub/tenant-lookup";
 import { logAudit } from "@/lib/audit";
+import { emitHubWebhookAsync } from "@/lib/hub/webhooks";
 
 const RemoveMemberSchema = z
   .object({
@@ -130,6 +131,16 @@ export async function POST(
   console.log(
     `[remove-member] tenant=${tenantId} user=${user.id} affected=${result.count}`,
   );
+
+  // §7.1 v1.4 — émettre tenant.member_removed si au moins une membership a
+  // bien été soft-deletée (sinon noop : already-removed = pas d'event).
+  if (result.count > 0) {
+    emitHubWebhookAsync("tenant.member_removed", tenantId, {
+      user_id: user.id,
+      email: user.email,
+      affected_workspaces: result.count,
+    });
+  }
 
   return NextResponse.json({
     tenant_id: tenantId,

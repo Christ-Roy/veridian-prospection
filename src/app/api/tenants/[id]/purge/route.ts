@@ -200,8 +200,9 @@ export async function POST(
     `[purge] tenant=${tenantId} slug=${tenant.slug} rows=${JSON.stringify(rowsDeleted)} reason="${reason}"`,
   );
 
-  emitHubWebhookAsync("tenant.deleted", tenantId, {
-    event_subtype: "purged",
+  // §7.1 v1.4 — event spécifique à la purge physique (≠ soft-delete). Le Hub
+  // matérialise `prospection_purged_at` + `prospection_purged_rows`.
+  emitHubWebhookAsync("tenant.purged", tenantId, {
     purged_at: now.toISOString(),
     rows_deleted: rowsDeleted,
     reason,
