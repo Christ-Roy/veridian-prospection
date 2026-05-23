@@ -121,7 +121,10 @@ export function PipelineBoard() {
     try {
       const res = await fetch("/api/pipeline");
       const data = await res.json();
-      setPipeline(data.pipeline);
+      // Garde défensif : si l'API renvoie un shape inattendu (auth expirée,
+      // erreur sérialisée, redirect), on retombe sur {} plutôt que de laisser
+      // pipeline = undefined puis throw au prochain Object.values().
+      setPipeline(data?.pipeline && typeof data.pipeline === "object" ? data.pipeline : {});
     } catch {
       toast.error("Erreur chargement pipeline");
     }

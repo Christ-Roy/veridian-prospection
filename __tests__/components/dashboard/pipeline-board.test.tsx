@@ -121,3 +121,78 @@ describe("pipeline-board.tsx — code-split LeadSheet (perf sprint 2026-05-22)",
     expect(source).toMatch(/setLeadSheetOpened/);
   });
 });
+
+describe("pipeline-board.tsx — guard défensif fetchPipeline (bug intermittent 2026-05-23)", () => {
+  let source = "";
+
+  test("setup : lecture du source", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    source = await fs.readFile(
+      path.resolve(process.cwd(), "src/components/dashboard/pipeline-board.tsx"),
+      "utf-8",
+    );
+    expect(source.length).toBeGreaterThan(0);
+  });
+
+  // Bug intermittent : si /api/pipeline renvoie un shape inattendu (auth
+  // expirée, erreur sérialisée, redirect), `data.pipeline` peut être
+  // undefined. Sans guard, le prochain Object.values(pipeline).flat()
+  // au render throw "Cannot read properties of undefined". Le setter
+  // doit retomber sur {} si shape invalide.
+  test("setPipeline gardé contre data.pipeline undefined / non-objet", () => {
+    expect(source).not.toMatch(/setPipeline\(data\.pipeline\)\s*;/);
+    expect(source).toMatch(
+      /setPipeline\(\s*data\?\.pipeline\s*&&\s*typeof\s+data\.pipeline\s*===\s*"object"/,
+    );
+  });
+
+  // Sabotage-check : si on retire le guard pour revenir à
+  // `setPipeline(data.pipeline)`, ce test rougit immédiatement.
+  test("aucun setPipeline non-gardé sur data.pipeline", () => {
+    // Match strict du pattern dangereux (sans le guard).
+    expect(source).not.toMatch(/setPipeline\(\s*data\.pipeline\s*\)/);
+  });
+});
+
+describe("sans-site-sidebar.tsx — guard data.qualiopiSpecialites (bug intermittent 2026-05-23)", () => {
+  let source = "";
+
+  test("setup : lecture du source", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    source = await fs.readFile(
+      path.resolve(process.cwd(), "src/components/dashboard/sans-site-sidebar.tsx"),
+      "utf-8",
+    );
+    expect(source.length).toBeGreaterThan(0);
+  });
+
+  // Si l'API /api/sans-site-filters renvoie data sans qualiopiSpecialites
+  // (rétrocompat, fail partiel), `data.qualiopiSpecialites.length` throw.
+  test("accès qualiopiSpecialites.length gardé par ?. / ?? 0", () => {
+    expect(source).not.toMatch(/data\.qualiopiSpecialites\.length/);
+    expect(source).toMatch(/qualiopiSpecialites\?\.length/);
+  });
+});
+
+describe("segment-page.tsx — guard setSegments Array.isArray (bug intermittent 2026-05-23)", () => {
+  let source = "";
+
+  test("setup : lecture du source", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    source = await fs.readFile(
+      path.resolve(process.cwd(), "src/components/dashboard/segment-page.tsx"),
+      "utf-8",
+    );
+    expect(source.length).toBeGreaterThan(0);
+  });
+
+  // JSON.parse(text) peut retourner n'importe quel type — sans
+  // Array.isArray on peut stocker un objet dans `segments: SegmentInfo[]`
+  // et tout `segments.find()` / `.filter()` ultérieur throw.
+  test("setSegments gardé par Array.isArray fallback []", () => {
+    expect(source).toMatch(/setSegments\(\s*Array\.isArray\(d\)\s*\?\s*d\s*:\s*\[\]\s*\)/);
+  });
+});

@@ -143,7 +143,7 @@ export function SegmentPage({ segmentId }: { segmentId: string | null }) {
           return [] as SegmentInfo[];
         }
       })
-      .then((d) => { setSegments(d); setLoadingSegments(false); })
+      .then((d) => { setSegments(Array.isArray(d) ? d : []); setLoadingSegments(false); })
       .catch(() => setLoadingSegments(false));
   }, []);
 
