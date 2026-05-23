@@ -246,3 +246,5 @@ CONTRAT-HUB.md) mais le Hub attend `emitted_at`. Ticket déposé côté Hub :
 
 ⏳ **PAS en prod.** Migration 0011 à appliquer DB prod lors de la promo.
 Archiver dans `done/` après promo.
+
+## ✅ Archivé 2026-05-22 — livré et vérifié en prod

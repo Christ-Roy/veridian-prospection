@@ -148,3 +148,5 @@ Smoke staging vert (UUID + email). Tests 87/87.
 
 ⏳ **PAS en prod.** Bug `/health` avec email → 500 toujours actif en prod
 tant que ce bundle n'est pas promu. Archiver dans `done/` après promo prod.
+
+## ✅ Archivé 2026-05-22 — livré et vérifié en prod

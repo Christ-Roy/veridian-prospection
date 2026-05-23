@@ -133,3 +133,5 @@ de ticket). Backend : exposer le solde via une route lisible par l'UI.
 - [ ] Schéma du body communiqué à l'agent Hub (ticket refill 3/3)
 - [ ] Tests de conformité verts
 - [ ] Réponse + archivage done/
+
+## ✅ Archivé 2026-05-22 — livré et vérifié en prod
