@@ -92,16 +92,14 @@ describe("/api/phone/server-call", () => {
       prismaMock.callLog.create.mockResolvedValue({ id: 42 });
       prismaMock.callLog.update.mockResolvedValue({ id: 42 });
       // Stub fetch global pour Telnyx
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockResolvedValue({
-          ok: true,
-          status: 200,
-          json: async () => ({
-            data: { call_control_id: "call-ctl-xyz" },
-          }),
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: { call_control_id: "call-ctl-xyz" },
         }),
-      );
+      });
+      vi.stubGlobal("fetch", fetchMock);
 
       const res = await POST(
         makeRequest("/api/phone/server-call", {
@@ -117,6 +115,15 @@ describe("/api/phone/server-call", () => {
         callControlId: "call-ctl-xyz",
         message: "Appel lance via Telnyx.",
       });
+      // Anti-régression sabotage L33 : vérifie que normalizeToE164 a bien
+      // transformé "0612345678" → "+33612345678" dans le body envoyé à
+      // Telnyx. Si normalizeToE164 retourne null (sabotage), to:null part
+      // dans le POST → assertion casse.
+      const fetchCall = fetchMock.mock.calls[0] as [string, RequestInit];
+      const telnyxBody = JSON.parse(fetchCall[1].body as string);
+      expect(telnyxBody.to).toBe("+33612345678");
+      expect(telnyxBody.from).toBe("+33974066175");
+      expect(telnyxBody.connection_id).toBe("call-control-app-id");
     });
 
     test("returns 500 quand Telnyx API throw — callLog passé en 'failed'", async () => {

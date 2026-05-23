@@ -47,6 +47,11 @@ vi.mock("@/lib/cache", () => ({ cached: cachedMock }));
 vi.mock("@/lib/rate-limit", () => ({ isRateLimited: isRateLimitedMock }));
 vi.mock("@/lib/queries", () => queriesMock);
 
+const { checkTrialExpiredMock } = vi.hoisted(() => ({
+  checkTrialExpiredMock: vi.fn().mockResolvedValue(false),
+}));
+vi.mock("@/lib/trial", () => ({ checkTrialExpired: checkTrialExpiredMock }));
+
 import { GET } from "@/app/api/prospects/route";
 import { makeRequest, readJson } from "./_helpers";
 
@@ -148,6 +153,47 @@ describe("GET /api/prospects", () => {
     expect(res.status).toBe(200);
     const body = (await readJson(res)) as Record<string, number>;
     expect(body).toEqual({ top_prospects: 50, btp_artisans: 12 });
+  });
+
+  // Anti-régression sabotage L291 (truncateSensitiveFields → return null).
+  // En mode freemium + trial expiré, les champs sensibles doivent être
+  // partiellement masqués (les 67 % de la fin remplacés par •).
+  test("FREEMIUM TRIAL EXPIRÉ : champs sensibles obfusqués (anti-régression sabotage L291)", async () => {
+    defaultAuthCtx();
+    getTenantProspectLimitMock.mockResolvedValue(300); // freemium
+    checkTrialExpiredMock.mockResolvedValue(true);
+    // Inhibe la query freemium pool (sinon import dynamique cherche prisma).
+    queriesMock.getAllSettings.mockResolvedValue({});
+    queriesMock.getProspects.mockResolvedValue({
+      data: [
+        {
+          siren: "111111111",
+          domain: "acme.fr",
+          nom_entreprise: "ACME COMPANY SA",
+          email: "contact@acme.fr",
+          phone: "+33612345678",
+          dirigeant: "Jean Dupont",
+          ville: "Paris",
+        },
+      ],
+      total: 1,
+    });
+
+    const res = await GET(makeRequest("/api/prospects"));
+    expect(res.status).toBe(200);
+    const body = (await readJson(res)) as {
+      data: Array<Record<string, string>>;
+    };
+    const row = body.data[0];
+    // Si truncateSensitiveFields est saboté (return null), data devient
+    // [null] et row.siren crash → test rougit.
+    expect(row.siren).toBe("111111111"); // siren NON obfusqué (non sensible)
+    // Champs sensibles obfusqués : contiennent au moins un •
+    expect(row.nom_entreprise).toMatch(/•/);
+    expect(row.email).toMatch(/•/);
+    expect(row.phone).toMatch(/•/);
+    // Le préfixe (33 % conservé) doit être présent au début.
+    expect(row.nom_entreprise.startsWith("ACME")).toBe(true);
   });
 
   test("BigInt depuis Prisma est sérialisé en Number dans le body JSON", async () => {
