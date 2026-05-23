@@ -36,7 +36,7 @@ const BASE_INPUT = {
 describe("sendInvitationEmail", () => {
   it("POST /api/transactional.send avec Bearer + body Notifuse correct", async () => {
     const fetchSpy = vi.fn(
-      async (_url: string, _init?: RequestInit) =>
+      async () =>
         new Response(JSON.stringify({ message_id: "msg-123", success: true }), {
           status: 200,
         }),
@@ -73,7 +73,7 @@ describe("sendInvitationEmail", () => {
   it("strip trailing slash dans NOTIFUSE_URL", async () => {
     process.env.NOTIFUSE_URL = "https://notifuse.test.local////";
     const fetchSpy = vi.fn(
-      async (_url: string, _init?: RequestInit) =>
+      async () =>
         new Response("{}", { status: 200 }),
     );
     vi.stubGlobal("fetch", fetchSpy);
