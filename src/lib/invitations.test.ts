@@ -16,20 +16,34 @@ const {
   mockExecuteRawUnsafe,
   mockUserUpsert,
   mockAccountUpsert,
+  mockTenantFindUnique,
+  mockUserFindUnique,
+  mockWorkspaceFindUnique,
+  mockSendInvitationEmail,
 } = vi.hoisted(() => ({
   mockQueryRawUnsafe: vi.fn(),
   mockExecuteRawUnsafe: vi.fn(),
   mockUserUpsert: vi.fn(),
   mockAccountUpsert: vi.fn(),
+  mockTenantFindUnique: vi.fn(),
+  mockUserFindUnique: vi.fn(),
+  mockWorkspaceFindUnique: vi.fn(),
+  mockSendInvitationEmail: vi.fn(),
 }));
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     $queryRawUnsafe: mockQueryRawUnsafe,
     $executeRawUnsafe: mockExecuteRawUnsafe,
-    user: { upsert: mockUserUpsert },
+    user: { upsert: mockUserUpsert, findUnique: mockUserFindUnique },
     account: { upsert: mockAccountUpsert },
+    tenant: { findUnique: mockTenantFindUnique },
+    workspace: { findUnique: mockWorkspaceFindUnique },
   },
+}));
+
+vi.mock("@/lib/notifuse/client", () => ({
+  sendInvitationEmail: mockSendInvitationEmail,
 }));
 
 vi.mock("bcryptjs", () => ({
@@ -49,7 +63,16 @@ beforeEach(() => {
   mockExecuteRawUnsafe.mockReset();
   mockUserUpsert.mockReset();
   mockAccountUpsert.mockReset();
+  mockTenantFindUnique.mockReset();
+  mockUserFindUnique.mockReset();
+  mockWorkspaceFindUnique.mockReset();
+  mockSendInvitationEmail.mockReset();
   process.env.APP_URL = "https://app.test.local";
+  // Par défaut : tenant non provisionné Notifuse → emailSent=false silent.
+  // Les tests qui veulent emailSent=true overrident ce mock.
+  mockTenantFindUnique.mockResolvedValue(null);
+  mockUserFindUnique.mockResolvedValue(null);
+  mockWorkspaceFindUnique.mockResolvedValue(null);
 });
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -115,7 +138,134 @@ describe("createInvitation", () => {
       invitedBy: "11111111-1111-1111-1111-111111111111",
       tenantId: "22222222-2222-2222-2222-222222222222",
     });
+    // sendInvitationEmail est mocké donc fetch ne devrait JAMAIS être appelé
+    // depuis ce test (les credentials Notifuse sont absents en defaults).
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  // ─── Notifuse best-effort ───────────────────────────────────────────────
+  it("appelle Notifuse avec workspace_id + apiKey du tenant + vars Liquid", async () => {
+    mockQueryRawUnsafe.mockResolvedValueOnce([{ id: 99 }]);
+    mockTenantFindUnique.mockResolvedValueOnce({
+      notifuseWorkspaceSlug: "veridian-prosp-ws-99",
+      notifuseApiKey: "jwt.fake.apikey",
+      name: "Acme Corp",
+    });
+    mockUserFindUnique.mockResolvedValueOnce({ email: "boss@acme.com" });
+    mockWorkspaceFindUnique.mockResolvedValueOnce({ name: "Team Sales" });
+    mockSendInvitationEmail.mockResolvedValueOnce({
+      ok: true,
+      messageId: "msg-abc",
+    });
+
+    const result = await createInvitation({
+      email: "newbie@acme.com",
+      invitedBy: "11111111-1111-1111-1111-111111111111",
+      tenantId: "22222222-2222-2222-2222-222222222222",
+      workspaceId: "33333333-3333-3333-3333-333333333333",
+      role: "member",
+    });
+
+    expect(result.emailSent).toBe(true);
+    expect(mockSendInvitationEmail).toHaveBeenCalledOnce();
+    const call = mockSendInvitationEmail.mock.calls[0][0];
+    expect(call.workspaceId).toBe("veridian-prosp-ws-99");
+    expect(call.apiKey).toBe("jwt.fake.apikey");
+    expect(call.toEmail).toBe("newbie@acme.com");
+    expect(call.vars.inviter_email).toBe("boss@acme.com");
+    expect(call.vars.workspace_name).toBe("Team Sales");
+    expect(call.vars.invite_url).toMatch(/^https:\/\/app\.test\.local\/invite\/[0-9a-f]{64}$/);
+    expect(call.vars.expires_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(call.externalId).toMatch(/^invitation-[0-9a-f]{16}$/);
+  });
+
+  it("emailSent=false si le tenant n'a pas de notifuseApiKey (pas provisionné)", async () => {
+    mockQueryRawUnsafe.mockResolvedValueOnce([{ id: 100 }]);
+    mockTenantFindUnique.mockResolvedValueOnce({
+      notifuseWorkspaceSlug: null,
+      notifuseApiKey: null,
+      name: "Pending Corp",
+    });
+
+    const result = await createInvitation({
+      email: "x@pending.test",
+      invitedBy: "11111111-1111-1111-1111-111111111111",
+      tenantId: "22222222-2222-2222-2222-222222222222",
+    });
+
+    expect(result.emailSent).toBe(false);
+    expect(mockSendInvitationEmail).not.toHaveBeenCalled();
+    // L'invitation EST créée (id renvoyé, inviteUrl utilisable) — l'admin
+    // copie-colle. Notifuse non-bloquant.
+    expect(result.id).toBe(100);
+    expect(result.inviteUrl).toMatch(/^https:\/\/app\.test\.local\/invite\//);
+  });
+
+  it("emailSent=false si Notifuse répond ok=false (template absent, 503, etc.) — invitation préservée", async () => {
+    mockQueryRawUnsafe.mockResolvedValueOnce([{ id: 101 }]);
+    mockTenantFindUnique.mockResolvedValueOnce({
+      notifuseWorkspaceSlug: "ws-101",
+      notifuseApiKey: "apikey",
+      name: "T",
+    });
+    mockUserFindUnique.mockResolvedValueOnce({ email: "boss@t.test" });
+    mockSendInvitationEmail.mockResolvedValueOnce({
+      ok: false,
+      reason: "missing_template",
+      status: 400,
+    });
+
+    const result = await createInvitation({
+      email: "x@t.test",
+      invitedBy: "11111111-1111-1111-1111-111111111111",
+      tenantId: "22222222-2222-2222-2222-222222222222",
+    });
+
+    expect(result.emailSent).toBe(false);
+    expect(result.id).toBe(101);
+    expect(mockSendInvitationEmail).toHaveBeenCalledOnce();
+  });
+
+  it("emailSent=false si sendInvitationEmail throw inopinément — invitation préservée (jamais bloquant)", async () => {
+    mockQueryRawUnsafe.mockResolvedValueOnce([{ id: 102 }]);
+    mockTenantFindUnique.mockResolvedValueOnce({
+      notifuseWorkspaceSlug: "ws-102",
+      notifuseApiKey: "apikey",
+      name: "T",
+    });
+    mockUserFindUnique.mockResolvedValueOnce({ email: "boss@t.test" });
+    mockSendInvitationEmail.mockRejectedValueOnce(new Error("bug inattendu"));
+
+    const result = await createInvitation({
+      email: "x@t.test",
+      invitedBy: "11111111-1111-1111-1111-111111111111",
+      tenantId: "22222222-2222-2222-2222-222222222222",
+    });
+
+    expect(result.emailSent).toBe(false);
+    expect(result.id).toBe(102);
+  });
+
+  it("workspace_name fallback sur tenant.name si invitation tenant-level (workspaceId null)", async () => {
+    mockQueryRawUnsafe.mockResolvedValueOnce([{ id: 103 }]);
+    mockTenantFindUnique.mockResolvedValueOnce({
+      notifuseWorkspaceSlug: "ws-103",
+      notifuseApiKey: "apikey",
+      name: "Tenant Name Fallback",
+    });
+    mockUserFindUnique.mockResolvedValueOnce({ email: "boss@t.test" });
+    mockSendInvitationEmail.mockResolvedValueOnce({ ok: true });
+
+    await createInvitation({
+      email: "x@t.test",
+      invitedBy: "11111111-1111-1111-1111-111111111111",
+      tenantId: "22222222-2222-2222-2222-222222222222",
+      // pas de workspaceId
+    });
+
+    expect(mockWorkspaceFindUnique).not.toHaveBeenCalled();
+    const call = mockSendInvitationEmail.mock.calls[0][0];
+    expect(call.vars.workspace_name).toBe("Tenant Name Fallback");
   });
 });
 

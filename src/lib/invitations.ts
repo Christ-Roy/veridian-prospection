@@ -18,6 +18,7 @@
 import { randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { sendInvitationEmail } from "@/lib/notifuse/client";
 
 export type InvitationStatus = "pending" | "accepted" | "revoked" | "expired" | "all";
 
@@ -61,13 +62,22 @@ function getInviteBaseUrl(): string {
 }
 
 /**
- * Create an invitation row. Le lien d'invitation est dans `inviteUrl` —
- * l'admin doit aujourd'hui copier-coller manuellement, on n'envoie plus le
- * mail via Supabase (GoTrue mort). TODO : brancher Notifuse pour automatiser
- * l'envoi du mail d'invitation (cf todo/2026-05-23-invitations-notifuse-email.md).
+ * Create an invitation row + best-effort envoi mail via Notifuse.
  *
- * `emailSent` reste dans le retour pour ne pas casser le contrat API, mais
- * vaut toujours `false` tant que Notifuse n'est pas branché.
+ * Le lien d'invitation est dans `inviteUrl`. Si l'envoi Notifuse réussit
+ * (workspace + apiKey tenant + template "invitation-prospection" présents
+ * + 2xx) → emailSent=true. Sinon → emailSent=false : l'admin reste le filet
+ * de sécurité et copie-colle l'inviteUrl depuis /admin/invitations.
+ *
+ * L'échec Notifuse N'EST JAMAIS BLOQUANT : la row invitation est créée
+ * de toutes façons, le lien est retourné, l'admin peut renvoyer.
+ *
+ * Variables Liquid attendues côté template Notifuse :
+ *   inviter_email, workspace_name, invite_url, expires_at
+ *
+ * Spec template + ticket import côté Notifuse :
+ *   templates/notifuse/invitation-prospection.mjml
+ *   ../notifuse-veridian/todo/2026-05-23-import-template-invitation-prospection.md
  */
 export async function createInvitation(
   input: CreateInvitationInput,
@@ -100,8 +110,122 @@ export async function createInvitation(
   }
 
   const inviteUrl = `${getInviteBaseUrl()}/invite/${token}`;
+  const emailSent = await trySendInvitationMail({
+    inviterUserId: input.invitedBy,
+    tenantId: input.tenantId,
+    workspaceId: input.workspaceId ?? null,
+    toEmail: email,
+    inviteUrl,
+    expiresAt,
+    token,
+  });
 
-  return { id, token, inviteUrl, expiresAt, emailSent: false };
+  return { id, token, inviteUrl, expiresAt, emailSent };
+}
+
+/**
+ * Best-effort envoi du mail d'invitation. Retourne false sur toute erreur
+ * (Notifuse 4xx/5xx, timeout, credentials manquants, template absent du
+ * workspace tenant, etc.) sans jamais throw — la création de l'invitation
+ * doit rester atomique côté caller.
+ */
+async function trySendInvitationMail(args: {
+  inviterUserId: string;
+  tenantId: string;
+  workspaceId: string | null;
+  toEmail: string;
+  inviteUrl: string;
+  expiresAt: Date;
+  token: string;
+}): Promise<boolean> {
+  try {
+    // 1 round-trip Prisma minimal : on récupère ce qu'il faut pour le mail.
+    // - tenant : workspace Notifuse cible + api_key (Bearer)
+    // - inviter user : email à afficher dans le mail
+    // - workspace : nom à afficher dans le mail (optionnel)
+    const [tenant, inviter, workspace] = await Promise.all([
+      prisma.tenant.findUnique({
+        where: { id: args.tenantId },
+        select: { notifuseWorkspaceSlug: true, notifuseApiKey: true, name: true },
+      }),
+      prisma.user.findUnique({
+        where: { id: args.inviterUserId },
+        select: { email: true },
+      }),
+      args.workspaceId
+        ? prisma.workspace.findUnique({
+            where: { id: args.workspaceId },
+            select: { name: true },
+          })
+        : Promise.resolve(null),
+    ]);
+
+    if (!tenant?.notifuseWorkspaceSlug || !tenant?.notifuseApiKey) {
+      logInvitationMail({
+        level: "warn",
+        reason: "tenant_notifuse_not_provisioned",
+        tenantId: args.tenantId,
+        to: args.toEmail,
+      });
+      return false;
+    }
+
+    const result = await sendInvitationEmail({
+      workspaceId: tenant.notifuseWorkspaceSlug,
+      apiKey: tenant.notifuseApiKey,
+      toEmail: args.toEmail,
+      externalId: `invitation-${args.token.slice(0, 16)}`,
+      vars: {
+        inviter_email: inviter?.email ?? "Un administrateur Veridian",
+        workspace_name: workspace?.name ?? tenant.name,
+        invite_url: args.inviteUrl,
+        expires_at: args.expiresAt.toISOString(),
+      },
+    });
+
+    if (!result.ok) {
+      logInvitationMail({
+        level: "warn",
+        reason: `notifuse_${result.reason ?? "unknown"}`,
+        status: result.status,
+        tenantId: args.tenantId,
+        to: args.toEmail,
+      });
+      return false;
+    }
+
+    logInvitationMail({
+      level: "info",
+      reason: "sent",
+      messageId: result.messageId,
+      tenantId: args.tenantId,
+      to: args.toEmail,
+    });
+    return true;
+  } catch (err) {
+    logInvitationMail({
+      level: "warn",
+      reason: "unexpected_error",
+      tenantId: args.tenantId,
+      to: args.toEmail,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+}
+
+function logInvitationMail(payload: Record<string, unknown>): void {
+  const level = (payload.level as string) ?? "info";
+  const line = JSON.stringify({
+    tag: "[invitations][notifuse]",
+    ts: new Date().toISOString(),
+    ...payload,
+  });
+  if (level === "warn" || level === "error") {
+    console.warn(line);
+  } else {
+    console.log(line);
+  }
 }
 
 /**
