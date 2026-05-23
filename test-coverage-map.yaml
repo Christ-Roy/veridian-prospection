@@ -114,3 +114,52 @@
     couvrent l'envoi transactional best-effort : 8 reasons explicites
     (sent / missing_template / auth_failed / timeout / etc.), contrat
     POST exact, jamais bloquant pour le call parent.
+
+# ── Renames + modifs ciblées passe 2026-05-23 (seconde passe) ────────────
+
+- sources:
+    - src/lib/auth-config.ts
+    - src/app/api/auth/[...nextauth]/route.ts
+    - src/app/api/auth/token/route.ts
+  covered_by:
+    - src/lib/auth/api-auth.test.ts
+    - src/lib/auth/user-context.test.ts
+  reason: |
+    Le fichier auth-config.ts (rename depuis lib/auth.ts) exporte
+    NextAuth { auth, handlers, signIn, signOut } consommés par
+    [...nextauth]/route.ts et auth/token/route.ts. Le contrat (cookies
+    session-token, callbacks JWT) est validé indirectement par les
+    tests colocalisés api-auth.test.ts (8 tests requireAuth) et
+    user-context.test.ts (34 tests resolution multi-tenant), qui
+    mockent @/lib/auth-config et testent le comportement de session.
+    Pas de test direct du provider Credentials (bcrypt) car testé en
+    E2E via le helper canonique e2e/helpers/auth.ts.
+
+# Composants /settings — refonte responsive 2026-05-23 (settings-overflow)
+- sources:
+    - src/components/dashboard/settings-tabs.tsx
+    - src/components/dashboard/settings-display.tsx
+    - src/components/dashboard/settings-reference.tsx
+  covered_by:
+    - e2e/extended/mobile-viewport.spec.ts
+  reason: |
+    Fix overflow horizontal iPhone SE 375px (commit 67eaa4c). Le test
+    mobile-viewport.spec.ts:84 mesure document.scrollWidth -
+    window.innerWidth ≤ 20px sur /settings. C'est le test qui a détecté
+    le bug initial (overflow 382px), il valide aussi le fix.
+    Tests source-level non requis : refonte responsive pure (wrapper
+    overflow-x-auto + collapse layout grid-cols-1 sm:grid-cols-2 + tables
+    wrappées défensivement). Le smoke E2E couvre l'invariant cible.
+
+# Headers JSDoc nettoyés — modifs cosmétiques (nettoyer-comments)
+- sources:
+    - src/lib/auth/middleware.ts
+    - src/lib/invitations.ts
+  covered_by:
+    - src/lib/auth/middleware.test.ts
+    - src/lib/invitations.test.ts
+  reason: |
+    Commit da370d6 (nettoyer-comments) ne touche QUE les commentaires
+    JSDoc (retire les références Supabase mortes). Aucun changement
+    runtime. Tests colocalisés (22 tests middleware + 16 tests
+    invitations) restent verts et continuent à couvrir le comportement.

@@ -17,10 +17,7 @@ src/components/dashboard/quality-tabs.tsx
 src/components/dashboard/segment-table.tsx
 src/components/dashboard/settings-ai-storage.tsx
 src/components/dashboard/settings-call-routing.tsx
-src/components/dashboard/settings-display.tsx
 src/components/dashboard/settings-form.tsx
-src/components/dashboard/settings-reference.tsx
-src/components/dashboard/settings-tabs.tsx
 src/components/dashboard/settings-telephony.tsx
 src/components/dashboard/stats-cards.tsx
 src/components/dashboard/status-badge.tsx
