@@ -19,7 +19,7 @@ const { mockAuth } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
 }));
 
-vi.mock("@/lib/auth", () => ({
+vi.mock("@/lib/auth-config", () => ({
   auth: mockAuth,
 }));
 

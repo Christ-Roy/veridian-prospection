@@ -41,7 +41,7 @@ const {
   mockWorkspaceFindFirst: vi.fn(),
 }));
 
-vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
+vi.mock("@/lib/auth-config", () => ({ auth: mockAuth }));
 vi.mock("next/headers", () => ({ cookies: mockCookies }));
 vi.mock("@/lib/prisma", () => ({
   prisma: {

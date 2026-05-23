@@ -271,7 +271,7 @@ export interface AcceptInvitationResult {
  * - L'ancien flow appelait /auth/v1/admin/users (GoTrue, mort) pour
  *   create/update user + signin password — tout ça est remplacé par Prisma.
  * - Pattern aligné sur ensureCanonicalUser() du helper E2E
- *   (e2e/helpers/auth.ts) et sur le provider Credentials de src/lib/auth.ts.
+ *   (e2e/helpers/auth.ts) et sur le provider Credentials de src/lib/auth-config.ts.
  * - Account.access_token stocke le bcrypt du password (clé unique
  *   provider+providerAccountId=email).
  */
@@ -307,7 +307,7 @@ export async function acceptInvitation(
   //    providerAccountId). On utilise l'email comme providerAccountId
   //    (stable, unique, aligné avec le pattern E2E + login form).
   //    access_token = bcrypt hash du password (consommé par le provider
-  //    Credentials de src/lib/auth.ts → bcrypt.compare).
+  //    Credentials de src/lib/auth-config.ts → bcrypt.compare).
   await prisma.account.upsert({
     where: {
       provider_providerAccountId: {
