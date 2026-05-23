@@ -188,7 +188,7 @@ Credentials et procédure détaillés dans [`dashboard/docs/TESTING.md`](./TESTI
 Tests automatisés couvrant ce flow :
 - `scripts/test-invite-api.ts` — smoke API pure (wiré dans CI `e2e-staging`)
 - `e2e/admin-pages-v1.spec.ts` — vérifie que `/admin/invitations` charge sans console error
-- `e2e/invite-flow.spec.ts` — scénario e2e complet avec 2 browser contexts (admin + collègue)
+- `e2e/extended/invite-flow.spec.ts` — scénario e2e complet avec 2 browser contexts (admin + collègue)
 
 ---
 
@@ -236,5 +236,5 @@ Par ordre de priorité business :
 | `src/app/invite/[token]/page.tsx` | Landing serveur |
 | `src/app/invite/[token]/invite-accept-form.tsx` | Form client d'acceptation |
 | `scripts/test-invite-api.ts` | Smoke API automatisé |
-| `e2e/invite-flow.spec.ts` | Test e2e 2 contexts |
+| `e2e/extended/invite-flow.spec.ts` | Test e2e 2 contexts |
 | `e2e/admin-pages-v1.spec.ts` | Smoke pages admin V1 |

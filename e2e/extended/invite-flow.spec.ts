@@ -2,29 +2,29 @@
  * Invite flow e2e — test critique pour la démo.
  *
  * Scénario complet bout-en-bout sur 2 contexts browser:
- *  1. Admin login → /admin/invitations
- *  2. Ouvre le dialog "Nouvelle invitation", remplit email/workspace/role, submit
- *  3. Capture inviteUrl via interception de la réponse POST /api/admin/invitations
- *  4. Vérifie que la table montre l'invitation avec status "En attente"
- *  5. Ouvre un NOUVEAU context browser (collègue anonyme)
- *  6. Goto inviteUrl → landing avec "Vous avez été invité"
- *  7. Remplit password + fullName, submit
- *  8. Assert redirect vers /prospects + cookies Supabase posés
- *  9. Retour sur context admin, refresh /admin/invitations, assert status "Acceptée"
- * 10. Cleanup: supprime le user Supabase créé
+ *  1. Admin login (compte canonique e2e-persistent, owner → isAdmin=true)
+ *  2. Navigate /admin/invitations
+ *  3. Ouvre dialog "Nouvelle invitation", remplit email/workspace/role, submit
+ *  4. Capture inviteUrl via interception POST /api/admin/invitations
+ *  5. Vérifie la table montre l'invitation avec status "En attente"
+ *  6. Ouvre un NOUVEAU context browser (collègue anonyme)
+ *  7. Goto inviteUrl → landing "Vous avez été invité"
+ *  8. Remplit password + fullName, accepte
+ *  9. Assert redirect /prospects + cookie session Auth.js posé
+ * 10. Retour admin, refresh /admin/invitations, status "Acceptée"
+ * 11. Cleanup: delete user Prisma + révoque invitation
  *
- * Skip gracieux si la feature n'est pas encore stable (pages 404, API manquante).
- * Zero console error sur les 2 contexts.
+ * Auth.js v5 (post migration Supabase → Auth.js 2026-05-23) :
+ *   - L'invitation crée le user via Prisma (plus de Supabase signup)
+ *   - Cookie session = `authjs.session-token` (plus `sb-*`)
+ *   - Cleanup user via Prisma direct (plus admin API Supabase)
  */
 import { test, expect, type ConsoleMessage, type Page } from "@playwright/test";
+import { PrismaClient } from "@prisma/client";
 import { loginAsE2EUser } from "../helpers/auth";
 
 const PROSPECTION_URL =
-  process.env.PROSPECTION_URL || "https://saas-prospection.staging.veridian.site";
-const SUPABASE_URL =
-  process.env.SUPABASE_URL || "https://saas-api.staging.veridian.site";
-const ANON_KEY = process.env.SUPABASE_ANON_KEY || "";
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  process.env.PROSPECTION_URL || "https://prospection.staging.veridian.site";
 
 const INVITEE_PASSWORD = "CollegueDemo2026!";
 const INVITEE_FULLNAME = "Collègue Demo";
@@ -44,38 +44,23 @@ function attachErrorListeners(page: Page, sink: string[], label: string) {
   });
 }
 
-async function deleteSupabaseUser(userId: string): Promise<void> {
-  if (!SERVICE_KEY || !ANON_KEY) return;
-  try {
-    await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
-      method: "DELETE",
-      headers: {
-        apikey: ANON_KEY,
-        Authorization: `Bearer ${SERVICE_KEY}`,
-      },
-    });
-  } catch {
-    /* best-effort */
-  }
+let prismaSingleton: PrismaClient | null = null;
+function getPrisma(): PrismaClient {
+  if (!prismaSingleton) prismaSingleton = new PrismaClient();
+  return prismaSingleton;
 }
 
-async function findUserIdByEmail(email: string): Promise<string | null> {
-  if (!SERVICE_KEY || !ANON_KEY) return null;
+async function deleteUserByEmail(email: string): Promise<void> {
   try {
-    const res = await fetch(
-      `${SUPABASE_URL}/auth/v1/admin/users?email=${encodeURIComponent(email)}`,
-      {
-        headers: {
-          apikey: ANON_KEY,
-          Authorization: `Bearer ${SERVICE_KEY}`,
-        },
-      },
-    );
-    if (!res.ok) return null;
-    const body = (await res.json()) as { users?: Array<{ id: string; email?: string }> };
-    return body.users?.find((u) => u.email === email)?.id ?? null;
+    const prisma = getPrisma();
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) return;
+    // Suppression best-effort. Ordre : memberships → accounts → user.
+    await prisma.workspaceMember.deleteMany({ where: { userId: user.id } }).catch(() => {});
+    await prisma.account.deleteMany({ where: { userId: user.id } }).catch(() => {});
+    await prisma.user.delete({ where: { id: user.id } }).catch(() => {});
   } catch {
-    return null;
+    /* best-effort */
   }
 }
 
@@ -86,12 +71,12 @@ test.describe("Invite flow e2e (critical demo path)", () => {
     browser,
     page,
     request,
-  }, testInfo) => {
+  }) => {
     const adminErrors: string[] = [];
     attachErrorListeners(page, adminErrors, "admin");
 
     const INVITEE_EMAIL = `invited-${Date.now()}@yopmail.com`;
-    let createdUserId: string | null = null;
+    let invitationId: number | undefined;
 
     // --- Step 1: admin login ---
     await loginAsE2EUser(page, request);
@@ -99,42 +84,24 @@ test.describe("Invite flow e2e (critical demo path)", () => {
     // --- Step 2: navigate to /admin/invitations ---
     await page.goto(`${PROSPECTION_URL}/admin/invitations`);
     await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
-
-    // Skip gracieux si redirect (user non-admin sur ce tenant)
-    if (!page.url().includes("/admin/invitations")) {
-      testInfo.skip(
-        true,
-        `e2e user not admin on tenant — /admin/invitations redirected to ${page.url()}`,
-      );
-      return;
-    }
-
-    // Skip gracieux si la page est une 404
-    const bodyCheck = (await page.textContent("body")) || "";
-    if (/404\s*not found/i.test(bodyCheck) || bodyCheck.includes("This page could not be found")) {
-      testInfo.skip(true, "/admin/invitations renvoie 404 — feature pas encore déployée");
-      return;
-    }
+    expect(page.url(), "compte canonique should be admin, no redirect").toContain(
+      "/admin/invitations",
+    );
 
     // --- Step 3: open create dialog ---
     const newInviteBtn = page.getByRole("button", { name: /nouvelle invitation/i });
     await expect(newInviteBtn).toBeVisible({ timeout: 10000 });
     await newInviteBtn.click();
 
-    // Remplir email
     const emailInput = page.locator("#inv-email");
     await expect(emailInput).toBeVisible({ timeout: 5000 });
     await emailInput.fill(INVITEE_EMAIL);
 
-    // Sélectionner le premier workspace du Select shadcn/ui
     const wsTrigger = page.locator("#inv-workspace");
     await wsTrigger.click();
-    // SelectContent est en portal, attend au moins un item
     const firstItem = page.locator('[role="option"]').first();
     await expect(firstItem).toBeVisible({ timeout: 5000 });
     await firstItem.click();
-
-    // Role = member (default), rien à faire
 
     // --- Step 4: submit + capture response ---
     const responsePromise = page.waitForResponse(
@@ -152,21 +119,20 @@ test.describe("Invite flow e2e (critical demo path)", () => {
     };
     const inviteUrl = createBody.inviteUrl;
     expect(inviteUrl, "inviteUrl should be present in response").toBeTruthy();
-    const invitationId = createBody.id;
+    invitationId = createBody.id;
 
-    // Fermer le dialog de lien créé s'il s'ouvre
     const linkDialogClose = page.getByRole("button", { name: /^fermer$/i });
     if (await linkDialogClose.isVisible().catch(() => false)) {
       await linkDialogClose.click();
     }
 
-    // --- Step 5: vérifier que la table montre l'invitation ---
+    // --- Step 5: row visible "En attente" ---
     await page.waitForTimeout(500);
     const row = page.getByRole("row", { name: new RegExp(INVITEE_EMAIL, "i") });
     await expect(row).toBeVisible({ timeout: 10000 });
     await expect(row.getByText(/en attente/i)).toBeVisible();
 
-    // --- Step 6: nouveau browser context (collègue) ---
+    // --- Step 6: nouveau context (collègue) ---
     const guestContext = await browser.newContext();
     const guestPage = await guestContext.newPage();
     const guestErrors: string[] = [];
@@ -176,61 +142,47 @@ test.describe("Invite flow e2e (critical demo path)", () => {
       await guestPage.goto(inviteUrl!);
       await guestPage.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
 
-      // --- Step 7: landing visible avec "Vous avez été invité" ---
+      // --- Step 7: landing visible ---
       await expect(guestPage.getByText(/vous avez été invité/i)).toBeVisible({
         timeout: 10000,
       });
 
-      // Remplir password + fullName
       const pwInput = guestPage.locator('input[type="password"]').first();
       await expect(pwInput).toBeVisible({ timeout: 5000 });
       await pwInput.fill(INVITEE_PASSWORD);
 
-      // fullName est optionnel — on remplit si un input texte existe
       const nameInput = guestPage.locator('input[type="text"]').first();
       if (await nameInput.isVisible().catch(() => false)) {
         await nameInput.fill(INVITEE_FULLNAME);
       }
 
-      // --- Step 8: submit + assert redirect /prospects + cookies ---
+      // --- Step 8: accept + redirect ---
       await guestPage.getByRole("button", { name: /accepter l'invitation/i }).click();
       await guestPage.waitForURL(/\/prospects/, { timeout: 30000 });
 
-      // Vérifier cookies Supabase posés
+      // Cookie session Auth.js v5 (HTTPS prod → __Secure-, HTTP local → sans préfixe)
       const cookies = await guestContext.cookies();
-      const hasSupabaseCookie = cookies.some((c) => c.name.includes("sb-"));
-      expect(hasSupabaseCookie, "Supabase auth cookie should be set").toBe(true);
+      const hasAuthCookie = cookies.some((c) => c.name.includes("authjs.session-token"));
+      expect(hasAuthCookie, "Auth.js session cookie should be set").toBe(true);
 
-      // Heading de la page /prospects visible
       const prospectsHeading = guestPage.getByRole("heading", { name: /prospect/i }).first();
       await expect(prospectsHeading).toBeVisible({ timeout: 10000 });
 
-      // --- Step 9: retour admin, refresh, status passé à "Acceptée" ---
-      createdUserId = await findUserIdByEmail(INVITEE_EMAIL);
-
+      // --- Step 9: retour admin, refresh, status "Acceptée" ---
       await page.reload();
       await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
       const acceptedRow = page.getByRole("row", { name: new RegExp(INVITEE_EMAIL, "i") });
-      // La ligne peut disparaître de la vue "pending" par défaut — on accepte les 2 cas:
-      // soit la ligne existe avec badge "Acceptée", soit elle n'existe plus (filtrée).
       if (await acceptedRow.isVisible().catch(() => false)) {
         await expect(acceptedRow.getByText(/accept/i)).toBeVisible({ timeout: 5000 });
       } else {
         console.log(
-          `ℹ ${INVITEE_EMAIL} n'apparaît plus dans la liste pending (filtré après accept) — OK`,
+          `[invite-flow] ${INVITEE_EMAIL} n'apparaît plus dans la liste pending (filtré après accept) — OK`,
         );
       }
     } finally {
       // --- Step 10: cleanup ---
       await guestContext.close();
-      if (createdUserId) {
-        await deleteSupabaseUser(createdUserId);
-      } else {
-        // Fallback : essayer de trouver par email
-        const uid = await findUserIdByEmail(INVITEE_EMAIL);
-        if (uid) await deleteSupabaseUser(uid);
-      }
-      // Révoquer l'invitation si elle existe encore
+      await deleteUserByEmail(INVITEE_EMAIL);
       if (invitationId) {
         try {
           const cookies = await page.context().cookies();
@@ -245,7 +197,6 @@ test.describe("Invite flow e2e (critical demo path)", () => {
       }
     }
 
-    // Zero console errors sur les 2 contexts
     expect(adminErrors, `admin errors: ${adminErrors.join("\n")}`).toHaveLength(0);
     expect(guestErrors, `guest errors: ${guestErrors.join("\n")}`).toHaveLength(0);
   });
