@@ -429,6 +429,41 @@ model AuditLog {
   @@map("audit_log")
 }
 
+/// Client-side JS errors captured by ClientErrorBoundary (window.onerror +
+/// unhandledrejection). Persisted to make intermittent prod bugs queryable.
+/// Cf. todo/2026-05-23-persist-client-errors-db.md.
+///
+/// Dedupe model : one row per (dedupeKey, occurredHour). `dedupeKey` = sha1
+/// of (message + filename + lineno) truncated to 16 chars. `occurredHour`
+/// = truncated to the hour. The combined unique index lets `/api/errors`
+/// upsert + increment `count` instead of growing one row per occurrence,
+/// keeping the table bounded even in a crash loop.
+///
+/// PII guardrails (enforced by /api/errors route, NOT the schema) :
+///   - message truncated to 1000 chars
+///   - stack truncated to 2000 chars
+///   - userAgent truncated to 200 chars
+model ClientError {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String?  @map("tenant_id") @db.Uuid
+  workspaceId  String?  @map("workspace_id") @db.Uuid
+  userId       String?  @map("user_id") @db.Uuid
+  message      String   @db.Text
+  stack        String?  @db.Text
+  url          String?  @db.Text
+  userAgent    String?  @map("user_agent")
+  dedupeKey    String   @map("dedupe_key")
+  occurredHour DateTime @map("occurred_hour") @db.Timestamptz
+  occurredAt   DateTime @default(now()) @map("occurred_at") @db.Timestamptz
+  lastSeenAt   DateTime @default(now()) @map("last_seen_at") @db.Timestamptz
+  count        Int      @default(1)
+
+  @@unique([dedupeKey, occurredHour], map: "client_errors_dedupe_hour_key")
+  @@index([occurredAt(sort: Desc)])
+  @@index([tenantId, occurredAt(sort: Desc)])
+  @@map("client_errors")
+}
+
 model MagicLink {
   token       String    @id
   email       String
