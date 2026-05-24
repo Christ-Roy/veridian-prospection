@@ -140,4 +140,33 @@ describe("requireAuth — happy path", () => {
     if (!("error" in r2)) expect(r2.user.id).toBe("u-2");
     expect(mockAuth).toHaveBeenCalledTimes(2);
   });
+
+  it("ne leak pas les tokens session (accessToken, sessionToken, etc.) vers les handlers", async () => {
+    // Auth.js peut enrichir la session avec des champs sensibles côté JWT
+    // (provider, access_token, sub interne, ...). Le contrat requireAuth
+    // n'expose QUE id + email — pas de fuite latérale vers les handlers.
+    mockAuth.mockResolvedValueOnce({
+      user: {
+        id: "u-99",
+        email: "leak-test@veridian.site",
+        name: "Should Not Leak",
+        accessToken: "secret-bearer-token",
+        sessionToken: "secret-session-token",
+        provider: "google",
+      } as unknown as { id: string; email: string },
+      expires: "2099-01-01",
+    });
+
+    const result = await requireAuth();
+
+    expect("error" in result).toBe(false);
+    if (!("error" in result)) {
+      expect(result.user).toEqual({ id: "u-99", email: "leak-test@veridian.site" });
+      // Defense-in-depth : aucun champ "token-like" ne doit traverser le wrapper.
+      const userAsRecord = result.user as Record<string, unknown>;
+      expect(userAsRecord.accessToken).toBeUndefined();
+      expect(userAsRecord.sessionToken).toBeUndefined();
+      expect(userAsRecord.provider).toBeUndefined();
+    }
+  });
 });
