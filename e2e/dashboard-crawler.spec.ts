@@ -19,9 +19,15 @@
  *    visiter les pages. Pour tester les flows actifs → spec dédiée.
  *  - Erreurs asynchrones tardives (>5s après mount) — pas de waitForTimeout
  *    long pour garder le crawler rapide.
+ *
+ * Listener console : on passe par `captureConsoleErrorsAfterLogin()` après le
+ * login. Ne PAS attacher `page.on("console", …)` inline avant login — cela
+ * capture les 3 × 401 légitimes du root layout (AppNav, TrialProvider) qui
+ * fetch sans cookie session sur /login (cf e2e/helpers/console.ts).
  */
-import { test, expect, type ConsoleMessage } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import { loginAsE2EUser } from "./helpers/auth";
+import { captureConsoleErrorsAfterLogin } from "./helpers/console";
 
 const DASHBOARD_PAGES = [
   { path: "/prospects", name: "Prospects" },
@@ -51,37 +57,23 @@ const CONSOLE_ERROR_IGNORE = [
   /Hydration failed because the initial UI does not match/i, // TODO: chopper en suivi dédié, le crawler doit rester vert
 ];
 
-function shouldIgnoreConsoleError(msg: string): boolean {
-  return CONSOLE_ERROR_IGNORE.some((pattern) => pattern.test(msg));
-}
-
 test.describe("Dashboard crawler — détection batch erreurs UI", () => {
   for (const page of DASHBOARD_PAGES) {
     test(`${page.name} (${page.path}) — pas d'erreur visible ni console`, async ({
       page: browserPage,
       request,
     }) => {
-      const consoleErrors: string[] = [];
-      const errorListener = (msg: ConsoleMessage) => {
-        if (msg.type() === "error") {
-          const text = msg.text();
-          if (!shouldIgnoreConsoleError(text)) {
-            consoleErrors.push(text);
-          }
-        }
-      };
-
-      // Login canonical user (idempotent). On ne listen PAS encore les console
-      // errors : pendant le passage sur /login, les composants du layout racine
-      // (AppNav, TrialContext) sont déjà montés et lancent leurs useEffect →
-      // fetch /api/me /api/trial /api/settings → 401 légitimes (pas de session
-      // avant submit du form). Ce sont des faux positifs UI, pas un vrai bug.
-      // Cf incident 2026-05-23 (todo/done/2026-05-23-fix-401-api-routes-clientside-auth.md).
+      // Login canonical user (idempotent). On n'attache PAS de listener
+      // console.error avant ce point — cf e2e/helpers/console.ts pour le
+      // pourquoi (3 × 401 légitimes pendant le passage sur /login).
       await loginAsE2EUser(browserPage, request);
 
       // À partir d'ici la session est établie : tout console.error qui survient
       // pendant la navigation cible est un vrai signal.
-      browserPage.on("console", errorListener);
+      const { errors: consoleErrors } = captureConsoleErrorsAfterLogin(
+        browserPage,
+        CONSOLE_ERROR_IGNORE,
+      );
 
       // Navigate to target page. waitUntil "load" = HTML + assets prêts,
       // mais on n'attend PAS "networkidle" : useSession Auth.js refresh
