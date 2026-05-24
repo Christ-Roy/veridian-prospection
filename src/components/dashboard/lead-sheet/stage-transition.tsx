@@ -13,7 +13,24 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { INTEREST_SCALE } from "@/lib/types";
+import { useWorkspacePipelineStages, findStageOrFallback } from "@/hooks/use-pipeline-stages";
 import { toast } from "sonner";
+
+// 8 slugs canoniques avec UI "riche" (deadline, devis, acompte, etc.).
+// Un stage custom (créé via /settings/pipeline) tombe dans le bloc
+// "default" du switch et n'affiche que le champ note libre — comportement
+// minimal mais cohérent : le commercial reste maître de ce qu'il veut tracker.
+const CANONICAL_STAGES = new Set([
+  "fiche_ouverte",
+  "repondeur",
+  "a_rappeler",
+  "site_demo",
+  "acompte",
+  "finition",
+  "client",
+  "upsell",
+  "archive",
+]);
 
 interface StageTransitionProps {
   open: boolean;
@@ -119,7 +136,7 @@ export function StageTransitionModal({ open, targetStage, dirigeant, onConfirm, 
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {stageLabel(targetStage)}
+            <StageLabel stage={targetStage} />
           </DialogTitle>
         </DialogHeader>
 
@@ -318,17 +335,10 @@ export function StageTransitionModal({ open, targetStage, dirigeant, onConfirm, 
   );
 }
 
-function stageLabel(stage: string): string {
-  const labels: Record<string, string> = {
-    fiche_ouverte: "Fiche ouverte",
-    repondeur: "Repondeur",
-    a_rappeler: "A rappeler",
-    site_demo: "Site demo",
-    acompte: "Acompte",
-    finition: "Finition",
-    client: "Client",
-    upsell: "Upsell SaaS",
-    archive: "Archiver",
-  };
-  return labels[stage] || stage;
+function StageLabel({ stage }: { stage: string }) {
+  // Hook côté composant client — résout le label custom via le workspace
+  // courant. Fallback : capitalize du slug si stage inconnu (= legacy default).
+  const { stages } = useWorkspacePipelineStages();
+  const view = findStageOrFallback(stages, stage);
+  return <>{view.label}</>;
 }

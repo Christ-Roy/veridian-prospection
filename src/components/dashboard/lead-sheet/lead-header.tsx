@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { PIPELINE_STAGES } from "@/lib/types";
+import { useWorkspacePipelineStages } from "@/hooks/use-pipeline-stages";
 import type { LeadDetail } from "@/lib/types";
 import { toast } from "sonner";
 import {
@@ -40,6 +40,13 @@ export function LeadHeader({ lead, domain, onUpdated, onDismiss }: LeadHeaderPro
   const [status, setStatus] = useState(lead.pipeline_stage || lead.outreach_status || "a_contacter");
   const [transitionOpen, setTransitionOpen] = useState(false);
   const [pendingStage, setPendingStage] = useState<string | null>(null);
+  // Stages custom du workspace (dropdown ci-dessous). Filtre les masqués
+  // par défaut — on les rend tout de même si le lead courant en porte la
+  // valeur (sinon le sélecteur affiche un value introuvable).
+  const { stages: workspaceStages } = useWorkspacePipelineStages();
+  const dropdownStages = workspaceStages.filter(
+    (s) => !s.isHidden || s.slug === status,
+  );
 
 
   function handleStatusChange(val: string) {
@@ -232,7 +239,7 @@ export function LeadHeader({ lead, domain, onUpdated, onDismiss }: LeadHeaderPro
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {PIPELINE_STAGES.map((s) => (
+            {dropdownStages.map((s) => (
               <SelectItem key={s.id} value={s.id}>
                 <span className={`inline-block w-2 h-2 rounded-full mr-2 ${s.color}`} />
                 {s.label}

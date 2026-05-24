@@ -20,15 +20,17 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
-import { TrendingUp, MessageSquare, Bell, FileText, ExternalLink, ShieldAlert, Smartphone, Copyright, Linkedin, Facebook, Instagram } from "lucide-react";
+import { TrendingUp, MessageSquare, Bell, FileText, ExternalLink, ShieldAlert, Smartphone, Copyright, Linkedin, Facebook, Instagram, History } from "lucide-react";
 import { toast } from "sonner";
 import type { LeadDetail, Followup } from "@/lib/types";
-import { formatEffectifs, formatCA, PIPELINE_STAGES } from "@/lib/types";
+import { formatEffectifs, formatCA } from "@/lib/types";
+import { useWorkspacePipelineStages, findStageOrFallback } from "@/hooks/use-pipeline-stages";
 import { webHref } from "@/lib/utils";
 import { LeadHeader } from "./lead-sheet/lead-header";
 import { AutoSaveNotes } from "./lead-sheet/auto-save-notes";
 import { StageTransitionModal, type StageData } from "./lead-sheet/stage-transition";
 import { AppointmentsSection } from "./lead-sheet/appointments-section";
+import { HistoryTab } from "./lead-sheet/history-tab";
 import {
   EntrepriseSection,
   ContactSection,
@@ -75,6 +77,9 @@ export function LeadSheet({ domain, onClose, onUpdated }: LeadSheetProps) {
   const [loading, setLoading] = useState(false);
   const [followups, setFollowups] = useState<Followup[]>([]);
   const [stageEditOpen, setStageEditOpen] = useState(false);
+  // Stages custom (lookup pour le rendu du badge "État pipeline"). Hook
+  // partagé avec pipeline-board.tsx — cache 60s côté module.
+  const { stages: workspaceStages } = useWorkspacePipelineStages();
 
   useEffect(() => {
     if (!domain) {
@@ -184,7 +189,7 @@ export function LeadSheet({ domain, onClose, onUpdated }: LeadSheetProps) {
 
             {/* ========== ETAT PIPELINE + BOUTON MODIFIER ========== */}
             {lead.pipeline_stage && lead.pipeline_stage !== "a_contacter" && (() => {
-              const stageInfo = PIPELINE_STAGES.find(s => s.id === lead.pipeline_stage) || { label: lead.pipeline_stage, color: "bg-slate-500", bgLight: "bg-slate-50", textColor: "text-slate-700" };
+              const stageInfo = findStageOrFallback(workspaceStages, lead.pipeline_stage);
               const latestNote = lead.outreach_notes?.split("\n---\n")[0]?.trim();
               return (
                 <div className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border ${stageInfo.bgLight}`}>
@@ -619,6 +624,20 @@ export function LeadSheet({ domain, onClose, onUpdated }: LeadSheetProps) {
                         />
                       </div>
                     </div>
+                  </AccordionContent>
+                </AccordionItem>
+              )}
+
+              {/* Historique 360° — fil chronologique agrégé (Phase 1) */}
+              {lead.siren && (
+                <AccordionItem value="history">
+                  <AccordionTrigger className="py-3 text-sm">
+                    <span className="flex items-center gap-2 text-violet-600">
+                      <History className="h-4 w-4" /> Historique
+                    </span>
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    <HistoryTab siren={lead.siren} />
                   </AccordionContent>
                 </AccordionItem>
               )}

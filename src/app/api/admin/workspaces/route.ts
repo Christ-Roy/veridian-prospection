@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin, invalidateAllUserContexts } from "@/lib/auth/user-context";
 import { PrismaClient } from "@prisma/client";
+import { seedDefaultPipelineStages } from "@/lib/outreach/pipeline-stages";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 const prisma = globalForPrisma.prisma ?? new PrismaClient();
@@ -81,6 +82,10 @@ export async function POST(request: NextRequest) {
       createdBy: auth.ctx.userId,
     },
   });
+
+  // Seed les 8 stages canoniques pour que le kanban /pipeline ne s'affiche
+  // pas vide au premier login dans ce workspace. Idempotent (skipDuplicates).
+  await seedDefaultPipelineStages(prisma, workspace.id);
 
   invalidateAllUserContexts();
 

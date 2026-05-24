@@ -16,6 +16,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireHubHmac } from "@/lib/hub/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveOrCreateUserFromHub } from "@/lib/hub/identity";
+import { seedDefaultPipelineStages } from "@/lib/outreach/pipeline-stages";
 import { randomUUID } from "crypto";
 
 type AttachBody = {
@@ -102,6 +103,9 @@ export async function POST(request: NextRequest) {
       },
       select: { id: true },
     });
+    // Seed les 8 stages canoniques pour le nouveau workspace (sinon le
+    // kanban /pipeline naît vide). Idempotent.
+    await seedDefaultPipelineStages(prisma, workspace.id);
   }
 
   // 3) Membership : additif uniquement.

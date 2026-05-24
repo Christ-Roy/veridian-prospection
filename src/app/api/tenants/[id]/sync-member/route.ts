@@ -26,6 +26,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireHubHmac } from "@/lib/hub/auth";
 import { resolveOrCreateUserFromHub } from "@/lib/hub/identity";
+import { seedDefaultPipelineStages } from "@/lib/outreach/pipeline-stages";
 import { resolveTenantByIdOrEmail } from "@/lib/hub/tenant-lookup";
 import { logAudit } from "@/lib/audit";
 import { ROLE_RANK, type WorkspaceRole } from "@/lib/auth/roles";
@@ -94,6 +95,8 @@ export async function POST(
       },
       select: { id: true },
     });
+    // Seed les 8 stages canoniques (sinon /pipeline naît vide).
+    await seedDefaultPipelineStages(prisma, workspace.id);
   }
 
   const existing = await prisma.workspaceMember.findUnique({

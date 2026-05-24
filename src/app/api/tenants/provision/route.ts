@@ -8,6 +8,7 @@ import {
 } from "@/lib/hub/hmac";
 import { generateApiKey, hashApiKey } from "@/lib/hub/apiKey";
 import { resolveOrCreateUserFromHub } from "@/lib/hub/identity";
+import { seedDefaultPipelineStages } from "@/lib/outreach/pipeline-stages";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 const prisma = globalForPrisma.prisma ?? new PrismaClient();
@@ -79,6 +80,8 @@ async function ensureOwnerWorkspace(
         },
         select: { id: true, apiKeyHash: true },
       });
+      // Seed les 8 stages canoniques (sinon /pipeline naît vide).
+      await seedDefaultPipelineStages(prisma, workspace.id);
     }
 
     await prisma.workspaceMember.upsert({

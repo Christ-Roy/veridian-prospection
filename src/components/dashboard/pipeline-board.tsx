@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
-import { formatCA, PIPELINE_STAGES, INTEREST_SCALE } from "@/lib/types";
+import { formatCA, INTEREST_SCALE } from "@/lib/types";
+import { useWorkspacePipelineStages, type PipelineStageView } from "@/hooks/use-pipeline-stages";
 import { StageTransitionModal, type StageData } from "./lead-sheet/stage-transition";
 import { toast } from "sonner";
 import {
@@ -98,6 +99,14 @@ function interestLabel(pct: number): string {
 }
 
 export function PipelineBoard() {
+  // Stages custom du workspace (était PIPELINE_STAGES hardcodé avant 2026-05-23).
+  // Fallback automatique sur les 8 canoniques si l'API est down — défini dans
+  // le hook, pas besoin de gérer ici.
+  const { stages: workspaceStages } = useWorkspacePipelineStages();
+  // Filtre les stages masqués du board principal (toujours présents dans
+  // workspaceStages pour le lookup, mais pas dans le render des colonnes).
+  const visibleStages = workspaceStages.filter((s) => !s.isHidden);
+
   const [pipeline, setPipeline] = useState<Record<string, PipelineLead[]>>({});
   const [loading, setLoading] = useState(true);
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
@@ -321,7 +330,7 @@ export function PipelineBoard() {
 
   // Rendu des cartes d'un stade — partagé par le board horizontal (desktop)
   // et l'accordéon (mobile) pour ne pas dupliquer la logique drag + handlers.
-  function renderStageCards(stage: (typeof PIPELINE_STAGES)[number], leads: PipelineLead[]) {
+  function renderStageCards(stage: PipelineStageView, leads: PipelineLead[]) {
     return leads.map((lead, i) => (
       <PipelineCard
         key={lead.domain}
@@ -408,7 +417,7 @@ export function PipelineBoard() {
           étroite. Sous md, on bascule sur l'accordéon vertical plus bas :
           8 colonnes de 220px sur un téléphone = 8 écrans à balayer, illisible. */}
       <div className="hidden md:flex gap-2 overflow-x-auto flex-1 min-h-0 pb-2 snap-x snap-proximity">
-        {PIPELINE_STAGES.map(stage => {
+        {visibleStages.map(stage => {
           const rawLeads = pipeline[stage.id] || [];
           const leads = sortLeads(rawLeads);
           const isCardDropColumn = dragType === "card" && dropCardTarget?.column === stage.id;
@@ -451,10 +460,10 @@ export function PipelineBoard() {
       <div className="md:hidden flex-1 min-h-0 overflow-y-auto pb-2">
         <Accordion
           type="multiple"
-          defaultValue={PIPELINE_STAGES.filter(s => (pipeline[s.id]?.length || 0) > 0).map(s => s.id)}
+          defaultValue={visibleStages.filter(s => (pipeline[s.id]?.length || 0) > 0).map(s => s.id)}
           className="space-y-2"
         >
-          {PIPELINE_STAGES.map(stage => {
+          {visibleStages.map(stage => {
             const rawLeads = pipeline[stage.id] || [];
             const leads = sortLeads(rawLeads);
             const colValue = leads.reduce((s, l) => s + (l.estimated_value || l.real_value || 0), 0);
@@ -546,7 +555,7 @@ function PipelineCard({
   onDrop,
 }: {
   lead: PipelineLead;
-  stage: (typeof PIPELINE_STAGES)[number];
+  stage: PipelineStageView;
   isDragging: boolean;
   isDropBefore: boolean;
   onClick: () => void;
