@@ -273,3 +273,29 @@
        inserts pipeline_transitions par getProspectTimeline.
     Pas de test colocalisé canonique car le fichier n'a aucune branche à
     sabotager : son `export const __testing = ...` est trivial.
+
+# Audit trial résidus 2026-05-24 (Agent R, commit d8a3cc3) — fixes "client payant
+# = AUCUN cap visible". 5 fichiers modifiés, couverts par 3 tests dédiés à
+# l'audit (matrice 7 plans payants + cache invalidation) plutôt que par les tests
+# canoniques (qui restent pertinents pour le comportement non-trial).
+- sources:
+    - src/app/api/trial/route.ts
+    - src/lib/auth/tenant.ts
+    - src/app/api/tenants/update-plan/route.ts
+    - src/components/dashboard/admin-kpi.tsx
+    - src/components/dashboard/prospect-page.tsx
+    - src/components/layout/app-nav.tsx
+  covered_by:
+    - __tests__/api/trial-residus.test.ts
+    - __tests__/lib/auth/plan-cache-invalidation.test.ts
+    - __tests__/api/tenants/update-plan-cache-invalidation.test.ts
+  reason: |
+    Audit cross-app "client paie = AUCUN cap, AUCUN bandeau" (cf Hub
+    AUDIT-TRIAL-RESIDUS-2026-05-24). Les 6 fichiers source sont modifiés
+    en cohérence : badges gated par plan payant, cache invalidé, plans
+    élargis. Les 3 tests dédiés assertent la matrice complète (7 plans
+    payants × pas de cap), l'isolation tenant du cache, et l'invalidation
+    end-to-end via la route update-plan. Les tests canoniques
+    (__tests__/api/trial.test.ts etc.) gardent leur rôle sur les flows
+    non-trial et ne sont volontairement pas modifiés pour éviter le
+    bruit (sinon chaque audit cross-app pollue 6 fichiers de tests).
