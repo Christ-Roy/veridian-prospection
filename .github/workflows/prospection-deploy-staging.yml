@@ -318,6 +318,7 @@ jobs:
             --include='prisma/migrations/***' \
             --include='e2e/' --include='e2e/dashboard-crawler.spec.ts' \
             --include='e2e/helpers/' --include='e2e/helpers/auth.ts' \
+            --include='e2e/helpers/console.ts' \
             --exclude='*' \
             ./ ubuntu@37.187.199.185:$DEST/
 
