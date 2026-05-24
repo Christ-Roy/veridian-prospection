@@ -1,6 +1,5 @@
 src/components/client-error-boundary.tsx
 src/components/command-palette.tsx
-src/components/dashboard/admin-kpi.tsx
 src/components/dashboard/admin-members.tsx
 src/components/dashboard/domain-sidebar.tsx
 src/components/dashboard/france-map.tsx

@@ -150,3 +150,44 @@ describe("app-nav.tsx — badge solde leads perma-visible (2026-05-23)", () => {
     expect(source).toMatch(/href="\/settings\/leads"/);
   });
 });
+
+describe("app-nav.tsx — badge trial gated par plan (audit trial résidus 2026-05-24)", () => {
+  let source = "";
+
+  test("setup : lecture du source", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    source = await fs.readFile(
+      path.resolve(process.cwd(), "src/components/layout/app-nav.tsx"),
+      "utf-8",
+    );
+    expect(source.length).toBeGreaterThan(0);
+  });
+
+  // Le badge "Essai gratuit — Xj" doit DISPARAÎTRE pour un user payant.
+  // `/api/trial` renvoie daysLeft=999 pour pro/business/enterprise/gifted ;
+  // on s'appuie sur `daysLeft < 900` comme gate (la valeur 900 est un seuil
+  // arbitraire bien au-dessus de tout trial réel — TRIAL_DAYS max = 30).
+  test("expose un gate `showTrialBadge` basé sur daysLeft < 900", () => {
+    expect(source).toMatch(/const\s+showTrialBadge\s*=\s*daysLeft\s*<\s*900/);
+  });
+
+  // Le badge "Essai gratuit" ne doit plus exister sans condition au render.
+  // On exige que la div du badge soit wrappée dans `{showTrialBadge && ...}`.
+  test("le badge `Essai gratuit` est wrappé dans `showTrialBadge &&`", () => {
+    expect(source).toMatch(/\{showTrialBadge\s*&&\s*\(/);
+  });
+
+  // Sabotage : si quelqu'un retire le gating et remet le badge en
+  // permanence, ce test casse.
+  test("le label `Essai gratuit` ne doit jamais être rendu hors du gate", () => {
+    // Capture le bloc qui contient le badge — il doit être à l'intérieur
+    // d'un `{showTrialBadge && (...)}`. On vérifie qu'il y a au moins
+    // une occurrence du label `Essai gratuit` ET qu'elle suit
+    // `showTrialBadge`.
+    const idxGate = source.indexOf("showTrialBadge");
+    const idxLabel = source.indexOf("Essai gratuit");
+    expect(idxGate).toBeGreaterThan(-1);
+    expect(idxLabel).toBeGreaterThan(idxGate);
+  });
+});

@@ -154,3 +154,90 @@ describe("GET /api/trial — Prisma-only après refactor 2026-05-20", () => {
     expect(source).not.toMatch(/SUPABASE_SERVICE_ROLE_KEY/);
   });
 });
+
+/**
+ * Audit trial résidus 2026-05-24 — promesse Robert "client paie = AUCUN
+ * cap, AUCUN bandeau visible". Avant le fix, seuls `pro` et `enterprise`
+ * étaient reconnus comme paid → `business`, `starter`, `lifetime_*`,
+ * `internal` voyaient `daysLeft` calculé depuis `createdAt`, ce qui
+ * pouvait tomber à 0 et déclencher le `Paywall` overlay pour un user
+ * qui paie.
+ */
+describe("GET /api/trial — audit résidus 2026-05-24", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.TRIAL_DAYS = "7";
+    requireAuthMock.mockResolvedValue({
+      user: { id: "u-paid", email: "paid@v.site" },
+    });
+    // createdAt ancien : sans le fix, daysLeft=0 et isExpired=true.
+    prismaMock.user.findUnique.mockResolvedValue({
+      createdAt: new Date("2020-01-01"),
+    });
+    prismaMock.workspaceMember.findFirst.mockResolvedValue(null);
+  });
+
+  // Matrice : tout plan non-freemium = daysLeft=999, isExpired=false.
+  const paidPlans = [
+    "pro",
+    "business",
+    "enterprise",
+    "starter",
+    "lifetime_site_vitrine",
+    "lifetime_partner",
+    "internal",
+  ];
+
+  for (const plan of paidPlans) {
+    test(`plan=${plan} → daysLeft=999 + isExpired=false (jamais de paywall)`, async () => {
+      prismaMock.tenant.findFirst.mockResolvedValueOnce({ plan });
+      const res = await GET();
+      const body = (await readJson(res)) as {
+        plan: string;
+        daysLeft: number;
+        isExpired?: boolean;
+      };
+      expect(body.plan).toBe(plan);
+      expect(body.daysLeft).toBe(999);
+      expect(body.isExpired).toBe(false);
+    });
+  }
+
+  test("plan=freemium expiré → isExpired=true exposé côté serveur", async () => {
+    prismaMock.tenant.findFirst.mockResolvedValueOnce({ plan: "freemium" });
+    const res = await GET();
+    const body = (await readJson(res)) as {
+      plan: string;
+      daysLeft: number;
+      isExpired?: boolean;
+    };
+    expect(body.plan).toBe("freemium");
+    expect(body.daysLeft).toBe(0);
+    expect(body.isExpired).toBe(true);
+  });
+
+  test("freemium nouveau (createdAt récent) → isExpired=false", async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ createdAt: new Date() });
+    prismaMock.tenant.findFirst.mockResolvedValueOnce({ plan: "freemium" });
+    const res = await GET();
+    const body = (await readJson(res)) as {
+      plan: string;
+      daysLeft: number;
+      isExpired?: boolean;
+    };
+    expect(body.plan).toBe("freemium");
+    expect(body.daysLeft).toBeGreaterThan(0);
+    expect(body.isExpired).toBe(false);
+  });
+
+  test("exception Prisma → fail-safe isExpired=false (jamais de paywall par panne)", async () => {
+    prismaMock.user.findUnique.mockRejectedValueOnce(new Error("db down"));
+    const res = await GET();
+    const body = (await readJson(res)) as {
+      plan: string;
+      isExpired?: boolean;
+    };
+    expect(body.plan).toBe("error");
+    expect(body.isExpired).toBe(false);
+  });
+});

@@ -142,3 +142,36 @@ describe("prospect-page.tsx — wiring onboarding Workspace (switch-mode-agence)
     expect(source).toContain("onboarding_done");
   });
 });
+
+describe("prospect-page.tsx — badge 'X / 300' gated par trial actif (audit trial résidus 2026-05-24)", () => {
+  let source = "";
+
+  test("setup : lecture du source", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    source = await fs.readFile(
+      path.resolve(process.cwd(), "src/components/dashboard/prospect-page.tsx"),
+      "utf-8",
+    );
+    expect(source.length).toBeGreaterThan(0);
+  });
+
+  // Avant le fix : `{data && data.total <= 300 && ( <span>X / 300</span> )}`
+  // s'affichait pour TOUS les users (un user pro avec filtres serrés voyait
+  // "Quota freemium"). Après le fix : ajout des gates trialState.
+  test("badge X/300 conditionné sur !trialState.isExpired ET daysLeft < 900", () => {
+    expect(source).toMatch(/trialState\.daysLeft\s*<\s*900/);
+    expect(source).toMatch(/!trialState\.isExpired/);
+  });
+
+  test("badge X/300 attend aussi !trialState.loading (évite flash au mount)", () => {
+    expect(source).toMatch(/!trialState\.loading/);
+  });
+
+  // Sabotage : enlever les gates rétablit l'ancien bug.
+  test("le bloc `data.total <= 300` est gated par `trialState`", () => {
+    const match = source.match(/data && data\.total <= 300[\s\S]{0,200}/);
+    expect(match).not.toBeNull();
+    expect(match![0]).toMatch(/trialState/);
+  });
+});

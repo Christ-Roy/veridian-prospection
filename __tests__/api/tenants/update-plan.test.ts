@@ -467,4 +467,69 @@ describe("POST /api/tenants/update-plan — CONTRAT-BILLING v2", () => {
     )) as { previous_plan: string | null };
     expect(body.previous_plan).toBeNull();
   });
+
+  // ── Invalidation cache plan (audit trial résidus 2026-05-24) ───────────
+  // Sans ce fix, un user qui upgrade reste capé pendant 5 min (TTL
+  // planCache in-memory dans src/lib/auth/tenant.ts). Le call à
+  // `invalidatePlanCacheForTenant` doit s'enchaîner après le
+  // `prisma.tenant.update` réussi pour que les requêtes /api/prospects
+  // suivantes du même user voient immédiatement la nouvelle limite.
+  describe("invalidation planCache (audit trial résidus 2026-05-24)", () => {
+    test("update-plan réussi purge le cache plan du tenant", async () => {
+      const { __planCacheInternals } = await import("@/lib/auth/tenant");
+      __planCacheInternals.clear();
+      // Poison le cache pour 2 users du tenant cible + 1 user d'un autre.
+      const future = Date.now() + 5 * 60_000;
+      __planCacheInternals.set("u-poisoned-1", {
+        limit: 300,
+        tenantId: "t-cache-1",
+        expiresAt: future,
+      });
+      __planCacheInternals.set("u-poisoned-2", {
+        limit: 300,
+        tenantId: "t-cache-1",
+        expiresAt: future,
+      });
+      __planCacheInternals.set("u-other-tenant", {
+        limit: 300,
+        tenantId: "t-cache-other",
+        expiresAt: future,
+      });
+
+      mocks.tenantFindUnique.mockResolvedValueOnce({
+        id: "t-cache-1",
+        plan: "freemium",
+        planSource: "stripe",
+      });
+      mocks.tenantUpdate.mockResolvedValueOnce({});
+
+      const res = await call(v2Body({ tenant_id: "t-cache-1", plan: "pro" }));
+      expect(res.status).toBe(200);
+
+      // Les 2 entrées du tenant cible ont disparu.
+      expect(__planCacheInternals.get("u-poisoned-1")).toBeUndefined();
+      expect(__planCacheInternals.get("u-poisoned-2")).toBeUndefined();
+      // Le tenant non-concerné n'est PAS touché.
+      expect(__planCacheInternals.get("u-other-tenant")).toBeDefined();
+    });
+
+    test("update-plan sans entrée cache existante = no-op (200 OK)", async () => {
+      const { __planCacheInternals } = await import("@/lib/auth/tenant");
+      __planCacheInternals.clear();
+
+      mocks.tenantFindUnique.mockResolvedValueOnce({
+        id: "t-cache-empty",
+        plan: "freemium",
+        planSource: "stripe",
+      });
+      mocks.tenantUpdate.mockResolvedValueOnce({});
+
+      const res = await call(
+        v2Body({ tenant_id: "t-cache-empty", plan: "pro" }),
+      );
+      expect(res.status).toBe(200);
+      const body = (await readJson(res)) as { plan: string };
+      expect(body.plan).toBe("pro");
+    });
+  });
 });
