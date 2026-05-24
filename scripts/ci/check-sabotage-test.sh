@@ -261,21 +261,39 @@ for t in $CHANGED_TESTS; do
   fi
   rm -f "$TEST_LOG"
 
-  # ── Skip tests source-level (anti-faux-positif 2026-05-23) ──
+  # ── Skip tests source-level (anti-faux-positif 2026-05-23, durci 2026-05-24) ──
   # Un test "source-level" lit le fichier source en texte et asserte sur
-  # son contenu (ex: `expect(source).toMatch(/...regex.../)`. C'est un
-  # pattern valide et reproductible (cf pipeline-board.test.tsx,
-  # sans-site-sidebar.test.tsx, app-nav.test.tsx, etc. — convention repo).
+  # son contenu (ex: `expect(source).toMatch(/...regex.../)` ou
+  # `source.match(/.../)`). C'est un pattern valide et reproductible
+  # (cf settings-reference.test.tsx, sans-site-sidebar.test.tsx,
+  # app-nav.test.tsx, prospects-tech-debt-sort.test.ts — convention repo).
   #
   # Le sabotage runtime (sed sur le source pour casser une valeur de
   # retour) NE CHANGE PAS le contenu textuel des regex que le test
   # cherche → le test reste vert même après sabotage. C'est un faux
   # positif inhérent au pattern source-level, pas un défaut du test.
   #
-  # Détection : le test fait `fs.readFile` + `expect(source).toMatch` →
-  # source-level. Skip avec warning explicite.
-  if grep -q "fs.readFile" "$t" && grep -qE "expect\([a-zA-Z]+\)\.toMatch" "$t"; then
-    echo "${YELLOW}  ⚠ $t est un test source-level (fs.readFile + toMatch) — skip sabotage runtime${NC}"
+  # Détection (l'un des deux suffit) :
+  #   - lecture FS  : `fs.readFile`, `fs.readFileSync`, ou `readFileSync` /
+  #                   `readFile` importés via `from "fs"` ou `from "node:fs"`
+  #   - assertion source : `expect(<id>).toMatch(...)`,
+  #                        `<id>.match(...)`, `<id>.toContain(...)` ou
+  #                        `<id>.includes(...)` sur le texte source lu
+  #
+  # Cf ticket todo/done/2026-05-24-husky-faux-positif-sabotage-source-level-tests.md
+  # (Agent I 2026-05-23 — 1/11 tests faux-positif sur sabotage muté).
+  reads_source=0
+  if grep -qE 'fs\.readFile|readFileSync\(|readFile\(' "$t" \
+     || grep -qE 'from "(node:)?fs"' "$t"; then
+    reads_source=1
+  fi
+  asserts_on_source=0
+  if grep -qE 'expect\([a-zA-Z_][a-zA-Z0-9_]*\)\.toMatch' "$t" \
+     || grep -qE '\b(source|src|sourceCode|code|content|text)\.(match|toContain|includes)\(' "$t"; then
+    asserts_on_source=1
+  fi
+  if [ "$reads_source" = "1" ] && [ "$asserts_on_source" = "1" ]; then
+    echo "${YELLOW}  ⚠ $t est un test source-level (lecture fs + assertion textuelle) — skip sabotage runtime${NC}"
     SKIPPED=$((SKIPPED + 1))
     continue
   fi
