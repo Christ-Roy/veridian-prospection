@@ -19,7 +19,7 @@ import { prisma } from "@/lib/prisma";
 import { requireHubHmac } from "@/lib/hub/auth";
 import { resolveTenantByIdOrEmail } from "@/lib/hub/tenant-lookup";
 import { logAudit } from "@/lib/audit";
-import { emitHubWebhookAsync } from "@/lib/hub/webhooks";
+import { enqueueEvent } from "@/lib/hub-webhook/outbox";
 
 const RemoveMemberSchema = z
   .object({
@@ -106,13 +106,30 @@ export async function POST(
     });
   }
 
-  const result = await prisma.workspaceMember.updateMany({
-    where: {
-      userId: user.id,
-      workspaceId: { in: wsIds },
-      deletedAt: null,
-    },
-    data: { deletedAt: new Date() },
+  // Atomicité mutation + outbox : la soft-delete des memberships et l'enqueue
+  // sont dans la même transaction. Si l'enqueue échoue, les memberships
+  // ne sont pas soft-deletées → pas de désync Hub ↔ Prospection.
+  const result = await prisma.$transaction(async (tx) => {
+    const updated = await tx.workspaceMember.updateMany({
+      where: {
+        userId: user!.id,
+        workspaceId: { in: wsIds },
+        deletedAt: null,
+      },
+      data: { deletedAt: new Date() },
+    });
+
+    // §7.1 v1.4 — émettre tenant.member_removed si au moins une membership a
+    // bien été soft-deletée (sinon noop : already-removed = pas d'event).
+    if (updated.count > 0) {
+      await enqueueEvent(tx, "tenant.member_removed", tenantId, {
+        user_id: user!.id,
+        email: user!.email,
+        affected_workspaces: updated.count,
+      });
+    }
+
+    return updated;
   });
 
   await logAudit({
@@ -131,16 +148,6 @@ export async function POST(
   console.log(
     `[remove-member] tenant=${tenantId} user=${user.id} affected=${result.count}`,
   );
-
-  // §7.1 v1.4 — émettre tenant.member_removed si au moins une membership a
-  // bien été soft-deletée (sinon noop : already-removed = pas d'event).
-  if (result.count > 0) {
-    emitHubWebhookAsync("tenant.member_removed", tenantId, {
-      user_id: user.id,
-      email: user.email,
-      affected_workspaces: result.count,
-    });
-  }
 
   return NextResponse.json({
     tenant_id: tenantId,

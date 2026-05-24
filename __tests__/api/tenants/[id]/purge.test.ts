@@ -53,8 +53,8 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
-vi.mock("@/lib/hub/webhooks", () => ({
-  emitHubWebhookAsync: mocks.emitWebhook,
+vi.mock("@/lib/hub-webhook/outbox", () => ({
+  enqueueEvent: mocks.emitWebhook,
 }));
 
 import { POST } from "@/app/api/tenants/[id]/purge/route";
@@ -348,7 +348,8 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
     // §7.1 v1.4 — event spécifique tenant.purged (≠ tenant.deleted générique).
     // Le Hub matérialise prospection_purged_at + prospection_purged_rows.
     expect(mocks.emitWebhook).toHaveBeenCalledOnce();
-    const [event, id, data] = mocks.emitWebhook.mock.calls[0];
+    // Pattern outbox v1 : enqueueEvent(tx, event, tenantId, data).
+    const [, event, id, data] = mocks.emitWebhook.mock.calls[0];
     expect(event).toBe("tenant.purged");
     expect(id).toBe(TENANT_ID);
     expect(data.rows_deleted).toEqual(body.rows_deleted);

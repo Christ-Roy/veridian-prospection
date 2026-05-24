@@ -35,8 +35,8 @@ const mocks = vi.hoisted(() => ({
   auditLog: vi.fn(),
 }));
 
-vi.mock("@/lib/prisma", () => ({
-  prisma: {
+vi.mock("@/lib/prisma", () => {
+  const txClient = {
     tenant: {
       findUnique: mocks.tenantFindUnique,
       findFirst: mocks.tenantFindFirst,
@@ -51,8 +51,20 @@ vi.mock("@/lib/prisma", () => ({
       create: mocks.memberCreate,
       update: mocks.memberUpdate,
     },
-  },
-}));
+  };
+  return {
+    prisma: {
+      ...txClient,
+      // Pattern outbox transactionnel : la branche de mutation member
+      // (create/update/restore) + l'enqueue sont dans prisma.$transaction.
+      // Mock = exécute la callback avec un tx qui pointe vers les mêmes
+      // mocks, pour que les assertions memberCreate/memberUpdate marchent.
+      $transaction: vi.fn(async (cb: (tx: typeof txClient) => unknown) => {
+        return cb(txClient);
+      }),
+    },
+  };
+});
 
 const { resolveOrCreateUserFromHubMock } = vi.hoisted(() => ({
   resolveOrCreateUserFromHubMock: vi.fn(),
@@ -68,8 +80,8 @@ vi.mock("@/lib/audit", () => ({
 const { emitWebhookMock } = vi.hoisted(() => ({
   emitWebhookMock: vi.fn(),
 }));
-vi.mock("@/lib/hub/webhooks", () => ({
-  emitHubWebhookAsync: emitWebhookMock,
+vi.mock("@/lib/hub-webhook/outbox", () => ({
+  enqueueEvent: emitWebhookMock,
 }));
 
 // seedDefaultPipelineStages est best-effort post-création workspace
@@ -235,7 +247,8 @@ describe("POST /api/tenants/[id]/sync-member", () => {
 
     // §7.1 v1.4 — sur création, tenant.member_added doit être émis.
     expect(emitWebhookMock).toHaveBeenCalledOnce();
-    const [event, id, data] = emitWebhookMock.mock.calls[0];
+    // Pattern outbox v1 : enqueueEvent(tx, event, tenantId, data).
+    const [, event, id, data] = emitWebhookMock.mock.calls[0];
     expect(event).toBe("tenant.member_added");
     expect(id).toBe(TENANT_ID);
     expect(data.workspace_id).toBe(WS_ID);

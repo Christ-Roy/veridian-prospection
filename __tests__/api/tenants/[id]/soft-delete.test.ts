@@ -30,23 +30,36 @@ const { tenantFindUnique, tenantFindFirst, tenantUpdate, userFindUnique } =
     userFindUnique: vi.fn(),
   }));
 
+// Pattern outbox transactionnel (ticket webhook-outbox 2026-05-23). On mocke
+// enqueueEvent à la place de l'ancien emitHubWebhookAsync. Le code routes
+// passe par prisma.$transaction(tx => tx.tenant.update + enqueueEvent(tx)).
+// On mocke $transaction pour appeler la callback avec un tx qui pointe vers
+// les mêmes mocks tenant — l'enqueue est interceptée par le mock module.
 const { emitWebhookMock } = vi.hoisted(() => ({
   emitWebhookMock: vi.fn(),
 }));
 
-vi.mock("@/lib/prisma", () => ({
-  prisma: {
+vi.mock("@/lib/prisma", () => {
+  const txClient = {
     tenant: {
       findUnique: tenantFindUnique,
       findFirst: tenantFindFirst,
       update: tenantUpdate,
     },
     user: { findUnique: userFindUnique },
-  },
-}));
+  };
+  return {
+    prisma: {
+      ...txClient,
+      $transaction: vi.fn(async (cb: (tx: typeof txClient) => unknown) => {
+        return cb(txClient);
+      }),
+    },
+  };
+});
 
-vi.mock("@/lib/hub/webhooks", () => ({
-  emitHubWebhookAsync: emitWebhookMock,
+vi.mock("@/lib/hub-webhook/outbox", () => ({
+  enqueueEvent: emitWebhookMock,
 }));
 
 import { POST } from "@/app/api/tenants/[id]/soft-delete/route";
@@ -236,7 +249,8 @@ describe("POST /api/tenants/{id}/soft-delete", () => {
     expect(updateCall.data.metadata.softDeleteReason).toBe("stripe_canceled");
 
     expect(emitWebhookMock).toHaveBeenCalledOnce();
-    const [event, id, data] = emitWebhookMock.mock.calls[0];
+    // Pattern outbox v1 : enqueueEvent(tx, event, tenantId, data).
+    const [, event, id, data] = emitWebhookMock.mock.calls[0];
     // §7.1 v1.4 — event spécifique soft-delete (≠ tenant.deleted générique).
     // Le Hub matérialise prospection_soft_deleted_at sur ce signal.
     expect(event).toBe("tenant.soft_deleted");
@@ -288,7 +302,8 @@ describe("POST /api/tenants/{id}/soft-delete", () => {
     expect(tenantUpdate.mock.calls[0][0].data.metadata.softDeleteReason).toBe(
       "admin_action",
     );
-    expect(emitWebhookMock.mock.calls[0][2].reason).toBe("admin_action");
+    // enqueueEvent(tx, event, tenantId, data) → data en index 3.
+    expect(emitWebhookMock.mock.calls[0][3].reason).toBe("admin_action");
   });
 
   // ───────── Idempotence ─────────

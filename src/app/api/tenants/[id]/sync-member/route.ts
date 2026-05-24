@@ -30,7 +30,7 @@ import { seedDefaultPipelineStages } from "@/lib/outreach/pipeline-stages";
 import { resolveTenantByIdOrEmail } from "@/lib/hub/tenant-lookup";
 import { logAudit } from "@/lib/audit";
 import { ROLE_RANK, type WorkspaceRole } from "@/lib/auth/roles";
-import { emitHubWebhookAsync } from "@/lib/hub/webhooks";
+import { enqueueEvent } from "@/lib/hub-webhook/outbox";
 
 const SyncMemberSchema = z.object({
   user_email: z.string().email().max(254),
@@ -109,51 +109,72 @@ export async function POST(
   let appRole: WorkspaceRole = body.role;
   let roleAction: "created" | "upgraded" | "restored" | "noop" = "created";
 
-  if (existing && !existing.deletedAt) {
-    const currentRank = ROLE_RANK[existing.role as WorkspaceRole] ?? 0;
-    const targetRank = ROLE_RANK[body.role] ?? 0;
-    if (targetRank > currentRank) {
-      await prisma.workspaceMember.update({
+  // Atomicité mutation + outbox : on wrap la branche de mutation dans une
+  // transaction Prisma. L'enqueue n'est exécuté que pour les actions qui
+  // émettent un event v1.4 (created/restored). upgraded/noop n'émettent
+  // rien (le change rôle est déjà tracé via `tenant.member_role_changed`
+  // côté admin endpoint).
+  await prisma.$transaction(async (tx) => {
+    if (existing && !existing.deletedAt) {
+      const currentRank = ROLE_RANK[existing.role as WorkspaceRole] ?? 0;
+      const targetRank = ROLE_RANK[body.role] ?? 0;
+      if (targetRank > currentRank) {
+        await tx.workspaceMember.update({
+          where: {
+            workspaceId_userId: {
+              workspaceId: workspace.id,
+              userId: localUserId,
+            },
+          },
+          data: { role: body.role },
+        });
+        appRole = body.role;
+        roleAction = "upgraded";
+      } else {
+        // Idempotent — jamais de downgrade.
+        appRole = (existing.role as WorkspaceRole) || body.role;
+        roleAction = "noop";
+      }
+    } else if (existing && existing.deletedAt) {
+      // Re-sync après soft-delete : relève deletedAt et applique le role demandé.
+      await tx.workspaceMember.update({
         where: {
           workspaceId_userId: {
             workspaceId: workspace.id,
             userId: localUserId,
           },
         },
-        data: { role: body.role },
+        data: { role: body.role, deletedAt: null, joinedAt: new Date() },
       });
       appRole = body.role;
-      roleAction = "upgraded";
+      roleAction = "restored";
     } else {
-      // Idempotent — jamais de downgrade.
-      appRole = (existing.role as WorkspaceRole) || body.role;
-      roleAction = "noop";
-    }
-  } else if (existing && existing.deletedAt) {
-    // Re-sync après soft-delete : relève deletedAt et applique le role demandé.
-    await prisma.workspaceMember.update({
-      where: {
-        workspaceId_userId: {
+      await tx.workspaceMember.create({
+        data: {
           workspaceId: workspace.id,
           userId: localUserId,
+          role: body.role,
+          visibilityScope: "own",
         },
-      },
-      data: { role: body.role, deletedAt: null, joinedAt: new Date() },
-    });
-    appRole = body.role;
-    roleAction = "restored";
-  } else {
-    await prisma.workspaceMember.create({
-      data: {
-        workspaceId: workspace.id,
-        userId: localUserId,
-        role: body.role,
-        visibilityScope: "own",
-      },
-    });
-    appRole = body.role;
-    roleAction = "created";
-  }
+      });
+      appRole = body.role;
+      roleAction = "created";
+    }
+
+    // §7.1 v1.4 — enqueue dans la MÊME transaction que la mutation. Atomicité
+    // garantie : si l'INSERT outbox échoue (UNIQUE violation idempotency_key
+    // p.ex.), la mutation member rollback aussi → pas de désync Hub ↔ Prosp.
+    if (roleAction === "created" || roleAction === "restored") {
+      await enqueueEvent(tx, "tenant.member_added", tenantId, {
+        workspace_id: workspace.id,
+        user_id: localUserId,
+        hub_user_id: body.hub_user_id,
+        email: body.user_email,
+        role: appRole,
+        action: roleAction,
+      });
+    }
+  });
 
   await logAudit({
     tenantId,
@@ -174,20 +195,6 @@ export async function POST(
     `[sync-member] tenant=${tenantId} workspace=${workspace.id} ` +
       `user=${localUserId} role=${appRole} action=${roleAction}`,
   );
-
-  // §7.1 v1.4 — émettre tenant.member_added lors d'une vraie addition (création
-  // ou restauration). Skip sur upgrade/noop : la mutation rôle est déjà
-  // tracée par `tenant.member_role_changed` côté admin endpoint.
-  if (roleAction === "created" || roleAction === "restored") {
-    emitHubWebhookAsync("tenant.member_added", tenantId, {
-      workspace_id: workspace.id,
-      user_id: localUserId,
-      hub_user_id: body.hub_user_id,
-      email: body.user_email,
-      role: appRole,
-      action: roleAction,
-    });
-  }
 
   return NextResponse.json({
     tenant_id: tenantId,

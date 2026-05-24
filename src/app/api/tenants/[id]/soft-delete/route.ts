@@ -15,7 +15,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { requireHubHmac } from "@/lib/hub/auth";
-import { emitHubWebhookAsync } from "@/lib/hub/webhooks";
+import { enqueueEvent } from "@/lib/hub-webhook/outbox";
 import { prisma } from "@/lib/prisma";
 import { resolveTenantByIdOrEmail } from "@/lib/hub/tenant-lookup";
 
@@ -114,31 +114,35 @@ export async function POST(
   const meta = (tenant.metadata as Record<string, unknown> | null) ?? {};
   const now = new Date();
 
-  await prisma.tenant.update({
-    where: { id: tenantId },
-    data: {
-      deletedAt: now,
-      purgeEligibleAt: purgeEligibleDate,
-      // status reste tel quel (active/suspended) — la machine d'état lit deletedAt
-      // pour déterminer "soft_deleted" dans /health (§5.5).
-      metadata: {
-        ...meta,
-        softDeleteReason: reason,
+  // Atomicité mutation + outbox : si l'enqueue échoue, la mutation rollback.
+  // Cf src/lib/hub-webhook/outbox.ts — pattern transactional outbox.
+  await prisma.$transaction(async (tx) => {
+    await tx.tenant.update({
+      where: { id: tenantId },
+      data: {
+        deletedAt: now,
+        purgeEligibleAt: purgeEligibleDate,
+        // status reste tel quel (active/suspended) — la machine d'état lit
+        // deletedAt pour déterminer "soft_deleted" dans /health (§5.5).
+        metadata: {
+          ...meta,
+          softDeleteReason: reason,
+        },
       },
-    },
+    });
+
+    // §7.1 v1.4 — event spécifique au soft-delete (≠ purge). Le Hub
+    // matérialise `prospection_status='deleted'` + `prospection_soft_deleted_at`.
+    await enqueueEvent(tx, "tenant.soft_deleted", tenantId, {
+      soft_deleted_at: now.toISOString(),
+      purge_eligible_at: purgeEligibleDate.toISOString(),
+      reason,
+    });
   });
 
   console.log(
     `[soft-delete] tenant=${tenantId} reason=${reason} purge_eligible_at=${purgeEligibleDate.toISOString()}`,
   );
-
-  // §7.1 v1.4 — event spécifique au soft-delete (≠ purge). Le Hub
-  // matérialise `prospection_status='deleted'` + `prospection_soft_deleted_at`.
-  emitHubWebhookAsync("tenant.soft_deleted", tenantId, {
-    soft_deleted_at: now.toISOString(),
-    purge_eligible_at: purgeEligibleDate.toISOString(),
-    reason,
-  });
 
   return NextResponse.json({
     tenant_id: tenantId,

@@ -28,8 +28,8 @@ const mocks = vi.hoisted(() => ({
   auditLog: vi.fn(),
 }));
 
-vi.mock("@/lib/prisma", () => ({
-  prisma: {
+vi.mock("@/lib/prisma", () => {
+  const txClient = {
     tenant: {
       findUnique: mocks.tenantFindUnique,
       findFirst: mocks.tenantFindFirst,
@@ -37,8 +37,20 @@ vi.mock("@/lib/prisma", () => ({
     user: { findUnique: mocks.userFindUnique },
     workspace: { findMany: mocks.workspaceFindMany },
     workspaceMember: { updateMany: mocks.memberUpdateMany },
-  },
-}));
+  };
+  return {
+    prisma: {
+      ...txClient,
+      // Pattern outbox transactionnel : la route enveloppe la mutation
+      // memberUpdateMany + l'enqueue dans prisma.$transaction(async tx => ...).
+      // On exécute le callback avec le même tx (=prisma mocks) et on
+      // retourne ce que la callback retourne (typiquement `updated`).
+      $transaction: vi.fn(async (cb: (tx: typeof txClient) => unknown) => {
+        return cb(txClient);
+      }),
+    },
+  };
+});
 
 vi.mock("@/lib/audit", () => ({
   logAudit: mocks.auditLog,
@@ -47,8 +59,8 @@ vi.mock("@/lib/audit", () => ({
 const { emitWebhookMock } = vi.hoisted(() => ({
   emitWebhookMock: vi.fn(),
 }));
-vi.mock("@/lib/hub/webhooks", () => ({
-  emitHubWebhookAsync: emitWebhookMock,
+vi.mock("@/lib/hub-webhook/outbox", () => ({
+  enqueueEvent: emitWebhookMock,
 }));
 
 import { POST } from "@/app/api/tenants/[id]/remove-member/route";
@@ -177,7 +189,8 @@ describe("POST /api/tenants/[id]/remove-member", () => {
     // §7.1 v1.4 — tenant.member_removed émis seulement si au moins une
     // membership a bien été retirée (skip si already-removed).
     expect(emitWebhookMock).toHaveBeenCalledOnce();
-    const [event, id, data] = emitWebhookMock.mock.calls[0];
+    // Pattern outbox v1 : enqueueEvent(tx, event, tenantId, data).
+    const [, event, id, data] = emitWebhookMock.mock.calls[0];
     expect(event).toBe("tenant.member_removed");
     expect(id).toBe(TENANT_ID);
     expect(data.user_id).toBe(LOCAL_USER_ID);

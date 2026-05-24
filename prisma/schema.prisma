@@ -970,3 +970,45 @@ model LeadEmail {
   @@index([tenantId, sentStatus])
   @@map("lead_emails")
 }
+
+/// Pattern transactional outbox — webhooks Prospection → Hub durables.
+///
+/// Cf ticket 2026-05-23-emit-webhook-events-niveau2-sync-followup-outbox.md
+/// et migration 0023. Au lieu d'émettre fire-and-forget depuis chaque route
+/// mutante (risque de perte si crash entre commit DB et fetch sortant), on
+/// INSERT une row dans `webhook_outbox` dans la MÊME transaction Prisma. Un
+/// worker cron (POST /api/cron/process-outbox) consomme ensuite les rows
+/// avec retry exponentiel.
+///
+/// `status` (text + CHECK côté SQL, string ici pour rester additif) :
+///   - `pending`       — enqueued, jamais essayé
+///   - `sending`       — locké par un worker via SELECT FOR UPDATE
+///   - `sent`          — Hub a répondu 200 (dédup côté Hub via idempotency_key)
+///   - `failed_retry`  — fetch a échoué, en attente du prochain retry
+///   - `dead`          — > MAX_ATTEMPTS échecs consécutifs, sortie de la file
+///
+/// `nextRetryAt` : backoff exponentiel (1s, 2s, 4s, 8s, …, cap 1h).
+/// `idempotencyKey` : UUID injecté dans le payload Hub (header §7.1 v1.4),
+/// UNIQUE côté outbox pour rejeter à l'INSERT un replay.
+///
+/// Pas de FK vers `tenants` exprès : un event peut survivre au purge du
+/// tenant (cas legit : `tenant.purged` lui-même), et inversement le worker
+/// doit pouvoir nettoyer des events orphelins sans cascade.
+model WebhookOutbox {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventType      String    @map("event_type") @db.VarChar(64)
+  tenantId       String    @map("tenant_id") @db.Uuid
+  payload        Json
+  idempotencyKey String    @unique @map("idempotency_key") @db.Uuid
+  status         String    @default("pending") @db.VarChar(16)
+  attempts       Int       @default(0)
+  nextRetryAt    DateTime  @default(now()) @map("next_retry_at") @db.Timestamptz
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  sentAt         DateTime? @map("sent_at") @db.Timestamptz
+  lastError      String?   @map("last_error")
+
+  @@index([status, nextRetryAt])
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([status])
+  @@map("webhook_outbox")
+}
