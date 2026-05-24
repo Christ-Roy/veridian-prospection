@@ -61,6 +61,9 @@ describe("@/lib/queries — surface du barrel", () => {
     // refill leads (ticket refill 1/3)
     "consumeLead",
     "getLeadBalance",
+    // workspace preferences (ticket switch-mode-agence)
+    "getWorkspacePreferences",
+    "updateWorkspacePreferences",
   ] as const;
 
   test.each(EXPECTED_FUNCTIONS)("exporte la fonction %s", (name) => {

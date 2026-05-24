@@ -34,4 +34,40 @@ describe("settings-display.tsx — collapse grid mobile 2026-05-23", () => {
   test("au moins une déclaration grid-cols-1 sm:grid-cols-2 (le fix)", () => {
     expect(source).toMatch(/grid-cols-1\s+sm:grid-cols-2/);
   });
+
+  // ─── DisplayModeToggle (ticket switch-mode-agence 2026-05-22) ──────────
+  // Switch de mode d'affichage agence/générique persisté via
+  // PATCH /api/me/workspace-preferences. Le composant DOIT :
+  //   - fetch GET au mount pour récupérer le displayMode courant
+  //   - appeler PATCH avec displayMode='agency'|'generic' au clic
+  //   - exposer data-testid pour les e2e (display-mode-generic/agency)
+  describe("DisplayModeToggle", () => {
+    test("expose le composant DisplayModeToggle", () => {
+      expect(source).toContain("DisplayModeToggle");
+    });
+
+    test("appelle GET /api/me/workspace-preferences au mount", () => {
+      // useEffect avec fetch sur l'endpoint canonique.
+      expect(source).toMatch(
+        /fetch\(\s*["']\/api\/me\/workspace-preferences["']\s*\)/,
+      );
+    });
+
+    test("appelle PATCH /api/me/workspace-preferences pour persister", () => {
+      // Body envoyé doit contenir displayMode.
+      expect(source).toMatch(/method:\s*["']PATCH["']/);
+      expect(source).toContain("displayMode");
+    });
+
+    test("expose data-testid pour les deux modes (e2e hookable)", () => {
+      expect(source).toContain('data-testid="display-mode-generic"');
+      expect(source).toContain('data-testid="display-mode-agency"');
+    });
+
+    test("aria-pressed reflète le mode actif (a11y)", () => {
+      // aria-pressed est requis pour annoncer correctement l'état
+      // toggle au lecteur d'écran (pattern button-with-state).
+      expect(source).toMatch(/aria-pressed=/);
+    });
+  });
 });

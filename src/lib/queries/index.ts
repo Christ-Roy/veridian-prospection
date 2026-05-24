@@ -50,3 +50,14 @@ export type { ProspectFilters } from "./prospects";
 // Refill leads — quota / décompte (ticket refill 1/3)
 export { consumeLead, getLeadBalance } from "./lead-credits";
 export type { LeadBalance } from "./lead-credits";
+
+// Préférences workspace — switch mode agence + onboarding (ticket switch-mode-agence)
+export {
+  getWorkspacePreferences,
+  updateWorkspacePreferences,
+} from "./workspace-preferences";
+export type {
+  DisplayMode,
+  WorkspacePreferences,
+  WorkspacePreferencesPatch,
+} from "./workspace-preferences";

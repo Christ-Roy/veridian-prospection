@@ -84,25 +84,38 @@ export function ProspectPage() {
     requirePhone: true,
   });
 
-  // Check onboarding status — skip if already has data or settings say done.
-  // If settings API fails (401 race after login, network error), skip onboarding
-  // to avoid blocking the UI. A real new user will see it on reload.
+  // Check onboarding status — skip if already has data ou onboarding fait
+  // (source de vérité = workspace.onboardingCompletedAt côté Workspace,
+  // ticket switch-mode-agence). Fallback legacy : settings.onboarding_done dans
+  // pipeline_config — pour les workspaces qui ont fait l'onboarding avant
+  // migration 0019. Si les deux APIs échouent (401 race après login), on skip.
   useEffect(() => {
-    fetch("/api/settings")
-      .then(r => {
-        if (!r.ok) return null; // 401 = session not ready yet, skip onboarding
-        return r.json();
-      })
-      .then((settings: Record<string, string> | null) => {
-        if (!settings) { setOnboardingChecked(true); return; }
-        if (settings["settings.onboarding_done"]) { setOnboardingChecked(true); return; }
-        // No onboarding_done → check if tenant has data (admin/returning user)
-        fetch("/api/health")
-          .then(r => r.ok ? r.json() : null)
-          .then((health: { leadCount?: number } | null) => {
-            const hasLeads = health && (health.leadCount ?? 0) > 100;
-            if (!hasLeads) setShowOnboarding(true);
-            setOnboardingChecked(true);
+    fetch("/api/me/workspace-preferences")
+      .then(r => (r.ok ? r.json() : null))
+      .then((prefs: { onboardingCompletedAt: string | null } | null) => {
+        if (prefs && prefs.onboardingCompletedAt) {
+          setOnboardingChecked(true);
+          return;
+        }
+        // Pas de flag sur Workspace → fallback legacy pipeline_config
+        fetch("/api/settings")
+          .then(r => (r.ok ? r.json() : null))
+          .then((settings: Record<string, string> | null) => {
+            if (settings && settings["settings.onboarding_done"]) {
+              setOnboardingChecked(true);
+              return;
+            }
+            // Pas d'onboarding fait → check si tenant a déjà des données
+            // (admin / returning user qui n'a jamais fait l'onboarding mais
+            // utilise l'app depuis longtemps — on ne le force pas à le faire).
+            fetch("/api/health")
+              .then(r => (r.ok ? r.json() : null))
+              .then((health: { leadCount?: number } | null) => {
+                const hasLeads = health && (health.leadCount ?? 0) > 100;
+                if (!hasLeads) setShowOnboarding(true);
+                setOnboardingChecked(true);
+              })
+              .catch(() => setOnboardingChecked(true));
           })
           .catch(() => setOnboardingChecked(true));
       })
@@ -127,7 +140,28 @@ export function ProspectPage() {
     setShowOnboarding(false);
     // Apply geo filter from onboarding
     setGeoDepts(config.departments);
-    // Persist onboarding_done + selected departments
+
+    // Persistence canonique sur Workspace (ticket switch-mode-agence) — les
+    // filtres par défaut sont stockés en JSONB, l'onboarding flag en
+    // timestamp. C'est ce que liront les sidebars existantes au prochain login.
+    fetch("/api/me/workspace-preferences", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        onboardingCompletedAt: true,
+        defaultGeoFilters: config.departments.length > 0
+          ? { departements: config.departments }
+          : null,
+        defaultSectorFilters: config.sectors?.length
+          ? { secteurs: config.sectors }
+          : null,
+      }),
+    }).catch(() => {});
+
+    // Fallback legacy — l'API /api/prospects (mode freemium quota) lit toujours
+    // settings.onboarding_departments / settings.quota_sectors depuis
+    // pipeline_config. À retirer quand la query freemium aura migré sur
+    // workspace.defaultGeoFilters.
     fetch("/api/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -137,7 +171,7 @@ export function ProspectPage() {
         onboarding_departments: config.departments.join(","),
         ...(config.sectors?.length ? { quota_sectors: config.sectors.join(",") } : {}),
       }),
-    });
+    }).catch(() => {});
   }
 
   // Save/restore quality filters when toggling historique

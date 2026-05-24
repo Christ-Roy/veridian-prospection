@@ -16,6 +16,7 @@ const {
   cachedMock,
   isRateLimitedMock,
   queriesMock,
+  getWorkspacePreferencesMock,
 } = vi.hoisted(() => ({
   requireAuthMock: vi.fn(),
   getTenantIdMock: vi.fn(),
@@ -32,6 +33,12 @@ const {
     getPresetCounts: vi.fn(),
     getAllSettings: vi.fn(),
   },
+  getWorkspacePreferencesMock: vi.fn().mockResolvedValue({
+    displayMode: "generic",
+    defaultGeoFilters: null,
+    defaultSectorFilters: null,
+    onboardingCompletedAt: null,
+  }),
 }));
 
 vi.mock("@/lib/auth/api-auth", () => ({ requireAuth: requireAuthMock }));
@@ -46,6 +53,9 @@ vi.mock("@/lib/auth/user-context", () => ({
 vi.mock("@/lib/cache", () => ({ cached: cachedMock }));
 vi.mock("@/lib/rate-limit", () => ({ isRateLimited: isRateLimitedMock }));
 vi.mock("@/lib/queries", () => queriesMock);
+vi.mock("@/lib/queries/workspace-preferences", () => ({
+  getWorkspacePreferences: getWorkspacePreferencesMock,
+}));
 
 const { checkTrialExpiredMock } = vi.hoisted(() => ({
   checkTrialExpiredMock: vi.fn().mockResolvedValue(false),
@@ -211,5 +221,101 @@ describe("GET /api/prospects", () => {
     // BigInt converti en Number — assertion forte sur le type ET la valeur.
     expect(body.data[0].ca).toBe(50000);
     expect(typeof body.data[0].ca).toBe("number");
+  });
+
+  // ── Mode agence (ticket switch-mode-agence) ─────────────────────────────
+  // Le workspace pref displayMode='agency' doit injecter sort='tech_debt'
+  // SI le client ne passe pas un sort explicite dans l'URL. C'est un défaut
+  // serveur, pas un verrou — l'utilisateur garde la main via ?sort=.
+  describe("displayMode workspace (mode agence)", () => {
+    test("displayMode='agency' active sort='tech_debt' par défaut", async () => {
+      defaultAuthCtx();
+      getUserContextMock.mockResolvedValue({
+        userId: "u-1",
+        tenantId: "t-1",
+        isAdmin: false,
+        workspaces: [{ id: "ws-1" }],
+        activeWorkspaceId: "ws-1",
+      });
+      getWorkspacePreferencesMock.mockResolvedValue({
+        displayMode: "agency",
+        defaultGeoFilters: null,
+        defaultSectorFilters: null,
+        onboardingCompletedAt: null,
+      });
+      queriesMock.getProspects.mockResolvedValue({ data: [], total: 0 });
+
+      await GET(makeRequest("/api/prospects"));
+
+      // getProspects appelé avec sort='tech_debt' (priorité défaut workspace)
+      const call = queriesMock.getProspects.mock.calls[0][0];
+      expect(call.sort).toBe("tech_debt");
+    });
+
+    test("displayMode='generic' ne force aucun sort par défaut", async () => {
+      defaultAuthCtx();
+      getUserContextMock.mockResolvedValue({
+        userId: "u-1",
+        tenantId: "t-1",
+        isAdmin: false,
+        workspaces: [{ id: "ws-1" }],
+        activeWorkspaceId: "ws-1",
+      });
+      getWorkspacePreferencesMock.mockResolvedValue({
+        displayMode: "generic",
+        defaultGeoFilters: null,
+        defaultSectorFilters: null,
+        onboardingCompletedAt: null,
+      });
+      queriesMock.getProspects.mockResolvedValue({ data: [], total: 0 });
+
+      await GET(makeRequest("/api/prospects"));
+
+      const call = queriesMock.getProspects.mock.calls[0][0];
+      // mode generic = sort undefined côté API → fallback côté query (prospect_score)
+      expect(call.sort).toBeUndefined();
+    });
+
+    test("sort explicite ?sort=ca override le défaut agency", async () => {
+      defaultAuthCtx();
+      getUserContextMock.mockResolvedValue({
+        userId: "u-1",
+        tenantId: "t-1",
+        isAdmin: false,
+        workspaces: [{ id: "ws-1" }],
+        activeWorkspaceId: "ws-1",
+      });
+      getWorkspacePreferencesMock.mockResolvedValue({
+        displayMode: "agency",
+        defaultGeoFilters: null,
+        defaultSectorFilters: null,
+        onboardingCompletedAt: null,
+      });
+      queriesMock.getProspects.mockResolvedValue({ data: [], total: 0 });
+
+      await GET(
+        makeRequest("/api/prospects", { searchParams: { sort: "ca" } }),
+      );
+
+      const call = queriesMock.getProspects.mock.calls[0][0];
+      // Override utilisateur respecté — le mode agence n'est pas un verrou.
+      expect(call.sort).toBe("ca");
+    });
+
+    test("erreur getWorkspacePreferences ne casse pas la route", async () => {
+      defaultAuthCtx();
+      getUserContextMock.mockResolvedValue({
+        userId: "u-1",
+        tenantId: "t-1",
+        isAdmin: false,
+        workspaces: [{ id: "ws-1" }],
+        activeWorkspaceId: "ws-1",
+      });
+      getWorkspacePreferencesMock.mockRejectedValueOnce(new Error("DB down"));
+      queriesMock.getProspects.mockResolvedValue({ data: [], total: 0 });
+
+      const res = await GET(makeRequest("/api/prospects"));
+      expect(res.status).toBe(200);
+    });
   });
 });

@@ -1,10 +1,13 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { toast } from "sonner";
+import { Building2, Wrench, Loader2 } from "lucide-react";
 import type { AllSettings } from "./settings-tabs";
 
 interface Props {
@@ -12,9 +15,125 @@ interface Props {
   update: <K extends keyof AllSettings>(key: K, value: AllSettings[K]) => void;
 }
 
+type DisplayMode = "generic" | "agency";
+
+function DisplayModeToggle() {
+  const [mode, setMode] = useState<DisplayMode | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/me/workspace-preferences")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return;
+        setMode((data.displayMode as DisplayMode) ?? "generic");
+      })
+      .catch(() => {
+        if (!cancelled) setMode("generic");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleSwitch(next: DisplayMode) {
+    if (next === mode || saving) return;
+    setSaving(true);
+    const prev = mode;
+    setMode(next); // optimistic
+    try {
+      const res = await fetch("/api/me/workspace-preferences", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ displayMode: next }),
+      });
+      if (!res.ok) {
+        setMode(prev);
+        toast.error("Impossible de changer le mode");
+      } else {
+        toast.success(
+          next === "agency"
+            ? "Mode agence web activé — tri par dette technique"
+            : "Mode générique activé — tri par CA / score",
+        );
+      }
+    } catch {
+      setMode(prev);
+      toast.error("Erreur réseau");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card className="p-6 space-y-4">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold">Mode d&apos;affichage</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Choisit la logique de tri de la liste prospects. Les mêmes leads
+            sont visibles dans les deux modes, seul l&apos;ordre change.
+          </p>
+        </div>
+        {saving && (
+          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <button
+          type="button"
+          onClick={() => handleSwitch("generic")}
+          disabled={saving || mode === null}
+          aria-pressed={mode === "generic"}
+          data-testid="display-mode-generic"
+          className={`text-left p-4 rounded-lg border-2 transition-all ${
+            mode === "generic"
+              ? "border-indigo-500 bg-indigo-50/50 ring-2 ring-indigo-100"
+              : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+          }`}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <Building2 className="h-4 w-4 text-indigo-600" />
+            <span className="font-semibold text-sm">Générique</span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Tri par CA et score prospect. Convient à tous les usages.
+          </p>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleSwitch("agency")}
+          disabled={saving || mode === null}
+          aria-pressed={mode === "agency"}
+          data-testid="display-mode-agency"
+          className={`text-left p-4 rounded-lg border-2 transition-all ${
+            mode === "agency"
+              ? "border-indigo-500 bg-indigo-50/50 ring-2 ring-indigo-100"
+              : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+          }`}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <Wrench className="h-4 w-4 text-indigo-600" />
+            <span className="font-semibold text-sm">Agence web</span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Tri par dette technique. Met en avant les sites obsolètes.
+          </p>
+        </button>
+      </div>
+    </Card>
+  );
+}
+
 export function SettingsDisplay({ settings, update }: Props) {
   return (
     <div className="space-y-6">
+      {/* Mode d'affichage — switch agence/générique (tri seul, pas filtre) */}
+      <DisplayModeToggle />
+
       {/* Affichage */}
       <Card className="p-6 space-y-4">
         <h2 className="text-lg font-semibold">Affichage</h2>

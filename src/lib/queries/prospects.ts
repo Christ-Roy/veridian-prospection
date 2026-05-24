@@ -147,6 +147,14 @@ function getPresetWhere(presets: ProspectPreset[]): string {
 }
 
 // Sort mapping (table-qualified for direct queries)
+//
+// Le sort `tech_debt` correspond au mode agence (ticket switch-mode-agence) :
+// trie par dette technique cumulée — site éclaté (web_eclate_score), puis tech
+// obsolète (web_tech_score), puis score prospect en tiebreak. Pas un filtre :
+// les mêmes leads que `generic`, juste un ORDER BY différent.
+const TECH_DEBT_SORT_SQL =
+  "COALESCE(e.web_eclate_score, 0) * 100 + COALESCE(e.web_tech_score, 0)";
+
 const SORT_MAP: Record<string, string> = {
   siren: "e.siren",
   nom_entreprise: "e.denomination",
@@ -155,6 +163,7 @@ const SORT_MAP: Record<string, string> = {
   ca: "e.chiffre_affaires",
   tech_score: "e.web_tech_score",
   eclate_score: "e.web_eclate_score",
+  tech_debt: TECH_DEBT_SORT_SQL,
   copyright_year: "e.web_copyright_year",
   prospect_score: "e.prospect_score",
   small_biz_score: SMALL_BIZ_FIT_SCORE_SQL,
@@ -163,6 +172,9 @@ const SORT_MAP: Record<string, string> = {
 };
 
 // Sort mapping for subquery context (column aliases from SELECT)
+//
+// tech_debt n'est pas dans le SELECT (colonne calculée à la volée), donc
+// l'alias retombe sur le SQL inline en miroir du SORT_MAP table-qualified.
 const SORT_MAP_ALIAS: Record<string, string> = {
   siren: "siren",
   nom_entreprise: "nom_entreprise",
@@ -171,6 +183,7 @@ const SORT_MAP_ALIAS: Record<string, string> = {
   ca: "ca",
   tech_score: "tech_score",
   eclate_score: "eclate_score",
+  tech_debt: TECH_DEBT_SORT_SQL,
   copyright_year: "copyright_year",
   prospect_score: "prospect_score",
   small_biz_score: "small_biz_score",

@@ -291,27 +291,27 @@ model PipelineConfig {
 // ============================================================================
 
 model Workspace {
-  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId   String    @map("tenant_id") @db.Uuid
-  name       String
-  slug       String
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  name          String
+  slug          String
   // LEGACY — cap de plan jamais branché (1 ref read-only dans admin/kpi).
   // Conservé tel quel (le drop = migration destructive). Le quota refill
   // vit désormais dans leadsCredited/leadsConsumed ci-dessous.
-  leadsLimit Int?      @map("leads_limit")
+  leadsLimit    Int?      @map("leads_limit")
   // Quota refill leads (ticket refill 1/3, CONTRAT-BILLING §8.4).
   //   solde = leadsCredited - leadsConsumed
   // - leadsCredited : cumul des crédits (achats Stripe one-shot + welcome).
   //   Incrémenté SEULEMENT par POST /api/tenants/{id}/credit-leads.
   // - leadsConsumed : cumul des leads consommés (1 fiche entreprise débloquée).
   //   Incrémenté par la consultation d'une fiche, idempotent par (ws, siren).
-  leadsCredited Int    @default(0) @map("leads_credited")
-  leadsConsumed Int    @default(0) @map("leads_consumed")
-  createdBy  String?   @map("created_by") @db.Uuid
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  leadsCredited Int       @default(0) @map("leads_credited")
+  leadsConsumed Int       @default(0) @map("leads_consumed")
+  createdBy     String?   @map("created_by") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   // SaaS standard — soft delete (P1.1). Purge définitive cron 30j (P1.6).
-  deletedAt  DateTime? @map("deleted_at") @db.Timestamptz
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
 
   // Contrat Hub §5.6 + §6.2 — Bearer api_key tenant pour generateMagicLink.
   // 1 api_key = 1 workspace (scoping strict). Hash sha256 hex (64 chars), la
@@ -319,6 +319,24 @@ model Workspace {
   // provision puis stockée côté Hub dans hub_app.tenants.prospectionApiKey.
   apiKeyHash      String?   @unique @map("api_key_hash")
   apiKeyCreatedAt DateTime? @map("api_key_created_at") @db.Timestamptz
+
+  // Préférences workspace — switch mode agence + onboarding (ticket
+  // 2026-05-22 switch-mode-agence-et-onboarding).
+  //
+  // displayMode : "generic" (DÉFAUT, tri par CA/effectif/prospect_score)
+  //             | "agency"  (tri par dette technique — niche agence web)
+  // Pas un filtre : les mêmes leads visibles dans les 2 modes, seul l'ORDER BY change.
+  //
+  // defaultGeoFilters / defaultSectorFilters : choix de l'onboarding,
+  // pré-remplissent les sidebars existantes — modifiables à tout moment.
+  // JSON arbitraire {departements: ["69", "42"], secteurs: ["BTP", "..."]}
+  //
+  // onboardingCompletedAt : NULL = onboarding pas fait, l'overlay
+  // /components/layout/onboarding.tsx s'affiche au login. Datetime = fait.
+  displayMode           String    @default("generic") @map("display_mode")
+  defaultGeoFilters     Json?     @map("default_geo_filters")
+  defaultSectorFilters  Json?     @map("default_sector_filters")
+  onboardingCompletedAt DateTime? @map("onboarding_completed_at") @db.Timestamptz
 
   members          WorkspaceMember[]
   leadCreditEvents LeadCreditEvent[]

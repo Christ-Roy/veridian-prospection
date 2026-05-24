@@ -105,3 +105,78 @@ describe("getProspects — visibility scope 2026-05-19", () => {
     expect(countSql).not.toMatch(/o\.user_id\s*=\s*\$/);
   });
 });
+
+// ─── sort tech_debt (mode agence, ticket switch-mode-agence) ─────────────────
+//
+// Quand l'API /api/prospects détecte workspace.displayMode='agency', elle passe
+// sort='tech_debt' à getProspects. Ici on vérifie que la SQL générée trie bien
+// sur la formule composite (web_eclate_score * 100 + web_tech_score DESC).
+describe("getProspects — sort tech_debt (mode agence)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupPrismaMock();
+  });
+
+  test("sort='tech_debt' injecte web_eclate_score + web_tech_score dans ORDER BY", async () => {
+    await getProspects({
+      domainId: "all",
+      presets: ["tous"],
+      page: 1,
+      pageSize: 50,
+      sort: "tech_debt",
+      sortDir: "desc",
+    }, T);
+    // 2e call = SELECT data avec ORDER BY
+    const dataSql = (prisma.$queryRawUnsafe as ReturnType<typeof vi.fn>).mock.calls[1][0] as string;
+    expect(dataSql).toContain("ORDER BY");
+    expect(dataSql).toContain("web_eclate_score");
+    expect(dataSql).toContain("web_tech_score");
+    expect(dataSql).toContain("DESC");
+  });
+
+  test("sort='tech_debt' avec sortDir='asc' respecte la direction demandée", async () => {
+    await getProspects({
+      domainId: "all",
+      presets: ["tous"],
+      page: 1,
+      pageSize: 50,
+      sort: "tech_debt",
+      sortDir: "asc",
+    }, T);
+    const dataSql = (prisma.$queryRawUnsafe as ReturnType<typeof vi.fn>).mock.calls[1][0] as string;
+    // ASC = on remonte d'abord les sites les MOINS éclatés (utile pour
+    // audit qualité, peu utile en prospection, mais on respecte l'API).
+    expect(dataSql).toMatch(/ORDER BY[\s\S]*web_eclate_score[\s\S]*ASC/);
+  });
+
+  test("sort inconnu fallback sur prospect_score (pas de crash SQL)", async () => {
+    await getProspects({
+      domainId: "all",
+      presets: ["tous"],
+      page: 1,
+      pageSize: 50,
+      sort: "champ_qui_n_existe_pas",
+    }, T);
+    const dataSql = (prisma.$queryRawUnsafe as ReturnType<typeof vi.fn>).mock.calls[1][0] as string;
+    expect(dataSql).toContain("e.prospect_score");
+  });
+
+  // Anti-sabotage buildDomainNafWhere — exerce le chemin domain≠"all" qui
+  // appelle buildDomainNafWhere (la fonction qui retourne {sql, params} pour
+  // le filtre NAF). Si quelqu'un sabote son `return` à null, ce test pète
+  // car nafSql.params devient null et $queryRawUnsafe reçoit n'importe quoi.
+  test("domain != 'all' produit une clause NAF dans le WHERE (anti-sabotage)", async () => {
+    await getProspects({
+      domainId: "btp",
+      presets: ["btp_artisans"],
+      page: 1,
+      pageSize: 50,
+    }, T);
+    const countSql = (prisma.$queryRawUnsafe as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    // Présence d'une clause NAF — soit `e.code_naf IN (...)` soit `LIKE`
+    // selon la définition du domaine "btp". Si la fonction retourne null,
+    // countSql contient "null AND" et ces deux assertions plantent.
+    expect(countSql).toMatch(/e\.code_naf/);
+    expect(countSql).not.toMatch(/\bnull\b/);
+  });
+});

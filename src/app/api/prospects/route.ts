@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getProspects, getDomainCounts, getPresetCounts, getAllSettings } from "@/lib/queries";
+import { getWorkspacePreferences } from "@/lib/queries/workspace-preferences";
 import { cached } from "@/lib/cache";
 import type { ProspectPreset } from "@/lib/domains";
 import type { ProspectFilters } from "@/lib/queries/prospects";
@@ -250,8 +251,24 @@ export async function GET(request: NextRequest) {
   const domainId = sp.get("domain") ?? "all";
   const page = Math.max(1, parseInt(sp.get("page") ?? "1"));
   const pageSize = Math.min(200, Math.max(1, parseInt(sp.get("pageSize") ?? "50")));
-  const sort = sp.get("sort") ?? undefined;
+  let sort = sp.get("sort") ?? undefined;
   const sortDir = sp.get("sortDir") === "asc" ? "asc" as const : "desc" as const;
+
+  // Mode agence (ticket switch-mode-agence) : si aucun sort explicite côté UI
+  // et que le workspace est en displayMode='agency', on bascule sur le sort
+  // composite `tech_debt` (web_eclate * 100 + web_tech). L'utilisateur peut
+  // toujours overrider via le query param ?sort=… — c'est un tri par défaut,
+  // pas un verrou. Le mode 'generic' garde le défaut historique (prospect_score).
+  if (!sort && ctx?.activeWorkspaceId) {
+    try {
+      const prefs = await getWorkspacePreferences(ctx.activeWorkspaceId);
+      if (prefs.displayMode === "agency") {
+        sort = "tech_debt";
+      }
+    } catch (e) {
+      console.warn("[prospects] getWorkspacePreferences failed, using default sort:", e);
+    }
+  }
 
   const result = await getProspects({ domainId, presets, page, pageSize, sort, sortDir, filters, visibility }, tenantId);
 

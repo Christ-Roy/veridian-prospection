@@ -100,3 +100,45 @@ describe("prospect-page.tsx — câblage MobileFilterDrawer (sprint 2026-05-22)"
     expect(source).toMatch(/function\s+exitHistorique/);
   });
 });
+
+// ─── Onboarding wiring sur Workspace (ticket switch-mode-agence) ─────────
+//
+// L'onboarding doit désormais lire/écrire ses choix sur la table workspaces
+// (workspace.onboardingCompletedAt source de vérité), pas seulement dans
+// pipeline_config legacy. Le double-write permet la rétrocompat tant que
+// l'API freemium n'a pas migré sur workspace.defaultGeoFilters.
+describe("prospect-page.tsx — wiring onboarding Workspace (switch-mode-agence)", () => {
+  let source = "";
+
+  test("setup : lecture du source", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    source = await fs.readFile(
+      path.resolve(process.cwd(), "src/components/dashboard/prospect-page.tsx"),
+      "utf-8",
+    );
+    expect(source.length).toBeGreaterThan(0);
+  });
+
+  test("check onboardingCompletedAt depuis /api/me/workspace-preferences", () => {
+    // Source de vérité = workspace, fallback legacy = pipeline_config.
+    expect(source).toMatch(
+      /fetch\(\s*["']\/api\/me\/workspace-preferences["']\s*\)/,
+    );
+    expect(source).toContain("onboardingCompletedAt");
+  });
+
+  test("handleOnboardingComplete PATCH vers /api/me/workspace-preferences", () => {
+    // PATCH avec onboardingCompletedAt + defaultGeoFilters + defaultSectorFilters.
+    expect(source).toMatch(/method:\s*["']PATCH["']/);
+    expect(source).toContain("defaultGeoFilters");
+    expect(source).toContain("defaultSectorFilters");
+  });
+
+  test("double-write legacy pipeline_config conservé (rétrocompat freemium)", () => {
+    // Tant que l'API /api/prospects mode freemium lit settings.onboarding_*,
+    // on doit conserver le POST /api/settings en parallèle du PATCH workspace.
+    expect(source).toMatch(/fetch\(\s*["']\/api\/settings["']/);
+    expect(source).toContain("onboarding_done");
+  });
+});
