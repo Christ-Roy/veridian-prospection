@@ -207,15 +207,23 @@ for f in $CHANGED; do
     continue
   fi
 
-  # ─── 1. Existence du test canonique ───
+  # ─── 1. Trouver un test pertinent modifié ───
+  # Ordre de recherche :
+  #   a) test canonique colocalisé s'il existe ET est modifié
+  #   b) sinon coverage-map : au moins un covered_by modifié
+  #   c) sinon : REFUS
+  #
+  # Sémantique : un fichier source peut avoir un test canonique (pour son
+  # comportement principal) ET être couvert par des tests dédiés à des
+  # comportements spécifiques (ex: audit cross-app trial-residus). Le check
+  # accepte n'importe lequel comme preuve que la modif est testée.
   test_file=""
-  if [ -f "$expected_test" ]; then
+  if [ -f "$expected_test" ] && echo "$CHANGED" | grep -Fxq "$expected_test"; then
     test_file="$expected_test"
   else
-    # Fallback coverage map
+    # Fallback coverage map (que le canonique existe ou non)
     covering=$(find_covering_tests "$f")
     if [ -n "$covering" ]; then
-      # Au moins un des covered_by doit exister et être modifié
       while IFS= read -r cov; do
         [ -z "$cov" ] && continue
         if [ -f "$cov" ] && echo "$CHANGED" | grep -Fxq "$cov"; then
@@ -223,28 +231,27 @@ for f in $CHANGED; do
           break
         fi
       done <<< "$covering"
-      if [ -z "$test_file" ]; then
+    fi
+    if [ -z "$test_file" ]; then
+      if [ -f "$expected_test" ]; then
+        echo "${RED}✗ $f modifié, mais $expected_test non touché${NC}"
+        echo "  Tu as changé la source sans rien adapter dans le test."
+        if [ -n "$covering" ]; then
+          echo "  Couvertures déclarées en coverage map : $(echo "$covering" | tr '\n' ' ')"
+          echo "  Mais aucune n'est modifiée dans la PR."
+        fi
+      elif [ -n "$covering" ]; then
         echo "${RED}✗ $f${NC}"
         echo "  Couvert par coverage map : $(echo "$covering" | tr '\n' ' ')"
         echo "  Mais aucun de ces tests n'est modifié dans la PR."
-        FAILED=$((FAILED + 1))
-        continue
+      else
+        echo "${RED}✗ $f modifié sans test correspondant${NC}"
+        echo "  Test attendu (canonique) : ${expected_test}"
+        echo "  OU déclarer dans test-coverage-map.yaml qu'un autre test le couvre."
       fi
-    else
-      echo "${RED}✗ $f modifié sans test correspondant${NC}"
-      echo "  Test attendu (canonique) : ${expected_test}"
-      echo "  OU déclarer dans test-coverage-map.yaml qu'un autre test le couvre."
       FAILED=$((FAILED + 1))
       continue
     fi
-  fi
-
-  # ─── 2. Test modifié dans la même PR ───
-  if ! echo "$CHANGED" | grep -Fxq "$test_file"; then
-    echo "${RED}✗ $f modifié, mais $test_file non touché${NC}"
-    echo "  Tu as changé la source sans rien adapter dans le test."
-    FAILED=$((FAILED + 1))
-    continue
   fi
 
   # ─── 3. Comptage 1-pour-1 ───
