@@ -91,7 +91,8 @@ describe("lead-sheet.tsx — intégration onglet Historique 360° Phase 1 (2026-
   });
 
   test("importe l'icône History depuis lucide-react", () => {
-    expect(source).toMatch(/from\s+["']lucide-react["'][^;]*\bHistory\b/);
+    // import { ..., History, ... } from "lucide-react"
+    expect(source).toMatch(/import\s*\{[^}]*\bHistory\b[^}]*\}\s*from\s*["']lucide-react["']/);
   });
 
   test("rend un AccordionItem value=\"history\" qui monte HistoryTab", () => {
@@ -106,5 +107,56 @@ describe("lead-sheet.tsx — intégration onglet Historique 360° Phase 1 (2026-
     // Tenter de la rendre sans SIREN = fetch 400. Le gating `lead.siren &&`
     // évite l'affichage prématuré pendant le loading initial.
     expect(source).toMatch(/\{lead\.siren\s*&&\s*\(\s*\n?\s*<AccordionItem\s+value="history"/);
+  });
+});
+
+describe("lead-sheet.tsx — bouton & modale 'Envoyer un mail' (mail SMTP v1 2026-05-25)", () => {
+  // Le bouton est rendu dans la section Emails de la fiche lead, à côté du
+  // label "Emails". Au clic, il ouvre ComposeMailDialog pré-rempli avec
+  // le premier email trouvé du prospect.
+  //
+  // Sabotage-test : si on retire l'import ComposeMailDialog ou le state
+  // composeMailOpen, ces tests cassent — c'est exactement ce qu'on veut.
+  let source = "";
+
+  test("setup : lecture du source", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    source = await fs.readFile(
+      path.resolve(process.cwd(), "src/components/dashboard/lead-sheet.tsx"),
+      "utf-8",
+    );
+    expect(source.length).toBeGreaterThan(0);
+  });
+
+  test("importe ComposeMailDialog depuis @/components/mail/compose-mail-dialog", () => {
+    expect(source).toMatch(
+      /import\s*\{\s*ComposeMailDialog\s*\}\s*from\s*["']@\/components\/mail\/compose-mail-dialog["']/,
+    );
+  });
+
+  test("importe l'icône Mail depuis lucide-react", () => {
+    // import { ..., Mail, ... } from "lucide-react"
+    expect(source).toMatch(/import\s*\{[^}]*\bMail\b[^}]*\}\s*from\s*["']lucide-react["']/);
+  });
+
+  test("détient un state composeMailOpen + composeMailTo pour piloter la modale", () => {
+    expect(source).toMatch(/composeMailOpen/);
+    expect(source).toMatch(/setComposeMailOpen/);
+    expect(source).toMatch(/composeMailTo/);
+    expect(source).toMatch(/setComposeMailTo/);
+  });
+
+  test("monte <ComposeMailDialog> avec to + prospect + siren", () => {
+    expect(source).toMatch(/<ComposeMailDialog\b/);
+    expect(source).toMatch(/to=\{composeMailTo\}/);
+    expect(source).toMatch(/siren=\{lead\.siren\s*\?\?\s*null\}/);
+  });
+
+  test("rend le bouton 'Envoyer un mail' uniquement s'il y a un email disponible", () => {
+    // Le pattern `firstEmail && (` empêche l'affichage quand aucun mail
+    // n'est dispo — sinon clic bouton avec to="" donnerait un 400.
+    expect(source).toMatch(/firstEmail\s*&&\s*\(/);
+    expect(source).toContain("Envoyer un mail");
   });
 });

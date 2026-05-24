@@ -870,6 +870,7 @@ model Tenant {
   purgedAt        DateTime? @map("purged_at") @db.Timestamptz
 
   planHistory PlanHistory[]
+  mailConfig  TenantMailConfig?
 
   @@index([userId])
   @@index([status])
@@ -899,4 +900,73 @@ model PlanHistory {
 
   @@index([tenantId, changedAt(sort: Desc)])
   @@map("veridian_plan_history")
+}
+
+/// Configuration SMTP par tenant (mail v1 — envoi sortant BYO commercial).
+/// Cf migration 0022_add_mail_config_and_lead_emails. Mot de passe chiffré
+/// AES-256-GCM via AUTH_SECRET (lib/crypto/encrypt-password.ts) — JAMAIS
+/// stocké en clair, JAMAIS retourné par les routes API au client.
+model TenantMailConfig {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId         String   @unique @map("tenant_id") @db.Uuid
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  smtpHost         String?  @map("smtp_host") @db.VarChar(255)
+  smtpPort         Int?     @map("smtp_port")
+  smtpUsername     String?  @map("smtp_username") @db.VarChar(320)
+  /// Format : "<iv_b64>:<tag_b64>:<ciphertext_b64>" — voir encrypt-password.ts.
+  smtpPasswordEnc  String?  @map("smtp_password_enc")
+  smtpTls          Boolean  @default(true) @map("smtp_tls")
+  smtpFromEmail    String?  @map("smtp_from_email") @db.VarChar(320)
+  smtpFromName     String?  @map("smtp_from_name") @db.VarChar(120)
+
+  lastTestAt       DateTime? @map("last_test_at") @db.Timestamptz
+  lastTestStatus   String?   @map("last_test_status") @db.VarChar(32)
+  lastTestError    String?   @map("last_test_error")
+
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("tenant_mail_config")
+}
+
+/// Trace mail envoyé/reçu par prospect — alimente la timeline 360°.
+/// v1 = "outgoing" uniquement (SMTP send). v2 IMAP ajoutera "incoming".
+/// Pas de FK vers Outreach (même raisonnement que pipeline_transitions :
+/// PK composite outreach + archives possibles → on stocke siren + tenant_id).
+model LeadEmail {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  workspaceId   String?  @map("workspace_id") @db.Uuid
+  userId        String?  @map("user_id") @db.Uuid
+
+  siren         String?  @db.VarChar(9)
+  /// "outgoing" | "incoming"
+  direction     String   @default("outgoing") @db.VarChar(16)
+
+  messageId     String   @unique @map("message_id") @db.VarChar(255)
+  inReplyTo     String?  @map("in_reply_to") @db.VarChar(255)
+  references    String?
+
+  fromEmail     String   @map("from_email") @db.VarChar(320)
+  fromName      String?  @map("from_name") @db.VarChar(120)
+  toEmails      String[] @default([]) @map("to_emails")
+  ccEmails      String[] @default([]) @map("cc_emails")
+  subject       String?  @db.VarChar(500)
+  bodyText      String?  @map("body_text")
+  bodyHtml      String?  @map("body_html")
+
+  templateSlug  String?  @map("template_slug") @db.VarChar(64)
+
+  /// "queued" | "sent" | "failed"
+  sentStatus    String   @default("queued") @map("sent_status") @db.VarChar(16)
+  sentError     String?  @map("sent_error")
+  sentAt        DateTime? @map("sent_at") @db.Timestamptz
+
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([siren, tenantId, sentAt(sort: Desc)])
+  @@index([tenantId, sentAt(sort: Desc)])
+  @@index([tenantId, sentStatus])
+  @@map("lead_emails")
 }

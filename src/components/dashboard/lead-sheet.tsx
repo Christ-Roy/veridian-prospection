@@ -20,7 +20,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
-import { TrendingUp, MessageSquare, Bell, FileText, ExternalLink, ShieldAlert, Smartphone, Copyright, Linkedin, Facebook, Instagram, History } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { TrendingUp, MessageSquare, Bell, FileText, ExternalLink, ShieldAlert, Smartphone, Copyright, Linkedin, Facebook, Instagram, History, Mail } from "lucide-react";
+import { ComposeMailDialog } from "@/components/mail/compose-mail-dialog";
 import { toast } from "sonner";
 import type { LeadDetail, Followup } from "@/lib/types";
 import { formatEffectifs, formatCA } from "@/lib/types";
@@ -77,6 +79,9 @@ export function LeadSheet({ domain, onClose, onUpdated }: LeadSheetProps) {
   const [loading, setLoading] = useState(false);
   const [followups, setFollowups] = useState<Followup[]>([]);
   const [stageEditOpen, setStageEditOpen] = useState(false);
+  // Compose mail modale (feature mail SMTP v1).
+  const [composeMailOpen, setComposeMailOpen] = useState(false);
+  const [composeMailTo, setComposeMailTo] = useState<string>("");
   // Stages custom (lookup pour le rendu du badge "État pipeline"). Hook
   // partagé avec pipeline-board.tsx — cache 60s côté module.
   const { stages: workspaceStages } = useWorkspacePipelineStages();
@@ -282,28 +287,57 @@ export function LeadSheet({ domain, onClose, onUpdated }: LeadSheetProps) {
                     })()}
 
                     {/* Emails */}
-                    <div>
-                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Emails</span>
-                      <div className="flex flex-col gap-1 mt-0.5">
-                        {lead.dirigeant_emails_all && lead.dirigeant_emails_all !== "[]" ? (
-                          safeParseArray(lead.dirigeant_emails_all).map(email => (
-                            <a key={email} href={`mailto:${email}`} className="text-sm bg-green-50 text-green-700 px-2 py-1 rounded-md hover:bg-green-100 font-medium transition-colors w-fit">{email}</a>
-                          ))
-                        ) : lead.dirigeant_email ? (
-                          <a href={`mailto:${lead.dirigeant_email}`} className="text-sm bg-green-50 text-green-700 px-2 py-1 rounded-md hover:bg-green-100 font-medium transition-colors w-fit">{lead.dirigeant_email}</a>
-                        ) : null}
-                        {lead.emails && lead.emails !== "[]" ? (
-                          safeParseArray(lead.emails).map(email => (
-                            <a key={email} href={`mailto:${email}`} className="text-sm bg-slate-50 text-slate-600 px-2 py-1 rounded-md hover:bg-slate-100 transition-colors w-fit">{email}</a>
-                          ))
-                        ) : lead.email && lead.email !== lead.dirigeant_email ? (
-                          <a href={`mailto:${lead.email}`} className="text-sm bg-slate-50 text-slate-600 px-2 py-1 rounded-md hover:bg-slate-100 transition-colors w-fit">{lead.email}</a>
-                        ) : null}
-                        {!lead.dirigeant_email && !lead.email && (!lead.dirigeant_emails_all || lead.dirigeant_emails_all === "[]") && (!lead.emails || lead.emails === "[]") && (
-                          <p className="text-sm text-muted-foreground italic">Aucun email</p>
-                        )}
-                      </div>
-                    </div>
+                    {(() => {
+                      // Premier email disponible — utilisé pour pré-remplir la
+                      // modale "Envoyer un mail" (feature mail SMTP v1).
+                      const dirigeantEmails = safeParseArray(lead.dirigeant_emails_all);
+                      const otherEmails = safeParseArray(lead.emails);
+                      const firstEmail =
+                        dirigeantEmails[0]
+                          ?? lead.dirigeant_email
+                          ?? otherEmails[0]
+                          ?? lead.email
+                          ?? null;
+                      return (
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Emails</span>
+                            {firstEmail && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-6 gap-1 text-xs"
+                                onClick={() => {
+                                  setComposeMailTo(firstEmail);
+                                  setComposeMailOpen(true);
+                                }}
+                              >
+                                <Mail className="h-3 w-3" /> Envoyer un mail
+                              </Button>
+                            )}
+                          </div>
+                          <div className="flex flex-col gap-1 mt-0.5">
+                            {lead.dirigeant_emails_all && lead.dirigeant_emails_all !== "[]" ? (
+                              safeParseArray(lead.dirigeant_emails_all).map(email => (
+                                <a key={email} href={`mailto:${email}`} className="text-sm bg-green-50 text-green-700 px-2 py-1 rounded-md hover:bg-green-100 font-medium transition-colors w-fit">{email}</a>
+                              ))
+                            ) : lead.dirigeant_email ? (
+                              <a href={`mailto:${lead.dirigeant_email}`} className="text-sm bg-green-50 text-green-700 px-2 py-1 rounded-md hover:bg-green-100 font-medium transition-colors w-fit">{lead.dirigeant_email}</a>
+                            ) : null}
+                            {lead.emails && lead.emails !== "[]" ? (
+                              safeParseArray(lead.emails).map(email => (
+                                <a key={email} href={`mailto:${email}`} className="text-sm bg-slate-50 text-slate-600 px-2 py-1 rounded-md hover:bg-slate-100 transition-colors w-fit">{email}</a>
+                              ))
+                            ) : lead.email && lead.email !== lead.dirigeant_email ? (
+                              <a href={`mailto:${lead.email}`} className="text-sm bg-slate-50 text-slate-600 px-2 py-1 rounded-md hover:bg-slate-100 transition-colors w-fit">{lead.email}</a>
+                            ) : null}
+                            {!lead.dirigeant_email && !lead.email && (!lead.dirigeant_emails_all || lead.dirigeant_emails_all === "[]") && (!lead.emails || lead.emails === "[]") && (
+                              <p className="text-sm text-muted-foreground italic">Aucun email</p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {/* Dirigeant */}
                     {lead.dirigeant && (
@@ -761,6 +795,20 @@ export function LeadSheet({ domain, onClose, onUpdated }: LeadSheetProps) {
             }
           }}
           onCancel={() => setStageEditOpen(false)}
+        />
+      )}
+
+      {/* Compose mail dialog — feature mail SMTP v1 (BYO SMTP commercial). */}
+      {lead && (
+        <ComposeMailDialog
+          open={composeMailOpen}
+          onOpenChange={setComposeMailOpen}
+          to={composeMailTo}
+          prospect={{
+            name: lead.dirigeant ?? lead.nom_entreprise ?? "",
+            entreprise: lead.nom_entreprise ?? domain ?? "",
+          }}
+          siren={lead.siren ?? null}
         />
       )}
     </Sheet>
