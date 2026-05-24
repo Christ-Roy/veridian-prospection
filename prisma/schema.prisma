@@ -341,11 +341,75 @@ model Workspace {
   members          WorkspaceMember[]
   leadCreditEvents LeadCreditEvent[]
   leadConsumptions LeadConsumption[]
+  pipelineStages   WorkspacePipelineStage[]
 
   @@unique([tenantId, slug])
   @@index([tenantId])
   @@index([tenantId, deletedAt])
   @@map("workspaces")
+}
+
+// ============================================================================
+// PIPELINE STAGES CUSTOM PAR WORKSPACE
+// (ticket 2026-05-23-pipeline-stages-customisables-par-workspace.md)
+// ============================================================================
+//
+// Avant : 8 stages canoniques hardcodés dans src/lib/outreach/status.ts +
+// src/lib/types.ts:PIPELINE_STAGES. Le kanban /pipeline et le sélecteur de
+// la lead-sheet rendaient ces 8 colonnes en dur — impossible à adapter
+// par tenant (les agences B2B ont leur propre workflow).
+//
+// Après : chaque workspace possède sa propre liste de stages. Au seed de
+// la migration 0020, on copie les 8 canoniques pour chaque workspace
+// existant — comportement strictement identique pour les clients en place.
+// Les admins peuvent ensuite éditer via l'UI /settings/pipeline.
+//
+// La colonne `outreach.pipeline_stage` reste un `String?` libre — le slug
+// d'un stage custom y est écrit tel quel, le kanban groupe par cette
+// valeur. Pas de FK SQL stricte pour ne pas orphaniser un lead quand un
+// stage est soft-deleted (l'API DELETE refuse le soft-delete s'il reste
+// des leads dessus).
+model WorkspacePipelineStage {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  // Slug technique stable (utilisé dans outreach.pipeline_stage). Lowercase
+  // snake_case. Unique par workspace. 64 chars — assez large pour des
+  // libellés métier verticaux.
+  slug        String   @db.VarChar(64)
+
+  // Label affiché à l'utilisateur. Edit live possible sans casser la DB
+  // (le slug reste figé même quand le label change).
+  label       String   @db.VarChar(80)
+
+  // Ordre d'affichage du kanban (gauche → droite). Les API reorder font un
+  // bulk update transactionnel pour éviter les races.
+  position    Int      @default(0)
+
+  // Token couleur du badge UI. Token Tailwind ("bg-emerald-500") ou hex.
+  // NULL = couleur par défaut (slate).
+  color       String?  @db.VarChar(32)
+
+  // Stage terminal : sort le lead du funnel actif (badge différent, exclu
+  // des stats "pipeline en cours"). Ex: "client", "perdu".
+  isTerminal  Boolean  @default(false) @map("is_terminal")
+
+  // Stage caché du board principal (mais reste filtrable côté historique).
+  // Ex: "archive", "spam".
+  isHidden    Boolean  @default(false) @map("is_hidden")
+
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  // Soft-delete : on garde la row pour ne pas orphaniser un lead dont le
+  // pipeline_stage pointait dessus. Le code masque les rows where deletedAt
+  // IS NOT NULL.
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId, position])
+  @@index([workspaceId, deletedAt])
+  @@map("workspace_pipeline_stages")
 }
 
 // ============================================================================
