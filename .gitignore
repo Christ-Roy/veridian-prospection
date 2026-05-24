@@ -37,6 +37,7 @@ TASK-*.md
 e2e/screenshots/
 *.rendered.yml
 e2e-headfull-staging.json
+e2e-flows-cross-app.json
 test-results/
 
 # Worktrees git créés par les agents (jamais committer)
