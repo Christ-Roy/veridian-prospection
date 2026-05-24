@@ -66,3 +66,45 @@ describe("lead-sheet.tsx — badge état pipeline dynamique (2026-05-23)", () =>
     );
   });
 });
+
+describe("lead-sheet.tsx — intégration onglet Historique 360° Phase 1 (2026-05-24)", () => {
+  // L'onglet Historique est ajouté à la liste d'AccordionItem de la fiche.
+  // Si le composant HistoryTab est retiré ou que l'AccordionItem disparaît,
+  // la fiche perd son fil chronologique sans bruit. Ces invariants
+  // bloquent la régression silencieuse.
+  let source = "";
+
+  test("setup : lecture du source", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    source = await fs.readFile(
+      path.resolve(process.cwd(), "src/components/dashboard/lead-sheet.tsx"),
+      "utf-8",
+    );
+    expect(source.length).toBeGreaterThan(0);
+  });
+
+  test("importe HistoryTab depuis lead-sheet/history-tab", () => {
+    expect(source).toMatch(
+      /import\s*\{\s*HistoryTab\s*\}\s*from\s*["']\.\/lead-sheet\/history-tab["']/,
+    );
+  });
+
+  test("importe l'icône History depuis lucide-react", () => {
+    expect(source).toMatch(/from\s+["']lucide-react["'][^;]*\bHistory\b/);
+  });
+
+  test("rend un AccordionItem value=\"history\" qui monte HistoryTab", () => {
+    // Sabotage : si on retire l'AccordionItem ou qu'on coupe le siren prop,
+    // ce test casse — c'est exactement ce qu'on veut.
+    expect(source).toMatch(/AccordionItem\s+value="history"/);
+    expect(source).toMatch(/<HistoryTab\s+siren=\{lead\.siren\}\s*\/>/);
+  });
+
+  test("monte l'onglet uniquement si lead.siren présent (pas de fiche sans SIREN valide)", () => {
+    // La timeline est SIREN-centric (cf endpoint /api/leads/[siren]/timeline).
+    // Tenter de la rendre sans SIREN = fetch 400. Le gating `lead.siren &&`
+    // évite l'affichage prématuré pendant le loading initial.
+    expect(source).toMatch(/\{lead\.siren\s*&&\s*\(\s*\n?\s*<AccordionItem\s+value="history"/);
+  });
+});

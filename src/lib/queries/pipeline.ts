@@ -1,6 +1,61 @@
 import { prisma, bigIntToNumber, tenantWhere, DEFAULT_ENTREPRISES_WHERE } from "./shared";
 import { pipelineStageForStatus } from "@/lib/outreach/status";
 
+/**
+ * Insère une row dans pipeline_transitions si toStage diffère réellement de
+ * fromStage (sinon = update qui ne touche pas le stage, on ne pollue pas).
+ * Best-effort : un échec d'insert ne doit JAMAIS bloquer la mutation outreach.
+ * La timeline tolère un trou ; l'inverse (échec de patch parce qu'on n'a pas
+ * pu logger) serait inacceptable. Erreur loggée en console pour debug.
+ *
+ * Le model Prisma est injecté en 2e argument pour testabilité (cf
+ * pipeline-internal-testing.ts). En prod : prisma.pipelineTransition direct.
+ */
+// Interface minimale pour le mock Prisma — `data` typé `any` pour rester
+// compatible avec le delegate Prisma réel (qui a une union complexe
+// CreateInput/UncheckedCreateInput) ET avec un mock { create: vi.fn() } côté
+// tests. La sécurité de typage du payload est garantie par le call site
+// ci-dessous qui construit explicitement les bons champs.
+interface PipelineTransitionWriter {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  create: (args: { data: any }) => Promise<unknown>;
+}
+
+async function recordPipelineTransition(
+  params: {
+    siren: string;
+    tenantId: string;
+    workspaceId: string | null;
+    userId: string | null;
+    fromStage: string | null;
+    toStage: string;
+  },
+  model: PipelineTransitionWriter = prisma.pipelineTransition,
+): Promise<void> {
+  // Pas de transition si stage inchangé (évite spam timeline sur simple
+  // édition notes/qualif sans mouvement kanban).
+  if (params.fromStage === params.toStage) return;
+  try {
+    await model.create({
+      data: {
+        siren: params.siren,
+        tenantId: params.tenantId,
+        workspaceId: params.workspaceId,
+        userId: params.userId,
+        fromStage: params.fromStage,
+        toStage: params.toStage,
+      },
+    });
+  } catch (err) {
+    // Best-effort : on garde la trace en logs mais on n'échoue pas la mutation.
+    console.warn("[pipeline-transition] insert failed (non-blocking):", err);
+  }
+}
+
+// Export interne pour tests Vitest — pas un contrat public, ne pas
+// consommer depuis le code applicatif.
+export const __pipelineTestingInternals = { recordPipelineTransition };
+
 export interface PipelineLead {
   /** Alias legacy: front-end PipelineBoard reads `domain` to key/select leads. */
   domain: string;
@@ -158,6 +213,15 @@ export async function updateOutreach(
   const uid = userId ?? null;
   // Sync : pipeline_stage dérivé du status (mapping canonique).
   const pipelineStage = pipelineStageForStatus(data.status);
+
+  // Capture le stage actuel AVANT update — sert au hook pipeline_transitions
+  // pour reconstruire from_stage → to_stage. null si la row n'existait pas
+  // (cas premier contact).
+  const prev = await prisma.outreach.findUnique({
+    where: { siren_tenantId: { siren, tenantId: effectiveTid } },
+    select: { pipelineStage: true },
+  });
+
   await prisma.$executeRaw`
     INSERT INTO outreach (siren, tenant_id, workspace_id, status, pipeline_stage, notes, contact_method, contacted_date, qualification, updated_at, user_id, last_interaction_at)
     VALUES (${siren}, ${effectiveTid}::uuid, ${wid}::uuid, ${data.status}, ${pipelineStage}, ${data.notes}, ${data.contact_method}, ${data.contacted_date}, ${data.qualification}, ${now}, ${uid}::uuid, NOW())
@@ -173,6 +237,15 @@ export async function updateOutreach(
       workspace_id = COALESCE(outreach.workspace_id, EXCLUDED.workspace_id),
       user_id = COALESCE(EXCLUDED.user_id, outreach.user_id)
   `;
+
+  await recordPipelineTransition({
+    siren,
+    tenantId: effectiveTid,
+    workspaceId: wid,
+    userId: uid,
+    fromStage: prev?.pipelineStage ?? null,
+    toStage: pipelineStage,
+  });
 }
 
 export async function patchOutreach(
@@ -224,6 +297,10 @@ export async function patchOutreach(
   } else if (data.pipeline_stage !== undefined && data.status === undefined) {
     syncedStatus = data.pipeline_stage;
   }
+
+  // Snapshot du stage AVANT update — sert au hook pipeline_transitions
+  // pour reconstruire from_stage → to_stage. null = pas de row existante.
+  const previousStage = existing?.pipelineStage ?? null;
 
   if (existing) {
     // Standard Prisma fields
@@ -300,6 +377,22 @@ export async function patchOutreach(
       initialStage, siren, effectiveTid
     );
   }
+
+  // Hook timeline 360° — log la transition de stage si elle a vraiment changé.
+  // syncedPipelineStage est l'état cible visé par le patch ; previousStage est
+  // l'état avant (peut être null si nouvelle row). On déduit le stage effectif
+  // final = syncedPipelineStage si fourni, sinon previousStage (pas de
+  // changement) sinon pipelineStage initial à la création.
+  const effectiveToStage =
+    syncedPipelineStage ?? previousStage ?? pipelineStageForStatus(syncedStatus ?? "a_contacter");
+  await recordPipelineTransition({
+    siren,
+    tenantId: effectiveTid,
+    workspaceId: workspaceId ?? existing?.workspaceId ?? null,
+    userId: userId ?? null,
+    fromStage: previousStage,
+    toStage: effectiveToStage,
+  });
 }
 
 export async function recordVisit(
@@ -359,6 +452,20 @@ export async function reorderPipelineCards(
   const now = new Date().toISOString().replace("T", " ").split(".")[0];
   const tw = tenantWhere("outreach", tenantId);
   const ws = workspaceSqlClause("outreach", workspaceFilter);
+  const effectiveTid = tenantId ?? "00000000-0000-0000-0000-000000000000";
+
+  // Snapshot des stages AVANT update — sert au hook pipeline_transitions
+  // pour ne logger que les vrais changements (sirens déplacés inter-colonne).
+  // Drag-drop intra-colonne (réordonner = même status) ne crée pas de
+  // transition grâce au early-return dans recordPipelineTransition.
+  const before = sirens.length > 0
+    ? await prisma.outreach.findMany({
+        where: { siren: { in: sirens }, tenantId: effectiveTid },
+        select: { siren: true, pipelineStage: true, workspaceId: true },
+      })
+    : [];
+  const beforeMap = new Map(before.map(r => [r.siren, r]));
+
   await prisma.$transaction(async (tx) => {
     for (let i = 0; i < sirens.length; i++) {
       await tx.$executeRawUnsafe(
@@ -367,6 +474,19 @@ export async function reorderPipelineCards(
       );
     }
   });
+
+  // Hook timeline 360° — INSERT en parallèle, best-effort par siren.
+  await Promise.all(sirens.map(siren => {
+    const prev = beforeMap.get(siren);
+    return recordPipelineTransition({
+      siren,
+      tenantId: effectiveTid,
+      workspaceId: prev?.workspaceId ?? null,
+      userId: null, // reorder n'a pas de user attaché dans cette signature
+      fromStage: prev?.pipelineStage ?? null,
+      toStage: status,
+    });
+  }));
 }
 
 export async function batchReorderPipelineCards(
@@ -377,6 +497,18 @@ export async function batchReorderPipelineCards(
   const now = new Date().toISOString().replace("T", " ").split(".")[0];
   const tw = tenantWhere("outreach", tenantId);
   const ws = workspaceSqlClause("outreach", workspaceFilter);
+  const effectiveTid = tenantId ?? "00000000-0000-0000-0000-000000000000";
+
+  // Snapshot global des stages AVANT update.
+  const allSirens = columns.flatMap(c => c.sirens);
+  const before = allSirens.length > 0
+    ? await prisma.outreach.findMany({
+        where: { siren: { in: allSirens }, tenantId: effectiveTid },
+        select: { siren: true, pipelineStage: true, workspaceId: true },
+      })
+    : [];
+  const beforeMap = new Map(before.map(r => [r.siren, r]));
+
   await prisma.$transaction(async (tx) => {
     for (const col of columns) {
       for (let i = 0; i < col.sirens.length; i++) {
@@ -387,4 +519,19 @@ export async function batchReorderPipelineCards(
       }
     }
   });
+
+  // Hook timeline 360° — log toutes les transitions inter-colonne en parallèle.
+  await Promise.all(columns.flatMap(col =>
+    col.sirens.map(siren => {
+      const prev = beforeMap.get(siren);
+      return recordPipelineTransition({
+        siren,
+        tenantId: effectiveTid,
+        workspaceId: prev?.workspaceId ?? null,
+        userId: null,
+        fromStage: prev?.pipelineStage ?? null,
+        toStage: col.status,
+      });
+    })
+  ));
 }

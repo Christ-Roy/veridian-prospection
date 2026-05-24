@@ -254,3 +254,22 @@
     logique métier propre (la branche save passe par les routes API).
     Sabotage : retirer userIsAdminOfWorkspace du serveur casse l'invariant
     "admin/owner uniquement pour mutations" testé dans pipeline-stages-rbac.
+
+- sources:
+    - src/lib/queries/pipeline-internal-testing.ts
+  covered_by:
+    - __tests__/api/leads/[domain]/timeline.test.ts
+    - __tests__/lib/queries/timeline.test.ts
+  reason: |
+    Façade testing qui ré-exporte `__pipelineTestingInternals` (la fonction
+    interne `recordPipelineTransition` de pipeline.ts) pour la rendre
+    accessible aux tests Vitest sans casser l'encapsulation. Le fichier
+    contient zéro logique métier — c'est un strict pass-through de 4 lignes.
+    La vraie couverture vit dans :
+     - le test route timeline qui exerce recordPipelineTransition via le
+       chemin réel updateOutreach/patchOutreach (sabotage : si on retire le
+       hook, le test sabotage casse).
+     - le test unitaire timeline.test.ts qui couvre la consommation des
+       inserts pipeline_transitions par getProspectTimeline.
+    Pas de test colocalisé canonique car le fichier n'a aucune branche à
+    sabotager : son `export const __testing = ...` est trivial.

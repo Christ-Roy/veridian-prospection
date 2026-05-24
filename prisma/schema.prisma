@@ -195,6 +195,27 @@ model Outreach {
   @@map("outreach")
 }
 
+// Pipeline transitions — historique des changements de stage par prospect.
+// Alimente la timeline 360° (fiche historique prospect). Insert hook côté
+// src/lib/queries/pipeline.ts à chaque mutation de pipeline_stage.
+// Pas de FK vers outreach : outreach a une PK composite (siren, tenant_id)
+// et on garde l'historique même si la row outreach est archivée.
+model PipelineTransition {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  siren       String   @db.VarChar(9)
+  tenantId    String   @map("tenant_id") @db.Uuid
+  workspaceId String?  @map("workspace_id") @db.Uuid
+  userId      String?  @map("user_id") @db.Uuid
+  fromStage   String?  @map("from_stage") @db.VarChar(64)
+  toStage     String   @map("to_stage") @db.VarChar(64)
+  occurredAt  DateTime @default(now()) @map("occurred_at") @db.Timestamptz
+
+  @@index([siren, tenantId, occurredAt(sort: Desc)], map: "pipeline_transitions_siren_tenant_occurred_at_idx")
+  @@index([tenantId, occurredAt(sort: Desc)], map: "pipeline_transitions_tenant_occurred_at_idx")
+  @@index([workspaceId, occurredAt(sort: Desc)], map: "pipeline_transitions_workspace_occurred_at_idx")
+  @@map("pipeline_transitions")
+}
+
 model ClaudeActivity {
   id           Int     @id @default(autoincrement())
   tenantId     String? @map("tenant_id") @db.Uuid

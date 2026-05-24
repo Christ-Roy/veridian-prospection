@@ -99,6 +99,144 @@ describe("queries/pipeline source — anti-régression Claude+email cleanup", ()
  * non-vide écrit dans outreach.pipeline_stage sinon les leads sur stage
  * custom disparaissent du kanban.
  */
+/**
+ * Hook `recordPipelineTransition` (fiche historique 360° Phase 1, 2026-05-24)
+ * — exposé via __pipelineTestingInternals. Tests de comportement, pas source-
+ * level : on injecte un mock `model` (pas le vrai Prisma) et on vérifie que
+ *
+ *  1. no-op si fromStage === toStage (évite spam timeline)
+ *  2. INSERT correct si stage différent
+ *  3. best-effort : un échec du create est avalé (la mutation outreach
+ *     parente NE DOIT PAS échouer à cause du logging)
+ *
+ * Sabotage à reconnaître : retirer le early-return → on log même quand le
+ * stage n'a pas bougé → spam timeline + bug visible. Ce test casserait.
+ */
+describe("recordPipelineTransition hook — fiche historique 360°", () => {
+  test("no-op si fromStage === toStage (early return)", async () => {
+    const { __pipelineTestingInternals } = await import("@/lib/queries/pipeline");
+    const createSpy = vi.fn();
+    await __pipelineTestingInternals.recordPipelineTransition(
+      {
+        siren: "123456789",
+        tenantId: "tenant-test-1",
+        workspaceId: "ws-1",
+        userId: "user-1",
+        fromStage: "site_demo",
+        toStage: "site_demo",
+      },
+      { create: createSpy },
+    );
+    expect(createSpy).not.toHaveBeenCalled();
+  });
+
+  test("INSERT correct quand stage change", async () => {
+    const { __pipelineTestingInternals } = await import("@/lib/queries/pipeline");
+    const createSpy = vi.fn().mockResolvedValue({});
+    await __pipelineTestingInternals.recordPipelineTransition(
+      {
+        siren: "123456789",
+        tenantId: "tenant-test-1",
+        workspaceId: "ws-1",
+        userId: "user-1",
+        fromStage: "a_rappeler",
+        toStage: "site_demo",
+      },
+      { create: createSpy },
+    );
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(createSpy).toHaveBeenCalledWith({
+      data: {
+        siren: "123456789",
+        tenantId: "tenant-test-1",
+        workspaceId: "ws-1",
+        userId: "user-1",
+        fromStage: "a_rappeler",
+        toStage: "site_demo",
+      },
+    });
+  });
+
+  test("INSERT aussi quand fromStage null (premier contact) → toStage", async () => {
+    const { __pipelineTestingInternals } = await import("@/lib/queries/pipeline");
+    const createSpy = vi.fn().mockResolvedValue({});
+    await __pipelineTestingInternals.recordPipelineTransition(
+      {
+        siren: "987654321",
+        tenantId: "tenant-test-1",
+        workspaceId: null,
+        userId: null,
+        fromStage: null,
+        toStage: "fiche_ouverte",
+      },
+      { create: createSpy },
+    );
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(createSpy).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        fromStage: null,
+        toStage: "fiche_ouverte",
+        workspaceId: null,
+        userId: null,
+      }),
+    });
+  });
+
+  test("best-effort : erreur create avalée sans rejeter (résistance prod)", async () => {
+    const { __pipelineTestingInternals } = await import("@/lib/queries/pipeline");
+    const createSpy = vi.fn().mockRejectedValue(new Error("DB down"));
+    // L'invariant CRITIQUE : si le logging timeline plante, la mutation
+    // outreach parente DOIT continuer. On ne fait pas échouer un drag-drop
+    // kanban à cause d'une indispo timeline.
+    const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await expect(
+      __pipelineTestingInternals.recordPipelineTransition(
+        {
+          siren: "111111111",
+          tenantId: "tenant-test-1",
+          workspaceId: null,
+          userId: null,
+          fromStage: "fiche_ouverte",
+          toStage: "repondeur",
+        },
+        { create: createSpy },
+      ),
+    ).resolves.toBeUndefined();
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+});
+
+/**
+ * Anti-régression source-level : les 4 sites de mutation pipeline_stage
+ * doivent câbler le hook. Si quelqu'un retire un appel, la timeline rate
+ * silencieusement la transition de ce point d'entrée.
+ */
+describe("pipeline.ts source — hook recordPipelineTransition câblé partout", () => {
+  test("hook appelé dans updateOutreach + patchOutreach + reorder + batchReorder", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(
+      path.resolve(process.cwd(), "src/lib/queries/pipeline.ts"),
+      "utf-8",
+    );
+    // 4 appels minimum (un par site de mutation). On compte avec
+    // (match ?? []).length pour résister à l'évolution du code.
+    const calls = source.match(/recordPipelineTransition\(/g) ?? [];
+    expect(calls.length).toBeGreaterThanOrEqual(4);
+  });
+
+  test("export __pipelineTestingInternals exposé (sinon les tests cassent)", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(
+      path.resolve(process.cwd(), "src/lib/queries/pipeline.ts"),
+      "utf-8",
+    );
+    expect(source).toMatch(/export\s+const\s+__pipelineTestingInternals\s*=\s*\{\s*recordPipelineTransition\s*\}/);
+  });
+});
+
 describe("pipeline.ts — grouping accepte slugs custom (2026-05-23)", () => {
   test("ne contient plus la liste hardcodée NEW_STAGES côté grouping", async () => {
     const fs = await import("node:fs/promises");
