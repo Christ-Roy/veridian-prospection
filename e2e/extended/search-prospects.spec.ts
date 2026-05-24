@@ -48,6 +48,13 @@ function assertNoConsoleErrors(ctx: string) {
   ).toHaveLength(0);
 }
 
+// Serial mode : la Command Palette (Cmd+K) garde des handlers globaux
+// entre tests qui se télescopent quand 4 workers ouvrent /prospects en
+// parallèle sur le même compte canonique. Sérialiser sur ce describe seul
+// suffit à stabiliser sans pénaliser le reste de la suite.
+// Cf todo/done/2026-05-23-flaky-e2e-workers4-canonical-account.md (Option A).
+test.describe.configure({ mode: "serial" });
+
 test.describe("Search & filters on /prospects", () => {
   test.setTimeout(90_000);
 

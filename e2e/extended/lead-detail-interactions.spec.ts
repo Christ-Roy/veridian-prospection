@@ -49,6 +49,14 @@ function assertNoConsoleErrors(ctx: string) {
   ).toHaveLength(0);
 }
 
+// Serial mode : tous les tests de ce describe mutent l'Outreach SIREN
+// 900000001 du tenant canonique partagé `e2e-persistent`. En workers=4,
+// la concurrence sur ce row provoque des flaky (sheet ouverte par un
+// worker, fermée par un autre, etc.). Sérialiser sur ce describe seul
+// suffit à stabiliser sans pénaliser le reste de la suite.
+// Cf todo/done/2026-05-23-flaky-e2e-workers4-canonical-account.md (Option A).
+test.describe.configure({ mode: "serial" });
+
 test.describe("Lead detail interactions", () => {
   test.setTimeout(90_000);
 
