@@ -15,7 +15,7 @@
  * `2026-05-22-e2e-specs-auth-supabase-inline.md`).
  */
 import { test, expect, type ConsoleMessage, type Page } from "@playwright/test";
-import { loginAsE2EUser } from "./helpers/auth";
+import { loginAsE2EUser } from "../helpers/auth";
 
 const PROSPECTION_URL =
   process.env.PROSPECTION_URL || "https://prospection.staging.veridian.site";

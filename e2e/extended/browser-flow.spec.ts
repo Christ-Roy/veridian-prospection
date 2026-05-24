@@ -21,7 +21,7 @@
  * ils sont réduits à des smoke "page renders" (sans tentative d'auth).
  */
 import { test, expect, type ConsoleMessage } from "@playwright/test";
-import { loginAsE2EUser } from "./helpers/auth";
+import { loginAsE2EUser } from "../helpers/auth";
 
 const PROSPECTION_URL =
   process.env.PROSPECTION_URL || "https://prospection.staging.veridian.site";

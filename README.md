@@ -119,7 +119,7 @@ PROSPECTION_URL="https://saas-prospection.staging.veridian.site" \
 SUPABASE_URL="https://saas-api.staging.veridian.site" \
 SUPABASE_ANON_KEY="..." SUPABASE_SERVICE_ROLE_KEY="..." \
 TENANT_API_SECRET="staging-prospection-secret-2026" \
-npx playwright test e2e/ui-siren-smoke.spec.ts --reporter=list
+npx playwright test e2e/extended/ui-siren-smoke.spec.ts --reporter=list
 
 # Smoke API authentifié (15 routes)
 APP_URL="..." SUPABASE_URL="..." NEXT_PUBLIC_SUPABASE_URL="..." \
