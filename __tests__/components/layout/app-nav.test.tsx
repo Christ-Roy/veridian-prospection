@@ -118,3 +118,35 @@ describe("app-nav.tsx — guard défensif setSettings (audit setters 2026-05-23)
     expect(source).not.toMatch(/\.then\(\s*setSettings\s*\)(?![\s\S]*\.then)/);
   });
 });
+
+describe("app-nav.tsx — badge solde leads perma-visible (2026-05-23)", () => {
+  let source = "";
+
+  test("setup : lecture du source", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    source = await fs.readFile(
+      path.resolve(process.cwd(), "src/components/layout/app-nav.tsx"),
+      "utf-8",
+    );
+    expect(source.length).toBeGreaterThan(0);
+  });
+
+  // Ticket refill leads UI — le solde doit être visible en perma à côté du
+  // NotificationBell (decision Robert 2026-05-22 : solde POSITIF rassurant).
+  test("importe LeadsBalanceBadge depuis components/dashboard", () => {
+    expect(source).toMatch(
+      /import\s*\{\s*LeadsBalanceBadge\s*\}\s*from\s*["']@\/components\/dashboard\/leads-balance-badge["']/,
+    );
+  });
+
+  test("badge desktop rendu hidden sm:inline-flex (caché < sm pour ne pas surcharger)", () => {
+    // Mobile a sa propre section dédiée dans le burger.
+    expect(source).toMatch(/<LeadsBalanceBadge[^>]*hidden sm:inline-flex/);
+  });
+
+  test("section mobile burger : lien Mes leads → /settings/leads avec badge", () => {
+    expect(source).toMatch(/data-testid="nav-mobile-leads-link"/);
+    expect(source).toMatch(/href="\/settings\/leads"/);
+  });
+});

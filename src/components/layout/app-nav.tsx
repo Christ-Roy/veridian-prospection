@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NotificationBell } from "@/components/layout/notification-bell";
+import { LeadsBalanceBadge } from "@/components/dashboard/leads-balance-badge";
 import { useTrial } from "@/lib/trial-context";
 
 const navItems = [
@@ -186,6 +187,11 @@ export function AppNav({ initialIsAdmin = false }: { initialIsAdmin?: boolean })
           )}
         </nav>
 
+        {/* Solde leads — perma-visible (decision Robert 2026-05-22). Cliquable
+            → /settings/leads pour acheter. Mobile : visible aussi à côté du
+            burger. */}
+        <LeadsBalanceBadge className="hidden sm:inline-flex" />
+
                 <NotificationBell />
 
         {/* Logout (desktop seulement — mobile l'a dans le burger) */}
@@ -285,6 +291,26 @@ export function AppNav({ initialIsAdmin = false }: { initialIsAdmin?: boolean })
               </Link>
             </div>
           )}
+
+          {/* Solde leads — section dédiée burger mobile (le badge desktop est
+              hors-écran ici). Lien direct vers /settings/leads. */}
+          <div className="mt-1 pt-2 border-t flex flex-col gap-1">
+            <span className="px-3 pb-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Solde leads
+            </span>
+            <Link
+              href="/settings/leads"
+              data-testid="nav-mobile-leads-link"
+              onClick={() => setMobileOpen(false)}
+              className="px-3 py-2 text-sm rounded-md transition-colors flex items-center justify-between gap-2 hover:bg-muted"
+            >
+              <span className="flex items-center gap-2">
+                <Settings className="h-4 w-4" />
+                Mes leads
+              </span>
+              <LeadsBalanceBadge />
+            </Link>
+          </div>
 
           {/* Logout — toujours visible en bas du burger mobile, avec email
               affiché pour identifier le compte courant. */}
