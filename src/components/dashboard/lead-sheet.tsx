@@ -20,7 +20,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
-import { TrendingUp, MessageSquare, Bell, FileText, ExternalLink, ShieldAlert, Smartphone, Copyright, Linkedin, Facebook, Instagram, History } from "lucide-react";
+import { TrendingUp, MessageSquare, Bell, FileText, ExternalLink, ShieldAlert, Smartphone, Copyright, Linkedin, Facebook, Instagram } from "lucide-react";
 import { toast } from "sonner";
 import type { LeadDetail, Followup } from "@/lib/types";
 import { formatEffectifs, formatCA } from "@/lib/types";
@@ -30,7 +30,6 @@ import { LeadHeader } from "./lead-sheet/lead-header";
 import { AutoSaveNotes } from "./lead-sheet/auto-save-notes";
 import { StageTransitionModal, type StageData } from "./lead-sheet/stage-transition";
 import { AppointmentsSection } from "./lead-sheet/appointments-section";
-import { HistoryTab } from "./lead-sheet/history-tab";
 import {
   EntrepriseSection,
   ContactSection,
@@ -624,20 +623,6 @@ export function LeadSheet({ domain, onClose, onUpdated }: LeadSheetProps) {
                         />
                       </div>
                     </div>
-                  </AccordionContent>
-                </AccordionItem>
-              )}
-
-              {/* Historique 360° — fil chronologique agrégé (Phase 1) */}
-              {lead.siren && (
-                <AccordionItem value="history">
-                  <AccordionTrigger className="py-3 text-sm">
-                    <span className="flex items-center gap-2 text-violet-600">
-                      <History className="h-4 w-4" /> Historique
-                    </span>
-                  </AccordionTrigger>
-                  <AccordionContent>
-                    <HistoryTab siren={lead.siren} />
                   </AccordionContent>
                 </AccordionItem>
               )}

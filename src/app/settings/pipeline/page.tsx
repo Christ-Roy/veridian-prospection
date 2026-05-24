@@ -17,7 +17,7 @@ export default async function PipelineSettingsPage() {
       <div className="p-6 max-w-3xl">
         <h1 className="text-xl font-semibold">Pipeline</h1>
         <p className="text-sm text-muted-foreground mt-2">
-          Aucun workspace actif. Demande à ton admin de t'ajouter à un workspace.
+          Aucun workspace actif. Demande à ton admin de t&apos;ajouter à un workspace.
         </p>
       </div>
     );

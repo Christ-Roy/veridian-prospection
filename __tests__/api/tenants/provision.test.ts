@@ -61,6 +61,12 @@ vi.mock("@/lib/hub/identity", () => ({
   resolveOrCreateUserFromHub: resolveOrCreateUserFromHubMock,
 }));
 
+// seedDefaultPipelineStages : mock no-op (couvert ailleurs cf
+// src/lib/outreach/pipeline-stages.test.ts).
+vi.mock("@/lib/outreach/pipeline-stages", () => ({
+  seedDefaultPipelineStages: vi.fn(),
+}));
+
 import { POST } from "@/app/api/tenants/provision/route";
 import { makeRequest, readJson } from "../_helpers";
 
@@ -380,5 +386,37 @@ describe("POST /api/tenants/provision", () => {
     }
     const r11 = await send();
     expect(r11.status).toBe(429);
+  });
+});
+
+/**
+ * Anti-régression seed pipeline stages (ticket 2026-05-23) — la route
+ * doit appeler `seedDefaultPipelineStages` quand elle provisionne le
+ * workspace "default" du tenant.
+ *
+ * Source-level (mocks Prisma chaînés trop coûteux à brancher ici) :
+ * sabotage = retirer l'appel ou l'import = rouge.
+ */
+describe("provision — seed pipeline stages sur workspace.create", () => {
+  let source = "";
+
+  test("setup : lecture du source", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    source = await fs.readFile(
+      path.resolve(process.cwd(), "src/app/api/tenants/provision/route.ts"),
+      "utf-8",
+    );
+    expect(source.length).toBeGreaterThan(0);
+  });
+
+  test("importe seedDefaultPipelineStages depuis lib outreach", () => {
+    expect(source).toMatch(
+      /import\s*\{[^}]*seedDefaultPipelineStages[^}]*\}\s*from\s*["']@\/lib\/outreach\/pipeline-stages["']/,
+    );
+  });
+
+  test("appelle seedDefaultPipelineStages(prisma, workspace.id) après workspace.create", () => {
+    expect(source).toMatch(/seedDefaultPipelineStages\(\s*prisma\s*,\s*workspace\.id\s*\)/);
   });
 });

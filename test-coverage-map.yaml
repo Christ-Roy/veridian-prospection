@@ -186,3 +186,71 @@
     bucketToHour (3 cas : ramène HH:00 UTC, idempotent, bucket différent
     par heure). Sabotage-test : retirer le param `lineno` du hash
     casse "sensible au lineno" + retirer Date.UTC casse les 2 derniers.
+
+# ── Pipeline stages customisables par workspace (ticket 2026-05-23) ────
+# Bloc complet de couverture pour la feature pipeline-stages-customisables.
+# Mélange tests colocalisés (pattern lib Veridian) + tests source-level
+# centralisés dans src/app/api/workspaces/pipeline-stages-rbac.test.ts
+# qui exercent l'invariant clé (RBAC + seed + soft-delete + transaction).
+
+- sources:
+    - src/lib/outreach/pipeline-stages.ts
+    - src/lib/outreach/pipeline-stages.test.ts
+  covered_by:
+    - src/lib/outreach/pipeline-stages.test.ts
+  reason: |
+    Test colocalisé `src/lib/outreach/pipeline-stages.test.ts` (pattern
+    `src/lib/<X>.test.ts` couvre `src/lib/<X>.ts` cf src/lib/audit, invitations,
+    errors/dedupe). 10 tests Vitest : DEFAULT_PIPELINE_STAGES (3 cas :
+    8 stages canoniques alignés migration 0020, positions 0..7, label
+    non-vide + couleur Tailwind) + slugifyStage (5 cas : normalisation
+    snake_case ascii, retire bord, tronque 64 char, refuse bouillie,
+    collapse séparateurs). Sabotage : muter DEFAULT_PIPELINE_STAGES.length
+    à 7 casse "8 stages canoniques alignés migration".
+
+- sources:
+    - src/hooks/use-pipeline-stages.ts
+    - src/hooks/use-pipeline-stages.test.ts
+  covered_by:
+    - src/hooks/use-pipeline-stages.test.ts
+  reason: |
+    Test colocalisé `src/hooks/use-pipeline-stages.test.ts` couvre la
+    fonction pure `findStageOrFallback` (4 cas : slug trouvé, fallback
+    legacy pour slug canonique disparu du workspace, fallback synthétique
+    neutre slug inconnu, immutability). Les branches React du hook
+    (cache, SSR, fetchStages) sont couvertes indirectement par les tests
+    source-level des composants qui le consomment (pipeline-board-source.
+    test.ts + lead-sheet.test.tsx + pipeline-board.test.tsx).
+
+- sources:
+    - src/app/api/pipeline-stages/route.ts
+    - src/app/api/workspaces/[id]/pipeline-stages/route.ts
+    - src/app/api/workspaces/[id]/pipeline-stages/[stageId]/route.ts
+    - src/app/api/workspaces/[id]/pipeline-stages/reorder/route.ts
+  covered_by:
+    - src/app/api/workspaces/pipeline-stages-rbac.test.ts
+  reason: |
+    Test source-level centralisé qui verrouille les invariants RBAC +
+    sécu cross-tenant des 4 routes (GET membres autorisés / POST admin
+    only / PATCH+DELETE admin + soft-delete + refus 409 leads / reorder
+    transaction). Sabotage : retirer userIsAdminOfWorkspace, le check
+    409 stage_has_leads, $transaction, ou la double-vérif tenantId font
+    chacun rougir une assertion ciblée. La route partielle GET côté
+    client (src/app/api/pipeline-stages/route.ts) délègue à
+    `listWorkspacePipelineStages` (couvert par le test colocalisé de la
+    lib) — la route elle-même est triviale (auth + activeId + lecture).
+
+- sources:
+    - src/components/dashboard/pipeline-stages-settings.tsx
+    - src/app/settings/pipeline/page.tsx
+  covered_by:
+    - src/app/api/workspaces/pipeline-stages-rbac.test.ts
+    - src/lib/outreach/pipeline-stages.test.ts
+  reason: |
+    UI admin de la page /settings/pipeline. Le composant `PipelineStagesSettings`
+    enchaîne fetch + mutations sur les 4 routes RBAC déjà couvertes ; tout
+    écart côté serveur tombe via le test centralisé pipeline-stages-rbac.
+    Côté client le composant est pur drag-and-drop + modales — pas de
+    logique métier propre (la branche save passe par les routes API).
+    Sabotage : retirer userIsAdminOfWorkspace du serveur casse l'invariant
+    "admin/owner uniquement pour mutations" testé dans pipeline-stages-rbac.

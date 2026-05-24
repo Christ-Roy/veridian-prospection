@@ -41,14 +41,16 @@ const LEGACY_AUTO_ARCHIVE: Record<string, number | null> = {
   a_rappeler: 7,
 };
 
-function deriveLightColor(color: string | null): string {
+// Helpers de dérivation exportés pour testabilité (sabotage-test §3 :
+// muter le return casse au moins un test ciblé dans use-pipeline-stages.test.ts).
+export function deriveLightColor(color: string | null): string {
   if (!color) return "bg-slate-50";
   // "bg-emerald-500" → "bg-emerald-50"
   const m = color.match(/^bg-([a-z]+)-\d+$/);
   return m ? `bg-${m[1]}-50` : "bg-slate-50";
 }
 
-function deriveTextColor(color: string | null): string {
+export function deriveTextColor(color: string | null): string {
   if (!color) return "text-slate-700";
   const m = color.match(/^bg-([a-z]+)-\d+$/);
   return m ? `text-${m[1]}-700` : "text-slate-700";

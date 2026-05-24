@@ -21,6 +21,12 @@ vi.mock("@prisma/client", () => {
   return { PrismaClient };
 });
 
+// seedDefaultPipelineStages : mock no-op (couvert ailleurs cf
+// src/lib/outreach/pipeline-stages.test.ts).
+vi.mock("@/lib/outreach/pipeline-stages", () => ({
+  seedDefaultPipelineStages: vi.fn(),
+}));
+
 import { GET, POST } from "@/app/api/admin/workspaces/route";
 import { makeRequest, makeUserContext, makeForbidden, readJson } from "../_helpers";
 
@@ -57,5 +63,38 @@ describe("/api/admin/workspaces", () => {
       );
       expect(res.status).toBe(403);
     });
+  });
+});
+
+/**
+ * Anti-régression seed pipeline stages (ticket pipeline-stages-customisables
+ * 2026-05-23) — la route doit appeler `seedDefaultPipelineStages` après
+ * un workspace.create() sinon le nouveau workspace nait sans colonnes
+ * kanban (UX cassée premier login).
+ *
+ * Source-level pour ne pas avoir à mocker createMany — sabotage : retirer
+ * l'appel ou l'import rend ce test rouge.
+ */
+describe("admin/workspaces — seed pipeline stages post-create", () => {
+  let source = "";
+
+  test("setup : lecture du source", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    source = await fs.readFile(
+      path.resolve(process.cwd(), "src/app/api/admin/workspaces/route.ts"),
+      "utf-8",
+    );
+    expect(source.length).toBeGreaterThan(0);
+  });
+
+  test("importe seedDefaultPipelineStages depuis lib outreach", () => {
+    expect(source).toMatch(
+      /import\s*\{[^}]*seedDefaultPipelineStages[^}]*\}\s*from\s*["']@\/lib\/outreach\/pipeline-stages["']/,
+    );
+  });
+
+  test("appelle seedDefaultPipelineStages(prisma, workspace.id) après workspace.create", () => {
+    expect(source).toMatch(/seedDefaultPipelineStages\(\s*prisma\s*,\s*workspace\.id\s*\)/);
   });
 });

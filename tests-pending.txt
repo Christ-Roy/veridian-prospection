@@ -8,9 +8,7 @@ src/components/dashboard/guide-commercial.tsx
 src/components/dashboard/lead-sheet/appointments-section.tsx
 src/components/dashboard/lead-sheet/auto-save-notes.tsx
 src/components/dashboard/lead-sheet/google-maps-dropdown.tsx
-src/components/dashboard/lead-sheet/lead-header.tsx
 src/components/dashboard/lead-sheet/quick-notes.tsx
-src/components/dashboard/lead-sheet/stage-transition.tsx
 src/components/dashboard/notification-preferences-form.tsx
 src/components/dashboard/outreach-form.tsx
 src/components/dashboard/quality-tabs.tsx

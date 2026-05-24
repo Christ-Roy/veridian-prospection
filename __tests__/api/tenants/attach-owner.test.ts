@@ -56,6 +56,12 @@ vi.mock("@/lib/hub/identity", () => ({
   resolveOrCreateUserFromHub: resolveOrCreateUserFromHubMock,
 }));
 
+// seedDefaultPipelineStages : mock no-op (couvert ailleurs cf
+// src/lib/outreach/pipeline-stages.test.ts).
+vi.mock("@/lib/outreach/pipeline-stages", () => ({
+  seedDefaultPipelineStages: vi.fn(),
+}));
+
 import { POST } from "@/app/api/tenants/attach-owner/route";
 import { makeRequest, readJson } from "../_helpers";
 
@@ -310,5 +316,37 @@ describe("POST /api/tenants/attach-owner", () => {
     const body = (await readJson(res)) as { role: string };
     expect(body.role).toBe("owner");
     expect(mocks.memberUpdate).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Anti-régression seed pipeline stages (ticket 2026-05-23) — la route
+ * doit appeler `seedDefaultPipelineStages` quand elle crée le workspace
+ * "default" du tenant. Sinon le tenant nait sans colonnes kanban.
+ *
+ * Source-level (mocks Prisma chaînés trop coûteux à brancher ici) :
+ * sabotage = retirer l'appel ou l'import = rouge.
+ */
+describe("attach-owner — seed pipeline stages sur workspace.create", () => {
+  let source = "";
+
+  test("setup : lecture du source", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    source = await fs.readFile(
+      path.resolve(process.cwd(), "src/app/api/tenants/attach-owner/route.ts"),
+      "utf-8",
+    );
+    expect(source.length).toBeGreaterThan(0);
+  });
+
+  test("importe seedDefaultPipelineStages depuis lib outreach", () => {
+    expect(source).toMatch(
+      /import\s*\{[^}]*seedDefaultPipelineStages[^}]*\}\s*from\s*["']@\/lib\/outreach\/pipeline-stages["']/,
+    );
+  });
+
+  test("appelle seedDefaultPipelineStages(prisma, workspace.id) après workspace.create", () => {
+    expect(source).toMatch(/seedDefaultPipelineStages\(\s*prisma\s*,\s*workspace\.id\s*\)/);
   });
 });

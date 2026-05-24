@@ -16,21 +16,13 @@ import { INTEREST_SCALE } from "@/lib/types";
 import { useWorkspacePipelineStages, findStageOrFallback } from "@/hooks/use-pipeline-stages";
 import { toast } from "sonner";
 
-// 8 slugs canoniques avec UI "riche" (deadline, devis, acompte, etc.).
-// Un stage custom (créé via /settings/pipeline) tombe dans le bloc
-// "default" du switch et n'affiche que le champ note libre — comportement
-// minimal mais cohérent : le commercial reste maître de ce qu'il veut tracker.
-const CANONICAL_STAGES = new Set([
-  "fiche_ouverte",
-  "repondeur",
-  "a_rappeler",
-  "site_demo",
-  "acompte",
-  "finition",
-  "client",
-  "upsell",
-  "archive",
-]);
+// NOTE 2026-05-23 : les 8 slugs canoniques (fiche_ouverte, repondeur,
+// a_rappeler, site_demo, acompte, finition, client, upsell) ont une UI
+// "riche" (deadline, devis, acompte, etc.) gérée par le switch case
+// ci-dessous. Un stage custom (créé via /settings/pipeline) tombe dans
+// le bloc `default` du switch et n'affiche que le champ note libre —
+// comportement minimal mais cohérent : le commercial reste maître de
+// ce qu'il veut tracker.
 
 interface StageTransitionProps {
   open: boolean;

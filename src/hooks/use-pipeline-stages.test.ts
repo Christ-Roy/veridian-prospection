@@ -8,7 +8,12 @@
  * Run: npx vitest run src/hooks/use-pipeline-stages.test.ts
  */
 import { describe, it, expect } from "vitest";
-import { findStageOrFallback, type PipelineStageView } from "./use-pipeline-stages";
+import {
+  findStageOrFallback,
+  deriveLightColor,
+  deriveTextColor,
+  type PipelineStageView,
+} from "./use-pipeline-stages";
 
 function makeStage(over: Partial<PipelineStageView> = {}): PipelineStageView {
   return {
@@ -55,5 +60,37 @@ describe("findStageOrFallback", () => {
     const stages = [makeStage({ slug: "fiche_ouverte", label: "Original" })];
     findStageOrFallback(stages, "fiche_ouverte");
     expect(stages[0].label).toBe("Original");
+  });
+});
+
+describe("deriveLightColor", () => {
+  it("dérive bg-X-500 → bg-X-50 pour les tokens Tailwind", () => {
+    expect(deriveLightColor("bg-emerald-500")).toBe("bg-emerald-50");
+    expect(deriveLightColor("bg-indigo-500")).toBe("bg-indigo-50");
+    expect(deriveLightColor("bg-rose-500")).toBe("bg-rose-50");
+  });
+
+  it("fallback bg-slate-50 si color null", () => {
+    expect(deriveLightColor(null)).toBe("bg-slate-50");
+  });
+
+  it("fallback bg-slate-50 si pattern non-Tailwind (hex, libre)", () => {
+    expect(deriveLightColor("#FF5733")).toBe("bg-slate-50");
+    expect(deriveLightColor("rouge")).toBe("bg-slate-50");
+  });
+});
+
+describe("deriveTextColor", () => {
+  it("dérive bg-X-500 → text-X-700 pour les tokens Tailwind", () => {
+    expect(deriveTextColor("bg-emerald-500")).toBe("text-emerald-700");
+    expect(deriveTextColor("bg-indigo-500")).toBe("text-indigo-700");
+  });
+
+  it("fallback text-slate-700 si color null", () => {
+    expect(deriveTextColor(null)).toBe("text-slate-700");
+  });
+
+  it("fallback text-slate-700 si pattern non-Tailwind", () => {
+    expect(deriveTextColor("#FF5733")).toBe("text-slate-700");
   });
 });

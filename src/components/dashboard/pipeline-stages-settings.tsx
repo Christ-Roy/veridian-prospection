@@ -432,7 +432,7 @@ function StageDialog({
                 Masquer du board principal
               </Label>
               <span className="text-xs text-muted-foreground">
-                Reste accessible depuis l'historique et les filtres.
+                Reste accessible depuis l&apos;historique et les filtres.
               </span>
             </div>
           </div>

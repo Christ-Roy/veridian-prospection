@@ -176,6 +176,43 @@ describe("sans-site-sidebar.tsx — guard data.qualiopiSpecialites (bug intermit
   });
 });
 
+describe("pipeline-board.tsx — stages dynamiques par workspace (2026-05-23)", () => {
+  let source = "";
+
+  test("setup : lecture du source", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    source = await fs.readFile(
+      path.resolve(process.cwd(), "src/components/dashboard/pipeline-board.tsx"),
+      "utf-8",
+    );
+    expect(source.length).toBeGreaterThan(0);
+  });
+
+  // Migration vers stages custom par workspace (ticket pipeline-stages-
+  // customisables) : le kanban lit les stages via le hook au lieu de la
+  // constante hardcodée. Casser ce contrat = un workspace avec stages
+  // custom n'affiche que les 8 par défaut (régression silencieuse).
+  test("importe useWorkspacePipelineStages depuis le hook partagé", () => {
+    expect(source).toMatch(/from\s+"@\/hooks\/use-pipeline-stages"/);
+    expect(source).toContain("useWorkspacePipelineStages");
+  });
+
+  test("n'importe plus PIPELINE_STAGES depuis @/lib/types (sabotage : importer = rouge)", () => {
+    expect(source).not.toMatch(
+      /import\s*\{[^}]*\bPIPELINE_STAGES\b[^}]*\}\s*from\s*["']@\/lib\/types["']/,
+    );
+  });
+
+  test("itère sur visibleStages (issu du hook) pour les colonnes du board", () => {
+    expect(source).toContain("visibleStages.map");
+  });
+
+  test("filtre les stages isHidden du board principal (visibleStages)", () => {
+    expect(source).toMatch(/visibleStages\s*=\s*workspaceStages\.filter\(\s*\(s\)\s*=>\s*!s\.isHidden\s*\)/);
+  });
+});
+
 describe("segment-page.tsx — guard setSegments Array.isArray (bug intermittent 2026-05-23)", () => {
   let source = "";
 

@@ -90,3 +90,39 @@ describe("queries/pipeline source — anti-régression Claude+email cleanup", ()
     expect(source).not.toMatch(/twOe\b/);
   });
 });
+
+/**
+ * Anti-régression grouping élargi (ticket 2026-05-23 pipeline-stages-
+ * customisables) — le grouping côté getPipelineLeads acceptait avant
+ * uniquement les 9 slugs canoniques hardcodés (NEW_STAGES). Avec les
+ * stages custom par workspace, on doit accepter n'importe quel slug
+ * non-vide écrit dans outreach.pipeline_stage sinon les leads sur stage
+ * custom disparaissent du kanban.
+ */
+describe("pipeline.ts — grouping accepte slugs custom (2026-05-23)", () => {
+  test("ne contient plus la liste hardcodée NEW_STAGES côté grouping", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(
+      path.resolve(process.cwd(), "src/lib/queries/pipeline.ts"),
+      "utf-8",
+    );
+    // Avant : `const NEW_STAGES = ["fiche_ouverte", "repondeur", ...]` puis
+    // `NEW_STAGES.includes(ps)`. Après : trim + comparaison à a_contacter
+    // seulement (toute autre valeur non vide est un stage valide).
+    expect(source).not.toMatch(/const\s+NEW_STAGES\s*=\s*\[/);
+    expect(source).not.toMatch(/NEW_STAGES\.includes\(/);
+  });
+
+  test("utilise un grouping élargi (trim + check a_contacter)", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(
+      path.resolve(process.cwd(), "src/lib/queries/pipeline.ts"),
+      "utf-8",
+    );
+    // Pattern caractéristique de l'élargissement : on regarde si ps est
+    // non-vide et différent de "a_contacter", sinon fallback status.
+    expect(source).toMatch(/ps\s*&&\s*ps\s*!==\s*["']a_contacter["']/);
+  });
+});

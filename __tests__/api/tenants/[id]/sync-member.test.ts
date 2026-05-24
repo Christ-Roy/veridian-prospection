@@ -72,6 +72,17 @@ vi.mock("@/lib/hub/webhooks", () => ({
   emitHubWebhookAsync: emitWebhookMock,
 }));
 
+// seedDefaultPipelineStages est best-effort post-création workspace
+// (ticket 2026-05-23 pipeline-stages-customisables) — mock no-op pour
+// ne pas tester la lib pipeline-stages depuis sync-member (couverte
+// ailleurs cf src/lib/outreach/pipeline-stages.test.ts).
+const { seedStagesMock } = vi.hoisted(() => ({
+  seedStagesMock: vi.fn(),
+}));
+vi.mock("@/lib/outreach/pipeline-stages", () => ({
+  seedDefaultPipelineStages: seedStagesMock,
+}));
+
 import { POST } from "@/app/api/tenants/[id]/sync-member/route";
 import { makeRequest, readJson } from "../../_helpers";
 
@@ -360,5 +371,37 @@ describe("POST /api/tenants/[id]/sync-member", () => {
     expect(res.status).toBe(200);
     expect(mocks.memberUpdate).toHaveBeenCalledOnce();
     expect(mocks.memberUpdate.mock.calls[0][0].data.deletedAt).toBeNull();
+  });
+});
+
+/**
+ * Anti-régression seed pipeline stages (ticket 2026-05-23) — la route
+ * sync-member doit appeler `seedDefaultPipelineStages` quand elle crée
+ * le workspace "default" d'un tenant qui n'en avait pas.
+ *
+ * Source-level (mocks Prisma chaînés trop coûteux à brancher ici) :
+ * sabotage = retirer l'appel ou l'import = rouge.
+ */
+describe("sync-member — seed pipeline stages sur workspace.create", () => {
+  let source = "";
+
+  test("setup : lecture du source", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    source = await fs.readFile(
+      path.resolve(process.cwd(), "src/app/api/tenants/[id]/sync-member/route.ts"),
+      "utf-8",
+    );
+    expect(source.length).toBeGreaterThan(0);
+  });
+
+  test("importe seedDefaultPipelineStages depuis lib outreach", () => {
+    expect(source).toMatch(
+      /import\s*\{[^}]*seedDefaultPipelineStages[^}]*\}\s*from\s*["']@\/lib\/outreach\/pipeline-stages["']/,
+    );
+  });
+
+  test("appelle seedDefaultPipelineStages(prisma, workspace.id) après workspace.create", () => {
+    expect(source).toMatch(/seedDefaultPipelineStages\(\s*prisma\s*,\s*workspace\.id\s*\)/);
   });
 });
