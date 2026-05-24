@@ -33,7 +33,7 @@ import { makeUserContext, readJson } from "../_helpers";
 
 const WS_ID = "33333333-3333-4333-8333-333333333333";
 
-function authedUser(plan = "pro", activeWs: string | null = WS_ID) {
+function authedUser(activeWs: string | null = WS_ID) {
   return {
     ctx: makeUserContext({
       activeWorkspaceId: activeWs,
@@ -54,7 +54,7 @@ function authedUser(plan = "pro", activeWs: string | null = WS_ID) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.requireUser.mockResolvedValue(authedUser("pro"));
+  mocks.requireUser.mockResolvedValue(authedUser());
   mocks.tenantFindUnique.mockResolvedValue({ plan: "pro" });
   mocks.workspaceFindUnique.mockResolvedValue({
     leadsCredited: 2_500,
@@ -89,7 +89,7 @@ describe("GET /api/me/leads-balance", () => {
   });
 
   test("balance = 0 si pas de workspace résolu (état dégradé)", async () => {
-    mocks.requireUser.mockResolvedValue(authedUser("freemium", null));
+    mocks.requireUser.mockResolvedValue(authedUser(null));
     const res = await GET();
     expect(res.status).toBe(200);
     const body = (await readJson(res)) as { balance: number; credited: number };

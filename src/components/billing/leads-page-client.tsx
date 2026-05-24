@@ -268,7 +268,7 @@ export function LeadsPageClient() {
           {loadingEvents ? (
             <div className="p-6 flex items-center justify-center text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              Chargement de l'historique...
+              Chargement de l&apos;historique...
             </div>
           ) : events && events.length > 0 ? (
             <table
@@ -332,7 +332,7 @@ export function LeadsPageClient() {
             </table>
           ) : (
             <p className="p-6 text-sm text-muted-foreground text-center">
-              Aucun crédit pour l'instant. Achetez votre premier lot pour
+              Aucun crédit pour l&apos;instant. Achetez votre premier lot pour
               commencer à consulter des fiches entreprises.
             </p>
           )}

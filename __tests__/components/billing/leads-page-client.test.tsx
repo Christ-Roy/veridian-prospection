@@ -80,4 +80,13 @@ describe("leads-page-client.tsx — invariants critiques", () => {
   test("RefillModal monté avec refillTier issu de l'API (pas hardcodé)", () => {
     expect(source).toMatch(/refillTier=\{\s*balance\.refillTier\s*\}/);
   });
+
+  test("apostrophes JSX échappées via &apos; (eslint react/no-unescaped-entities)", () => {
+    // Anti-régression : l'apostrophe ASCII brute dans du texte JSX casse la
+    // CI eslint (react/no-unescaped-entities). On force &apos; pour les
+    // libellés UI affichés. Vu sur 6f6ba54 (CI staging rouge sur lignes
+    // 271 + 335 — fix commit 736d10f).
+    expect(source).toMatch(/Chargement de l&apos;historique/);
+    expect(source).toMatch(/Aucun crédit pour l&apos;instant/);
+  });
 });
