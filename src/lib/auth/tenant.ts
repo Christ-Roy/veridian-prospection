@@ -89,8 +89,54 @@ export function isGiftedPlan(plan: string | null | undefined): boolean {
 
 // Cache plan lookups par user — évite de re-résoudre le tenant+plan sur chaque
 // requête /api/prospects (historique: incident 2026-04-06 sur Supabase admin API).
-const planCache = new Map<string, { limit: number; expiresAt: number }>();
+//
+// Map `userId → { limit, tenantId, expiresAt }` : on garde le tenantId qui a
+// servi à résoudre la limite, ce qui permet d'invalider en une passe toutes
+// les entrées d'un tenant quand le Hub pousse `update-plan`. Sans ça, un user
+// qui upgrade reste capé jusqu'à 5 min (audit trial résidus 2026-05-24).
+const planCache = new Map<
+  string,
+  { limit: number; tenantId: string | null; expiresAt: number }
+>();
 const PLAN_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Invalide toutes les entrées du cache plan pour un tenant donné.
+ *
+ * À appeler par `POST /api/tenants/update-plan` (et tout autre endpoint
+ * qui muterait `tenant.plan` en DB) : sans ça les users du tenant continuent
+ * à voir leur ancienne limite jusqu'à 5 minutes (TTL). Audit trial résidus
+ * 2026-05-24 — promesse Robert "client paie = aucun cap immédiatement".
+ *
+ * Idempotent — si aucune entrée ne matche, no-op. Synchrone : la Map est
+ * en mémoire process, pas d'I/O.
+ *
+ * Limites connues : ce cache est par-process. Une instance Next multi-pod
+ * doit propager l'invalidation cross-pod (à câbler quand on aura un Redis
+ * ou un signal pub/sub) — aujourd'hui Prospection tourne en singleton,
+ * donc ce cache local est suffisant.
+ */
+export function invalidatePlanCacheForTenant(tenantId: string): number {
+  let cleared = 0;
+  for (const [userId, entry] of planCache.entries()) {
+    if (entry.tenantId === tenantId) {
+      planCache.delete(userId);
+      cleared++;
+    }
+  }
+  return cleared;
+}
+
+/** Test-only hook — pour les tests anti-régression du cache. */
+export const __planCacheInternals = {
+  clear: () => planCache.clear(),
+  size: () => planCache.size,
+  set: (
+    userId: string,
+    entry: { limit: number; tenantId: string | null; expiresAt: number },
+  ) => planCache.set(userId, entry),
+  get: (userId: string) => planCache.get(userId),
+};
 
 /**
  * Get the prospect limit for a tenant based on their plan.
@@ -107,9 +153,12 @@ export async function getTenantProspectLimit(userId: string): Promise<number> {
   }
 
   let plan = "freemium";
+  let tenantId: string | null = null;
   try {
-    const rows = await prisma.$queryRawUnsafe<{ plan: string | null }[]>(
-      `SELECT t.plan AS plan
+    const rows = await prisma.$queryRawUnsafe<
+      { plan: string | null; tenant_id: string | null }[]
+    >(
+      `SELECT t.plan AS plan, t.id::text AS tenant_id
        FROM tenants t
        LEFT JOIN workspaces w ON w.tenant_id = t.id
        LEFT JOIN workspace_members wm ON wm.workspace_id = w.id AND wm.deleted_at IS NULL
@@ -118,11 +167,16 @@ export async function getTenantProspectLimit(userId: string): Promise<number> {
       userId,
     );
     if (rows[0]?.plan) plan = rows[0].plan;
+    if (rows[0]?.tenant_id) tenantId = rows[0].tenant_id;
   } catch (err) {
     console.warn(`[getTenantProspectLimit] lookup failed for ${userId}:`, err);
   }
 
   const limit = PLAN_LIMITS[plan] ?? PLAN_LIMITS.freemium;
-  planCache.set(userId, { limit, expiresAt: Date.now() + PLAN_CACHE_TTL_MS });
+  planCache.set(userId, {
+    limit,
+    tenantId,
+    expiresAt: Date.now() + PLAN_CACHE_TTL_MS,
+  });
   return limit;
 }

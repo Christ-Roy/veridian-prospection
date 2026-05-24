@@ -424,7 +424,14 @@ export function ProspectPage() {
           <span className="text-xs text-muted-foreground">
             <strong>{data ? data.total.toLocaleString() : "..."}</strong> prospects
           </span>
-          {data && data.total <= 300 && (
+          {/* Compteur quota freemium "X / 300" — affiché UNIQUEMENT pendant
+              le trial actif. Audit trial résidus 2026-05-24 : un user payant
+              (plan != freemium) ne doit JAMAIS voir cette pastille même si
+              data.total <= 300 (workspace fraîchement provisioné, pool
+              proportionnel petit, etc.). `trialState.isExpired === false` ET
+              `daysLeft < 900` = trial actif (paid renvoie daysLeft=999 cf
+              /api/trial). */}
+          {data && data.total <= 300 && !trialState.loading && trialState.daysLeft < 900 && !trialState.isExpired && (
             <span className="text-[10px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full" title="Quota freemium — passez au plan Geo pour debloquer">
               {data.total} / 300
             </span>

@@ -80,6 +80,12 @@ export function AppNav({ initialIsAdmin = false }: { initialIsAdmin?: boolean })
   }
 
   const urgent = daysLeft <= 3;
+  // Audit trial résidus 2026-05-24 : badge "Essai gratuit" NE doit JAMAIS
+  // s'afficher pour un user payant. `daysLeft >= 900` = plan paid/gifted
+  // (l'endpoint /api/trial renvoie daysLeft=999 dans ce cas), `isExpired`
+  // est aussi `false`. On hide complètement le badge dans ce cas — promesse
+  // Robert "client paie = aucun bandeau visible".
+  const showTrialBadge = daysLeft < 900;
 
   return (
     <header className="border-b bg-white dark:bg-gray-900 dark:border-gray-800 px-4 md:px-6 py-2.5 sticky top-0 z-40">
@@ -93,22 +99,24 @@ export function AppNav({ initialIsAdmin = false }: { initialIsAdmin?: boolean })
             <h1 className="text-base font-semibold leading-tight">Prospection</h1>
             <p className="text-[11px] text-muted-foreground">Veridian</p>
           </div>
-          <div className={cn(
-            "ml-1 md:ml-2 inline-flex items-center gap-1 px-1.5 md:px-2 py-0.5 rounded-full text-[9px] md:text-[10px] font-medium shrink-0",
-            isExpired
-              ? "bg-red-100 text-red-700"
-              : urgent
-                ? "bg-red-100 text-red-700 animate-pulse"
-                : "bg-amber-100 text-amber-700"
-          )}>
-            <Clock className="h-2.5 w-2.5 md:h-3 md:w-3" />
-            <span className="hidden sm:inline">
-              {isExpired ? "Essai termine" : `Essai gratuit — ${daysLeft}j`}
-            </span>
-            <span className="sm:hidden">
-              {isExpired ? "Expire" : `${daysLeft}j`}
-            </span>
-          </div>
+          {showTrialBadge && (
+            <div className={cn(
+              "ml-1 md:ml-2 inline-flex items-center gap-1 px-1.5 md:px-2 py-0.5 rounded-full text-[9px] md:text-[10px] font-medium shrink-0",
+              isExpired
+                ? "bg-red-100 text-red-700"
+                : urgent
+                  ? "bg-red-100 text-red-700 animate-pulse"
+                  : "bg-amber-100 text-amber-700"
+            )}>
+              <Clock className="h-2.5 w-2.5 md:h-3 md:w-3" />
+              <span className="hidden sm:inline">
+                {isExpired ? "Essai termine" : `Essai gratuit — ${daysLeft}j`}
+              </span>
+              <span className="sm:hidden">
+                {isExpired ? "Expire" : `${daysLeft}j`}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Desktop nav */}

@@ -67,12 +67,24 @@ export function AdminKpiDashboard() {
           <StatCard
             label="Plan actuel"
             value={(trialData?.plan ?? "freemium").toUpperCase()}
-            sub={trialData?.plan === "enterprise" ? "Acces illimite" : trialData?.plan === "pro" ? "Acces zone geo" : "300 leads max"}
+            sub={
+              trialData?.plan === "enterprise" ||
+              trialData?.plan === "business" ||
+              trialData?.plan === "lifetime_site_vitrine" ||
+              trialData?.plan === "lifetime_partner" ||
+              trialData?.plan === "internal"
+                ? "Acces illimite"
+                : trialData?.plan === "pro"
+                  ? "Acces zone geo"
+                  : trialData?.plan === "starter"
+                    ? "5 000 leads"
+                    : "300 leads max"
+            }
           />
           <StatCard
             label="Jours restants"
-            value={trialData?.daysLeft ?? "?"}
-            sub={trialData && trialData.daysLeft > 365 ? "Illimite" : "Essai gratuit"}
+            value={trialData && trialData.daysLeft >= 900 ? "—" : (trialData?.daysLeft ?? "?")}
+            sub={trialData && trialData.daysLeft >= 900 ? "Illimite" : "Essai gratuit"}
           />
           <div className="bg-white dark:bg-gray-800 dark:border-gray-700 border rounded-lg p-4 shadow-sm col-span-2">
             <p className="text-xs text-muted-foreground uppercase tracking-wide">Upgrade</p>

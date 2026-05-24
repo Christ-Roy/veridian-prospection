@@ -31,6 +31,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { requireHubHmac } from "@/lib/hub/auth";
 import { prisma } from "@/lib/prisma";
+import { invalidatePlanCacheForTenant } from "@/lib/auth/tenant";
 import {
   CANONICAL_PLANS_V2,
   PLAN_SOURCES_V2,
@@ -245,6 +246,17 @@ export async function POST(request: NextRequest) {
       });
     }
     throw err;
+  }
+
+  // Invalide le cache plan in-memory pour TOUS les users du tenant — sans ça
+  // un user qui vient de payer reste capé pendant 5 minutes (TTL planCache).
+  // Audit trial résidus 2026-05-24 — promesse "client paie = aucun cap
+  // immédiatement". No-op si aucun user n'a encore peuplé le cache.
+  const cleared = invalidatePlanCacheForTenant(tenant_id);
+  if (cleared > 0) {
+    console.log(
+      `[update-plan] tenant=${tenant_id} planCache invalidated (${cleared} entries)`,
+    );
   }
 
   console.log(
