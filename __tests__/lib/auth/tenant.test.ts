@@ -8,19 +8,80 @@
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
 
-const { queryRawUnsafe } = vi.hoisted(() => ({ queryRawUnsafe: vi.fn() }));
+const { queryRawUnsafe, tenantFindFirst, workspaceMemberFindFirst } = vi.hoisted(() => ({
+  queryRawUnsafe: vi.fn(),
+  tenantFindFirst: vi.fn(),
+  workspaceMemberFindFirst: vi.fn(),
+}));
 
 vi.mock("@/lib/prisma", () => ({
-  prisma: { $queryRawUnsafe: queryRawUnsafe },
+  prisma: {
+    $queryRawUnsafe: queryRawUnsafe,
+    tenant: { findFirst: tenantFindFirst },
+    workspaceMember: { findFirst: workspaceMemberFindFirst },
+  },
 }));
 
 import {
+  getTenantId,
   getTenantProspectLimit,
   isGiftedPlan,
   GIFTED_PLANS,
   invalidatePlanCacheForTenant,
   __planCacheInternals,
 } from "@/lib/auth/tenant";
+
+describe("getTenantId — résolution tenant via direct + workspace fallback", () => {
+  beforeEach(() => {
+    tenantFindFirst.mockReset();
+    workspaceMemberFindFirst.mockReset();
+    // Reset cache entre tests (l'API n'expose pas un clear direct, donc on
+    // utilise des userIds uniques par test).
+  });
+
+  test("retourne l'id du tenant direct (tenants.user_id, schéma legacy)", async () => {
+    tenantFindFirst.mockResolvedValueOnce({ id: "t-direct-123" });
+    const result = await getTenantId("user-direct-abc");
+    expect(result).toBe("t-direct-123");
+    expect(tenantFindFirst).toHaveBeenCalledWith({
+      where: { userId: "user-direct-abc" },
+      select: { id: true },
+    });
+  });
+
+  test("fallback workspace membership si pas de tenant direct", async () => {
+    tenantFindFirst.mockResolvedValueOnce(null);
+    workspaceMemberFindFirst.mockResolvedValueOnce({
+      workspace: { tenantId: "t-via-workspace-456" },
+    });
+    const result = await getTenantId("user-invited-xyz");
+    expect(result).toBe("t-via-workspace-456");
+    expect(workspaceMemberFindFirst).toHaveBeenCalled();
+  });
+
+  test("retourne null si ni direct ni workspace ne trouve", async () => {
+    tenantFindFirst.mockResolvedValueOnce(null);
+    workspaceMemberFindFirst.mockResolvedValueOnce(null);
+    const result = await getTenantId("user-orphan-000");
+    expect(result).toBeNull();
+  });
+
+  test("cache : 2e appel même userId retourne la valeur cachée (pas null)", async () => {
+    // 1er appel : popule le cache
+    tenantFindFirst.mockResolvedValueOnce({ id: "t-cached-789" });
+    const first = await getTenantId("user-cache-test");
+    expect(first).toBe("t-cached-789");
+
+    // 2e appel : DOIT lire le cache (pas re-mock). Si le code `return cached.id`
+    // est saboté en `return null`, ce test rougit — anti-régression sabotage
+    // ligne 16 (cf check-sabotage-test).
+    tenantFindFirst.mockResolvedValueOnce(null); // si appelé = fail
+    const second = await getTenantId("user-cache-test");
+    expect(second).toBe("t-cached-789");
+    // Vérif que le cache a court-circuité (1 seul appel DB)
+    expect(tenantFindFirst).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("isGiftedPlan", () => {
   test("retourne true pour lifetime_site_vitrine", () => {
