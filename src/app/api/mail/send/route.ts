@@ -1,7 +1,18 @@
 /**
  * /api/mail/send — POST.
  *
- * Envoie un mail SMTP depuis la fiche lead (bouton "Envoyer un mail").
+ * Envoie un mail depuis la fiche lead (bouton "Envoyer un mail").
+ *
+ * Deux flows selon `workspace.mail_provider` :
+ *
+ *   1. `mail_provider === 'gmail-via-hub'` (nouveau, migration 0025) →
+ *      envoi via Hub Mail Gateway : le mail part du Gmail OAuth du commercial.
+ *      Différenciateur produit Veridian (cf ticket 2026-05-25-mail-send-as-user-via-hub-gateway.md).
+ *
+ *   2. `mail_provider === 'none'` (default, v1) → envoi SMTP BYO via
+ *      TenantMailConfig (host/port/user/passwordEnc). Comportement inchangé
+ *      pour tous les tenants existants.
+ *
  * Si `templateSlug` est fourni, on rend le template avec les variables
  * `prospect.{name,entreprise}` + `sender.{name,email}` puis on envoie.
  * Sinon le compose libre {subject, bodyText, bodyHtml} est utilisé tel quel.
@@ -9,8 +20,8 @@
  * Trace toujours côté DB (`lead_emails`) — sent OR failed — pour alimenter
  * la timeline 360 et la future page /history mails.
  *
- * Rate limit : 30 mails / 5 min par user — l'user envoie depuis SON SMTP,
- * mais on cap pour éviter qu'un bug UI ne spam.
+ * Rate limit : 30 mails / 5 min par user — quel que soit le provider, on cap
+ * pour éviter qu'un bug UI ne spam.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -19,6 +30,7 @@ import { requireAuth } from "@/lib/auth/api-auth";
 import { getTenantId } from "@/lib/auth/tenant";
 import { getWorkspaceScope } from "@/lib/auth/user-context";
 import { isRateLimited } from "@/lib/rate-limit";
+import { prisma } from "@/lib/prisma";
 import {
   getMailConfigInternal,
   recordSentEmail,
@@ -30,6 +42,11 @@ import {
   renderTemplate,
   type TemplateVars,
 } from "@/lib/mail/templates";
+import {
+  sendMailViaHub,
+  freshIdempotencyKey,
+  type SendMailViaHubFailureReason,
+} from "@/lib/mail-gateway-client";
 import { logAudit } from "@/lib/audit";
 
 const sendSchema = z
@@ -52,6 +69,12 @@ const sendSchema = z
     subject: z.string().min(1).max(500).optional(),
     bodyText: z.string().min(1).max(50_000).optional(),
     bodyHtml: z.string().min(1).max(100_000).optional(),
+    /**
+     * Idempotency key optionnel — si fourni le caller dédup (cas worker
+     * batch / sequence step). Sinon on génère un UUID v4 frais (cas envoi
+     * 1-to-1 ad-hoc depuis la fiche prospect).
+     */
+    idempotencyKey: z.string().uuid().optional(),
   })
   .refine(
     (d) =>
@@ -63,6 +86,39 @@ const sendSchema = z
         "Either templateSlug+vars OR (subject+bodyText+bodyHtml) is required",
     },
   );
+
+/**
+ * Map les reasons Hub vers le triplet (httpStatus, code clair UI).
+ * 412 needs_reauth et 422 provider_not_linked = STOP campagne côté UI.
+ */
+function mapHubFailureToHttp(
+  reason: SendMailViaHubFailureReason,
+  hubStatus: number,
+): { status: number; reason: string } {
+  switch (reason) {
+    case "needs_reauth":
+      return { status: 412, reason: "needs_reauth" };
+    case "provider_not_linked":
+      return { status: 422, reason: "provider_not_linked" };
+    case "user_not_found":
+      return { status: 404, reason: "user_not_found" };
+    case "rate_limit":
+      return { status: 429, reason: "rate_limit" };
+    case "invalid_payload":
+      return { status: 400, reason: "invalid_payload" };
+    case "invalid_hmac":
+    case "hub_misconfigured":
+      return { status: 503, reason: "hub_misconfigured" };
+    case "hub_timeout":
+    case "hub_network":
+    case "provider_unreachable":
+      return { status: 502, reason: "provider_unreachable" };
+    case "hub_invalid_response":
+    case "hub_server_error":
+    default:
+      return { status: 502, reason: hubStatus >= 500 ? "hub_server_error" : "provider_unreachable" };
+  }
+}
 
 export async function POST(request: NextRequest) {
   const auth = await requireAuth();
@@ -87,6 +143,32 @@ export async function POST(request: NextRequest) {
   }
   const input = parsed.data;
 
+  const { insertId: workspaceId } = await getWorkspaceScope();
+
+  // Lit le mail_provider du workspace actif. Si pas de workspace résolu,
+  // fallback SMTP BYO (cas legacy / tenant sans workspace member).
+  const workspace = workspaceId
+    ? await prisma.workspace.findUnique({
+        where: { id: workspaceId },
+        select: {
+          mailProvider: true,
+          gmailConnectedAt: true,
+        },
+      })
+    : null;
+  const provider = workspace?.mailProvider ?? "none";
+
+  // ─── Branche Hub Mail Gateway (Gmail OAuth user) ──────────────────────
+  if (provider === "gmail-via-hub") {
+    return sendViaHubGateway({
+      auth: auth.user,
+      tenantId,
+      workspaceId,
+      input,
+    });
+  }
+
+  // ─── Branche SMTP BYO (v1, default) ───────────────────────────────────
   const creds = await getMailConfigInternal(tenantId);
   if (!creds) {
     return NextResponse.json(
@@ -122,8 +204,6 @@ export async function POST(request: NextRequest) {
     bodyText = input.bodyText!;
     bodyHtml = input.bodyHtml!;
   }
-
-  const { insertId: workspaceId } = await getWorkspaceScope();
 
   const result = await sendMail(creds, {
     to: input.to,
@@ -161,13 +241,12 @@ export async function POST(request: NextRequest) {
         to: input.to,
         templateSlug: input.templateSlug ?? null,
         messageId: result.messageId,
+        provider: "smtp",
       },
     });
     return NextResponse.json({ ok: true, messageId: result.messageId });
   }
 
-  // Échec : on trace quand même pour la timeline (status=failed) avec un
-  // messageId synthétique pour respecter la contrainte UNIQUE.
   await recordFailedEmail({
     ...traceBase,
     messageId: `failed-${randomUUID()}`,
@@ -182,5 +261,135 @@ export async function POST(request: NextRequest) {
       errorMessage: result.errorMessage,
     },
     { status: 502 },
+  );
+}
+
+/**
+ * Branche Hub Mail Gateway. L'OAuth Gmail est stocké côté Hub sur
+ * `user.hubUserId` — Prosp ne fait que signer HMAC et déléguer.
+ */
+async function sendViaHubGateway(args: {
+  auth: { id: string; email: string };
+  tenantId: string;
+  workspaceId: string | null;
+  input: z.infer<typeof sendSchema>;
+}): Promise<NextResponse> {
+  const { auth, tenantId, workspaceId, input } = args;
+
+  // Résout hubUserId — sans lui, le Hub ne peut pas mapper vers l'OAuth Gmail.
+  const user = await prisma.user.findUnique({
+    where: { id: auth.id },
+    select: { hubUserId: true, email: true, name: true },
+  });
+  if (!user?.hubUserId) {
+    return NextResponse.json(
+      {
+        ok: false,
+        reason: "provider_not_linked",
+        message: "User has no hubUserId — cannot resolve Gmail OAuth",
+      },
+      { status: 422 },
+    );
+  }
+
+  // Rendu (template OU compose libre). Sender = email user lui-même
+  // (différenciateur : le from c'est SON adresse, pas un sender Veridian).
+  let subject: string;
+  let bodyText: string;
+  let bodyHtml: string;
+  if (input.templateSlug) {
+    const tpl = getTemplate(input.templateSlug);
+    if (!tpl) {
+      return NextResponse.json(
+        { error: "Unknown template", templateSlug: input.templateSlug },
+        { status: 400 },
+      );
+    }
+    const vars: TemplateVars = {
+      prospect: input.vars!.prospect,
+      sender: {
+        name: user.name ?? auth.email,
+        email: auth.email,
+      },
+    };
+    subject = renderTemplate(tpl.subject, vars);
+    bodyText = renderTemplate(tpl.bodyText, vars);
+    bodyHtml = renderTemplate(tpl.bodyHtml, vars);
+  } else {
+    subject = input.subject!;
+    bodyText = input.bodyText!;
+    bodyHtml = input.bodyHtml!;
+  }
+
+  const idempotencyKey = input.idempotencyKey ?? freshIdempotencyKey();
+  const result = await sendMailViaHub({
+    userId: user.hubUserId,
+    to: input.to,
+    subject,
+    bodyText,
+    bodyHtml,
+    cc: input.cc,
+    replyTo: auth.email,
+    idempotencyKey,
+  });
+
+  const traceBase = {
+    tenantId,
+    workspaceId,
+    userId: auth.id,
+    siren: input.siren ?? null,
+    fromEmail: auth.email,
+    fromName: user.name ?? null,
+    toEmails: [input.to],
+    ccEmails: input.cc ?? [],
+    subject,
+    bodyText,
+    bodyHtml,
+    templateSlug: input.templateSlug ?? null,
+  };
+
+  if (result.ok) {
+    await recordSentEmail({
+      ...traceBase,
+      messageId: result.messageId,
+    });
+    await logAudit({
+      tenantId,
+      actorType: "user",
+      actorId: auth.id,
+      action: "mail.sent",
+      targetType: "prospect",
+      targetId: input.siren ?? null,
+      metadata: {
+        to: input.to,
+        templateSlug: input.templateSlug ?? null,
+        messageId: result.messageId,
+        provider: "gmail-via-hub",
+        idempotentReplay: result.idempotentReplay,
+      },
+    });
+    return NextResponse.json({
+      ok: true,
+      messageId: result.messageId,
+      provider: "gmail-via-hub",
+      idempotentReplay: result.idempotentReplay,
+    });
+  }
+
+  // Échec : trace + map status.
+  const { status, reason } = mapHubFailureToHttp(result.reason, result.httpStatus);
+  await recordFailedEmail({
+    ...traceBase,
+    messageId: `failed-${randomUUID()}`,
+    errorMessage: result.message ?? reason,
+  });
+  return NextResponse.json(
+    {
+      ok: false,
+      reason,
+      provider: "gmail-via-hub",
+      errorMessage: result.message,
+    },
+    { status },
   );
 }
