@@ -713,3 +713,109 @@
     + signature includeSignature). Sabotage : retirer "allow-same-origin"
     de sandbox → test source rouge ; passer includeSignature à false
     par défaut → test rouge.
+
+# ── OpenRouter free tier + OAuth PKCE (W9d, 2026-05-25) ────────────────
+# Tests colocalisés `src/lib/openrouter/<X>.test.ts` couvrent
+# `src/lib/openrouter/<X>.ts` selon le même pattern que src/lib/ai/<X>.ts.
+
+- sources:
+    - src/lib/openrouter/pkce.ts
+    - src/lib/openrouter/pkce.test.ts
+  covered_by:
+    - src/lib/openrouter/pkce.test.ts
+  reason: |
+    Test colocalisé PKCE helpers (16 tests). Couvre :
+    - generateCodeVerifier (longueur 43-128 RFC 7636, base64url, entropie)
+    - generateCodeChallenge (SHA256 connu pour verifier="test", déterminisme)
+    - generateState (random 16B b64url)
+    - buildAuthorizeUrl (tous params requis + code_challenge_method=S256)
+    - exchangeCodeForKey (POST openrouter.ai/api/v1/auth/keys, mapping
+      kinds auth/server/invalid/network, refus key sans prefix sk-or-,
+      refus réponse sans key — anti-confusion provider)
+
+- sources:
+    - src/lib/openrouter/queries.ts
+    - src/lib/openrouter/queries.test.ts
+  covered_by:
+    - src/lib/openrouter/queries.test.ts
+  reason: |
+    Test colocalisé user_openrouter_link queries (15 tests). Crucial :
+    - Sabotage-test no-key-leak : JSON.stringify(getOpenRouterLinkPublic)
+      ne contient JAMAIS "apiKeyEnc" ni la clé chiffrée
+    - Round-trip AES-256-GCM : encrypt → decrypt sur clé sk-or-v1-...
+    - Soft-delete idempotent P2025 (record disparu = swallow)
+    - Re-throw erreurs non-P2025 (db down etc.)
+    - Reconnect : upsert update écrase apiKeyEnc + reset deletedAt à null
+
+- sources:
+    - src/lib/ai/resolver.ts
+    - src/lib/ai/resolver.test.ts
+  covered_by:
+    - src/lib/ai/resolver.test.ts
+  reason: |
+    Test colocalisé resolveAdapter (8 tests). Cœur du Palier 1 :
+    - Priorité 1 : link user OpenRouter > tenant config (user débite SON crédit)
+    - Priorité 2 : tenant config (anthropic/openai/mistral/openrouter)
+    - Priorité 3 : OPENROUTER_VERIDIAN_KEY env → veridian-free + Llama 3.3
+      70B :free
+    - Priorité 4 : null → 412 not_configured
+    - Edge : link soft-deleted retombe sur tenant, provider tenant inconnu
+      refuse au lieu de glisser silencieusement sur Veridian (admin doit
+      corriger).
+
+- sources:
+    - src/app/api/integrations/openrouter/connect/route.ts
+    - src/app/api/integrations/openrouter/callback/route.ts
+    - src/app/api/integrations/openrouter/disconnect/route.ts
+    - src/app/api/integrations/openrouter/status/route.ts
+  covered_by:
+    - src/app/api/integrations/openrouter/openrouter-rbac.test.ts
+    - e2e/staging-full/openrouter-oauth.spec.ts
+  reason: |
+    Test source-level centralisé qui verrouille les invariants des 4 routes
+    OAuth PKCE (W9d 2026-05-25) :
+    - connect : requireAuth + cookie HMAC HTTP-only + redirect openrouter.ai
+    - callback : requireAuth + verifyPayload signature + state CSRF strict
+      (regex `if\s*\(\s*payload\.state\s*!==\s*stateQuery\s*\)` — anti
+      désactivation `if (false && ...)`), userId match anti-link-jack,
+      exchangeCodeForKey, upsertOpenRouterLink, audit
+    - disconnect : requireAuth + soft delete (jamais prisma.delete physique)
+      + audit
+    - status : requireAuth + vue publique (no apiKeyEnc leak)
+    Wiring runtime validé par 12 specs Playwright hard-core
+    (e2e/staging-full/openrouter-oauth.spec.ts : happy path connect,
+    callbacks CSRF/cookie tampered/expiré/user-mismatch/missing,
+    RBAC non-auth sur les 4 routes, disconnect idempotent,
+    smoke generate fallback veridian-free).
+
+- sources:
+    - src/components/mail/openrouter-link-card.tsx
+  covered_by:
+    - e2e/staging-full/openrouter-oauth.spec.ts
+  reason: |
+    Composant client React du flow OAuth (W9d 2026-05-25). Logique pure :
+    - useEffect fetch /api/integrations/openrouter/status au mount
+    - parsing query params ?ai=connected / ?ai_error=... pour toast
+    - 3 états UI (non connecté + Veridian fallback, non connecté sans
+      fallback, connecté avec email + bouton Déconnecter)
+    - bouton Connecter = full redirect `<a href="/api/.../connect">`
+      (pas de fetch async — pattern OAuth standard)
+    - confirm() avant disconnect (anti-clic accidentel)
+    Aucune logique métier propre côté client — c'est un wrapper UI sur
+    les 4 routes API déjà couvertes par openrouter-rbac.test.ts. Le
+    wiring runtime (status JSON shape, redirect connect, toast d'erreur,
+    fetch DELETE disconnect) est validé par les 12 specs E2E. Pas de
+    test source-level dédié — la couverture API + E2E est suffisante
+    pour un composant qui ne fait que coller les routes ensemble.
+
+- sources:
+    - src/lib/openrouter/cookie.ts
+    - src/lib/openrouter/cookie.test.ts
+  covered_by:
+    - src/lib/openrouter/cookie.test.ts
+  reason: |
+    Test colocalisé cookie PKCE signé HMAC (W9d 2026-05-25, 7 tests).
+    Round-trip sign/verify, sabotage tampering payload/sig, format
+    invalide, fail-closed AUTH_SECRET manquant ou trop court. Extrait
+    de connect/route.ts à cause de la règle Next.js "no custom export
+    in route.ts" qui cassait le build.

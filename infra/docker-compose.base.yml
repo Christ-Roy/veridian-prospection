@@ -51,6 +51,10 @@ services:
       # Telnyx Ed25519 public key — vérifie signature /api/phone/telnyx-webhook
       # (T20 fix pentest T16 HIGH). Sans : webhook répond 500 fail-closed.
       TELNYX_PUBLIC_KEY: ${TELNYX_PUBLIC_KEY:-}
+      # OpenRouter clé Veridian globale — fallback gratuit IA mail templates
+      # (W9d 2026-05-25). Si absent : les tenants sans config IA voient 412.
+      # Modèle utilisé par défaut : VERIDIAN_DEFAULT_FREE_MODEL (src/lib/ai/models.ts).
+      OPENROUTER_VERIDIAN_KEY: ${OPENROUTER_VERIDIAN_KEY:-}
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/api/health || exit 1"]
       interval: 30s

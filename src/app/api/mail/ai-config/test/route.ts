@@ -11,8 +11,10 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth/user-context";
 import { isRateLimited } from "@/lib/rate-limit";
-import { getAiConfigInternal, recordAiUsage } from "@/lib/ai/queries";
-import { getAdapter, AiAdapterError } from "@/lib/ai/adapter";
+import { recordAiUsage } from "@/lib/ai/queries";
+import { resolveAdapter } from "@/lib/ai/resolver";
+import { recordOpenRouterLinkUsage } from "@/lib/openrouter/queries";
+import { AiAdapterError } from "@/lib/ai/adapter";
 
 export async function POST() {
   const auth = await requireAdmin();
@@ -22,28 +24,33 @@ export async function POST() {
     return NextResponse.json({ error: "Rate limited" }, { status: 429 });
   }
 
-  const config = await getAiConfigInternal(auth.ctx.tenantId);
-  if (!config) {
+  const resolved = await resolveAdapter({
+    userId: auth.ctx.userId,
+    tenantId: auth.ctx.tenantId,
+  });
+  if (!resolved) {
     return NextResponse.json(
-      { ok: false, reason: "not_configured", error: "AI config not set up — fill in provider, model and API key first" },
+      { ok: false, reason: "not_configured", error: "AI config not set up — fill in provider, model and API key first, or contact Veridian to enable the free tier" },
       { status: 412 },
     );
   }
 
   try {
-    const adapter = getAdapter({
-      provider: config.provider,
-      model: config.model,
-      apiKeyEnc: config.apiKeyEnc,
-    });
-    const result = await adapter.generateText("Réponds en une seule phrase : dis bonjour.", {
+    const result = await resolved.adapter.generateText("Réponds en une seule phrase : dis bonjour.", {
       maxTokens: 100,
       temperature: 0.3,
     });
     // Compte les tokens même pour le test — c'est de la consommation réelle.
-    void recordAiUsage(config.tenantId, result.tokensIn, result.tokensOut);
+    if (resolved.mode === "tenant-byo") {
+      void recordAiUsage(auth.ctx.tenantId, result.tokensIn, result.tokensOut);
+    } else if (resolved.mode === "user-byo") {
+      void recordOpenRouterLinkUsage(auth.ctx.userId);
+    }
     return NextResponse.json({
       ok: true,
+      mode: resolved.mode,
+      provider: resolved.provider,
+      model: resolved.model,
       message: result.text.trim().slice(0, 300),
       tokensIn: result.tokensIn,
       tokensOut: result.tokensOut,

@@ -24,6 +24,7 @@ services:
       NEXT_PUBLIC_TRIAL_DAYS: "7"
       NEXTAUTH_URL: https://prospection.app.veridian.site
       NODE_ENV: production
+      OPENROUTER_VERIDIAN_KEY: ${OPENROUTER_VERIDIAN_KEY:-}
       PORT: "3000"
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
       SUPABASE_URL: ${SUPABASE_URL:-}

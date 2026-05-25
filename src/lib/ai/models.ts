@@ -91,8 +91,30 @@ export const AI_MODELS: Record<AiProvider, AiModelChoice[]> = {
       label: "Llama 3.3 70B",
       hint: "Open-source, économique",
     },
+    {
+      id: "deepseek/deepseek-chat-v3-0324:free",
+      label: "DeepSeek Chat V3 (free)",
+      hint: "Gratuit via OpenRouter — qualité bonne pour mail commercial",
+    },
+    {
+      id: "meta-llama/llama-3.3-70b-instruct:free",
+      label: "Llama 3.3 70B (free)",
+      hint: "Gratuit via OpenRouter — bon fallback francophone",
+    },
+    {
+      id: "google/gemma-2-9b-it:free",
+      label: "Gemma 2 9B (free)",
+      hint: "Léger, gratuit, rapide",
+    },
   ],
 };
+
+/**
+ * Modèle utilisé par défaut quand l'adapter tourne en mode "Veridian free tier"
+ * (clé globale `OPENROUTER_VERIDIAN_KEY`, pas de config tenant). Doit être un
+ * `:free` pour ne pas consommer le budget Veridian.
+ */
+export const VERIDIAN_DEFAULT_FREE_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
 
 /** Vrai si le couple (provider, model) est whitelisté. */
 export function isValidModel(provider: string, model: string): boolean {

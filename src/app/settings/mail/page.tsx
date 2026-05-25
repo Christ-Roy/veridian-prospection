@@ -1,5 +1,6 @@
 import { MailConfigForm } from "@/components/mail/mail-config-form";
 import { AiConfigForm } from "@/components/mail/ai-config-form";
+import { OpenRouterLinkCard } from "@/components/mail/openrouter-link-card";
 import { ImapConfigForm } from "@/components/mail/imap-config-form";
 import { MailSignatureForm } from "@/components/mail/mail-signature-form";
 import { MailTemplatesManager } from "@/components/mail/mail-templates-manager";
@@ -38,7 +39,8 @@ export default function MailSettingsPage() {
         <TabsContent value="signature">
           <MailSignatureForm />
         </TabsContent>
-        <TabsContent value="ia">
+        <TabsContent value="ia" className="space-y-4 max-w-2xl">
+          <OpenRouterLinkCard />
           <AiConfigForm />
         </TabsContent>
       </Tabs>

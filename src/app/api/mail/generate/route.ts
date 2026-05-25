@@ -26,7 +26,9 @@ import { isRateLimited } from "@/lib/rate-limit";
 import { logAudit } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { getAiConfigInternal, recordAiUsage } from "@/lib/ai/queries";
-import { getAdapter, AiAdapterError } from "@/lib/ai/adapter";
+import { resolveAdapter } from "@/lib/ai/resolver";
+import { recordOpenRouterLinkUsage } from "@/lib/openrouter/queries";
+import { AiAdapterError } from "@/lib/ai/adapter";
 import {
   buildPrompt,
   parseGeneratedMail,
@@ -70,13 +72,18 @@ export async function POST(request: NextRequest) {
   }
   const input = parsed.data;
 
-  const config = await getAiConfigInternal(tenantId);
-  if (!config) {
+  // Pour la locale du prompt : on lit la config tenant si elle existe,
+  // sinon "fr" par défaut. Aucune autre dépendance — resolveAdapter()
+  // gère le fallback Veridian / link user.
+  const tenantConfigForLocale = await getAiConfigInternal(tenantId);
+
+  const resolved = await resolveAdapter({ userId: auth.user.id, tenantId });
+  if (!resolved) {
     return NextResponse.json(
       {
         error: "AI not configured",
         reason: "not_configured",
-        hint: "Ask your tenant admin to set up the AI provider in Settings › Mail › IA",
+        hint: "Ask your tenant admin to set up the AI provider in Settings › Mail › IA, or contact Veridian to enable the free tier.",
       },
       { status: 412 },
     );
@@ -175,7 +182,7 @@ export async function POST(request: NextRequest) {
     recentTimeline,
     objective: input.objective as MailObjective,
     tone: input.tone as MailTone,
-    locale: (input.locale ?? config.defaultLocale) as MailLocale,
+    locale: (input.locale ?? tenantConfigForLocale?.defaultLocale ?? "fr") as MailLocale,
     senderName: auth.user.email.split("@")[0] || null,
   });
 
@@ -184,12 +191,7 @@ export async function POST(request: NextRequest) {
   let tokensIn = 0;
   let tokensOut = 0;
   try {
-    const adapter = getAdapter({
-      provider: config.provider,
-      model: config.model,
-      apiKeyEnc: config.apiKeyEnc,
-    });
-    const result = await adapter.generateText(user, {
+    const result = await resolved.adapter.generateText(user, {
       system,
       maxTokens: 2000,
       temperature: 0.7,
@@ -240,7 +242,13 @@ export async function POST(request: NextRequest) {
     .replace(/\n/g, "<br>")}</p>`;
 
   // ─── Métriques fire-and-forget ────────────────────────────────────────
-  void recordAiUsage(tenantId, tokensIn, tokensOut);
+  // Le compteur tenant_ai_config.last_used_at ne bouge que si on est en
+  // mode tenant-byo (la table existe sinon le link user prend le pas).
+  if (resolved.mode === "tenant-byo") {
+    void recordAiUsage(tenantId, tokensIn, tokensOut);
+  } else if (resolved.mode === "user-byo") {
+    void recordOpenRouterLinkUsage(auth.user.id);
+  }
   void logAudit({
     tenantId,
     actorType: "user",
@@ -249,8 +257,9 @@ export async function POST(request: NextRequest) {
     targetType: "prospect",
     targetId: input.siren,
     metadata: {
-      provider: config.provider,
-      model: config.model,
+      provider: resolved.provider,
+      model: resolved.model,
+      mode: resolved.mode,
       objective: input.objective,
       tone: input.tone,
       tokensIn,
@@ -263,7 +272,8 @@ export async function POST(request: NextRequest) {
     body_text,
     body_html,
     tokens_used: { in: tokensIn, out: tokensOut },
-    model_used: config.model,
-    provider_used: config.provider,
+    model_used: resolved.model,
+    provider_used: resolved.provider,
+    mode: resolved.mode,
   });
 }
