@@ -175,4 +175,168 @@ describe("classifyError", () => {
   test("erreur inconnue → unknown", () => {
     expect(classifyError({ message: "wtf" }).reason).toBe("unknown");
   });
+
+  // --- Cases additionnels (hardening v1) ---
+
+  test("ECONNREFUSED → host_unreachable (port fermé)", () => {
+    expect(
+      classifyError({ code: "ECONNREFUSED", message: "connect ECONNREFUSED" })
+        .reason,
+    ).toBe("host_unreachable");
+  });
+
+  test("ENOTFOUND → host_unreachable (DNS KO)", () => {
+    expect(
+      classifyError({ code: "ENOTFOUND", message: "getaddrinfo ENOTFOUND" })
+        .reason,
+    ).toBe("host_unreachable");
+  });
+
+  test("ESOCKET → timeout (socket coupé)", () => {
+    expect(classifyError({ code: "ESOCKET", message: "socket hang up" }).reason).toBe(
+      "timeout",
+    );
+  });
+
+  test("ETLS → tls_error (handshake explicite)", () => {
+    expect(classifyError({ code: "ETLS", message: "TLS negotiation" }).reason).toBe(
+      "tls_error",
+    );
+  });
+
+  test("message 'certificate' (sans code) → tls_error", () => {
+    expect(
+      classifyError({ message: "self signed certificate in chain" }).reason,
+    ).toBe("tls_error");
+  });
+
+  test("responseCode 534 → auth_failed (Gmail OAuth required)", () => {
+    expect(classifyError({ responseCode: 534, message: "Application-specific password required" }).reason).toBe(
+      "auth_failed",
+    );
+  });
+
+  test("classifyError préserve le message original (debug UI)", () => {
+    const { message } = classifyError({
+      code: "EAUTH",
+      responseCode: 535,
+      message: "535 5.7.0 Authentication credentials invalid",
+    });
+    expect(message).toContain("Authentication");
+  });
+
+  test("classifyError sur une string brute (err raw)", () => {
+    expect(classifyError("naked string error").reason).toBe("unknown");
+  });
+
+  test("classifyError sur une Error JS standard", () => {
+    expect(classifyError(new Error("boom")).reason).toBe("unknown");
+  });
+});
+
+describe("sendMail — error cases additionnels (hardening v1)", () => {
+  beforeEach(() => {
+    sendMailMock.mockReset();
+    verifyMock.mockReset();
+    closeMock.mockReset();
+    createTransportMock.mockClear();
+  });
+
+  test("ECONNREFUSED côté nodemailer → reason=host_unreachable, errorMessage propagé", async () => {
+    sendMailMock.mockRejectedValue({
+      code: "ECONNREFUSED",
+      message: "connect ECONNREFUSED 127.0.0.1:9999",
+    });
+    const res = await sendMail(makeCreds(), {
+      to: "a@b.c",
+      subject: "s",
+      bodyText: "t",
+      bodyHtml: "<p>t</p>",
+    });
+    expect(res.ok).toBe(false);
+    expect(res.reason).toBe("host_unreachable");
+    expect(res.errorMessage).toContain("ECONNREFUSED");
+    expect(closeMock).toHaveBeenCalled();
+  });
+
+  test("ETIMEDOUT côté nodemailer → reason=timeout", async () => {
+    sendMailMock.mockRejectedValue({
+      code: "ETIMEDOUT",
+      message: "operation timed out",
+    });
+    const res = await sendMail(makeCreds(), {
+      to: "a@b.c",
+      subject: "s",
+      bodyText: "t",
+      bodyHtml: "<p>t</p>",
+    });
+    expect(res.ok).toBe(false);
+    expect(res.reason).toBe("timeout");
+    expect(res.errorMessage).toBe("operation timed out");
+  });
+
+  test("EAUTH 535 → reason=auth_failed + smtpCode='535'", async () => {
+    sendMailMock.mockRejectedValue({
+      code: "EAUTH",
+      responseCode: 535,
+      message: "535 Authentication failed",
+    });
+    const res = await sendMail(makeCreds(), {
+      to: "a@b.c",
+      subject: "s",
+      bodyText: "t",
+      bodyHtml: "<p>t</p>",
+    });
+    expect(res.ok).toBe(false);
+    expect(res.reason).toBe("auth_failed");
+    expect(res.smtpCode).toBe("535");
+  });
+
+  test("TLS error sur le verify → testConnection retourne tls_error", async () => {
+    verifyMock.mockRejectedValue({
+      code: "ETLS",
+      message: "TLS handshake failed",
+    });
+    const res = await testConnection(makeCreds());
+    expect(res.ok).toBe(false);
+    expect(res.reason).toBe("tls_error");
+  });
+
+  test("reject 550 mailbox unknown → reason=rejected (5xx)", async () => {
+    sendMailMock.mockRejectedValue({
+      responseCode: 550,
+      message: "550 5.1.1 Mailbox unavailable",
+    });
+    const res = await sendMail(makeCreds(), {
+      to: "ghost@nowhere.com",
+      subject: "s",
+      bodyText: "t",
+      bodyHtml: "<p>t</p>",
+    });
+    expect(res.ok).toBe(false);
+    expect(res.reason).toBe("rejected");
+    expect(res.smtpCode).toBe("550");
+  });
+
+  test("transporter.close() est appelé même quand send throw", async () => {
+    sendMailMock.mockRejectedValue({ code: "EAUTH", message: "auth" });
+    await sendMail(makeCreds(), {
+      to: "a@b.c",
+      subject: "s",
+      bodyText: "t",
+      bodyHtml: "<p>t</p>",
+    });
+    expect(closeMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("fromName échappe les guillemets (header SMTP safe)", async () => {
+    sendMailMock.mockResolvedValue({ messageId: "<x@h>" });
+    await sendMail(
+      { ...makeCreds(), fromName: 'Robert "Boss" Brunon' },
+      { to: "a@b.c", subject: "s", bodyText: "t", bodyHtml: "<p>t</p>" },
+    );
+    const callArg = sendMailMock.mock.calls[0]?.[0] as { from: string };
+    // Le wrapper retire les `"` du fromName pour éviter de casser le header.
+    expect(callArg.from).toBe('"Robert Boss Brunon" <user@example.com>');
+  });
 });

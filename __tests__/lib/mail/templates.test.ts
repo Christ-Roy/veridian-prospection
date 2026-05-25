@@ -91,3 +91,90 @@ describe("MAIL_TEMPLATES — sanity check liquid sur les 2 templates livrés", (
     expect(rendered).not.toMatch(/\{\{/);
   });
 });
+
+describe("renderTemplate — XSS/injection surface (hardening v1)", () => {
+  // CONTEXTE — Décision v1 documentée
+  // renderTemplate() est un simple remplacement de chaîne. Il n'échappe
+  // PAS le HTML des variables. C'est cohérent avec l'usage v1 :
+  //   - prospect.name vient de la DB INPI/dirigeants_uniformised → contrôlé
+  //     côté ETL (pas d'input user libre dans ce champ).
+  //   - sender.name vient du tenant_mail_config.smtpFromName, saisi par
+  //     l'admin de l'app (qui s'envoie à lui-même les conséquences).
+  //
+  // Ces tests verrouillent ce comportement : si quelqu'un ajoute un
+  // template qui injecte un input prospect non-contrôlé (ex: notes libres,
+  // contenu LLM), le test "html-vars-injectent-textes" doit servir de
+  // signal pour ajouter un escape avant le call site (et non dans
+  // renderTemplate qui doit rester pure replace).
+
+  test("les variables sont injectées brutes — pas d'escape implicite", () => {
+    const vars = {
+      prospect: {
+        name: "<script>alert(1)</script>",
+        entreprise: "Acme & Co",
+      },
+      sender: { name: "Bob", email: "bob@v.s" },
+    };
+    const out = renderTemplate(
+      "Bonjour {{ prospect.name }} chez {{ prospect.entreprise }}",
+      vars,
+    );
+    // Comportement v1 : le contenu est inséré tel quel. Un futur escape
+    // doit ce passer côté CALLER (route mail/send) avant de templater.
+    expect(out).toContain("<script>alert(1)</script>");
+    expect(out).toContain("Acme & Co");
+  });
+
+  test("HTML rendering: prospect.name contient des balises → présentes brutes", () => {
+    const t = MAIL_TEMPLATES["relance-commerciale-v1"]!;
+    const evil = {
+      prospect: {
+        name: "Bobby<script>alert('xss')</script>",
+        entreprise: "<img src=x onerror=alert(2)>",
+      },
+      sender: { name: "Bob", email: "bob@v.s" },
+    };
+    const html = renderTemplate(t.bodyHtml, evil);
+    // Smoke: la donnée est passée — c'est au caller de la sanitizer.
+    expect(html).toContain("<script>");
+    expect(html).toContain("<img src=x onerror");
+    // Mais ZÉRO variable liquid résiduelle.
+    expect(html).not.toMatch(/\{\{/);
+  });
+
+  test("ne casse pas si une variable string est vide", () => {
+    const vars = {
+      prospect: { name: "", entreprise: "Acme" },
+      sender: { name: "", email: "" },
+    };
+    expect(renderTemplate("Hi {{ prospect.name }}!", vars)).toBe("Hi !");
+  });
+
+  test("préserve les accents (UTF-8) — encodage subject", () => {
+    const vars = {
+      prospect: { name: "François", entreprise: "Café & Délice" },
+      sender: { name: "Hélène", email: "h@v.s" },
+    };
+    expect(
+      renderTemplate("{{ prospect.name }} de {{ prospect.entreprise }}", vars),
+    ).toBe("François de Café & Délice");
+  });
+
+  test("n'évalue pas une variable de type non-string (Number/Object → laissée brute)", () => {
+    // Sécurité défense en profondeur : si un jour `prospect.entreprise`
+    // dérive vers un objet (ex: { name, siret }), on ne veut PAS qu'il
+    // soit interpolé en `[object Object]` — le code retourne le match.
+    // On cast en `unknown` puis `TemplateVars` pour simuler la dérive
+    // de type runtime tout en gardant le compilateur content.
+    const vars = {
+      prospect: {
+        name: "Alice",
+        entreprise: { foo: "bar" } as unknown as string,
+      },
+      sender: { name: "Bob", email: "bob@v.s" },
+    };
+    expect(renderTemplate("{{ prospect.entreprise }}", vars)).toBe(
+      "{{ prospect.entreprise }}",
+    );
+  });
+});
