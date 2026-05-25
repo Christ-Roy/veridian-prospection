@@ -972,6 +972,21 @@ model TenantMailConfig {
   lastTestStatus   String?   @map("last_test_status") @db.VarChar(32)
   lastTestError    String?   @map("last_test_error")
 
+  /// IMAP réception (migration 0027, cron 5 min). Mêmes conventions de
+  /// chiffrement que SMTP : passwordEnc = "<iv_b64>:<tag_b64>:<ct_b64>"
+  /// dérivé de AUTH_SECRET. imapFolder par défaut "INBOX". imapLastUidSeen
+  /// = high-water mark du fetch UID, alimenté par le cron.
+  imapHost            String?   @map("imap_host") @db.VarChar(255)
+  imapPort            Int?      @map("imap_port")
+  imapUsername        String?   @map("imap_username") @db.VarChar(320)
+  imapPasswordEnc     String?   @map("imap_password_enc")
+  imapTls             Boolean   @default(true) @map("imap_tls")
+  imapFolder          String    @default("INBOX") @map("imap_folder") @db.VarChar(64)
+  imapLastUidSeen     Int?      @map("imap_last_uid_seen")
+  imapLastSyncAt      DateTime? @map("imap_last_sync_at") @db.Timestamptz
+  imapLastSyncStatus  String?   @map("imap_last_sync_status") @db.VarChar(32)
+  imapLastSyncError   String?   @map("imap_last_sync_error")
+
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 

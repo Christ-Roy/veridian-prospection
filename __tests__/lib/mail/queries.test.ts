@@ -15,6 +15,7 @@ vi.mock("@/lib/prisma", () => ({
       findUnique: findUniqueMock,
       upsert: upsertMock,
       update: updateMock,
+      findMany: findManyMock,
     },
     leadEmail: {
       create: createMock,
@@ -262,3 +263,239 @@ describe("listLeadEmails", () => {
 // reste branché (sabotage-test : si on retire encryptPassword de upsertMailConfig,
 // le test "chiffre le password" rougit).
 void encryptPassword;
+
+// ─── IMAP réception v2 (W8b 2026-05-25) ─────────────────────────────────────
+import {
+  getImapConfigPublic,
+  getImapConfigInternal,
+  listImapEnabledTenants,
+  upsertImapConfig,
+  clearImapConfig,
+  recordImapSyncResult,
+  recordIncomingEmail,
+} from "@/lib/mail/queries";
+
+describe("getImapConfigPublic", () => {
+  test("retourne null si pas de row", async () => {
+    findUniqueMock.mockResolvedValue(null);
+    const r = await getImapConfigPublic("t-1");
+    expect(r).toBeNull();
+  });
+
+  test("masque le password, expose passwordConfigured", async () => {
+    findUniqueMock.mockResolvedValue({
+      imapHost: "imap.x.com",
+      imapPort: 993,
+      imapUsername: "u",
+      imapPasswordEnc: "iv:tag:ct",
+      imapTls: true,
+      imapFolder: "INBOX",
+      imapLastUidSeen: 42,
+      imapLastSyncAt: new Date("2026-05-25T10:00:00Z"),
+      imapLastSyncStatus: "ok",
+      imapLastSyncError: null,
+    });
+    const r = await getImapConfigPublic("t-1");
+    expect(r?.passwordConfigured).toBe(true);
+    expect(r).not.toHaveProperty("imapPasswordEnc");
+    expect(r?.lastSyncAt).toBe("2026-05-25T10:00:00.000Z");
+  });
+});
+
+describe("getImapConfigInternal", () => {
+  test("null si imapHost null", async () => {
+    findUniqueMock.mockResolvedValue({ imapHost: null });
+    const r = await getImapConfigInternal("t-1");
+    expect(r).toBeNull();
+  });
+
+  test("retourne passwordEnc + creds complets si config valide", async () => {
+    findUniqueMock.mockResolvedValue({
+      imapHost: "imap.x.com",
+      imapPort: 993,
+      imapUsername: "u",
+      imapPasswordEnc: "iv:tag:ct",
+      imapTls: true,
+      imapFolder: "INBOX",
+      imapLastUidSeen: null,
+    });
+    const r = await getImapConfigInternal("t-1");
+    expect(r?.passwordEnc).toBe("iv:tag:ct");
+    expect(r?.host).toBe("imap.x.com");
+  });
+});
+
+describe("listImapEnabledTenants", () => {
+  test("filtre les rows incomplètes", async () => {
+    findManyMock.mockResolvedValue([
+      {
+        tenantId: "t-1",
+        imapHost: "imap.x.com",
+        imapPort: 993,
+        imapUsername: "u",
+        imapPasswordEnc: "iv:tag:ct",
+        imapTls: true,
+        imapFolder: "INBOX",
+        imapLastUidSeen: null,
+      },
+    ]);
+    const r = await listImapEnabledTenants();
+    expect(r).toHaveLength(1);
+    expect(r[0].tenantId).toBe("t-1");
+    expect(r[0].passwordEnc).toBe("iv:tag:ct");
+  });
+});
+
+describe("upsertImapConfig", () => {
+  beforeEach(() => {
+    findUniqueMock.mockReset();
+    upsertMock.mockReset();
+  });
+
+  test("chiffre le password et upsert", async () => {
+    findUniqueMock.mockResolvedValue(null);
+    upsertMock.mockResolvedValue({});
+    findUniqueMock.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      imapHost: "imap.x.com",
+      imapPort: 993,
+      imapUsername: "u",
+      imapPasswordEnc: "iv:tag:ct",
+      imapTls: true,
+      imapFolder: "INBOX",
+      imapLastUidSeen: null,
+      imapLastSyncAt: null,
+      imapLastSyncStatus: null,
+      imapLastSyncError: null,
+    });
+    await upsertImapConfig("t-1", {
+      host: "imap.x.com",
+      port: 993,
+      username: "u",
+      password: "hunter2",
+      tls: true,
+      folder: "INBOX",
+    });
+    const args = upsertMock.mock.calls[0][0];
+    // Le password doit être chiffré (format <iv>:<tag>:<ct>)
+    expect(args.create.imapPasswordEnc).toMatch(/:/);
+    expect(args.create.imapPasswordEnc).not.toBe("hunter2");
+  });
+
+  test("reset lastUidSeen si host change (account swap)", async () => {
+    findUniqueMock.mockReset();
+    findUniqueMock.mockResolvedValueOnce({
+      imapHost: "imap.old.com",
+      imapUsername: "u",
+    });
+    findUniqueMock.mockResolvedValueOnce({
+      imapHost: "imap.new.com",
+      imapPort: 993,
+      imapUsername: "u",
+      imapPasswordEnc: "iv:tag:ct",
+      imapTls: true,
+      imapFolder: "INBOX",
+      imapLastUidSeen: null,
+      imapLastSyncAt: null,
+      imapLastSyncStatus: null,
+      imapLastSyncError: null,
+    });
+    upsertMock.mockResolvedValue({});
+    await upsertImapConfig("t-1", {
+      host: "imap.new.com",
+      port: 993,
+      username: "u",
+      password: "secret",
+      tls: true,
+      folder: "INBOX",
+    });
+    const args = upsertMock.mock.calls[0][0];
+    expect(args.update.imapLastUidSeen).toBeNull();
+  });
+});
+
+describe("clearImapConfig", () => {
+  test("update tous les champs IMAP à null", async () => {
+    updateMock.mockResolvedValue({});
+    await clearImapConfig("t-1");
+    const args = updateMock.mock.calls[0][0];
+    expect(args.data.imapHost).toBeNull();
+    expect(args.data.imapPasswordEnc).toBeNull();
+    expect(args.data.imapLastUidSeen).toBeNull();
+  });
+});
+
+describe("recordImapSyncResult", () => {
+  test("écrit status + error + lastUidSeen", async () => {
+    updateMock.mockResolvedValue({});
+    await recordImapSyncResult("t-1", { status: "ok", error: null, lastUidSeen: 100 });
+    const args = updateMock.mock.calls[0][0];
+    expect(args.data.imapLastSyncStatus).toBe("ok");
+    expect(args.data.imapLastUidSeen).toBe(100);
+  });
+});
+
+describe("recordIncomingEmail", () => {
+  test("crée la row direction=incoming + sent_status=received", async () => {
+    createMock.mockResolvedValue({});
+    const r = await recordIncomingEmail({
+      tenantId: "t-1",
+      siren: "123456789",
+      messageId: "msg-1@x",
+      inReplyTo: null,
+      references: null,
+      fromEmail: "x@y.fr",
+      fromName: null,
+      toEmails: ["u@v.fr"],
+      ccEmails: [],
+      subject: "Hi",
+      bodyText: "body",
+      bodyHtml: null,
+      receivedAt: new Date(),
+    });
+    expect(r).toBe(true);
+    const args = createMock.mock.calls[0][0];
+    expect(args.data.direction).toBe("incoming");
+    expect(args.data.sentStatus).toBe("received");
+  });
+
+  test("P2002 (duplicate messageId) swallow + return false", async () => {
+    createMock.mockRejectedValue({ code: "P2002" });
+    const r = await recordIncomingEmail({
+      tenantId: "t-1",
+      siren: null,
+      messageId: "msg-dup@x",
+      inReplyTo: null,
+      references: null,
+      fromEmail: "x@y.fr",
+      fromName: null,
+      toEmails: [],
+      ccEmails: [],
+      subject: null,
+      bodyText: null,
+      bodyHtml: null,
+      receivedAt: new Date(),
+    });
+    expect(r).toBe(false);
+  });
+
+  test("autre erreur DB → throw", async () => {
+    createMock.mockRejectedValue({ code: "P9999" });
+    await expect(
+      recordIncomingEmail({
+        tenantId: "t-1",
+        siren: null,
+        messageId: "msg-fatal@x",
+        inReplyTo: null,
+        references: null,
+        fromEmail: "x@y.fr",
+        fromName: null,
+        toEmails: [],
+        ccEmails: [],
+        subject: null,
+        bodyText: null,
+        bodyHtml: null,
+        receivedAt: new Date(),
+      }),
+    ).rejects.toBeDefined();
+  });
+});
