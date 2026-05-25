@@ -871,6 +871,7 @@ model Tenant {
 
   planHistory PlanHistory[]
   mailConfig  TenantMailConfig?
+  aiConfig    TenantAiConfig?
 
   @@index([userId])
   @@index([status])
@@ -928,6 +929,35 @@ model TenantMailConfig {
   updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   @@map("tenant_mail_config")
+}
+
+/// Configuration LLM par tenant (mail IA v1 — génération templates BYO).
+/// Cf migration 0024_add_tenant_ai_config. Clé API chiffrée AES-256-GCM
+/// via AUTH_SECRET (réutilise lib/crypto/encrypt-password.ts). 1 config
+/// par tenant, admin only côté UI. Coût IA porté par le client (BYO).
+model TenantAiConfig {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String   @unique @map("tenant_id") @db.Uuid
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// "anthropic" | "openai" | "mistral" | "openrouter"
+  provider      String   @db.VarChar(32)
+  /// "claude-opus-4-7" | "gpt-4o" | "mistral-large-latest" | …
+  model         String   @db.VarChar(64)
+  /// Format : "<iv_b64>:<tag_b64>:<ciphertext_b64>" — voir encrypt-password.ts.
+  apiKeyEnc     String   @map("api_key_enc")
+  /// "fr" | "en" — locale par défaut de la génération.
+  defaultLocale String   @default("fr") @map("default_locale") @db.VarChar(8)
+
+  /// Métriques d'usage (souple, fire-and-forget après chaque generate()).
+  lastUsedAt     DateTime? @map("last_used_at") @db.Timestamptz
+  totalTokensIn  Int       @default(0) @map("total_tokens_in")
+  totalTokensOut Int       @default(0) @map("total_tokens_out")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("tenant_ai_config")
 }
 
 /// Trace mail envoyé/reçu par prospect — alimente la timeline 360°.

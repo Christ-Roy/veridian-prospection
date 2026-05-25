@@ -299,3 +299,114 @@
     (__tests__/api/trial.test.ts etc.) gardent leur rôle sur les flows
     non-trial et ne sont volontairement pas modifiés pour éviter le
     bruit (sinon chaque audit cross-app pollue 6 fichiers de tests).
+
+# ── Mail IA — adapter pattern (vague 6.2, 2026-05-25) ───────────────────
+# Tests colocalisés `src/lib/ai/<X>.test.ts` couvrent `src/lib/ai/<X>.ts`.
+# Le mapping canonique cherche `__tests__/lib/ai/<X>.test.test.ts` (double
+# .test), faux positif inhérent à la colocalisation. On les déclare ici.
+
+- sources:
+    - src/lib/ai/adapter.ts
+    - src/lib/ai/anthropic.ts
+    - src/lib/ai/anthropic.test.ts
+  covered_by:
+    - src/lib/ai/anthropic.test.ts
+  reason: |
+    Tests colocalisés Anthropic adapter (13 tests Vitest, mock fetch).
+    Couvre payload Messages API (cache_control ephemeral, model,
+    max_tokens, temperature, headers x-api-key + anthropic-version),
+    parsing usage (input_tokens/output_tokens), et mapping erreur HTTP
+    → AiAdapterError.kind (auth/rate/server/invalid/network).
+    adapter.ts est un switch trivial sur le provider — la couverture
+    réelle est dans les 4 tests d'adapter implémentations.
+
+- sources:
+    - src/lib/ai/openai.ts
+    - src/lib/ai/openai.test.ts
+  covered_by:
+    - src/lib/ai/openai.test.ts
+  reason: |
+    Test colocalisé OpenAI adapter (9 tests). Couvre Chat Completions
+    + branche reasoning (o1/o3 utilise max_completion_tokens, refuse
+    temperature). Headers Bearer + assertions sur le shape body.
+
+- sources:
+    - src/lib/ai/mistral.ts
+    - src/lib/ai/mistral.test.ts
+  covered_by:
+    - src/lib/ai/mistral.test.ts
+  reason: |
+    Test colocalisé Mistral adapter (6 tests). Couvre payload OpenAI-
+    compatible + mapping erreur 403 → kind=auth.
+
+- sources:
+    - src/lib/ai/openrouter.ts
+    - src/lib/ai/openrouter.test.ts
+  covered_by:
+    - src/lib/ai/openrouter.test.ts
+  reason: |
+    Test colocalisé OpenRouter adapter (5 tests). Spécifique : assert
+    headers HTTP-Referer + X-Title (anti-fraud OpenRouter) + model
+    "provider/model" passé tel quel.
+
+- sources:
+    - src/lib/ai/models.ts
+    - src/lib/ai/models.test.ts
+  covered_by:
+    - src/lib/ai/models.test.ts
+  reason: |
+    Test colocalisé whitelist providers + models (10 tests). Garde-fou
+    convention Veridian : Claude opus-4-7/sonnet-4-6/haiku-4-5, pas les
+    anciennes générations. isValidModel exact-match.
+
+- sources:
+    - src/lib/ai/prompt-builder.ts
+    - src/lib/ai/prompt-builder.test.ts
+  covered_by:
+    - src/lib/ai/prompt-builder.test.ts
+  reason: |
+    Test colocalisé prompt builder + parser (15 tests). Assert system
+    prompt STABLE entre 2 appels (preuve du cache Anthropic), user
+    prompt embarque {denomination, secteur, score, contacts, timeline,
+    objectif, ton, locale}, et parseGeneratedMail gère JSON pur,
+    fences ```json, prose autour, throw sur schéma invalide.
+
+- sources:
+    - src/lib/ai/queries.ts
+    - src/lib/ai/queries.test.ts
+  covered_by:
+    - src/lib/ai/queries.test.ts
+  reason: |
+    Test colocalisé queries config IA (24 tests). Crucial :
+    - Sabotage-test masquage clé : aucune string SECRET dans JSON.stringify
+      du retour public.
+    - Round-trip crypto AES-256-GCM (réutilise lib/crypto/encrypt-password).
+    - Tampering ciphertext/tag → decryptPassword throw.
+    - Refus insertion sans apiKey, refus (provider, model) hors whitelist.
+    - recordAiUsage fire-and-forget (ne throw jamais), clamp négatifs à 0.
+
+# ── Mail IA — UI composants (couverture via source-level test) ─────────
+# Les composants React (compose-mail-dialog modifié + ai-config-form +
+# ai-generate-dialog) n'ont PAS de test Vitest jsdom (pas le pattern du
+# projet — cf invitations-modal, mail-config-form). La couverture passe
+# par `src/components/mail/ai-source-level.test.ts` qui lit les fichiers
+# .tsx sources et asserte la présence des libellés, data-testid, imports
+# et patterns (bouton ✨, onglet IA, fetch POST /api/mail/generate, etc).
+
+- sources:
+    - src/components/mail/compose-mail-dialog.tsx
+    - src/components/mail/ai-config-form.tsx
+    - src/components/mail/ai-generate-dialog.tsx
+    - src/app/settings/mail/page.tsx
+  covered_by:
+    - src/components/mail/ai-source-level.test.ts
+  reason: |
+    Couverture source-level (18 tests) : assert présence bouton
+    "Rédige avec IA" + data-testid='ai-generate-trigger' dans
+    compose-mail-dialog, présence onglet IA + libellés dans
+    settings/mail/page, présence input type=password + dropdown
+    AI_PROVIDERS + gestion 403 dans ai-config-form, et présence
+    POST /api/mail/generate + data-testid='ai-generate-submit' dans
+    ai-generate-dialog. Sabotage : retirer le bouton → test rouge.
+    Pattern Veridian éprouvé pour les UI mail (cf compose-mail-dialog
+    source-level historique).

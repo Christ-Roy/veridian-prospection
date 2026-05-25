@@ -15,7 +15,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Loader2, Mail, Send } from "lucide-react";
+import { Loader2, Mail, Send, Sparkles } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -36,6 +36,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { listTemplates, getTemplate, renderTemplate } from "@/lib/mail/templates";
+import { AiGenerateDialog } from "@/components/mail/ai-generate-dialog";
 
 interface ComposeMailDialogProps {
   open: boolean;
@@ -64,6 +65,7 @@ export function ComposeMailDialog({
   const [sending, setSending] = useState(false);
   const [configReady, setConfigReady] = useState<boolean | null>(null);
   const [senderName, setSenderName] = useState<string>("");
+  const [aiOpen, setAiOpen] = useState(false);
 
   const templates = listTemplates();
 
@@ -183,21 +185,35 @@ export function ComposeMailDialog({
         )}
 
         <div className="space-y-3">
-          <div>
-            <Label htmlFor="template-select">Template</Label>
-            <Select value={templateSlug} onValueChange={handleTemplateChange}>
-              <SelectTrigger id="template-select">
-                <SelectValue placeholder="Choisir un template" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={FREEFORM}>Compose libre</SelectItem>
-                {templates.map((t) => (
-                  <SelectItem key={t.slug} value={t.slug}>
-                    {t.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <Label htmlFor="template-select">Template</Label>
+              <Select value={templateSlug} onValueChange={handleTemplateChange}>
+                <SelectTrigger id="template-select">
+                  <SelectValue placeholder="Choisir un template" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={FREEFORM}>Compose libre</SelectItem>
+                  {templates.map((t) => (
+                    <SelectItem key={t.slug} value={t.slug}>
+                      {t.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setAiOpen(true)}
+              disabled={!siren}
+              className="gap-2"
+              data-testid="ai-generate-trigger"
+              title={siren ? "Génère un mail IA personnalisé selon le contexte du prospect" : "Disponible uniquement depuis une fiche prospect"}
+            >
+              <Sparkles className="h-4 w-4" />
+              Rédige avec IA
+            </Button>
           </div>
 
           <div>
@@ -244,6 +260,21 @@ export function ComposeMailDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      {siren && (
+        <AiGenerateDialog
+          open={aiOpen}
+          onOpenChange={setAiOpen}
+          siren={siren}
+          onGenerated={({ subject: s, body_text }) => {
+            setTemplateSlug(FREEFORM);
+            setSubject(s);
+            setBodyText(body_text);
+            setBodyHtml("");
+            setAiOpen(false);
+          }}
+        />
+      )}
     </Dialog>
   );
 }
