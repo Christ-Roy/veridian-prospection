@@ -181,13 +181,16 @@ describe("app-nav.tsx — badge trial gated par plan (audit trial résidus 2026-
   // Sabotage : si quelqu'un retire le gating et remet le badge en
   // permanence, ce test casse.
   test("le label `Essai gratuit` ne doit jamais être rendu hors du gate", () => {
-    // Capture le bloc qui contient le badge — il doit être à l'intérieur
-    // d'un `{showTrialBadge && (...)}`. On vérifie qu'il y a au moins
-    // une occurrence du label `Essai gratuit` ET qu'elle suit
-    // `showTrialBadge`.
-    const idxGate = source.indexOf("showTrialBadge");
-    const idxLabel = source.indexOf("Essai gratuit");
+    // On vise le label rendu (template literal JSX), pas les occurrences
+    // dans les commentaires d'audit qui décrivent justement ce gate.
+    // Le label rendu est : `Essai gratuit — ${daysLeft}j`.
+    const labelPattern = /`Essai gratuit\s+—\s+\$\{daysLeft\}j`/;
+    const matchLabel = source.match(labelPattern);
+    expect(matchLabel).not.toBeNull();
+    const idxGate = source.indexOf("const showTrialBadge");
     expect(idxGate).toBeGreaterThan(-1);
-    expect(idxLabel).toBeGreaterThan(idxGate);
+    // Le label rendu DOIT apparaître APRÈS la déclaration du gate
+    // (sinon il est rendu avant d'être gated → impossible structurellement).
+    expect(matchLabel!.index!).toBeGreaterThan(idxGate);
   });
 });
