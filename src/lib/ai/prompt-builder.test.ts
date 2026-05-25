@@ -183,6 +183,115 @@ describe("buildPrompt", () => {
     });
     expect(user).toContain("English");
   });
+
+  // ── Phase 2/3 timeline 360° ───────────────────────────────────────────
+  // L'extension de TimelineEventCtx ajoute 'email_outgoing' (mail v1/v2)
+  // et 'call' (Telnyx). On verrouille ici que :
+  //  1. Le builder accepte ces 2 nouveaux types sans planter
+  //  2. Les summaries sont injectés tels quels (l'IA voit l'historique mail/call)
+  //  3. Le tag `[type]` est rendu dans le prompt — pas de leak du type interne
+  //     (ex: `[mail_out]` qui serait incohérent avec le contrat IA)
+
+  it("timeline avec email_outgoing → summary mail injecté + tag email_outgoing visible", () => {
+    const tl: TimelineEventCtx[] = [
+      {
+        type: "email_outgoing",
+        occurredAt: "2026-05-22T09:30:00Z",
+        summary: "mail envoyé: Bonjour Robert — démo Veridian (sent)",
+      },
+    ];
+    const { user } = buildPrompt({
+      prospect,
+      contacts,
+      recentTimeline: tl,
+      objective: "relance",
+      tone: "friendly",
+      locale: "fr",
+    });
+    expect(user).toContain("2026-05-22");
+    expect(user).toContain("[email_outgoing]");
+    expect(user).toContain("Bonjour Robert");
+    expect(user).toContain("démo Veridian");
+  });
+
+  it("timeline avec call → summary appel injecté + tag call visible", () => {
+    const tl: TimelineEventCtx[] = [
+      {
+        type: "call",
+        occurredAt: "2026-05-24T14:15:00Z",
+        summary: "appel outbound (completed) 195s",
+      },
+    ];
+    const { user } = buildPrompt({
+      prospect,
+      contacts,
+      recentTimeline: tl,
+      objective: "follow_rdv",
+      tone: "expert",
+      locale: "fr",
+    });
+    expect(user).toContain("2026-05-24");
+    expect(user).toContain("[call]");
+    expect(user).toContain("appel outbound");
+    expect(user).toContain("195s");
+  });
+
+  it("timeline mixte (transition + email_outgoing + call) → tous rendus", () => {
+    const tl: TimelineEventCtx[] = [
+      {
+        type: "pipeline_transition",
+        occurredAt: "2026-05-20T10:00:00Z",
+        summary: "transition: a_contacter → contacte",
+      },
+      {
+        type: "email_outgoing",
+        occurredAt: "2026-05-22T09:30:00Z",
+        summary: "mail envoyé: Suite à notre échange (sent)",
+      },
+      {
+        type: "call",
+        occurredAt: "2026-05-24T14:15:00Z",
+        summary: "appel outbound (completed) 60s",
+      },
+    ];
+    const { user } = buildPrompt({
+      prospect,
+      contacts,
+      recentTimeline: tl,
+      objective: "follow_rdv",
+      tone: "formel",
+      locale: "fr",
+    });
+    // Tous les types rendus
+    expect(user).toContain("[pipeline_transition]");
+    expect(user).toContain("[email_outgoing]");
+    expect(user).toContain("[call]");
+    // Tous les summaries présents
+    expect(user).toContain("a_contacter");
+    expect(user).toContain("Suite à notre échange");
+    expect(user).toContain("appel outbound");
+  });
+
+  it("timeline > 5 events → seulement les 5 premiers rendus (cap dur builder)", () => {
+    const tl: TimelineEventCtx[] = Array.from({ length: 8 }, (_, i) => ({
+      type: "email_outgoing" as const,
+      occurredAt: `2026-05-${(20 + i).toString().padStart(2, "0")}T10:00:00Z`,
+      summary: `mail ${i}`,
+    }));
+    const { user } = buildPrompt({
+      prospect,
+      contacts,
+      recentTimeline: tl,
+      objective: "relance",
+      tone: "formel",
+      locale: "fr",
+    });
+    // 5 premiers présents, 6e absent (cap = .slice(0, 5))
+    expect(user).toContain("mail 0");
+    expect(user).toContain("mail 4");
+    expect(user).not.toContain("mail 5");
+    expect(user).not.toContain("mail 7");
+  });
 });
 
 describe("parseGeneratedMail", () => {

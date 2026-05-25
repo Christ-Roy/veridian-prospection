@@ -257,4 +257,144 @@ describe("POST /api/mail/generate", () => {
     // Métriques fire-and-forget
     expect(recordAiUsageMock).toHaveBeenCalledWith("t-1", 800, 120);
   });
+
+  // ── Phase 2/3 timeline 360° — mail_out + call dans le contexte IA ─────
+  // L'extension de getProspectTimeline ajoute 2 nouveaux types (mail_out,
+  // call). La route mail/generate les mappe vers TimelineEventCtx via un
+  // switch. Si demain on ajoute un nouveau type côté query SANS étendre le
+  // switch, TypeScript émet une erreur ET les tests ci-dessous garantissent
+  // que les events arrivent bien dans le prompt envoyé à l'IA (pas perdus
+  // silencieusement).
+
+  test("timeline mail_out → summary du mail injecté dans le prompt envoyé à l'IA", async () => {
+    requireAuthMock.mockResolvedValue(AUTH_OK);
+    getTenantIdMock.mockResolvedValue("t-1");
+    getAiConfigInternalMock.mockResolvedValue(AI_CFG_OK);
+    prismaMock.entreprise.findUnique.mockResolvedValue(ENT_OK);
+    getProspectTimelineMock.mockResolvedValue([
+      {
+        type: "mail_out",
+        id: "mail-uuid-1",
+        occurredAt: "2026-05-22T09:30:00Z",
+        subject: "Bonjour Robert — démo Veridian",
+        bodyPreview: "Je vous propose une démo demain à 14h",
+        templateSlug: "cold-intro-v3",
+        fromEmail: "robert@veridian.site",
+        toEmails: ["j@acme.fr"],
+        status: "sent",
+      },
+    ]);
+    const generateMock = vi.fn().mockResolvedValue({
+      text: '{"subject":"Relance","body":"Bonjour Jean,\\nSuite à mon précédent mail..."}',
+      tokensIn: 500,
+      tokensOut: 80,
+    });
+    getAdapterMock.mockReturnValue({ generateText: generateMock });
+
+    const res = await POST(makeRequest("/api/mail/generate", { method: "POST", body: validBody() }));
+    expect(res.status).toBe(200);
+
+    // Le prompt envoyé à l'IA DOIT contenir :
+    //  - Le summary mail formaté ("mail envoyé: ...")
+    //  - Le tag [email_outgoing] (mapping mail_out → email_outgoing côté
+    //    builder pour ne pas révéler la convention DB interne à l'IA)
+    //  - Le subject du mail précédent (l'IA doit pouvoir éviter les
+    //    répétitions, ou faire référence)
+    const userPrompt = generateMock.mock.calls[0][0] as string;
+    expect(userPrompt).toContain("[email_outgoing]");
+    expect(userPrompt).toContain("Bonjour Robert");
+    expect(userPrompt).toContain("démo Veridian");
+    expect(userPrompt).toContain("sent");
+  });
+
+  test("timeline call → summary appel injecté dans le prompt (direction + durée)", async () => {
+    requireAuthMock.mockResolvedValue(AUTH_OK);
+    getTenantIdMock.mockResolvedValue("t-1");
+    getAiConfigInternalMock.mockResolvedValue(AI_CFG_OK);
+    prismaMock.entreprise.findUnique.mockResolvedValue(ENT_OK);
+    getProspectTimelineMock.mockResolvedValue([
+      {
+        type: "call",
+        id: "42",
+        occurredAt: "2026-05-24T14:15:00Z",
+        direction: "outbound",
+        status: "completed",
+        durationSeconds: 195,
+        recordingPath: null,
+        notes: null,
+        provider: "telnyx",
+      },
+    ]);
+    const generateMock = vi.fn().mockResolvedValue({
+      text: '{"subject":"Suite à notre appel","body":"Bonjour Jean,\\nComme convenu..."}',
+      tokensIn: 500,
+      tokensOut: 80,
+    });
+    getAdapterMock.mockReturnValue({ generateText: generateMock });
+
+    const res = await POST(makeRequest("/api/mail/generate", { method: "POST", body: validBody() }));
+    expect(res.status).toBe(200);
+
+    const userPrompt = generateMock.mock.calls[0][0] as string;
+    expect(userPrompt).toContain("[call]");
+    expect(userPrompt).toContain("appel outbound");
+    expect(userPrompt).toContain("completed");
+    expect(userPrompt).toContain("195s");
+  });
+
+  test("timeline mixte (transition + mail_out + call) → les 3 types arrivent dans le prompt", async () => {
+    requireAuthMock.mockResolvedValue(AUTH_OK);
+    getTenantIdMock.mockResolvedValue("t-1");
+    getAiConfigInternalMock.mockResolvedValue(AI_CFG_OK);
+    prismaMock.entreprise.findUnique.mockResolvedValue(ENT_OK);
+    getProspectTimelineMock.mockResolvedValue([
+      {
+        type: "pipeline_transition",
+        id: "tr-1",
+        occurredAt: "2026-05-20T10:00:00Z",
+        fromStage: "a_contacter",
+        toStage: "contacte",
+        userId: "u-1",
+      },
+      {
+        type: "mail_out",
+        id: "m-1",
+        occurredAt: "2026-05-22T09:00:00Z",
+        subject: "Premier mail",
+        bodyPreview: "x",
+        templateSlug: null,
+        fromEmail: "robert@veridian.site",
+        toEmails: ["j@acme.fr"],
+        status: "sent",
+      },
+      {
+        type: "call",
+        id: "1",
+        occurredAt: "2026-05-24T11:00:00Z",
+        direction: "outbound",
+        status: "completed",
+        durationSeconds: 60,
+        recordingPath: null,
+        notes: null,
+        provider: "telnyx",
+      },
+    ]);
+    const generateMock = vi.fn().mockResolvedValue({
+      text: '{"subject":"S","body":"B"}',
+      tokensIn: 500,
+      tokensOut: 80,
+    });
+    getAdapterMock.mockReturnValue({ generateText: generateMock });
+
+    const res = await POST(makeRequest("/api/mail/generate", { method: "POST", body: validBody() }));
+    expect(res.status).toBe(200);
+
+    const userPrompt = generateMock.mock.calls[0][0] as string;
+    expect(userPrompt).toContain("[pipeline_transition]");
+    expect(userPrompt).toContain("[email_outgoing]");
+    expect(userPrompt).toContain("[call]");
+    expect(userPrompt).toContain("a_contacter");
+    expect(userPrompt).toContain("Premier mail");
+    expect(userPrompt).toContain("appel outbound");
+  });
 });
