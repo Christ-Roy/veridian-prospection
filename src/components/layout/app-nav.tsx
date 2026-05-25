@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import {
-  FolderOpen, Kanban, History, BookOpen, Settings, Clock, Menu, X, Globe, PhoneCall, Shield, List, LogOut,
+  FolderOpen, Kanban, History, BookOpen, Settings, Clock, Menu, X, Globe, PhoneCall, Shield, List, LogOut, Inbox,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NotificationBell } from "@/components/layout/notification-bell";
@@ -15,6 +15,7 @@ import { useTrial } from "@/lib/trial-context";
 const navItems = [
   { href: "/prospects", label: "Prospects", icon: FolderOpen },
   { href: "/pipeline", label: "Pipeline", icon: Kanban },
+  { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/historique", label: "Historique", icon: History },
   { href: "/guide", label: "Guide", icon: BookOpen, settingKey: "show_guide" },
   { href: "/settings", label: "Settings", icon: Settings },

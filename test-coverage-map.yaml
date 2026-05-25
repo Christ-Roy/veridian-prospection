@@ -485,3 +485,57 @@
     retirer le AbortController → test rouge ; remplacer fetch
     /api/refill/start par /api/billing/refill-checkout legacy → rouge ;
     enlever Lock icon du gating qualifiers → rouge.
+
+# ── Inbox global (W8c — Vague 8) ────────────────────────────────────────
+# Pattern : lib/queries colocalisé + routes API source-level + composants
+# source-level (pas de @testing-library dans le repo).
+
+- sources:
+    - src/lib/queries/inbox.ts
+    - src/lib/queries/inbox.test.ts
+  covered_by:
+    - src/lib/queries/inbox.test.ts
+  reason: |
+    Test colocalisé. 23 tests Vitest mocks Prisma : cursor encode/decode
+    roundtrip + invalides ignorés, listInboxEmails RBAC tenantId +
+    workspaceFilter (admin null vs member list), filtres direction/status
+    avec fallback "all" sur input garbage, hasMore + nextCursor pagination,
+    enrichissement entrepriseName via findMany sirens, preview fallback
+    bodyText→bodyHtml stripped→null. attachInboxEmail happy/not_found/
+    forbidden cross-tenant/forbidden workspace/siren_not_found/re-attach.
+    Sabotage-test : retirer le check tenantId !== ctx.tenantId → test
+    "returns forbidden when email belongs to another tenant" rouge.
+
+- sources:
+    - src/app/api/inbox/route.ts
+    - src/app/api/inbox/attach/route.ts
+  covered_by:
+    - src/app/api/inbox/inbox-rbac.test.ts
+  reason: |
+    Test source-level (pattern Veridian, cf pipeline-stages-rbac.test.ts).
+    Lit les fichiers route.ts et vérifie : requireUser(), retour 401,
+    getWorkspaceFilter, scope tenantId, Zod validation (uuid + regex
+    SIREN 9 chiffres), rate-limit (120/min list, 30/min attach), mapping
+    error codes (forbidden→403, not_found→404), audit log
+    `inbox.email_attached`, safe-parse `request.json().catch(() => ({}))`.
+    23 assertions. Sabotage : retirer `tenantId: auth.ctx.tenantId` de
+    listInboxEmails call → test "passe tenantId" rouge.
+
+- sources:
+    - src/components/inbox/InboxList.tsx
+    - src/components/inbox/InboxFilters.tsx
+    - src/components/inbox/AttachProspectModal.tsx
+    - src/app/inbox/page.tsx
+    - src/components/layout/app-nav.tsx
+  covered_by:
+    - src/components/inbox/inbox-list.test.ts
+  reason: |
+    Test source-level (pas de @testing-library dans le repo — cf
+    refill-icp.test.tsx). 28 assertions : data-testid pour E2E,
+    fallback "Non rattaché"/"(sans contenu)"/"(sans sujet)", lien
+    /leads/:siren conditionnel, modale AttachProspectModal montée
+    seulement sur orphans, truncate subject 80 / preview 120, reset
+    cursor sur changement filtre (URL clean), POST /api/inbox/attach
+    JSON + toast success/error, debounce search 250ms (clearTimeout).
+    Page server force-dynamic + redirect /login + TrialGate. AppNav
+    expose href /inbox + icône Inbox importée.
