@@ -27,6 +27,9 @@ export interface PerTenantResult {
   fetched: number;
   inserted: number;
   duplicates: number;
+  /** Mails dont l'insert a throw (DB down…) — distingué des duplicates pour
+   *  remonter une vraie erreur côté monitoring. */
+  errors: number;
   matched: number;
   unmatched: number;
   errorMessage?: string;
@@ -65,6 +68,7 @@ export async function syncOneTenant(creds: {
 
   let inserted = 0;
   let duplicates = 0;
+  let errors = 0;
   let matched = 0;
   let unmatched = 0;
 
@@ -74,30 +78,37 @@ export async function syncOneTenant(creds: {
       if (siren) matched++;
       else unmatched++;
 
-      const ok = await recordIncomingEmail({
-        tenantId: creds.tenantId,
-        siren,
-        messageId: msg.messageId,
-        inReplyTo: msg.inReplyTo,
-        references: msg.references,
-        fromEmail: msg.fromEmail ?? "(unknown)",
-        fromName: msg.fromName,
-        toEmails: msg.toEmails,
-        ccEmails: msg.ccEmails,
-        subject: msg.subject,
-        bodyText: msg.bodyText && msg.bodyText.length > 0 ? msg.bodyText : "(no body)",
-        bodyHtml: msg.bodyHtml,
-        receivedAt: msg.receivedAt,
-      }).catch((err) => {
+      // 3 issues possibles : true=inserté, false=duplicate dédupliqué,
+      // null=erreur DB swallowée. On les distingue dans le compteur pour
+      // que le monitoring voie les vraies erreurs (vs déduplications normales).
+      let outcome: true | false | null;
+      try {
+        outcome = await recordIncomingEmail({
+          tenantId: creds.tenantId,
+          siren,
+          messageId: msg.messageId,
+          inReplyTo: msg.inReplyTo,
+          references: msg.references,
+          fromEmail: msg.fromEmail ?? "(unknown)",
+          fromName: msg.fromName,
+          toEmails: msg.toEmails,
+          ccEmails: msg.ccEmails,
+          subject: msg.subject,
+          bodyText: msg.bodyText && msg.bodyText.length > 0 ? msg.bodyText : "(no body)",
+          bodyHtml: msg.bodyHtml,
+          receivedAt: msg.receivedAt,
+        });
+      } catch (err) {
         console.error(
           `[imap-sync] insert failed tenant=${creds.tenantId} uid=${msg.uid}: ${
             err instanceof Error ? err.message : String(err)
           }`,
         );
-        return false;
-      });
-      if (ok) inserted++;
-      else duplicates++;
+        outcome = null;
+      }
+      if (outcome === true) inserted++;
+      else if (outcome === false) duplicates++;
+      else errors++;
     }
   }
 
@@ -123,6 +134,7 @@ export async function syncOneTenant(creds: {
     fetched: res.messages.length,
     inserted,
     duplicates,
+    errors,
     matched,
     unmatched,
     errorMessage: res.errorMessage,
@@ -157,6 +169,7 @@ export async function runImapSync(): Promise<SyncResult> {
         fetched: 0,
         inserted: 0,
         duplicates: 0,
+        errors: 0,
         matched: 0,
         unmatched: 0,
         errorMessage: err instanceof Error ? err.message : String(err),

@@ -118,6 +118,7 @@ describe("syncOneTenant", () => {
     const r = await syncOneTenant(makeTenantCreds());
     expect(r.inserted).toBe(0);
     expect(r.duplicates).toBe(1);
+    expect(r.errors).toBe(0);
   });
 
   test("fetch error (auth_failed) → ok=false, status persisté", async () => {
@@ -164,7 +165,7 @@ describe("syncOneTenant", () => {
     expect(recordIncomingEmailMock.mock.calls[0][0].fromEmail).toBe("(unknown)");
   });
 
-  test("recordIncomingEmail throw → swallowed + duplicate count", async () => {
+  test("recordIncomingEmail throw → errors++ (pas duplicate), pas de throw remonté", async () => {
     fetchNewMessagesMock.mockResolvedValue({
       ok: true,
       messages: [makeMessage()],
@@ -174,9 +175,26 @@ describe("syncOneTenant", () => {
     recordIncomingEmailMock.mockRejectedValue(new Error("DB down"));
 
     const r = await syncOneTenant(makeTenantCreds());
-    // Pas de throw, mais inserted=0 + duplicates=1 (fallback false).
+    // Erreur DB ≠ duplicate. La sémantique doit les distinguer pour
+    // que le monitoring voie les vraies erreurs.
     expect(r.inserted).toBe(0);
-    expect(r.duplicates).toBe(1);
+    expect(r.duplicates).toBe(0);
+    expect(r.errors).toBe(1);
+  });
+
+  test("happy path : errors=0 explicitement (anti-régression sémantique)", async () => {
+    fetchNewMessagesMock.mockResolvedValue({
+      ok: true,
+      messages: [makeMessage()],
+      lastUid: 1,
+    });
+    matchProspectByEmailMock.mockResolvedValue(null);
+    recordIncomingEmailMock.mockResolvedValue(true);
+
+    const r = await syncOneTenant(makeTenantCreds());
+    expect(r.inserted).toBe(1);
+    expect(r.duplicates).toBe(0);
+    expect(r.errors).toBe(0);
   });
 });
 
