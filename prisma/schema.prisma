@@ -767,7 +767,6 @@ model User {
   accounts Account[]
   sessions Session[]
   mfaCodes MfaCode[]
-  openrouterLink UserOpenRouterLink?
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
@@ -1027,35 +1026,6 @@ model TenantAiConfig {
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   @@map("tenant_ai_config")
-}
-
-/// Lien OAuth PKCE OpenRouter par user — sa clé débite son crédit perso.
-/// Distinct de TenantAiConfig (qui est BYO clé tenant-wide). Si présent
-/// pour le user qui appelle /api/mail/generate, prend le pas sur la config
-/// tenant et sur la clé Veridian globale (résolution dans resolveAdapter()).
-model UserOpenRouterLink {
-  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId          String    @unique @map("user_id") @db.Uuid
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  /// Format : "<iv_b64>:<tag_b64>:<ciphertext_b64>" — voir encrypt-password.ts.
-  apiKeyEnc       String    @map("api_key_enc")
-  /// Email du compte OpenRouter — affichage UI seulement. Nullable car
-  /// OpenRouter ne retourne pas l'email au callback PKCE v1.
-  openrouterEmail String?   @map("openrouter_email") @db.VarChar(320)
-  /// Scope OAuth (réservé futur — OpenRouter expose à terme des scopes).
-  scope           String?   @db.VarChar(64)
-
-  connectedAt     DateTime  @default(now()) @map("connected_at") @db.Timestamptz
-  lastUsedAt      DateTime? @map("last_used_at") @db.Timestamptz
-  /// Soft delete — disconnect = poser deleted_at, garde l'audit trail.
-  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz
-
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-
-  @@index([userId], map: "user_openrouter_link_active_idx")
-  @@map("user_openrouter_link")
 }
 
 /// Trace mail envoyé/reçu par prospect — alimente la timeline 360°.

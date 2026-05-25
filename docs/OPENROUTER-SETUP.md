@@ -1,24 +1,24 @@
-# OpenRouter — setup tier gratuit Veridian + OAuth PKCE user
+# OpenRouter — setup tier gratuit Veridian (Palier 1)
 
-Livré 2026-05-25 (W9d).
+Livré 2026-05-25 (W9d). Palier 2 OAuth PKCE user link reverté 2026-05-26.
 
 ## Vue d'ensemble
 
-L'app expose **deux paliers** d'accès à la génération de templates mail IA :
+L'app expose un fallback gratuit pour la génération IA des templates mail :
 
-1. **Veridian Free** (clé globale, ENV `OPENROUTER_VERIDIAN_KEY`) — fallback gratuit pour
-   tous les tenants n'ayant pas configuré leur propre IA. Plafonné à ~50 req/jour
-   partagées (1000/j si Robert dépose 10 USD chez OpenRouter).
-2. **User BYO via OAuth PKCE** — l'utilisateur clique "Connecter mon compte OpenRouter"
-   dans Settings › Mail › IA, OAuth PKCE retourne une clé `sk-or-v1-...` qui débite
-   SON crédit (illimité selon dépôt).
+**Veridian Free** (clé globale, ENV `OPENROUTER_VERIDIAN_KEY`) — fallback gratuit pour
+tous les tenants n'ayant pas configuré leur propre IA. Plafonné à ~50 req/jour
+partagées (1000/j si Robert dépose 10 USD chez OpenRouter).
+
+Si un tenant veut sa propre clé (n'importe quel provider : anthropic, openai, mistral,
+openrouter), il la pose dans Settings › Mail › IA (BYO clé tenant-wide chiffrée
+AES-256-GCM dans `tenant_ai_config`). Sa clé débite alors son propre crédit.
 
 Ordre de résolution dans `src/lib/ai/resolver.ts` :
 
-1. Link user (`user_openrouter_link`) → adapter OpenRouter avec sa clé
-2. Config tenant (`tenant_ai_config`) → adapter selon provider (anthropic/openai/mistral/openrouter)
-3. Fallback Veridian (`OPENROUTER_VERIDIAN_KEY` env) → adapter OpenRouter clé Veridian + modèle `:free`
-4. Aucun → 412 `not_configured`
+1. Config tenant (`tenant_ai_config`) → adapter selon provider (anthropic/openai/mistral/openrouter)
+2. Fallback Veridian (`OPENROUTER_VERIDIAN_KEY` env) → adapter OpenRouter clé Veridian + modèle `:free`
+3. Aucun → 412 `not_configured`
 
 ## Setup côté Robert (one-shot manuel)
 
@@ -46,59 +46,29 @@ Cf. `src/lib/ai/models.ts` :
 Tests qualité réels mail commercial 200-500 tokens : Llama 3.3 70B free retenu
 comme défaut (meilleur français des trois).
 
-## OAuth PKCE — flow user
-
-```
-1. UI: GET /api/integrations/openrouter/connect
-   → cookie or_pkce signé HMAC(AUTH_SECRET) = { verifier, state, userId, exp(+10min) }
-   → 302 redirect https://openrouter.ai/auth?callback_url=...&code_challenge=...&state=...
-2. User autorise sur openrouter.ai
-3. OpenRouter redirect /api/integrations/openrouter/callback?code=...&state=...
-4. callback :
-   - vérifie cookie or_pkce (signature HMAC + exp)
-   - compare state cookie vs state query → 400 si mismatch (CSRF)
-   - vérifie userId cookie == user session → 400 si user-mismatch (anti link-jack)
-   - POST https://openrouter.ai/api/v1/auth/keys { code, code_verifier, code_challenge_method: "S256" }
-     → { key: "sk-or-v1-...", user_id?: "..." }
-   - upsertOpenRouterLink → encrypt AES-256-GCM via AUTH_SECRET → user_openrouter_link
-   - 302 redirect /settings/mail?ai=connected (ou ?ai_error=<reason>)
-```
-
-## Tables / migrations
-
-- Migration 0031 — `user_openrouter_link` (user_id UNIQUE, api_key_enc TEXT NOT NULL,
-  openrouter_email, scope, connected_at, last_used_at, deleted_at). Soft-delete pour
-  audit (disconnect = poser `deleted_at`).
-
-## Sécurité
-
-- Clé chiffrée AES-256-GCM via `AUTH_SECRET` (même primitive que `tenant_ai_config.api_key_enc`)
-- Cookie PKCE HTTP-only + secure (en prod) + SameSite=Lax + signé HMAC + exp 10 min
-- Anti-CSRF : state random 16 bytes b64url
-- Anti link-jack : userId stocké dans le cookie, comparé à la session au callback
-- Rate limit callback : 10/min/user
-- Soft delete sur disconnect (audit trail conservé)
-
 ## Pour tester en local
 
 1. Set `OPENROUTER_VERIDIAN_KEY` dans `.env.local` (clé perso ou clé Veridian)
 2. `npm run dev`
 3. Va sur http://localhost:3000/settings/mail onglet IA
-4. Tu dois voir "Génération IA offerte par Veridian" (badge vert)
-5. Clique "Connecter mon compte OpenRouter" → redirection vers openrouter.ai
-6. Autorise → retour avec toast "Compte OpenRouter connecté"
-7. Génère un mail prospect → vérifie `mode: "user-byo"` dans la response
+4. Tu dois voir l'AiConfigForm — l'admin peut poser sa propre clé tenant
+   (BYO) ou laisser vide pour fallback Veridian.
+5. Génère un mail prospect → vérifie `mode: "tenant-byo"` ou
+   `mode: "veridian-free"` dans la response selon que le tenant a posé
+   sa clé ou pas.
 
-## E2E
+## Pourquoi pas d'OAuth PKCE user-link ?
 
-Voir `e2e/staging-full/openrouter-oauth.spec.ts` — 10 specs couvrant :
-- Happy path connect → callback → key stockée
-- CSRF state mismatch → ai_error=state_mismatch
-- Cookie expiré → ai_error=pkce_expired
-- User mismatch → ai_error=user_mismatch
-- OpenRouter 401 sur exchange → ai_error=exchange_auth
-- Réseau down → ai_error=exchange_network
-- Reconnect écrase la clé précédente
-- Disconnect → soft delete + fallback Veridian/tenant
-- RBAC : non-auth → 401
-- Cross-app : génération mail utilise bien la clé user après connect
+Le Palier 2 (OAuth PKCE OpenRouter par user, table `user_openrouter_link`,
+4 routes connect/callback/disconnect/status, AES-256-GCM, anti-link-jack,
+cookie HMAC) a été livré le 2026-05-25 puis reverté le 2026-05-26.
+
+Raison : pour le cas d'usage actuel (le user veut utiliser son propre
+crédit OpenRouter), coller `sk-or-v1-...` dans le `tenant_ai_config` BYO
+suffit. L'overkill OAuth complet (PKCE + state CSRF + cookie signé HMAC
++ anti link-jack + soft-delete + 12 specs E2E) n'apporte rien avant
+validation marché — la friction "OAuth pour copier-coller une clé" est
+plus pénible que le copier-coller direct.
+
+Re-livrable si le marché demande un compte OpenRouter perso par user
+(≠ tenant) — le commit `87e42ff` reste accessible via `git log`.

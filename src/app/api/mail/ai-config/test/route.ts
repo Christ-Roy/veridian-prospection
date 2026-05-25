@@ -13,7 +13,6 @@ import { requireAdmin } from "@/lib/auth/user-context";
 import { isRateLimited } from "@/lib/rate-limit";
 import { recordAiUsage } from "@/lib/ai/queries";
 import { resolveAdapter } from "@/lib/ai/resolver";
-import { recordOpenRouterLinkUsage } from "@/lib/openrouter/queries";
 import { AiAdapterError } from "@/lib/ai/adapter";
 
 export async function POST() {
@@ -41,10 +40,9 @@ export async function POST() {
       temperature: 0.3,
     });
     // Compte les tokens même pour le test — c'est de la consommation réelle.
+    // En veridian-free pas de DB row à bump (clé globale).
     if (resolved.mode === "tenant-byo") {
       void recordAiUsage(auth.ctx.tenantId, result.tokensIn, result.tokensOut);
-    } else if (resolved.mode === "user-byo") {
-      void recordOpenRouterLinkUsage(auth.ctx.userId);
     }
     return NextResponse.json({
       ok: true,

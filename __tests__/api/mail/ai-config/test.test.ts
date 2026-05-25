@@ -3,13 +3,12 @@
  *
  * Couvre :
  *  - RBAC requireAdmin
- *  - 412 si pas configuré (resolver retourne null = ni link user, ni tenant
- *     config, ni clé Veridian globale)
+ *  - 412 si pas configuré (resolver retourne null = ni tenant config, ni
+ *     clé Veridian globale)
  *  - 429 rate limited
  *  - 401 si clé invalide (adapter renvoie kind=auth)
- *  - 200 + message en mode tenant-byo, veridian-free, user-byo (Palier 1+2)
- *  - recordAiUsage uniquement en mode tenant-byo, recordOpenRouterLinkUsage
- *     uniquement en mode user-byo, ni l'un ni l'autre en veridian-free.
+ *  - 200 + message en mode tenant-byo, veridian-free (Palier 1)
+ *  - recordAiUsage uniquement en mode tenant-byo, jamais en veridian-free.
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
 import { NextResponse } from "next/server";
@@ -19,22 +18,17 @@ const {
   isRateLimitedMock,
   recordAiUsageMock,
   resolveAdapterMock,
-  recordOpenRouterLinkUsageMock,
 } = vi.hoisted(() => ({
   requireAdminMock: vi.fn(),
   isRateLimitedMock: vi.fn(() => false),
   recordAiUsageMock: vi.fn(),
   resolveAdapterMock: vi.fn(),
-  recordOpenRouterLinkUsageMock: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/user-context", () => ({ requireAdmin: requireAdminMock }));
 vi.mock("@/lib/rate-limit", () => ({ isRateLimited: isRateLimitedMock }));
 vi.mock("@/lib/ai/queries", () => ({ recordAiUsage: recordAiUsageMock }));
 vi.mock("@/lib/ai/resolver", () => ({ resolveAdapter: resolveAdapterMock }));
-vi.mock("@/lib/openrouter/queries", () => ({
-  recordOpenRouterLinkUsage: recordOpenRouterLinkUsageMock,
-}));
 
 import { POST } from "@/app/api/mail/ai-config/test/route";
 import { AiAdapterError } from "@/lib/ai/adapter";
@@ -120,12 +114,11 @@ describe("/api/mail/ai-config/test", () => {
     expect(body.model).toBe("claude-haiku-4-5");
     expect(body.tokensIn).toBe(12);
     expect(body.tokensOut).toBe(3);
-    // tenant-byo bump tenant_ai_config (recordAiUsage), pas le link user
+    // tenant-byo bump tenant_ai_config (recordAiUsage)
     expect(recordAiUsageMock).toHaveBeenCalledWith("t-1", 12, 3);
-    expect(recordOpenRouterLinkUsageMock).not.toHaveBeenCalled();
   });
 
-  test("200 + mode=veridian-free, ne bump NI tenant NI link user", async () => {
+  test("200 + mode=veridian-free, ne bump pas tenant_ai_config", async () => {
     requireAdminMock.mockResolvedValue({ ctx: ADMIN_CTX });
     resolveAdapterMock.mockResolvedValue({
       adapter: {
@@ -145,30 +138,6 @@ describe("/api/mail/ai-config/test", () => {
     expect(body.ok).toBe(true);
     expect(body.mode).toBe("veridian-free");
     // Aucun bump : clé globale partagée, pas de row DB à update
-    expect(recordAiUsageMock).not.toHaveBeenCalled();
-    expect(recordOpenRouterLinkUsageMock).not.toHaveBeenCalled();
-  });
-
-  test("200 + mode=user-byo, bump uniquement le link user (Palier 2)", async () => {
-    requireAdminMock.mockResolvedValue({ ctx: ADMIN_CTX });
-    resolveAdapterMock.mockResolvedValue({
-      adapter: {
-        generateText: vi.fn().mockResolvedValue({
-          text: "Hello from my OAuth-linked OpenRouter account",
-          tokensIn: 10,
-          tokensOut: 7,
-        }),
-      },
-      mode: "user-byo",
-      provider: "openrouter",
-      model: "anthropic/claude-3.5-sonnet",
-      userId: "u-admin",
-    });
-    const res = await POST();
-    expect(res.status).toBe(200);
-    const body = (await readJson(res)) as Record<string, unknown>;
-    expect(body.mode).toBe("user-byo");
-    expect(recordOpenRouterLinkUsageMock).toHaveBeenCalledWith("u-admin");
     expect(recordAiUsageMock).not.toHaveBeenCalled();
   });
 });

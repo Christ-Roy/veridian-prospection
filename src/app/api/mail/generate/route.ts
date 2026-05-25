@@ -27,7 +27,6 @@ import { logAudit } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { getAiConfigInternal, recordAiUsage } from "@/lib/ai/queries";
 import { resolveAdapter } from "@/lib/ai/resolver";
-import { recordOpenRouterLinkUsage } from "@/lib/openrouter/queries";
 import { AiAdapterError } from "@/lib/ai/adapter";
 import {
   buildPrompt,
@@ -243,11 +242,10 @@ export async function POST(request: NextRequest) {
 
   // ─── Métriques fire-and-forget ────────────────────────────────────────
   // Le compteur tenant_ai_config.last_used_at ne bouge que si on est en
-  // mode tenant-byo (la table existe sinon le link user prend le pas).
+  // mode tenant-byo. En mode veridian-free (clé globale), pas de DB row
+  // à bump.
   if (resolved.mode === "tenant-byo") {
     void recordAiUsage(tenantId, tokensIn, tokensOut);
-  } else if (resolved.mode === "user-byo") {
-    void recordOpenRouterLinkUsage(auth.user.id);
   }
   void logAudit({
     tenantId,

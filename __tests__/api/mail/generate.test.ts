@@ -6,16 +6,14 @@
  *  - 404 si tenant pas trouvé
  *  - 429 rate limited (30/min)
  *  - 400 si payload Zod invalide
- *  - 412 si AI pas configurée pour le tenant (ni link user, ni tenant config,
- *     ni clé Veridian globale)
+ *  - 412 si AI pas configurée pour le tenant (ni tenant config, ni clé
+ *    Veridian globale)
  *  - 404 si SIREN n'existe pas dans entreprises
  *  - 401 si adapter renvoie kind=auth (clé revoke)
  *  - 502 si LLM renvoie une réponse non parsable (anti-régression)
  *  - 200 + body {subject, body_text, body_html} sur succès (tenant-byo)
  *  - 200 + mode=veridian-free quand resolver tombe sur la clé Veridian
  *    (fallback Palier 1 — pas de tenant config, ENV présente)
- *  - 200 + mode=user-byo quand un user a connecté son compte via OAuth PKCE
- *    (Palier 2 — clé débite SON crédit)
  *  - audit metadata.mode reflète le mode résolu (anti-régression observability)
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
@@ -30,7 +28,6 @@ const {
   getAiConfigInternalMock,
   recordAiUsageMock,
   resolveAdapterMock,
-  recordOpenRouterLinkUsageMock,
   getProspectTimelineMock,
 } = vi.hoisted(() => ({
   requireAuthMock: vi.fn(),
@@ -41,7 +38,6 @@ const {
   getAiConfigInternalMock: vi.fn(),
   recordAiUsageMock: vi.fn(),
   resolveAdapterMock: vi.fn(),
-  recordOpenRouterLinkUsageMock: vi.fn(),
   getProspectTimelineMock: vi.fn(),
 }));
 
@@ -55,9 +51,6 @@ vi.mock("@/lib/ai/queries", () => ({
   recordAiUsage: recordAiUsageMock,
 }));
 vi.mock("@/lib/ai/resolver", () => ({ resolveAdapter: resolveAdapterMock }));
-vi.mock("@/lib/openrouter/queries", () => ({
-  recordOpenRouterLinkUsage: recordOpenRouterLinkUsageMock,
-}));
 vi.mock("@/lib/queries/timeline", () => ({
   getProspectTimeline: getProspectTimelineMock,
 }));
@@ -164,8 +157,8 @@ describe("POST /api/mail/generate", () => {
   test("412 si AI pas configurée pour le tenant (resolver retourne null)", async () => {
     requireAuthMock.mockResolvedValue(AUTH_OK);
     getTenantIdMock.mockResolvedValue("t-1");
-    // resolveAdapter retourne null = aucune voie : pas de link user, pas de
-    // tenant config, pas d'OPENROUTER_VERIDIAN_KEY env.
+    // resolveAdapter retourne null = aucune voie : pas de tenant config,
+    // pas d'OPENROUTER_VERIDIAN_KEY env.
     getAiConfigInternalMock.mockResolvedValue(null);
     resolveAdapterMock.mockResolvedValue(null);
     const res = await POST(makeRequest("/api/mail/generate", { method: "POST", body: validBody() }));
@@ -284,7 +277,7 @@ describe("POST /api/mail/generate", () => {
     const promptArgs = generateMock.mock.calls[0];
     expect(promptArgs[0]).toContain("ACME PLOMBERIE");
     expect(promptArgs[1].system).toBeDefined();
-    // Audit log appelé avec le mode résolu (observability Palier 1+2)
+    // Audit log appelé avec le mode résolu (observability Palier 1)
     expect(logAuditMock).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "mail.ai_generated",
@@ -295,7 +288,6 @@ describe("POST /api/mail/generate", () => {
     );
     // Métriques fire-and-forget : tenant-byo bump tenant_ai_config.last_used_at
     expect(recordAiUsageMock).toHaveBeenCalledWith("t-1", 800, 120);
-    expect(recordOpenRouterLinkUsageMock).not.toHaveBeenCalled();
   });
 
   // ── Palier 1 : fallback Veridian (OPENROUTER_VERIDIAN_KEY env, modèle :free) ──
@@ -327,49 +319,13 @@ describe("POST /api/mail/generate", () => {
     expect(body.mode).toBe("veridian-free");
     expect(body.provider_used).toBe("openrouter");
     expect(body.model_used).toBe("meta-llama/llama-3.3-70b-instruct:free");
-    // En veridian-free : NI recordAiUsage (pas de tenant_ai_config) NI
-    // recordOpenRouterLinkUsage (pas de link user). C'est délibéré — la clé
-    // Veridian est globale, on n'a pas de DB row à bump.
+    // En veridian-free : pas de recordAiUsage (pas de tenant_ai_config).
+    // C'est délibéré — la clé Veridian est globale, on n'a pas de DB row à bump.
     expect(recordAiUsageMock).not.toHaveBeenCalled();
-    expect(recordOpenRouterLinkUsageMock).not.toHaveBeenCalled();
     // Audit reflète bien le mode
     expect(logAuditMock).toHaveBeenCalledWith(
       expect.objectContaining({
         metadata: expect.objectContaining({ mode: "veridian-free", provider: "openrouter" }),
-      }),
-    );
-  });
-
-  // ── Palier 2 : user a connecté son compte OpenRouter via OAuth PKCE ──
-  test("200 + mode=user-byo + recordOpenRouterLinkUsage quand link user actif", async () => {
-    requireAuthMock.mockResolvedValue(AUTH_OK);
-    getTenantIdMock.mockResolvedValue("t-1");
-    getAiConfigInternalMock.mockResolvedValue(null);
-    prismaMock.entreprise.findUnique.mockResolvedValue(ENT_OK);
-    const generateMock = vi.fn().mockResolvedValue({
-      text: '{"subject":"S","body":"Bonjour Jean,\\nVotre site"}',
-      tokensIn: 300,
-      tokensOut: 50,
-    });
-    resolveAdapterMock.mockResolvedValue({
-      adapter: { generateText: generateMock },
-      mode: "user-byo",
-      provider: "openrouter",
-      model: "anthropic/claude-3.5-sonnet",
-      userId: "u-1",
-    });
-
-    const res = await POST(makeRequest("/api/mail/generate", { method: "POST", body: validBody() }));
-    expect(res.status).toBe(200);
-    const body = (await readJson(res)) as { mode: string; provider_used: string };
-    expect(body.mode).toBe("user-byo");
-    expect(body.provider_used).toBe("openrouter");
-    // user-byo : bump uniquement le link user (pas tenant_ai_config)
-    expect(recordOpenRouterLinkUsageMock).toHaveBeenCalledWith("u-1");
-    expect(recordAiUsageMock).not.toHaveBeenCalled();
-    expect(logAuditMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        metadata: expect.objectContaining({ mode: "user-byo" }),
       }),
     );
   });
