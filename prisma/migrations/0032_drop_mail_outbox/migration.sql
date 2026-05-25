@@ -1,0 +1,22 @@
+-- Revert post-W9c §F (2026-05-26) : suppression de la queue mail_outbox.
+--
+-- Justification : sur-ingénierie pour notre cas. Un commercial qui
+-- envoie 1 mail manuellement depuis sa fiche prospect n'a pas besoin
+-- de queue + worker + cron. /api/mail/send est revenu en synchrone
+-- direct (SMTP / Hub Gateway), comme Twenty CRM.
+--
+-- Destructif acceptable :
+--   - Table créée hier (migration 0028, 2026-05-25) sur staging
+--     uniquement
+--   - Jamais déployée en prod (la prod tourne encore sur post-W7
+--     synchrone)
+--   - 0 ligne en staging (aucun mail envoyé via UI depuis la mise en
+--     place, cron tournait à vide)
+--   - Confirmation team-lead 2026-05-26
+--
+-- Les améliorations W9c §A (templates customs) + §I (preview) + §J
+-- (signature) sont conservées — elles touchent d'autres tables
+-- (tenant_mail_templates, tenant_mail_config) et n'ont aucune
+-- dépendance sur mail_outbox.
+
+DROP TABLE IF EXISTS "mail_outbox" CASCADE;

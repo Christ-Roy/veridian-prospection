@@ -30,6 +30,9 @@ const {
   prismaMock: {
     workspace: { findUnique: vi.fn() },
     user: { findUnique: vi.fn() },
+    // applySignatureIfEnabled lit tenant_mail_config (W9c §J) — par défaut
+    // pas de row → no-op signature.
+    tenantMailConfig: { findUnique: vi.fn().mockResolvedValue(null) },
   },
   sendMailViaHubMock: vi.fn(),
   recordSentEmailMock: vi.fn(),

@@ -1141,52 +1141,6 @@ model WebhookOutbox {
   @@map("webhook_outbox")
 }
 
-/// Queue d'envoi mail asynchrone (migration 0028, ticket follow-ups §F).
-///
-/// Pattern outbox proche de WebhookOutbox : /api/mail/send INSERT une row
-/// queued + lead_emails(sent_status='queued'), retourne 202 en <100ms. Un
-/// worker cron (/api/cron/mail-outbox-flush, 1 min) consomme via SELECT
-/// FOR UPDATE SKIP LOCKED, exécute le send via lib/mail/smtp.ts.
-///
-/// Retry exponential : 1min → 5min → 15min → 60min → 24h (5 tentatives).
-/// status:
-///   - queued       — enqueued, jamais essayé
-///   - sending      — locké par un worker (lock court, libéré au RETURN)
-///   - sent         — SMTP a accepté, info.messageId présent
-///   - failed_retry — erreur transitoire, retry programmé
-///   - failed       — max attempts atteint, sortie définitive
-///
-/// payload : sérialisation du SendMailInput + provider context (to, cc,
-/// subject, body_text, body_html, template_slug, siren, provider).
-///
-/// idempotency_key UNIQUE : un caller (campagne worker futur) peut fournir
-/// son propre key — INSERT en conflit renvoie 202 + le row existant
-/// (pattern Stripe). Sinon /api/mail/send génère un UUID v4 frais.
-model MailOutbox {
-  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId       String    @map("tenant_id") @db.Uuid
-  userId         String?   @map("user_id") @db.Uuid
-  workspaceId    String?   @map("workspace_id") @db.Uuid
-  /// FK soft vers lead_emails — placeholder créé en MÊME transaction
-  /// que l'enqueue (status='queued') pour que la timeline 360° le voie.
-  /// Le worker met à jour la même row au flush.
-  leadEmailId    String?   @map("lead_email_id") @db.Uuid
-  payload        Json
-  idempotencyKey String    @unique @map("idempotency_key") @db.Uuid
-  status         String    @default("queued") @db.VarChar(16)
-  attempts       Int       @default(0)
-  nextRetryAt    DateTime  @default(now()) @map("next_retry_at") @db.Timestamptz
-  lastError      String?   @map("last_error")
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  sentAt         DateTime? @map("sent_at") @db.Timestamptz
-
-  @@index([status, nextRetryAt])
-  @@index([tenantId, createdAt(sort: Desc)])
-  @@index([status])
-  @@index([leadEmailId])
-  @@map("mail_outbox")
-}
-
 /// Templates mail customisables par tenant (migration 0029, ticket
 /// follow-ups §A).
 ///

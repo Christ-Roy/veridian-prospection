@@ -609,35 +609,31 @@
     rouge ; supprimer le check !prev.host (laisser l'auto-fill écraser)
     → spec "Host saisi manuellement avant le blur" rouge.
 
-# ── W9c mail improvements F/A/I/J (livré 2026-05-25) ─────────────────────
+# ── W9c mail improvements A/I/J (livré 2026-05-25, §F revert 2026-05-26) ──
+# §F (queue mail_outbox + cron flush) a été supprimé : envoi synchrone direct
+# suffisant pour notre cas (1 mail manuel depuis fiche prospect), pas besoin
+# de queue+worker+cron. Migration 0032 DROP TABLE.
 
 - sources:
-    - src/lib/mail/outbox.ts
-    - src/lib/mail/outbox.test.ts
+    - src/lib/mail/signature.ts
+    - src/lib/mail/signature.test.ts
   covered_by:
-    - src/lib/mail/outbox.test.ts
+    - src/lib/mail/signature.test.ts
   reason: |
-    Lib outbox (queue d'envoi mail v2, ticket follow-ups §F). Test
-    colocalisé src/lib/mail/outbox.test.ts (pattern Veridian). 17
-    assertions Vitest couvrant le contrat opérationnel :
-      - nextRetryDelayMs : timings exponential 1min/5min/15min/60min/24h,
-        cap à 24h pour attempts > 5, 0 pour attempts <= 0
-      - MAIL_OUTBOX_MAX_ATTEMPTS = 5 (constante exportée stable)
-      - applySignatureIfEnabled : no-op si config absente / disabled /
-        signature vide, append wrapper div .veridian-mail-signature en
-        HTML + plain text séparé par "--", pas de mutation du payload
-        input (immutable)
-      - flushOutbox via DI complet (resolveCreds + send + now mockés,
-        prisma stub) : queue vide → picked=0, send OK → status=sent +
-        bump lead_emails(messageId), SMTP fail transient → failed_retry
-        + nextRetryAt = now + 1min (attempts=1), à MAX-1 → encore
-        failed_retry, à MAX → failed + lead_emails(failed) + log error,
-        resolveCreds=null → failed sans send tenté, payload corrompu →
-        failed sans send tenté.
-    Sabotage : changer le tableau RETRY_DELAYS_MS → test timings rouge.
-    Retirer le early return si signature_enabled false → test "no-op
-    if disabled" rouge. Cap MAX_ATTEMPTS à 4 → test "at MAX" comporte
-    une assertion attempts=5 rouge.
+    Lib signature commerciale auto (ticket follow-ups §J). Test
+    colocalisé src/lib/mail/signature.test.ts (pattern Veridian).
+    Couvre applySignatureIfEnabled :
+      - no-op si config row absente
+      - no-op si mail_signature_enabled = false
+      - no-op si mail_signature_html NULL ou vide
+      - append wrapper div .veridian-mail-signature en HTML
+      - append plain text avec séparateur "--" (HTML stripped via
+        stripHtml)
+      - pas de mutation du body input (immutable)
+    + stripHtml : <br> → \n, strip tags <p>, collapse runs >2 \n.
+    Sabotage : retirer le early return si signature_enabled false →
+    test "no-op if disabled" rouge. Changer le séparateur "--" → test
+    "appends signature text" rouge.
 
 - sources:
     - src/lib/mail/tenant-templates.ts

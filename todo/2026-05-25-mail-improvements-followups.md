@@ -41,12 +41,13 @@ Mail v1 livré (commit 6b7892e + migration 0022). Liste des améliorations ident
 - Limite : 10 MB par mail (anti-bounce serveur destinataire)
 - Effort : ~6h
 
-### F — Queue d'envoi avec retry (background worker) ✅ LIVRÉ 2026-05-25 (W9c)
-- Livré : migration 0028 + `mail_outbox` + `src/lib/mail/outbox.ts` (enqueue + flush SELECT FOR UPDATE SKIP LOCKED) + route `/api/cron/mail-outbox-flush` (Bearer CRON_SECRET, 1 min) + refactor `/api/mail/send` (path SMTP BYO retourne 202 queued, branche Hub Gateway reste sync)
-- Retry exponential : 1min → 5min → 15min → 60min → 24h (5 tentatives) puis `failed`
-- Idempotency_key UNIQUE + dédup explicite pré-INSERT (pattern Stripe)
-- `lead_emails(sent_status='queued')` créé dans la même tx que mail_outbox → timeline 360° voit immédiatement le mail pending
-- Tests : 17 unit (outbox.ts) + 7 unit (cron) + 5 specs E2E (happy path, flush, idempotency, retry, max attempts)
+### F — Queue d'envoi avec retry (background worker) ❌ REVERT 2026-05-26
+- Livré 2026-05-25 (W9c) puis revert le lendemain : sur-ingénierie pour notre cas.
+- Justification revert : un commercial envoie 1 mail manuellement depuis la fiche prospect, pas besoin de queue+worker+cron. `/api/mail/send` synchrone direct (SMTP / Hub Gateway) suffit largement, comme Twenty CRM.
+- Migration `0032_drop_mail_outbox` DROP TABLE (table créée hier sur staging uniquement, 0 ligne, jamais en prod).
+- Suppression : `src/lib/mail/outbox.ts`, `src/app/api/cron/mail-outbox-flush/`, tests dédiés, helpers E2E section F.
+- Conservé : §A templates customs, §I preview, §J signature (réutilisés par le send synchrone via `src/lib/mail/signature.ts` extrait).
+- Si un jour le volume justifie l'async (>100 mails/jour par tenant, sequences automatisées, retry transient indispensable), réintroduire — mais pas avant.
 
 ### G — Threading conversation (Reply-To + In-Reply-To)
 - Quand on répond à un mail entrant (v2 IMAP), le `In-Reply-To` doit être posé

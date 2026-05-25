@@ -3,25 +3,36 @@
  *
  * Envoie un mail depuis la fiche lead (bouton "Envoyer un mail").
  *
+ * Envoi **synchrone direct** — pas de queue. Le commercial envoie un
+ * mail manuellement depuis la fiche prospect ; un appel HTTP simple
+ * SMTP / Hub Gateway est largement suffisant à notre échelle (cf
+ * Twenty CRM, qui marche pareil). La queue mail_outbox livrée W9c F a
+ * été revertée 2026-05-26 (sur-ingénierie).
+ *
  * Deux flows selon `workspace.mail_provider` :
  *
- *   1. `mail_provider === 'gmail-via-hub'` (nouveau, migration 0025) →
- *      envoi via Hub Mail Gateway : le mail part du Gmail OAuth du commercial.
- *      Différenciateur produit Veridian (cf ticket 2026-05-25-mail-send-as-user-via-hub-gateway.md).
+ *   1. `mail_provider === 'gmail-via-hub'` (migration 0025) → envoi
+ *      via Hub Mail Gateway : le mail part du Gmail OAuth du commercial.
+ *      Différenciateur produit Veridian (cf ticket
+ *      2026-05-25-mail-send-as-user-via-hub-gateway.md).
  *
  *   2. `mail_provider === 'none'` (default, v1) → envoi SMTP BYO via
- *      TenantMailConfig (host/port/user/passwordEnc). Comportement inchangé
- *      pour tous les tenants existants.
+ *      TenantMailConfig (host/port/user/passwordEnc).
  *
- * Si `templateSlug` est fourni, on rend le template avec les variables
- * `prospect.{name,entreprise}` + `sender.{name,email}` puis on envoie.
- * Sinon le compose libre {subject, bodyText, bodyHtml} est utilisé tel quel.
+ * Si `templateSlug` est fourni, on rend le template (custom tenant OR
+ * fallback hardcodé) avec les variables `prospect.{name,entreprise}`
+ * + `sender.{name,email}` puis on envoie. Sinon le compose libre
+ * {subject, bodyText, bodyHtml} est utilisé tel quel.
  *
- * Trace toujours côté DB (`lead_emails`) — sent OR failed — pour alimenter
- * la timeline 360 et la future page /history mails.
+ * Si une signature commerciale est configurée + activée
+ * (`tenant_mail_config.mail_signature_*`, migration 0030), elle est
+ * append au body AVANT l'envoi.
  *
- * Rate limit : 30 mails / 5 min par user — quel que soit le provider, on cap
- * pour éviter qu'un bug UI ne spam.
+ * Trace toujours côté DB (`lead_emails`) — sent OR failed — pour
+ * alimenter la timeline 360.
+ *
+ * Rate limit : 30 mails / 5 min par user — quel que soit le provider,
+ * on cap pour éviter qu'un bug UI ne spam.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -36,9 +47,10 @@ import {
   recordSentEmail,
   recordFailedEmail,
 } from "@/lib/mail/queries";
+import { sendMail } from "@/lib/mail/smtp";
 import { renderTemplate, type TemplateVars } from "@/lib/mail/templates";
 import { resolveTemplate } from "@/lib/mail/tenant-templates";
-import { enqueueMail } from "@/lib/mail/outbox";
+import { applySignatureIfEnabled } from "@/lib/mail/signature";
 import {
   sendMailViaHub,
   freshIdempotencyKey,
@@ -67,9 +79,8 @@ const sendSchema = z
     bodyText: z.string().min(1).max(50_000).optional(),
     bodyHtml: z.string().min(1).max(100_000).optional(),
     /**
-     * Idempotency key optionnel — si fourni le caller dédup (cas worker
-     * batch / sequence step). Sinon on génère un UUID v4 frais (cas envoi
-     * 1-to-1 ad-hoc depuis la fiche prospect).
+     * Idempotency key optionnel — utilisé uniquement par la branche
+     * Hub Gateway (le Hub dédoublonne côté Gmail). Sinon UUID frais.
      */
     idempotencyKey: z.string().uuid().optional(),
   })
@@ -113,7 +124,10 @@ function mapHubFailureToHttp(
     case "hub_invalid_response":
     case "hub_server_error":
     default:
-      return { status: 502, reason: hubStatus >= 500 ? "hub_server_error" : "provider_unreachable" };
+      return {
+        status: 502,
+        reason: hubStatus >= 500 ? "hub_server_error" : "provider_unreachable",
+      };
   }
 }
 
@@ -202,90 +216,72 @@ export async function POST(request: NextRequest) {
     bodyHtml = input.bodyHtml!;
   }
 
-  // Enqueue dans mail_outbox + lead_emails(queued) en MÊME transaction.
-  // Le cron /api/cron/mail-outbox-flush prendra le relais pour l'envoi
-  // réel + retry exponential. UI rend instantanément.
-  try {
-    const enqueueResult = await prisma.$transaction(async (tx) => {
-      return enqueueMail(tx, {
-        tenantId,
-        userId: auth.user.id,
-        workspaceId,
-        idempotencyKey: input.idempotencyKey,
-        payload: {
-          to: input.to,
-          cc: input.cc,
-          subject,
-          bodyText,
-          bodyHtml,
-          templateSlug: input.templateSlug ?? null,
-          siren: input.siren ?? null,
-          provider: "smtp",
-          fromEmail: creds.fromEmail,
-          fromName: creds.fromName,
-        },
-      });
-    });
+  // Append signature commerciale si configurée + activée (W9c §J).
+  const signed = await applySignatureIfEnabled(prisma, tenantId, {
+    bodyText,
+    bodyHtml,
+  });
+  bodyText = signed.bodyText;
+  bodyHtml = signed.bodyHtml;
 
+  const result = await sendMail(creds, {
+    to: input.to,
+    cc: input.cc,
+    subject,
+    bodyText,
+    bodyHtml,
+  });
+
+  const traceBase = {
+    tenantId,
+    workspaceId,
+    userId: auth.user.id,
+    siren: input.siren ?? null,
+    fromEmail: creds.fromEmail,
+    fromName: creds.fromName,
+    toEmails: [input.to],
+    ccEmails: input.cc ?? [],
+    subject,
+    bodyText,
+    bodyHtml,
+    templateSlug: input.templateSlug ?? null,
+  };
+
+  if (result.ok && result.messageId) {
+    await recordSentEmail({ ...traceBase, messageId: result.messageId });
     await logAudit({
       tenantId,
       actorType: "user",
       actorId: auth.user.id,
-      action: "mail.queued",
+      action: "mail.sent",
       targetType: "prospect",
       targetId: input.siren ?? null,
       metadata: {
         to: input.to,
         templateSlug: input.templateSlug ?? null,
-        outboxId: enqueueResult.outboxId,
-        leadEmailId: enqueueResult.leadEmailId,
-        idempotencyKey: enqueueResult.idempotencyKey,
-        alreadyEnqueued: enqueueResult.alreadyEnqueued,
+        messageId: result.messageId,
         provider: "smtp",
       },
     });
-
-    return NextResponse.json(
-      {
-        ok: true,
-        status: "queued",
-        outboxId: enqueueResult.outboxId,
-        leadEmailId: enqueueResult.leadEmailId,
-        idempotencyKey: enqueueResult.idempotencyKey,
-        alreadyEnqueued: enqueueResult.alreadyEnqueued,
-      },
-      { status: 202 },
-    );
-  } catch (err) {
-    console.error("[mail/send] enqueue failed:", err);
-    // Trace l'échec d'enqueue pour debug (rare : DB indisponible, etc.).
-    await recordFailedEmail({
-      tenantId,
-      workspaceId,
-      userId: auth.user.id,
-      siren: input.siren ?? null,
-      fromEmail: creds.fromEmail,
-      fromName: creds.fromName,
-      toEmails: [input.to],
-      ccEmails: input.cc ?? [],
-      subject,
-      bodyText,
-      bodyHtml,
-      templateSlug: input.templateSlug ?? null,
-      messageId: `failed-${randomUUID()}`,
-      errorMessage: `enqueue_failed: ${err instanceof Error ? err.message : String(err)}`,
-    }).catch(() => {});
-    return NextResponse.json(
-      {
-        ok: false,
-        reason: "enqueue_failed",
-        errorMessage: err instanceof Error ? err.message : String(err),
-      },
-      { status: 500 },
-    );
+    return NextResponse.json({ ok: true, messageId: result.messageId });
   }
-}
 
+  await recordFailedEmail({
+    ...traceBase,
+    messageId: `failed-${randomUUID()}`,
+    errorMessage: result.errorMessage ?? result.reason ?? "unknown",
+  });
+
+  return NextResponse.json(
+    {
+      ok: false,
+      reason: result.reason,
+      smtpCode: result.smtpCode,
+      errorMessage: result.errorMessage,
+    },
+    { status: 502 },
+  );
+}
 
 /**
  * Branche Hub Mail Gateway. L'OAuth Gmail est stocké côté Hub sur
@@ -343,6 +339,14 @@ async function sendViaHubGateway(args: {
     bodyText = input.bodyText!;
     bodyHtml = input.bodyHtml!;
   }
+
+  // Append signature commerciale si configurée + activée (W9c §J).
+  const signed = await applySignatureIfEnabled(prisma, tenantId, {
+    bodyText,
+    bodyHtml,
+  });
+  bodyText = signed.bodyText;
+  bodyHtml = signed.bodyHtml;
 
   const idempotencyKey = input.idempotencyKey ?? freshIdempotencyKey();
   const result = await sendMailViaHub({

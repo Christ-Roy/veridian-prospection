@@ -1,18 +1,17 @@
 /**
  * Tests route /api/mail/send — POST.
  *
- * Refactor v2 (2026-05-25, ticket follow-ups §F) :
- * /api/mail/send INSERT mail_outbox (queue d'envoi) au lieu d'appeler
- * sendMail sync. Le contract HTTP est passé de 200 (sent) à 202 (queued)
- * pour le path SMTP BYO. Path Hub Gateway reste sync (200/4xx/5xx).
+ * Comportement post-revert W9c §F (2026-05-26) : envoi **synchrone direct**
+ * (la queue mail_outbox a été supprimée — sur-ingénierie pour 1 mail manuel).
  *
  * Couvre :
  *  - Auth + rate limit + payload invalide
- *  - 412 si SMTP non configuré
+ *  - 412 si SMTP non configuré (provider 'none')
  *  - 400 sur templateSlug inconnu (custom OR fallback)
- *  - 202 queued (freeform) : enqueueMail appelé + logAudit "mail.queued"
- *  - 202 queued (template) : variables rendues dans subject/body au payload
- *  - 500 si enqueue throw (DB indisponible)
+ *  - 200 (freeform) : sendMail appelé + recordSentEmail + logAudit "mail.sent"
+ *  - 200 (template) : resolveTemplate appelé, variables rendues
+ *  - 502 si sendMail fail → recordFailedEmail (pas de recordSentEmail)
+ *  - Signature appliquée au body avant sendMail si configurée + enabled
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
 import { NextResponse } from "next/server";
@@ -23,10 +22,12 @@ const {
   getWorkspaceScopeMock,
   isRateLimitedMock,
   getMailConfigInternalMock,
+  recordSentEmailMock,
   recordFailedEmailMock,
+  sendMailMock,
   resolveTemplateMock,
-  enqueueMailMock,
-  prismaTransactionMock,
+  workspaceFindUniqueMock,
+  tenantMailConfigFindUniqueMock,
   logAuditMock,
 } = vi.hoisted(() => ({
   requireAuthMock: vi.fn(),
@@ -34,10 +35,12 @@ const {
   getWorkspaceScopeMock: vi.fn(),
   isRateLimitedMock: vi.fn(() => false),
   getMailConfigInternalMock: vi.fn(),
+  recordSentEmailMock: vi.fn(),
   recordFailedEmailMock: vi.fn(),
+  sendMailMock: vi.fn(),
   resolveTemplateMock: vi.fn(),
-  enqueueMailMock: vi.fn(),
-  prismaTransactionMock: vi.fn(),
+  workspaceFindUniqueMock: vi.fn(),
+  tenantMailConfigFindUniqueMock: vi.fn(),
   logAuditMock: vi.fn(),
 }));
 
@@ -49,31 +52,22 @@ vi.mock("@/lib/auth/user-context", () => ({
 vi.mock("@/lib/rate-limit", () => ({ isRateLimited: isRateLimitedMock }));
 vi.mock("@/lib/mail/queries", () => ({
   getMailConfigInternal: getMailConfigInternalMock,
-  recordSentEmail: vi.fn(),
+  recordSentEmail: recordSentEmailMock,
   recordFailedEmail: recordFailedEmailMock,
 }));
+vi.mock("@/lib/mail/smtp", () => ({ sendMail: sendMailMock }));
 vi.mock("@/lib/mail/tenant-templates", () => ({
   resolveTemplate: resolveTemplateMock,
 }));
-vi.mock("@/lib/mail/outbox", () => ({
-  enqueueMail: enqueueMailMock,
-}));
-const { userFindUniqueMock, workspaceFindUniqueMock, sendMailViaHubMock } = vi.hoisted(
-  () => ({
-    userFindUniqueMock: vi.fn(),
-    workspaceFindUniqueMock: vi.fn(),
-    sendMailViaHubMock: vi.fn(),
-  }),
-);
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    $transaction: (cb: (tx: unknown) => unknown) => prismaTransactionMock(cb),
-    user: { findUnique: userFindUniqueMock },
     workspace: { findUnique: workspaceFindUniqueMock },
+    user: { findUnique: vi.fn() },
+    tenantMailConfig: { findUnique: tenantMailConfigFindUniqueMock },
   },
 }));
 vi.mock("@/lib/mail-gateway-client", () => ({
-  sendMailViaHub: sendMailViaHubMock,
+  sendMailViaHub: vi.fn(),
   freshIdempotencyKey: () => "00000000-0000-4000-8000-000000000abc",
 }));
 vi.mock("@/lib/audit", () => ({ logAudit: logAuditMock }));
@@ -106,12 +100,12 @@ const VALID_CREDS = {
   fromName: "Robert",
 };
 
-const SAMPLE_TEMPLATE = {
+const FALLBACK_TEMPLATE = {
   slug: "relance-commerciale-v1",
-  label: "Relance",
-  subject: "Suite à notre échange — {{ prospect.entreprise }}",
-  bodyText: "Bonjour {{ prospect.name }} ({{ prospect.entreprise }})",
-  bodyHtml: "<p>Bonjour {{ prospect.name }} ({{ prospect.entreprise }})</p>",
+  subject: "Hello {{ prospect.entreprise }}",
+  bodyText: "Bonjour {{ prospect.name }}",
+  bodyHtml: "<p>Bonjour {{ prospect.name }}</p>",
+  isCustom: false,
 };
 
 describe("POST /api/mail/send", () => {
@@ -119,10 +113,13 @@ describe("POST /api/mail/send", () => {
     vi.clearAllMocks();
     isRateLimitedMock.mockReturnValue(false);
     getWorkspaceScopeMock.mockResolvedValue({ filter: null, insertId: "ws-1" });
-    // Default : execute tx callback in place avec un stub minimal.
-    prismaTransactionMock.mockImplementation(async (cb: (tx: unknown) => unknown) =>
-      cb({}),
-    );
+    // Par défaut workspace en mail_provider='none' (SMTP BYO)
+    workspaceFindUniqueMock.mockResolvedValue({
+      mailProvider: "none",
+      gmailConnectedAt: null,
+    });
+    // Par défaut pas de signature
+    tenantMailConfigFindUniqueMock.mockResolvedValue(null);
   });
 
   test("401 si non auth", async () => {
@@ -186,10 +183,9 @@ describe("POST /api/mail/send", () => {
     expect(res.status).toBe(412);
     const body = (await readJson(res)) as { reason: string };
     expect(body.reason).toBe("missing_credentials");
-    expect(enqueueMailMock).not.toHaveBeenCalled();
   });
 
-  test("400 sur templateSlug inconnu", async () => {
+  test("400 sur templateSlug inconnu (resolveTemplate=null)", async () => {
     requireAuthMock.mockResolvedValue({
       user: { id: "u-1", email: "u@v.site" },
     });
@@ -203,245 +199,128 @@ describe("POST /api/mail/send", () => {
       }),
     );
     expect(res.status).toBe(400);
-    expect(enqueueMailMock).not.toHaveBeenCalled();
   });
 
-  test("send freeform → 202 queued + enqueueMail + logAudit mail.queued", async () => {
+  test("send freeform → 200 ok + sendMail synchrone + recordSentEmail + logAudit", async () => {
     requireAuthMock.mockResolvedValue({
       user: { id: "u-1", email: "u@v.site" },
     });
     getTenantIdMock.mockResolvedValue("t-1");
     getMailConfigInternalMock.mockResolvedValue(VALID_CREDS);
-    enqueueMailMock.mockResolvedValue({
-      outboxId: "out-1",
-      leadEmailId: "lead-1",
-      idempotencyKey: "key-1",
-      alreadyEnqueued: false,
-    });
-
-    const res = await POST(
-      makeRequest("/api/mail/send", { method: "POST", body: VALID_FREEFORM_BODY }),
-    );
-    expect(res.status).toBe(202);
-    const body = (await readJson(res)) as {
-      ok: boolean;
-      status: string;
-      outboxId: string;
-      leadEmailId: string;
-    };
-    expect(body.ok).toBe(true);
-    expect(body.status).toBe("queued");
-    expect(body.outboxId).toBe("out-1");
-    expect(enqueueMailMock).toHaveBeenCalledOnce();
-    const [, enqueueArgs] = enqueueMailMock.mock.calls[0]!;
-    expect(enqueueArgs.tenantId).toBe("t-1");
-    expect(enqueueArgs.payload.to).toBe("alice@acme.com");
-    expect(enqueueArgs.payload.subject).toBe("Hello");
-    expect(enqueueArgs.payload.siren).toBe("123456789");
-    expect(enqueueArgs.payload.provider).toBe("smtp");
-    expect(logAuditMock).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "mail.queued" }),
-    );
-  });
-
-  test("send template → variables rendues dans subject/body au payload", async () => {
-    requireAuthMock.mockResolvedValue({
-      user: { id: "u-1", email: "u@v.site" },
-    });
-    getTenantIdMock.mockResolvedValue("t-1");
-    getMailConfigInternalMock.mockResolvedValue(VALID_CREDS);
-    resolveTemplateMock.mockResolvedValue(SAMPLE_TEMPLATE);
-    enqueueMailMock.mockResolvedValue({
-      outboxId: "out-2",
-      leadEmailId: "lead-2",
-      idempotencyKey: "key-2",
-      alreadyEnqueued: false,
-    });
-
-    const res = await POST(
-      makeRequest("/api/mail/send", { method: "POST", body: VALID_TEMPLATE_BODY }),
-    );
-    expect(res.status).toBe(202);
-
-    const [, enqueueArgs] = enqueueMailMock.mock.calls[0]!;
-    expect(enqueueArgs.payload.subject).toContain("Acme SAS");
-    expect(enqueueArgs.payload.bodyText).toContain("Alice");
-    expect(enqueueArgs.payload.bodyText).toContain("Acme SAS");
-    expect(enqueueArgs.payload.bodyText).not.toMatch(/\{\{/);
-    expect(enqueueArgs.payload.templateSlug).toBe("relance-commerciale-v1");
-  });
-
-  test("alreadyEnqueued true → réponse 202 alreadyEnqueued=true (idempotence Stripe-like)", async () => {
-    requireAuthMock.mockResolvedValue({
-      user: { id: "u-1", email: "u@v.site" },
-    });
-    getTenantIdMock.mockResolvedValue("t-1");
-    getMailConfigInternalMock.mockResolvedValue(VALID_CREDS);
-    enqueueMailMock.mockResolvedValue({
-      outboxId: "out-1",
-      leadEmailId: "lead-1",
-      idempotencyKey: "key-replay",
-      alreadyEnqueued: true,
-    });
-
-    const res = await POST(
-      makeRequest("/api/mail/send", {
-        method: "POST",
-        body: { ...VALID_FREEFORM_BODY, idempotencyKey: "00000000-0000-4000-8000-000000000001" },
-      }),
-    );
-    expect(res.status).toBe(202);
-    const body = (await readJson(res)) as { alreadyEnqueued: boolean };
-    expect(body.alreadyEnqueued).toBe(true);
-  });
-
-  test("500 + recordFailedEmail si enqueue throw (DB indisponible)", async () => {
-    requireAuthMock.mockResolvedValue({
-      user: { id: "u-1", email: "u@v.site" },
-    });
-    getTenantIdMock.mockResolvedValue("t-1");
-    getMailConfigInternalMock.mockResolvedValue(VALID_CREDS);
-    recordFailedEmailMock.mockResolvedValue(undefined);
-    prismaTransactionMock.mockRejectedValue(new Error("DB connection lost"));
-
-    const res = await POST(
-      makeRequest("/api/mail/send", { method: "POST", body: VALID_FREEFORM_BODY }),
-    );
-    expect(res.status).toBe(500);
-    const body = (await readJson(res)) as { reason: string };
-    expect(body.reason).toBe("enqueue_failed");
-    expect(recordFailedEmailMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        errorMessage: expect.stringContaining("enqueue_failed"),
-      }),
-    );
-  });
-
-  // ─── Branche Hub Gateway (gmail-via-hub) ───────────────────────────────
-  // Exerce sendViaHubGateway + mapHubFailureToHttp pour garantir que le
-  // sabotage du fichier route.ts est détecté (la branche SMTP seule ne
-  // couvrait pas mapHubFailureToHttp → fonction sabotable en silence).
-
-  test("Hub Gateway provider_not_linked (pas de hubUserId) → 422", async () => {
-    requireAuthMock.mockResolvedValue({
-      user: { id: "u-1", email: "u@v.site" },
-    });
-    getTenantIdMock.mockResolvedValue("t-1");
-    workspaceFindUniqueMock.mockResolvedValue({
-      mailProvider: "gmail-via-hub",
-      gmailConnectedAt: new Date(),
-    });
-    userFindUniqueMock.mockResolvedValue({
-      hubUserId: null,
-      email: "u@v.site",
-      name: "U",
-    });
-
-    const res = await POST(
-      makeRequest("/api/mail/send", {
-        method: "POST",
-        body: { ...VALID_FREEFORM_BODY, idempotencyKey: undefined },
-      }),
-    );
-    expect(res.status).toBe(422);
-    const body = (await readJson(res)) as { reason: string; provider?: string };
-    expect(body.reason).toBe("provider_not_linked");
-  });
-
-  test("Hub Gateway send OK → 200 ok + messageId + provider=gmail-via-hub", async () => {
-    requireAuthMock.mockResolvedValue({
-      user: { id: "u-1", email: "u@v.site" },
-    });
-    getTenantIdMock.mockResolvedValue("t-1");
-    workspaceFindUniqueMock.mockResolvedValue({
-      mailProvider: "gmail-via-hub",
-      gmailConnectedAt: new Date(),
-    });
-    userFindUniqueMock.mockResolvedValue({
-      hubUserId: "00000000-0000-4000-8000-deadbeefcafe",
-      email: "u@v.site",
-      name: "Robert",
-    });
-    sendMailViaHubMock.mockResolvedValue({
-      ok: true,
-      messageId: "<hub-msg-1@gmail>",
-      idempotentReplay: false,
-    });
+    sendMailMock.mockResolvedValue({ ok: true, messageId: "<msg-1@h>" });
 
     const res = await POST(
       makeRequest("/api/mail/send", { method: "POST", body: VALID_FREEFORM_BODY }),
     );
     expect(res.status).toBe(200);
-    const body = (await readJson(res)) as {
-      ok: boolean;
-      messageId: string;
-      provider: string;
-    };
-    expect(body.ok).toBe(true);
-    expect(body.messageId).toBe("<hub-msg-1@gmail>");
-    expect(body.provider).toBe("gmail-via-hub");
-    expect(sendMailViaHubMock).toHaveBeenCalledOnce();
+    expect(sendMailMock).toHaveBeenCalledWith(
+      VALID_CREDS,
+      expect.objectContaining({
+        to: "alice@acme.com",
+        subject: "Hello",
+      }),
+    );
+    expect(recordSentEmailMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        siren: "123456789",
+        messageId: "<msg-1@h>",
+        templateSlug: null,
+      }),
+    );
+    expect(logAuditMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "mail.sent" }),
+    );
   });
 
-  test("Hub Gateway fail needs_reauth → 412 (mapHubFailureToHttp)", async () => {
+  test("send template (custom resolveTemplate) → variables rendues", async () => {
     requireAuthMock.mockResolvedValue({
       user: { id: "u-1", email: "u@v.site" },
     });
     getTenantIdMock.mockResolvedValue("t-1");
-    workspaceFindUniqueMock.mockResolvedValue({
-      mailProvider: "gmail-via-hub",
-      gmailConnectedAt: new Date(),
-    });
-    userFindUniqueMock.mockResolvedValue({
-      hubUserId: "00000000-0000-4000-8000-deadbeefcafe",
-      email: "u@v.site",
-      name: "Robert",
-    });
-    sendMailViaHubMock.mockResolvedValue({
-      ok: false,
-      reason: "needs_reauth",
-      httpStatus: 412,
-      message: "Token expiré",
-    });
-    recordFailedEmailMock.mockResolvedValue(undefined);
+    getMailConfigInternalMock.mockResolvedValue(VALID_CREDS);
+    resolveTemplateMock.mockResolvedValue(FALLBACK_TEMPLATE);
+    sendMailMock.mockResolvedValue({ ok: true, messageId: "<msg-2@h>" });
 
-    const res = await POST(
-      makeRequest("/api/mail/send", { method: "POST", body: VALID_FREEFORM_BODY }),
+    await POST(
+      makeRequest("/api/mail/send", { method: "POST", body: VALID_TEMPLATE_BODY }),
     );
-    // mapHubFailureToHttp("needs_reauth") → status 412
-    expect(res.status).toBe(412);
-    const body = (await readJson(res)) as { reason: string };
-    expect(body.reason).toBe("needs_reauth");
+    expect(resolveTemplateMock).toHaveBeenCalledWith(
+      "t-1",
+      "relance-commerciale-v1",
+    );
+    const sendArgs = sendMailMock.mock.calls[0]![1];
+    expect(sendArgs.subject).toContain("Acme SAS");
+    expect(sendArgs.bodyText).toContain("Alice");
+    expect(sendArgs.bodyText).not.toMatch(/\{\{/);
+    expect(recordSentEmailMock).toHaveBeenCalledWith(
+      expect.objectContaining({ templateSlug: "relance-commerciale-v1" }),
+    );
   });
 
-  test("Hub Gateway fail provider_unreachable → 502 (mapHubFailureToHttp)", async () => {
+  test("send échec → 502 + recordFailedEmail + PAS de recordSentEmail", async () => {
     requireAuthMock.mockResolvedValue({
       user: { id: "u-1", email: "u@v.site" },
     });
     getTenantIdMock.mockResolvedValue("t-1");
-    workspaceFindUniqueMock.mockResolvedValue({
-      mailProvider: "gmail-via-hub",
-      gmailConnectedAt: new Date(),
-    });
-    userFindUniqueMock.mockResolvedValue({
-      hubUserId: "00000000-0000-4000-8000-deadbeefcafe",
-      email: "u@v.site",
-      name: "Robert",
-    });
-    sendMailViaHubMock.mockResolvedValue({
+    getMailConfigInternalMock.mockResolvedValue(VALID_CREDS);
+    sendMailMock.mockResolvedValue({
       ok: false,
-      reason: "hub_timeout",
-      httpStatus: 504,
-      message: "Hub timed out",
+      reason: "auth_failed",
+      errorMessage: "535",
     });
-    recordFailedEmailMock.mockResolvedValue(undefined);
 
     const res = await POST(
       makeRequest("/api/mail/send", { method: "POST", body: VALID_FREEFORM_BODY }),
     );
-    // mapHubFailureToHttp("hub_timeout") → status 502 reason "provider_unreachable"
     expect(res.status).toBe(502);
     const body = (await readJson(res)) as { reason: string };
-    expect(body.reason).toBe("provider_unreachable");
+    expect(body.reason).toBe("auth_failed");
+    expect(recordFailedEmailMock).toHaveBeenCalledWith(
+      expect.objectContaining({ errorMessage: "535" }),
+    );
+    expect(recordSentEmailMock).not.toHaveBeenCalled();
+  });
+
+  test("signature configurée + enabled → appendée au body avant sendMail", async () => {
+    requireAuthMock.mockResolvedValue({
+      user: { id: "u-1", email: "u@v.site" },
+    });
+    getTenantIdMock.mockResolvedValue("t-1");
+    getMailConfigInternalMock.mockResolvedValue(VALID_CREDS);
+    tenantMailConfigFindUniqueMock.mockResolvedValue({
+      mailSignatureHtml: "<p>Robert Brunon</p>",
+      mailSignatureEnabled: true,
+    });
+    sendMailMock.mockResolvedValue({ ok: true, messageId: "<msg-sig@h>" });
+
+    await POST(
+      makeRequest("/api/mail/send", { method: "POST", body: VALID_FREEFORM_BODY }),
+    );
+    const sendArgs = sendMailMock.mock.calls[0]![1];
+    expect(sendArgs.bodyHtml).toContain("veridian-mail-signature");
+    expect(sendArgs.bodyHtml).toContain("<p>Robert Brunon</p>");
+    expect(sendArgs.bodyText).toContain("Robert Brunon");
+    expect(sendArgs.bodyText).toContain("\n\n--\n");
+  });
+
+  test("signature disabled → no-op, body inchangé", async () => {
+    requireAuthMock.mockResolvedValue({
+      user: { id: "u-1", email: "u@v.site" },
+    });
+    getTenantIdMock.mockResolvedValue("t-1");
+    getMailConfigInternalMock.mockResolvedValue(VALID_CREDS);
+    tenantMailConfigFindUniqueMock.mockResolvedValue({
+      mailSignatureHtml: "<p>Robert Brunon</p>",
+      mailSignatureEnabled: false,
+    });
+    sendMailMock.mockResolvedValue({ ok: true, messageId: "<msg-nosig@h>" });
+
+    await POST(
+      makeRequest("/api/mail/send", { method: "POST", body: VALID_FREEFORM_BODY }),
+    );
+    const sendArgs = sendMailMock.mock.calls[0]![1];
+    expect(sendArgs.bodyHtml).toBe("<p>Hi Alice</p>");
+    expect(sendArgs.bodyText).toBe("Hi Alice");
+    expect(sendArgs.bodyHtml).not.toContain("veridian-mail-signature");
   });
 });
