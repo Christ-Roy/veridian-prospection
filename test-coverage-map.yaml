@@ -434,57 +434,13 @@
     absent). Sabotage : casser le routing par provider → l'un des deux
     tests rougit instantanément.
 
-# ── Refill ICP v2.1 (W7b — page native refill ICP filtres fins) ────────
-# La route credit-leads est modifiée pour ajouter `filters` (v2.1) ; le
-# comportement canonique (HMAC, idempotency, double-grant welcome) est
-# couvert par credit-leads.test.ts ; les ajouts v2.1 sont testés
-# spécifiquement dans credit-leads-filters.test.ts (6 tests : LeadOrder
-# créé sur purchase, filters interdit sur welcome, audit has_filters,
-# backward compat v2.0).
-
 - sources:
     - src/app/api/tenants/[id]/credit-leads/route.ts
   covered_by:
     - __tests__/api/tenants/[id]/credit-leads.test.ts
-    - __tests__/api/tenants/[id]/credit-leads-filters.test.ts
   reason: |
-    La route credit-leads a 2 surfaces : (1) le contrat v2.0 historique
-    (HMAC entrant + idempotency + welcome double-grant) couvert par
-    credit-leads.test.ts ; (2) l'extension v2.1 `filters` (LeadOrder
-    persisté pour les achats refill ICP) couverte par
-    credit-leads-filters.test.ts. Les 2 tests sont complémentaires :
-    canonique = invariants existants, filters = nouvel ajout v2.1.
-
-# ── Composants billing/refill-icp/* + page /leads/buy ───────────────────
-# Les 8 composants Radix (Slider/MultiSelect) et la page /leads/buy ont
-# une couverture source-level dans __tests__/components/billing/
-# refill-icp.test.tsx (50 tests assertant présence imports, contrôles
-# value/onChange, debounce 300ms, fetch endpoints, gating qualifiers
-# business, anti-tampering UI, etc).
-
-- sources:
-    - src/components/billing/refill-icp/SectorMultiSelect.tsx
-    - src/components/billing/refill-icp/GeoMultiSelect.tsx
-    - src/components/billing/refill-icp/EmployeeRangeSlider.tsx
-    - src/components/billing/refill-icp/RevenueRangeSlider.tsx
-    - src/components/billing/refill-icp/AgeRangeSelect.tsx
-    - src/components/billing/refill-icp/QualifierTagsSelect.tsx
-    - src/components/billing/refill-icp/LiveCountPreview.tsx
-    - src/components/billing/refill-icp/OrderSummaryCard.tsx
-    - src/components/billing/refill-icp/RefillIcpClient.tsx
-    - src/components/ui/slider.tsx
-    - src/app/leads/buy/page.tsx
-  covered_by:
-    - __tests__/components/billing/refill-icp.test.tsx
-  reason: |
-    Pattern source-level Veridian (cf refill-modal.test.tsx, mail/ai-
-    source-level.test.ts). JSDOM + Radix Slider trop coûteux pour
-    couverture par render-test ; on audit le source pour les invariants
-    critiques (debounce, anti-injection SQL via lib paramétré, gating
-    business, redirect window.location vers Stripe). Sabotage testable :
-    retirer le AbortController → test rouge ; remplacer fetch
-    /api/refill/start par /api/billing/refill-checkout legacy → rouge ;
-    enlever Lock icon du gating qualifiers → rouge.
+    Contrat v2.0 historique : HMAC entrant + idempotency
+    (lead_credit_events) + double-grant welcome.
 
 # ── Inbox global (W8c — Vague 8) ────────────────────────────────────────
 # Pattern : lib/queries colocalisé + routes API source-level + composants
@@ -531,7 +487,7 @@
     - src/components/inbox/inbox-list.test.ts
   reason: |
     Test source-level (pas de @testing-library dans le repo — cf
-    refill-icp.test.tsx). 28 assertions : data-testid pour E2E,
+    mail/ai-source-level.test.ts). 28 assertions : data-testid pour E2E,
     fallback "Non rattaché"/"(sans contenu)"/"(sans sujet)", lien
     /leads/:siren conditionnel, modale AttachProspectModal montée
     seulement sur orphans, truncate subject 80 / preview 120, reset

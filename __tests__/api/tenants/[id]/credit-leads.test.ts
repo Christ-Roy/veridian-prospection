@@ -29,7 +29,6 @@ const mocks = vi.hoisted(() => ({
   workspaceFindUnique: vi.fn(),
   workspaceUpdate: vi.fn(),
   leadCreditEventCreate: vi.fn(),
-  leadOrderCreate: vi.fn(),
   transaction: vi.fn(),
   resolveTenant: vi.fn(),
   auditLog: vi.fn(),
@@ -97,14 +96,12 @@ const validBody = {
 
 /**
  * Branche $transaction : exécute le callback avec un `tx` qui expose
- * leadCreditEvent.create + leadOrder.create + workspace.update mockés.
- * leadOrder.create n'est appelé que pour source=purchase (cf route v2.1).
+ * leadCreditEvent.create + workspace.update mockés.
  */
 function wireTransaction() {
   mocks.transaction.mockImplementation(async (cb: (tx: unknown) => unknown) =>
     cb({
       leadCreditEvent: { create: mocks.leadCreditEventCreate },
-      leadOrder: { create: mocks.leadOrderCreate },
       workspace: { update: mocks.workspaceUpdate },
     }),
   );

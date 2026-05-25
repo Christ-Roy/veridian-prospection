@@ -28,7 +28,7 @@ describe("isChunkLoadError", () => {
 
   it("matches dynamic import failure messages", () => {
     const err = new Error(
-      "Failed to fetch dynamically imported module: https://prospection.staging.veridian.site/_next/static/chunks/app/leads/buy/page-7393e8b4b5a40595.js",
+      "Failed to fetch dynamically imported module: https://prospection.staging.veridian.site/_next/static/chunks/app/prospects/page-7393e8b4b5a40595.js",
     );
     expect(isChunkLoadError(err)).toBe(true);
   });

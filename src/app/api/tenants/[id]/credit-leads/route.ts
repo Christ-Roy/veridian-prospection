@@ -56,7 +56,6 @@ import { prisma } from "@/lib/prisma";
 import { requireHubHmac } from "@/lib/hub/auth";
 import { resolveTenantByIdOrEmail } from "@/lib/hub/tenant-lookup";
 import { logAudit } from "@/lib/audit";
-import { RefillIcpFiltersSchema } from "@/lib/refill-icp/filters";
 
 /** Major du contrat billing supporté (aligné sur update-plan / CONTRAT-BILLING v2). */
 const SUPPORTED_CONTRACT_MAJOR = 2;
@@ -88,14 +87,6 @@ const CreditLeadsSchema = z
     idempotency_key: z.string().uuid(),
     stripe_payment_id: z.string().max(255).optional(),
     contract_version: z.string().min(1),
-    // ✨ v2.1 — filtres ICP forwardés par le Hub depuis la metadata Stripe.
-    // Présent UNIQUEMENT sur source='purchase' issu de la route Prosp
-    // `/api/refill/start` (page native ICP). Absent (legacy) → comportement
-    // historique : crédit "tout-venant" sans config ICP.
-    // Schéma identique à celui validé côté Prosp en émission (frontière
-    // unique RefillIcpFiltersSchema) — si le Hub forward des champs inconnus,
-    // Zod strict rejette en 422 (signal de désalignement contrat).
-    filters: RefillIcpFiltersSchema.optional(),
   })
   .superRefine((data, ctx) => {
     if (data.source === "welcome" && !data.welcome_plan) {
@@ -110,15 +101,6 @@ const CreditLeadsSchema = z
         code: z.ZodIssueCode.custom,
         path: ["welcome_plan"],
         message: "welcome_plan must be omitted when source='purchase'",
-      });
-    }
-    if (data.source === "welcome" && data.filters) {
-      // Un welcome n'a JAMAIS de filtres (c'est un cadeau forfaitaire, pas
-      // un achat ciblé). Le Hub envoie ça → contrat mal respecté côté Hub.
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["filters"],
-        message: "filters must be omitted when source='welcome'",
       });
     }
   });
@@ -210,26 +192,6 @@ export async function POST(
           contractVersion: body.contract_version,
         },
       });
-      // v2.1 — trace par commande refill avec config ICP (purchase only).
-      // L'idempotency_key partagé entre lead_credit_events et lead_orders
-      // sert de lien (pas de FK SQL — un welcome n'a pas de lead_orders).
-      // Si filters absent (legacy v2.0 ou source=welcome) → skip lead_orders.
-      if (body.source === "purchase") {
-        await tx.leadOrder.create({
-          data: {
-            workspaceId: workspace.id,
-            tenantId,
-            quantity: body.quantity,
-            source: body.source,
-            filtersJson: body.filters
-              ? (body.filters as unknown as Prisma.InputJsonValue)
-              : Prisma.JsonNull,
-            stripePaymentId: body.stripe_payment_id ?? null,
-            idempotencyKey: body.idempotency_key,
-            contractVersion: body.contract_version,
-          },
-        });
-      }
       return tx.workspace.update({
         where: { id: workspace.id },
         data: { leadsCredited: { increment: body.quantity } },
@@ -254,8 +216,6 @@ export async function POST(
         stripe_payment_id: body.stripe_payment_id ?? null,
         balance,
         contract_version: body.contract_version,
-        // Audit traçable du filtre appliqué (debug + compta).
-        has_filters: !!body.filters,
       },
     });
 
