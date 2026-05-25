@@ -1,20 +1,32 @@
 # 🔒 Veille CVE automatique — veridian-prospection
 
 > **Généré par** : `veridian-infra/.github/workflows/cron-trivy.yml`
-> **Dernier run** : 2026-05-24 04:11 UTC
-> **Run URL** : local-cron@mail.mybigserveur.local:2026-05-24
+> **Dernier run** : 2026-05-25 04:10 UTC
+> **Run URL** : local-cron@mail.mybigserveur.local:2026-05-25
 > **Image scannée** : `ghcr.io/christ-roy/prospection:latest`
-> **CVE bruts détectés** : 2 (avant filtrage)
+> **CVE bruts détectés** : 3 (avant filtrage)
 > **Scoring** : `veridian-infra/ci/trivy-scoring.yml`
 
 ## TL;DR
 
 - 🚨 **0 RED** — fix prioritaire
-- 🔴 **0 HIGH** — action recommandée cette semaine
+- 🔴 **1 HIGH** — action recommandée cette semaine
 - 🟡 **1 MEDIUM** — récap, pas urgent
 - 🟢 **0 NOISE** — annexe collapse
 
-✅ **Rien d'urgent.** Quelques items MEDIUM à voir quand t'as 5 min.
+
+---
+
+## 🔴 HIGH — 1 CVE en 1 groupe
+
+### 1. `nodemailer` — 7.0.13 → **8.0.5**
+
+- **CVE** : `GHSA-vvjj-xcjg-gr5g` (MEDIUM/RCE)
+- **Type** : RCE
+- **Score max** : 30
+- **Title** : Nodemailer Vulnerable to SMTP Command Injection via CRLF in Transport name Option (EHLO/HELO) 
+- **Source** : `package-lock.json`
+- **Fix** : `pnpm up nodemailer` (jusqu'à >= `8.0.5`)
 
 
 ---
