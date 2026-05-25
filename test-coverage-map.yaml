@@ -539,3 +539,72 @@
     JSON + toast success/error, debounce search 250ms (clearTimeout).
     Page server force-dynamic + redirect /login + TrialGate. AppNav
     expose href /inbox + icône Inbox importée.
+
+# ── Provider presets mail BYO (W9e — Vague 9) ──────────────────────────
+# Pattern colocalisé : la lib + son test vivent dans src/lib/mail/.
+# Pas de @testing-library dans le repo : le hint composant est testé
+# source-level (cf inbox-list.test.ts, mail/ai-source-level.test.ts).
+# Les 2 formulaires existants (imap-config-form, mail-config-form) sont
+# étendus pour intégrer auto-fill + bandeau ; ils sont couverts par les
+# tests E2E hard-core dans e2e/staging-full/imap-provider-presets.spec.ts
+# qui valident le flow user complet (auto-fill au blur, bandeau visible,
+# CTA target=_blank, accordéon toggle, non-écrasement host manuel).
+
+- sources:
+    - src/lib/mail/provider-presets.ts
+    - src/lib/mail/provider-presets.test.ts
+  covered_by:
+    - src/lib/mail/provider-presets.test.ts
+  reason: |
+    Lib pure (table de 6 providers + detectProvider). Test colocalisé
+    (pattern Veridian src/lib/*). 24 assertions Vitest : detectProvider
+    sur 8 domaines connus (gmail/googlemail/outlook/hotmail/yahoo/icloud/
+    ovh/free), case-insensitive (OUTLOOK.COM, Gmail.Com), trim whitespace,
+    null sur unknown/malformed/empty/sans @. Contrat structurel MAIL_PROVIDERS :
+    ≥ 6 providers, host non-vide, port > 0, requiresAppPassword conforme
+    réalité 2026 (Gmail/MS/Yahoo/iCloud true, OVH/Free false), URLs
+    appPassword en https://, Gmail IMAP 993 SSL (contrat imapflow). Sabotage :
+    retirer .toLowerCase() → "BOB@OUTLOOK.COM" rouge ; mettre Gmail port
+    143 → contrat imapflow rouge.
+
+- sources:
+    - src/components/mail/mail-provider-hint.tsx
+    - src/components/mail/mail-provider-hint.test.ts
+  covered_by:
+    - src/components/mail/mail-provider-hint.test.ts
+  reason: |
+    Composant client React, testé source-level (pattern Veridian, cf
+    inbox-list.test.ts). 7 assertions : retour null si provider null OU
+    requiresAppPassword false (court-circuit pour OVH/Free), CTA App
+    Password target="_blank" + rel="noopener noreferrer" (sécurité
+    tabnabbing), data-testid mail-provider-hint + data-provider + CTA +
+    toggle + steps (handles E2E), <ol list-decimal> pour les steps,
+    useState(false) + aria-expanded pour le toggle accordéon, classes
+    amber cohérentes avec warning anti-spam SMTP existant. Sabotage :
+    retirer rel="noopener noreferrer" → tabnabbing risk → test rouge ;
+    retirer le court-circuit !requiresAppPassword → bandeau OVH visible
+    par erreur → test rouge.
+
+- sources:
+    - src/components/mail/imap-config-form.tsx
+    - src/components/mail/mail-config-form.tsx
+  covered_by:
+    - e2e/staging-full/imap-provider-presets.spec.ts
+    - src/lib/mail/provider-presets.test.ts
+    - src/components/mail/mail-provider-hint.test.ts
+  reason: |
+    Les 2 formulaires existants (livrés v1 SMTP + W8b IMAP) sont étendus
+    pour intégrer detectProvider() au blur du champ username, auto-fill
+    host/port/TLS conditionnel (n'écrase pas un host saisi manuellement),
+    et rendu du composant MailProviderHint. La logique métier réside
+    dans la lib provider-presets (couverte par son test Vitest) et le
+    composant MailProviderHint (couvert source-level). Le wiring dans
+    les forms est validé par les 12 specs Playwright hard-core
+    e2e/staging-full/imap-provider-presets.spec.ts qui exercent le flow
+    user complet sur staging réel : auto-fill 6 providers (Gmail/Outlook/
+    OVH/Free), domaine inconnu sans plantage, email malformé, pollution
+    après reset, accordéon toggle, non-écrasement host manuel, RBAC,
+    isolement local state, équivalence IMAP/SMTP. Sabotage : retirer
+    onBlur={handleEmailBlur} d'un Input → spec "auto-fill au blur"
+    rouge ; supprimer le check !prev.host (laisser l'auto-fill écraser)
+    → spec "Host saisi manuellement avant le blur" rouge.

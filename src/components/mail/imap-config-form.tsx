@@ -16,6 +16,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { MailProviderHint } from "./mail-provider-hint";
+import {
+  detectProvider,
+  type MailProviderPreset,
+} from "@/lib/mail/provider-presets";
 
 interface ImapConfigState {
   host: string;
@@ -51,6 +56,33 @@ export function ImapConfigForm() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [provider, setProvider] = useState<MailProviderPreset | null>(null);
+
+  // Détection au blur du champ username (email) : auto-fill host/port/TLS
+  // si on est sur un domaine connu ET que les champs ne sont pas déjà
+  // remplis manuellement (on ne veut pas écraser un host saisi exprès).
+  function handleEmailBlur() {
+    const detected = detectProvider(config.username);
+    setProvider(detected);
+    if (!detected) return;
+    setConfig((prev) => {
+      const next = { ...prev };
+      if (!prev.host) next.host = detected.imap.host;
+      if (!prev.port || prev.port === 993) next.port = detected.imap.port;
+      if (prev.tls !== detected.imap.tls) next.tls = detected.imap.tls;
+      return next;
+    });
+    toast.info(`Détection ${detected.label}, paramètres pré-remplis`);
+  }
+
+  // Au chargement initial : si username existant, refléter le preset
+  // dans l'état (sans toast) pour afficher le bandeau d'aide.
+  useEffect(() => {
+    if (!loading && config.username) {
+      setProvider(detectProvider(config.username));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
 
   useEffect(() => {
     fetch("/api/mail/imap-config")
@@ -233,6 +265,8 @@ export function ImapConfigForm() {
             placeholder="user@example.com"
             value={config.username}
             onChange={(e) => update("username", e.target.value)}
+            onBlur={handleEmailBlur}
+            data-testid="imap-username-input"
           />
         </div>
 
@@ -271,6 +305,8 @@ export function ImapConfigForm() {
           </p>
         </div>
       </div>
+
+      <MailProviderHint provider={provider} />
 
       {config.lastSyncStatus && (
         <div className="rounded-md border bg-slate-50 px-3 py-2 text-sm">

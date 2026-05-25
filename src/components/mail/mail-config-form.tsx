@@ -14,6 +14,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { MailProviderHint } from "./mail-provider-hint";
+import {
+  detectProvider,
+  type MailProviderPreset,
+} from "@/lib/mail/provider-presets";
 
 interface MailConfigState {
   host: string;
@@ -48,6 +53,32 @@ export function MailConfigForm() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [provider, setProvider] = useState<MailProviderPreset | null>(null);
+
+  // Détection au blur du champ username : auto-fill SMTP host/port/TLS
+  // si domaine connu et que les champs sont vides (ou aux defaults 587).
+  function handleEmailBlur() {
+    const detected = detectProvider(config.username);
+    setProvider(detected);
+    if (!detected) return;
+    setConfig((prev) => {
+      const next = { ...prev };
+      if (!prev.host) next.host = detected.smtp.host;
+      if (!prev.port || prev.port === 587) next.port = detected.smtp.port;
+      if (prev.tls !== detected.smtp.tls) next.tls = detected.smtp.tls;
+      if (!prev.fromEmail) next.fromEmail = prev.username;
+      return next;
+    });
+    toast.info(`Détection ${detected.label}, paramètres pré-remplis`);
+  }
+
+  // Reflet initial du preset si username déjà saisi (sans toast).
+  useEffect(() => {
+    if (!loading && config.username) {
+      setProvider(detectProvider(config.username));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
 
   useEffect(() => {
     fetch("/api/mail/config")
@@ -214,6 +245,8 @@ export function MailConfigForm() {
             placeholder="user@example.com"
             value={config.username}
             onChange={(e) => update("username", e.target.value)}
+            onBlur={handleEmailBlur}
+            data-testid="smtp-username-input"
           />
         </div>
 
@@ -260,6 +293,8 @@ export function MailConfigForm() {
           />
         </div>
       </div>
+
+      <MailProviderHint provider={provider} />
 
       {config.lastTestStatus && (
         <div className="rounded-md border bg-slate-50 px-3 py-2 text-sm">
