@@ -11,10 +11,10 @@ Mail v1 livré (commit 6b7892e + migration 0022). Liste des améliorations ident
 
 ## Améliorations
 
-### A — Templates customisables par tenant (au lieu de 2 hardcodés)
-- Actuellement : 2 templates "Relance" et "Demo" hardcodés dans `src/lib/mail/templates.ts`
-- Cible : table `tenant_mail_templates` (slug, label, subject, body, variables liquid) éditables via UI `/settings/mail/templates`
-- Effort : ~1 jour (migration + CRUD + UI éditeur)
+### A — Templates customisables par tenant (au lieu de 2 hardcodés) ✅ LIVRÉ 2026-05-25 (W9c)
+- Livré : migration 0029 + `tenant_mail_templates` + `src/lib/mail/tenant-templates.ts` + routes `/api/admin/mail-templates[/templateId]` + `/api/mail/templates` (consumer) + UI `MailTemplatesManager` dans `/settings/mail` (onglet Templates)
+- Fallback hardcodés préservés pour les tenants qui n'ont rien créé — UNIQUE PARTIAL (tenant, slug) WHERE deleted_at IS NULL pour autoriser re-create
+- Tests : unit + 3 specs E2E (CRUD, conflict 409, send avec slug custom)
 
 ### B — Validation DKIM / SPF du from_email
 - Au moment du "Tester la connexion", lookup DNS du domaine `smtpFromEmail`
@@ -41,11 +41,12 @@ Mail v1 livré (commit 6b7892e + migration 0022). Liste des améliorations ident
 - Limite : 10 MB par mail (anti-bounce serveur destinataire)
 - Effort : ~6h
 
-### F — Queue d'envoi avec retry (background worker)
-- Actuellement : POST /api/mail/send fait l'envoi nodemailer en synchrone → bloque la requête HTTP 1-3s
-- Cible : INSERT en table `mail_outbox` (similar pattern outbox webhook), worker cron poll + envoie + retry exponential
-- Bénéfice : UI rend instantanément (queued), tolère un crash réseau SMTP transitoire
-- Effort : ~1 jour
+### F — Queue d'envoi avec retry (background worker) ✅ LIVRÉ 2026-05-25 (W9c)
+- Livré : migration 0028 + `mail_outbox` + `src/lib/mail/outbox.ts` (enqueue + flush SELECT FOR UPDATE SKIP LOCKED) + route `/api/cron/mail-outbox-flush` (Bearer CRON_SECRET, 1 min) + refactor `/api/mail/send` (path SMTP BYO retourne 202 queued, branche Hub Gateway reste sync)
+- Retry exponential : 1min → 5min → 15min → 60min → 24h (5 tentatives) puis `failed`
+- Idempotency_key UNIQUE + dédup explicite pré-INSERT (pattern Stripe)
+- `lead_emails(sent_status='queued')` créé dans la même tx que mail_outbox → timeline 360° voit immédiatement le mail pending
+- Tests : 17 unit (outbox.ts) + 7 unit (cron) + 5 specs E2E (happy path, flush, idempotency, retry, max attempts)
 
 ### G — Threading conversation (Reply-To + In-Reply-To)
 - Quand on répond à un mail entrant (v2 IMAP), le `In-Reply-To` doit être posé
@@ -59,15 +60,15 @@ Mail v1 livré (commit 6b7892e + migration 0022). Liste des améliorations ident
 - Lib : `liquidjs` (déjà installé pour les templates Notifuse)
 - Effort : ~3h
 
-### I — Aperçu mail avant envoi
-- Bouton "Aperçu" dans compose modal → render le body avec les variables remplies dans un iframe sandboxé
-- Évite l'envoi avec `{{ var }}` non remplacée
-- Effort : ~2h
+### I — Aperçu mail avant envoi ✅ LIVRÉ 2026-05-25 (W9c)
+- Livré : route `POST /api/mail/render-preview` (rendu liquid + détection vars non substituées + signature optionnelle) + composant `PreviewMailDialog` (iframe sandbox="allow-same-origin") branché dans `ComposeMailDialog` (bouton "Aperçu")
+- Tests : 2 specs E2E (variables + signature includeSignature)
 
-### J — Signature commerciale auto
-- Dans `/settings/mail` : champ "Signature" (rich text) qui s'ajoute en fin de chaque mail sortant
-- Variables : `{{ user.full_name }}`, `{{ user.phone }}`, `{{ tenant.company }}`
-- Effort : ~2h
+### J — Signature commerciale auto ✅ LIVRÉ 2026-05-25 (W9c)
+- Livré : migration 0030 (colonnes `mail_signature_html` + `mail_signature_enabled` sur `tenant_mail_config`) + route `/api/mail/signature` (GET/PUT) + composant `MailSignatureForm` (onglet Signature dans `/settings/mail`) + `applySignatureIfEnabled` au flush outbox (read tenant_mail_config, append HTML + plain text)
+- Signature appliquée au moment du flush (vs enqueue) → toute modif s'applique aux mails en queue
+- Tests : 6 unit (applySignatureIfEnabled) + 3 specs E2E (PUT/GET, enabled, disabled)
+- v2 possible : variables `{{ user.full_name }}` / `{{ user.phone }}` (out of scope pour v1, peut être ajouté quand le besoin émerge)
 
 ## Ordre suggéré (priorité commerciale)
 

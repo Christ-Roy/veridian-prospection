@@ -608,3 +608,108 @@
     onBlur={handleEmailBlur} d'un Input → spec "auto-fill au blur"
     rouge ; supprimer le check !prev.host (laisser l'auto-fill écraser)
     → spec "Host saisi manuellement avant le blur" rouge.
+
+# ── W9c mail improvements F/A/I/J (livré 2026-05-25) ─────────────────────
+
+- sources:
+    - src/lib/mail/outbox.ts
+    - src/lib/mail/outbox.test.ts
+  covered_by:
+    - src/lib/mail/outbox.test.ts
+  reason: |
+    Lib outbox (queue d'envoi mail v2, ticket follow-ups §F). Test
+    colocalisé src/lib/mail/outbox.test.ts (pattern Veridian). 17
+    assertions Vitest couvrant le contrat opérationnel :
+      - nextRetryDelayMs : timings exponential 1min/5min/15min/60min/24h,
+        cap à 24h pour attempts > 5, 0 pour attempts <= 0
+      - MAIL_OUTBOX_MAX_ATTEMPTS = 5 (constante exportée stable)
+      - applySignatureIfEnabled : no-op si config absente / disabled /
+        signature vide, append wrapper div .veridian-mail-signature en
+        HTML + plain text séparé par "--", pas de mutation du payload
+        input (immutable)
+      - flushOutbox via DI complet (resolveCreds + send + now mockés,
+        prisma stub) : queue vide → picked=0, send OK → status=sent +
+        bump lead_emails(messageId), SMTP fail transient → failed_retry
+        + nextRetryAt = now + 1min (attempts=1), à MAX-1 → encore
+        failed_retry, à MAX → failed + lead_emails(failed) + log error,
+        resolveCreds=null → failed sans send tenté, payload corrompu →
+        failed sans send tenté.
+    Sabotage : changer le tableau RETRY_DELAYS_MS → test timings rouge.
+    Retirer le early return si signature_enabled false → test "no-op
+    if disabled" rouge. Cap MAX_ATTEMPTS à 4 → test "at MAX" comporte
+    une assertion attempts=5 rouge.
+
+- sources:
+    - src/lib/mail/tenant-templates.ts
+    - src/lib/mail/tenant-templates.test.ts
+  covered_by:
+    - src/lib/mail/tenant-templates.test.ts
+  reason: |
+    Lib templates customisables par tenant (ticket follow-ups §A). Test
+    colocalisé src/lib/mail/tenant-templates.test.ts (pattern Veridian).
+    8 assertions Vitest couvrant :
+      - listTenantTemplates : retourne fallbacks hardcodés (≥ 2 :
+        relance-commerciale-v1 + demo-prospection-v1) quand pas de
+        customs, customs shadow fallbacks (même slug → custom prioritaire,
+        isCustom=true), customs-only en tête (ordre alphabétique custom
+        d'abord puis fallbacks)
+      - resolveTemplate : custom prioritaire si trouvé, fallback hardcodé
+        si pas de custom, null si slug totalement inconnu
+      - createTenantTemplate : crée OK si slug libre, throw
+        TenantTemplateConflictError si slug déjà utilisé (non
+        soft-deleted) — sans appeler create (côté UNIQUE PARTIAL DB).
+    Sabotage : retirer le filter customSlugs dans listTenantTemplates
+    (donc fallbacks shadowed pas masqués) → test "customs shadow
+    fallbacks" rouge. Retirer le pré-check findFirst dans
+    createTenantTemplate → test "throws conflict" rouge (le mock
+    n'attrape pas P2002 sans pré-check).
+
+- sources:
+    - src/components/mail/mail-signature-form.tsx
+  covered_by:
+    - __tests__/components/mail/mail-signature-form.test.tsx
+    - e2e/staging-full/mail-improvements.spec.ts
+  reason: |
+    Composant client React form signature (ticket §J). Couvert
+    source-level par __tests__/components/mail/mail-signature-form.test.tsx
+    (pattern Veridian, cf mail-provider-hint.test.ts) : présence des
+    appels fetch GET/PUT /api/mail/signature, payload {mailSignatureHtml,
+    mailSignatureEnabled}, dangerouslySetInnerHTML pour preview live,
+    data-testid pour E2E hook. Le wiring runtime (form interaction,
+    persistance DB, signature appliquée au mail réel) est validé par
+    3 specs Playwright hard-core dans e2e/staging-full/mail-improvements.spec.ts
+    (PUT/GET, send enabled, send disabled). Sabotage : changer
+    "/api/mail/signature" en "/api/foo" → test source rouge.
+
+- sources:
+    - src/components/mail/mail-templates-manager.tsx
+  covered_by:
+    - __tests__/components/mail/mail-templates-manager.test.tsx
+    - e2e/staging-full/mail-improvements.spec.ts
+  reason: |
+    Composant client React CRUD templates (ticket §A). Couvert
+    source-level par __tests__/components/mail/mail-templates-manager.test.tsx :
+    appels fetch GET /api/admin/mail-templates, POST /api/admin/mail-templates,
+    PUT /api/admin/mail-templates/${id}, DELETE /api/admin/mail-templates/${id},
+    payload {slug,label,subject,bodyText,bodyHtml}, message 409 conflict
+    gérée, confirm() pour delete (anti-clic accidentel), data-testid
+    pour E2E hooks. Wiring runtime validé par 3 specs Playwright
+    hard-core (CRUD admin, conflict 409, send avec slug custom shadow
+    fallback). Sabotage : retirer la branche res.status === 409 → test
+    source rouge (regex "Slug already exists").
+
+- sources:
+    - src/components/mail/preview-mail-dialog.tsx
+  covered_by:
+    - __tests__/components/mail/preview-mail-dialog.test.tsx
+    - e2e/staging-full/mail-improvements.spec.ts
+  reason: |
+    Composant client React modale aperçu (ticket §I). Couvert
+    source-level par __tests__/components/mail/preview-mail-dialog.test.tsx :
+    appel POST /api/mail/render-preview avec includeSignature true,
+    iframe sandbox="allow-same-origin" (no allow-scripts → no XSS),
+    rendu unresolvedVars en bandeau warning, data-testid pour E2E.
+    Wiring runtime validé par 2 specs Playwright hard-core (variables
+    + signature includeSignature). Sabotage : retirer "allow-same-origin"
+    de sandbox → test source rouge ; passer includeSignature à false
+    par défaut → test rouge.

@@ -23,6 +23,9 @@ export interface MailConfigPublic {
   lastTestAt: string | null;
   lastTestStatus: string | null;
   lastTestError: string | null;
+  /** Signature HTML appendée aux mails sortants (migration 0030 §J). */
+  mailSignatureHtml: string | null;
+  mailSignatureEnabled: boolean;
 }
 
 /** Vue interne avec passwordEnc — usage strictement serveur (envoi SMTP). */
@@ -55,7 +58,30 @@ export async function getMailConfigPublic(
     lastTestAt: row.lastTestAt?.toISOString() ?? null,
     lastTestStatus: row.lastTestStatus,
     lastTestError: row.lastTestError,
+    mailSignatureHtml: row.mailSignatureHtml,
+    mailSignatureEnabled: row.mailSignatureEnabled,
   };
+}
+
+/** Met à jour la signature mail du tenant. */
+export async function updateMailSignature(
+  tenantId: string,
+  input: { mailSignatureHtml: string | null; mailSignatureEnabled: boolean },
+): Promise<MailConfigPublic> {
+  await prisma.tenantMailConfig.upsert({
+    where: { tenantId },
+    update: {
+      mailSignatureHtml: input.mailSignatureHtml,
+      mailSignatureEnabled: input.mailSignatureEnabled,
+    },
+    create: {
+      tenantId,
+      mailSignatureHtml: input.mailSignatureHtml,
+      mailSignatureEnabled: input.mailSignatureEnabled,
+    },
+  });
+  const fresh = await getMailConfigPublic(tenantId);
+  return fresh!;
 }
 
 /** Lit la config mail d'un tenant en vue interne (avec passwordEnc). */

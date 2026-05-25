@@ -36,6 +36,7 @@ import {
   recordSentEmail,
   recordFailedEmail,
   listLeadEmails,
+  updateMailSignature,
 } from "@/lib/mail/queries";
 import { encryptPassword } from "@/lib/crypto/encrypt-password";
 
@@ -497,5 +498,95 @@ describe("recordIncomingEmail", () => {
         receivedAt: new Date(),
       }),
     ).rejects.toBeDefined();
+  });
+});
+
+describe("updateMailSignature", () => {
+  test("upsert avec html + enabled puis lit la nouvelle config publique", async () => {
+    upsertMock.mockResolvedValue({});
+    findUniqueMock.mockResolvedValue({
+      smtpHost: "smtp.test",
+      smtpPort: 587,
+      smtpUsername: "u",
+      smtpPasswordEnc: "iv:tag:ct",
+      smtpTls: true,
+      smtpFromEmail: "f@test.com",
+      smtpFromName: "F",
+      lastTestAt: null,
+      lastTestStatus: null,
+      lastTestError: null,
+      mailSignatureHtml: "<p>Robert</p>",
+      mailSignatureEnabled: true,
+    });
+    const cfg = await updateMailSignature("tenant-1", {
+      mailSignatureHtml: "<p>Robert</p>",
+      mailSignatureEnabled: true,
+    });
+    expect(cfg.mailSignatureHtml).toBe("<p>Robert</p>");
+    expect(cfg.mailSignatureEnabled).toBe(true);
+    // upsert appelé avec EXACTEMENT le payload signature (sabotage check :
+    // si quelqu'un swap les champs, l'assert deepEqual fail).
+    expect(upsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { tenantId: "tenant-1" },
+        update: {
+          mailSignatureHtml: "<p>Robert</p>",
+          mailSignatureEnabled: true,
+        },
+        create: expect.objectContaining({
+          tenantId: "tenant-1",
+          mailSignatureHtml: "<p>Robert</p>",
+          mailSignatureEnabled: true,
+        }),
+      }),
+    );
+  });
+
+  test("upsert avec html=null + enabled=false (toggle off sans perdre la sig)", async () => {
+    upsertMock.mockResolvedValue({});
+    findUniqueMock.mockResolvedValue({
+      smtpHost: null,
+      smtpPort: null,
+      smtpUsername: null,
+      smtpPasswordEnc: null,
+      smtpTls: true,
+      smtpFromEmail: null,
+      smtpFromName: null,
+      lastTestAt: null,
+      lastTestStatus: null,
+      lastTestError: null,
+      mailSignatureHtml: null,
+      mailSignatureEnabled: false,
+    });
+    const cfg = await updateMailSignature("tenant-1", {
+      mailSignatureHtml: null,
+      mailSignatureEnabled: false,
+    });
+    expect(cfg.mailSignatureHtml).toBeNull();
+    expect(cfg.mailSignatureEnabled).toBe(false);
+  });
+});
+
+describe("getMailConfigPublic — signature fields exposés", () => {
+  test("retourne mailSignatureHtml + mailSignatureEnabled dans la vue publique", async () => {
+    findUniqueMock.mockResolvedValue({
+      smtpHost: "smtp.test",
+      smtpPort: 587,
+      smtpUsername: "u",
+      smtpPasswordEnc: "iv:tag:ct",
+      smtpTls: true,
+      smtpFromEmail: "f@test.com",
+      smtpFromName: "F",
+      lastTestAt: null,
+      lastTestStatus: null,
+      lastTestError: null,
+      mailSignatureHtml: "<p>Sig</p>",
+      mailSignatureEnabled: false,
+    });
+    const cfg = await getMailConfigPublic("tenant-1");
+    // Sabotage check : si quelqu'un retire ces champs du return ou les
+    // hardcode à null, ces 2 asserts rougissent.
+    expect(cfg?.mailSignatureHtml).toBe("<p>Sig</p>");
+    expect(cfg?.mailSignatureEnabled).toBe(false);
   });
 });

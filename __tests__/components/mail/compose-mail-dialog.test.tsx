@@ -32,8 +32,11 @@ describe("compose-mail-dialog.tsx — invariants v1", () => {
     expect(source).toMatch(/siren\s*:\s*siren/);
   });
 
-  test("propose les templates via listTemplates()", () => {
-    expect(source).toMatch(/listTemplates\(\)/);
+  test("charge la liste templates via /api/mail/templates (customs + fallbacks)", () => {
+    // v2 (2026-05-25, ticket follow-ups §A) : templates customs par tenant
+    // → le client fetch /api/mail/templates au mount (vs ancien import statique
+    // listTemplates() qui ne voyait que les fallbacks hardcodés).
+    expect(source).toMatch(/\/api\/mail\/templates/);
   });
 
   test("offre l'option 'Compose libre' (FREEFORM)", () => {

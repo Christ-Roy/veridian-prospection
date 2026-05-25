@@ -36,12 +36,9 @@ import {
   recordSentEmail,
   recordFailedEmail,
 } from "@/lib/mail/queries";
-import { sendMail } from "@/lib/mail/smtp";
-import {
-  getTemplate,
-  renderTemplate,
-  type TemplateVars,
-} from "@/lib/mail/templates";
+import { renderTemplate, type TemplateVars } from "@/lib/mail/templates";
+import { resolveTemplate } from "@/lib/mail/tenant-templates";
+import { enqueueMail } from "@/lib/mail/outbox";
 import {
   sendMailViaHub,
   freshIdempotencyKey,
@@ -177,12 +174,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Rendu : template OU compose libre.
+  // Rendu : template (custom OU fallback hardcodé) OU compose libre.
   let subject: string;
   let bodyText: string;
   let bodyHtml: string;
   if (input.templateSlug) {
-    const tpl = getTemplate(input.templateSlug);
+    const tpl = await resolveTemplate(tenantId, input.templateSlug);
     if (!tpl) {
       return NextResponse.json(
         { error: "Unknown template", templateSlug: input.templateSlug },
@@ -205,64 +202,90 @@ export async function POST(request: NextRequest) {
     bodyHtml = input.bodyHtml!;
   }
 
-  const result = await sendMail(creds, {
-    to: input.to,
-    cc: input.cc,
-    subject,
-    bodyText,
-    bodyHtml,
-  });
+  // Enqueue dans mail_outbox + lead_emails(queued) en MÊME transaction.
+  // Le cron /api/cron/mail-outbox-flush prendra le relais pour l'envoi
+  // réel + retry exponential. UI rend instantanément.
+  try {
+    const enqueueResult = await prisma.$transaction(async (tx) => {
+      return enqueueMail(tx, {
+        tenantId,
+        userId: auth.user.id,
+        workspaceId,
+        idempotencyKey: input.idempotencyKey,
+        payload: {
+          to: input.to,
+          cc: input.cc,
+          subject,
+          bodyText,
+          bodyHtml,
+          templateSlug: input.templateSlug ?? null,
+          siren: input.siren ?? null,
+          provider: "smtp",
+          fromEmail: creds.fromEmail,
+          fromName: creds.fromName,
+        },
+      });
+    });
 
-  const traceBase = {
-    tenantId,
-    workspaceId,
-    userId: auth.user.id,
-    siren: input.siren ?? null,
-    fromEmail: creds.fromEmail,
-    fromName: creds.fromName,
-    toEmails: [input.to],
-    ccEmails: input.cc ?? [],
-    subject,
-    bodyText,
-    bodyHtml,
-    templateSlug: input.templateSlug ?? null,
-  };
-
-  if (result.ok && result.messageId) {
-    await recordSentEmail({ ...traceBase, messageId: result.messageId });
     await logAudit({
       tenantId,
       actorType: "user",
       actorId: auth.user.id,
-      action: "mail.sent",
+      action: "mail.queued",
       targetType: "prospect",
       targetId: input.siren ?? null,
       metadata: {
         to: input.to,
         templateSlug: input.templateSlug ?? null,
-        messageId: result.messageId,
+        outboxId: enqueueResult.outboxId,
+        leadEmailId: enqueueResult.leadEmailId,
+        idempotencyKey: enqueueResult.idempotencyKey,
+        alreadyEnqueued: enqueueResult.alreadyEnqueued,
         provider: "smtp",
       },
     });
-    return NextResponse.json({ ok: true, messageId: result.messageId });
+
+    return NextResponse.json(
+      {
+        ok: true,
+        status: "queued",
+        outboxId: enqueueResult.outboxId,
+        leadEmailId: enqueueResult.leadEmailId,
+        idempotencyKey: enqueueResult.idempotencyKey,
+        alreadyEnqueued: enqueueResult.alreadyEnqueued,
+      },
+      { status: 202 },
+    );
+  } catch (err) {
+    console.error("[mail/send] enqueue failed:", err);
+    // Trace l'échec d'enqueue pour debug (rare : DB indisponible, etc.).
+    await recordFailedEmail({
+      tenantId,
+      workspaceId,
+      userId: auth.user.id,
+      siren: input.siren ?? null,
+      fromEmail: creds.fromEmail,
+      fromName: creds.fromName,
+      toEmails: [input.to],
+      ccEmails: input.cc ?? [],
+      subject,
+      bodyText,
+      bodyHtml,
+      templateSlug: input.templateSlug ?? null,
+      messageId: `failed-${randomUUID()}`,
+      errorMessage: `enqueue_failed: ${err instanceof Error ? err.message : String(err)}`,
+    }).catch(() => {});
+    return NextResponse.json(
+      {
+        ok: false,
+        reason: "enqueue_failed",
+        errorMessage: err instanceof Error ? err.message : String(err),
+      },
+      { status: 500 },
+    );
   }
-
-  await recordFailedEmail({
-    ...traceBase,
-    messageId: `failed-${randomUUID()}`,
-    errorMessage: result.errorMessage ?? result.reason ?? "unknown",
-  });
-
-  return NextResponse.json(
-    {
-      ok: false,
-      reason: result.reason,
-      smtpCode: result.smtpCode,
-      errorMessage: result.errorMessage,
-    },
-    { status: 502 },
-  );
 }
+
 
 /**
  * Branche Hub Mail Gateway. L'OAuth Gmail est stocké côté Hub sur
@@ -298,7 +321,7 @@ async function sendViaHubGateway(args: {
   let bodyText: string;
   let bodyHtml: string;
   if (input.templateSlug) {
-    const tpl = getTemplate(input.templateSlug);
+    const tpl = await resolveTemplate(tenantId, input.templateSlug);
     if (!tpl) {
       return NextResponse.json(
         { error: "Unknown template", templateSlug: input.templateSlug },
