@@ -412,12 +412,13 @@
     source-level historique).
 
 # ── Mail v2 Hub Gateway — couverture multi-tests d'une seule route ─────
-# La route /api/mail/send/route.ts a été étendue (migration 0025) pour
-# router selon workspace.mail_provider : SMTP BYO v1 (test canonique
-# `__tests__/api/mail/send.test.ts` historique, 10 tests) OU branche Hub
-# Mail Gateway (test dédié `send-via-hub.test.ts`, 12 tests). Les 2 tests
+# La route /api/mail/send/route.ts route dynamiquement selon le statut
+# Hub mail-provider (cache 5 min via checkHubMailProviderStatus, depuis
+# migration 0035 qui a DROP la colonne workspace.mail_provider) : SMTP
+# BYO v1 (test canonique `__tests__/api/mail/send.test.ts`) OU branche
+# Hub Mail Gateway (test dédié `send-via-hub.test.ts`). Les 2 tests
 # cohabitent sur la même source pour ne pas dégrader la lisibilité du
-# fichier send.test.ts historique (déjà 230 lignes).
+# fichier send.test.ts historique.
 
 - sources:
     - src/app/api/mail/send/route.ts
@@ -427,12 +428,29 @@
   reason: |
     Couverture combinée. send.test.ts couvre la branche SMTP v1 (rate
     limit, 412 missing_credentials, freeform/template rendering, 502
-    auth_failed). send-via-hub.test.ts couvre la branche gmail-via-hub
-    (12 tests : happy path HMAC vers Hub, mapping needs_reauth/
-    provider_not_linked/rate_limit/user_not_found, idempotency key,
-    fallback SMTP si workspace.mail_provider='none' ou workspaceId
-    absent). Sabotage : casser le routing par provider → l'un des deux
-    tests rougit instantanément.
+    auth_failed) + 4 tests Hub Gateway pour exercer mapHubFailureToHttp.
+    send-via-hub.test.ts couvre la branche gmail-via-hub via le mock
+    checkHubMailProviderStatus (happy path HMAC vers Hub, mapping
+    needs_reauth/provider_not_linked/rate_limit/user_not_found,
+    idempotency key, fallback SMTP si Hub linked=false ou hubUserId
+    absent). Sabotage : casser le routing → un des deux tests rougit
+    instantanément.
+
+# ── checkHubMailProviderStatus — source de vérité dynamique Hub ────────
+# Remplace l'ancienne colonne workspace.mail_provider (DROP 0035). HMAC
+# vers `GET /api/users/{id}/mail-provider-status` côté Hub, cache 5 min
+# en mémoire pour éviter 1 roundtrip par envoi.
+
+- sources:
+    - src/lib/mail-gateway-client.ts
+  covered_by:
+    - __tests__/lib/mail-gateway-client.test.ts
+  reason: |
+    Tests sendMailViaHub (HMAC signature, mapping erreurs Hub, timeout,
+    idempotency) + checkHubMailProviderStatus (linked true/false, cache
+    5 min, fallback false sur Hub down, signature HMAC GET avec body
+    vide). Sabotage : changer la string canonique HMAC ou la condition
+    `provider !== 'none' && !needs_reauth` → test rouge.
 
 # ── Refill ICP v2.1 (W7b — page native refill ICP filtres fins) ────────
 # La route credit-leads est modifiée pour ajouter `filters` (v2.1) ; le

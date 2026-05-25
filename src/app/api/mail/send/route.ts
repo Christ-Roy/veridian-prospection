@@ -3,15 +3,15 @@
  *
  * Envoie un mail depuis la fiche lead (bouton "Envoyer un mail").
  *
- * Deux flows selon `workspace.mail_provider` :
+ * Routage dynamique : on interroge le Hub (HMAC, cache 5 min en mémoire)
+ * pour savoir si l'utilisateur a un compte Gmail OAuth lié.
  *
- *   1. `mail_provider === 'gmail-via-hub'` (nouveau, migration 0025) →
- *      envoi via Hub Mail Gateway : le mail part du Gmail OAuth du commercial.
- *      Différenciateur produit Veridian (cf ticket 2026-05-25-mail-send-as-user-via-hub-gateway.md).
+ *   1. Gmail OAuth lié côté Hub → envoi via Hub Mail Gateway (le mail
+ *      part du Gmail OAuth du commercial — différenciateur produit
+ *      Veridian, cf veridian-hub/docs/CONTRAT-MAIL.md v1.0).
  *
- *   2. `mail_provider === 'none'` (default, v1) → envoi SMTP BYO via
- *      TenantMailConfig (host/port/user/passwordEnc). Comportement inchangé
- *      pour tous les tenants existants.
+ *   2. Sinon → envoi SMTP BYO via TenantMailConfig (host/port/user/
+ *      passwordEnc). Comportement inchangé pour tous les tenants existants.
  *
  * Si `templateSlug` est fourni, on rend le template avec les variables
  * `prospect.{name,entreprise}` + `sender.{name,email}` puis on envoie.
@@ -42,6 +42,7 @@ import { enqueueMail } from "@/lib/mail/outbox";
 import {
   sendMailViaHub,
   freshIdempotencyKey,
+  checkHubMailProviderStatus,
   type SendMailViaHubFailureReason,
 } from "@/lib/mail-gateway-client";
 import { logAudit } from "@/lib/audit";
@@ -142,26 +143,25 @@ export async function POST(request: NextRequest) {
 
   const { insertId: workspaceId } = await getWorkspaceScope();
 
-  // Lit le mail_provider du workspace actif. Si pas de workspace résolu,
-  // fallback SMTP BYO (cas legacy / tenant sans workspace member).
-  const workspace = workspaceId
-    ? await prisma.workspace.findUnique({
-        where: { id: workspaceId },
-        select: {
-          mailProvider: true,
-          gmailConnectedAt: true,
-        },
-      })
-    : null;
-  const provider = workspace?.mailProvider ?? "none";
+  // Source de vérité = Hub (pas une colonne workspace DB). On résout
+  // d'abord hubUserId puis on demande au Hub si l'user a un Gmail OAuth lié.
+  // Cache 5 min en mémoire pour éviter 1 HMAC roundtrip à chaque envoi.
+  const user = await prisma.user.findUnique({
+    where: { id: auth.user.id },
+    select: { hubUserId: true, email: true, name: true },
+  });
+  const hasGmailOauthLinked = user?.hubUserId
+    ? await checkHubMailProviderStatus(user.hubUserId)
+    : false;
 
   // ─── Branche Hub Mail Gateway (Gmail OAuth user) ──────────────────────
-  if (provider === "gmail-via-hub") {
+  if (hasGmailOauthLinked && user?.hubUserId) {
     return sendViaHubGateway({
       auth: auth.user,
       tenantId,
       workspaceId,
       input,
+      user: { hubUserId: user.hubUserId, email: user.email, name: user.name },
     });
   }
 
@@ -296,24 +296,9 @@ async function sendViaHubGateway(args: {
   tenantId: string;
   workspaceId: string | null;
   input: z.infer<typeof sendSchema>;
+  user: { hubUserId: string; email: string; name: string | null };
 }): Promise<NextResponse> {
-  const { auth, tenantId, workspaceId, input } = args;
-
-  // Résout hubUserId — sans lui, le Hub ne peut pas mapper vers l'OAuth Gmail.
-  const user = await prisma.user.findUnique({
-    where: { id: auth.id },
-    select: { hubUserId: true, email: true, name: true },
-  });
-  if (!user?.hubUserId) {
-    return NextResponse.json(
-      {
-        ok: false,
-        reason: "provider_not_linked",
-        message: "User has no hubUserId — cannot resolve Gmail OAuth",
-      },
-      { status: 422 },
-    );
-  }
+  const { auth, tenantId, workspaceId, input, user } = args;
 
   // Rendu (template OU compose libre). Sender = email user lui-même
   // (différenciateur : le from c'est SON adresse, pas un sender Veridian).

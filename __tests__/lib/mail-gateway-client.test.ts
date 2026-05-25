@@ -15,6 +15,8 @@ import {
   sendMailViaHub,
   deterministicIdempotencyKey,
   freshIdempotencyKey,
+  checkHubMailProviderStatus,
+  _clearMailProviderStatusCache,
 } from "@/lib/mail-gateway-client";
 
 const HUB_URL = "https://hub.test.veridian.site";
@@ -369,5 +371,166 @@ describe("freshIdempotencyKey", () => {
     const keys = new Set<string>();
     for (let i = 0; i < 100; i++) keys.add(freshIdempotencyKey());
     expect(keys.size).toBe(100);
+  });
+});
+
+describe("checkHubMailProviderStatus", () => {
+  beforeEach(() => {
+    _clearMailProviderStatusCache();
+  });
+
+  test("linked=true si Hub répond provider != none && !needs_reauth", async () => {
+    const fetchImpl = vi.fn(async () =>
+      new Response(
+        JSON.stringify({ provider: "google", needs_reauth: false }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    ) as unknown as typeof fetch;
+
+    const linked = await checkHubMailProviderStatus(USER_ID, {
+      hubUrl: HUB_URL,
+      secret: SECRET,
+      fetchImpl,
+    });
+    expect(linked).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
+  test("linked=false si Hub répond provider === none", async () => {
+    const fetchImpl = vi.fn(async () =>
+      new Response(
+        JSON.stringify({ provider: "none", needs_reauth: false }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    ) as unknown as typeof fetch;
+
+    const linked = await checkHubMailProviderStatus(USER_ID, {
+      hubUrl: HUB_URL,
+      secret: SECRET,
+      fetchImpl,
+    });
+    expect(linked).toBe(false);
+  });
+
+  test("linked=false si needs_reauth=true (token Google révoqué)", async () => {
+    const fetchImpl = vi.fn(async () =>
+      new Response(
+        JSON.stringify({ provider: "google", needs_reauth: true }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    ) as unknown as typeof fetch;
+
+    const linked = await checkHubMailProviderStatus(USER_ID, {
+      hubUrl: HUB_URL,
+      secret: SECRET,
+      fetchImpl,
+    });
+    expect(linked).toBe(false);
+  });
+
+  test("linked=false sur Hub down (network error) — best-effort strict", async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new Error("ECONNREFUSED");
+    }) as unknown as typeof fetch;
+
+    const linked = await checkHubMailProviderStatus(USER_ID, {
+      hubUrl: HUB_URL,
+      secret: SECRET,
+      fetchImpl,
+    });
+    expect(linked).toBe(false);
+  });
+
+  test("linked=false sur Hub 5xx", async () => {
+    const fetchImpl = vi.fn(async () =>
+      new Response("Internal", { status: 500 }),
+    ) as unknown as typeof fetch;
+
+    const linked = await checkHubMailProviderStatus(USER_ID, {
+      hubUrl: HUB_URL,
+      secret: SECRET,
+      fetchImpl,
+    });
+    expect(linked).toBe(false);
+  });
+
+  test("linked=false si URL ou secret absent", async () => {
+    const linked = await checkHubMailProviderStatus(USER_ID, {});
+    expect(linked).toBe(false);
+  });
+
+  test("cache 5 min : second call ne refait pas le HMAC roundtrip", async () => {
+    const fetchImpl = vi.fn(async () =>
+      new Response(
+        JSON.stringify({ provider: "google", needs_reauth: false }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    ) as unknown as typeof fetch;
+
+    const linked1 = await checkHubMailProviderStatus(USER_ID, {
+      hubUrl: HUB_URL,
+      secret: SECRET,
+      fetchImpl,
+    });
+    const linked2 = await checkHubMailProviderStatus(USER_ID, {
+      hubUrl: HUB_URL,
+      secret: SECRET,
+      fetchImpl,
+    });
+    expect(linked1).toBe(true);
+    expect(linked2).toBe(true);
+    // Second appel servi par cache → fetch appelé une seule fois.
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
+  test("skipCache=true bypass le cache (utile aux tests)", async () => {
+    const fetchImpl = vi.fn(async () =>
+      new Response(
+        JSON.stringify({ provider: "google", needs_reauth: false }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    ) as unknown as typeof fetch;
+
+    await checkHubMailProviderStatus(USER_ID, {
+      hubUrl: HUB_URL,
+      secret: SECRET,
+      fetchImpl,
+    });
+    await checkHubMailProviderStatus(USER_ID, {
+      hubUrl: HUB_URL,
+      secret: SECRET,
+      fetchImpl,
+      skipCache: true,
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  test("HMAC signature présente dans les headers + timestamp en header", async () => {
+    let capturedHeaders: HeadersInit | undefined;
+    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      capturedHeaders = init?.headers;
+      return new Response(
+        JSON.stringify({ provider: "google", needs_reauth: false }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as unknown as typeof fetch;
+
+    await checkHubMailProviderStatus(USER_ID, {
+      hubUrl: HUB_URL,
+      secret: SECRET,
+      fetchImpl,
+    });
+
+    const h = capturedHeaders as Record<string, string>;
+    expect(h["x-veridian-app"]).toBe("prospection");
+    expect(h["x-veridian-timestamp"]).toMatch(/^\d+$/);
+    expect(h["x-veridian-hub-signature"]).toMatch(/^[0-9a-f]+$/);
+
+    // Re-compute signature : `${ts}.` sans body (GET).
+    const ts = h["x-veridian-timestamp"]!;
+    const expectedSig = createHmac("sha256", SECRET)
+      .update(`${ts}.`)
+      .digest("hex");
+    expect(h["x-veridian-hub-signature"]).toBe(expectedSig);
   });
 });

@@ -1,13 +1,16 @@
 /**
  * Tests route /api/mail/send — branche Hub Mail Gateway.
  *
+ * Refactor 2026-05-26 : source de vérité = Hub `mail-provider-status` (HMAC)
+ * au lieu de la colonne workspace.mail_provider (DROP migration 0035).
+ *
  * Couvre :
- *  - Routing : workspace.mail_provider === 'gmail-via-hub' → sendMailViaHub
- *  - hubUserId absent → 422 provider_not_linked
+ *  - Routing : checkHubMailProviderStatus(true) → sendMailViaHub
  *  - Mapping codes erreur Hub (412 needs_reauth, 422 provider_not_linked, etc.)
  *  - Reply-to = email auth user
  *  - Audit log avec provider=gmail-via-hub
  *  - Idempotency key passé tel quel si fourni, sinon généré
+ *  - checkHubMailProviderStatus(false) → fallback SMTP (sendMailViaHub PAS appelé)
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
 
@@ -18,6 +21,7 @@ const {
   isRateLimitedMock,
   prismaMock,
   sendMailViaHubMock,
+  checkHubMailProviderStatusMock,
   recordSentEmailMock,
   recordFailedEmailMock,
   logAuditMock,
@@ -28,10 +32,10 @@ const {
   getWorkspaceScopeMock: vi.fn(),
   isRateLimitedMock: vi.fn(() => false),
   prismaMock: {
-    workspace: { findUnique: vi.fn() },
     user: { findUnique: vi.fn() },
   },
   sendMailViaHubMock: vi.fn(),
+  checkHubMailProviderStatusMock: vi.fn(),
   recordSentEmailMock: vi.fn(),
   recordFailedEmailMock: vi.fn(),
   logAuditMock: vi.fn(),
@@ -53,6 +57,7 @@ vi.mock("@/lib/mail/queries", () => ({
 vi.mock("@/lib/mail/smtp", () => ({ sendMail: vi.fn() }));
 vi.mock("@/lib/mail-gateway-client", () => ({
   sendMailViaHub: sendMailViaHubMock,
+  checkHubMailProviderStatus: checkHubMailProviderStatusMock,
   freshIdempotencyKey: freshIdempotencyKeyMock,
   deterministicIdempotencyKey: vi.fn(),
 }));
@@ -81,15 +86,12 @@ function setupHubProvider(opts: { hubUserId?: string | null } = {}) {
     userFilter: null,
     ctx: null,
   });
-  prismaMock.workspace.findUnique.mockResolvedValue({
-    mailProvider: "gmail-via-hub",
-    gmailConnectedAt: new Date("2026-05-25T10:00:00Z"),
-  });
   prismaMock.user.findUnique.mockResolvedValue({
     hubUserId: opts.hubUserId === undefined ? HUB_USER_ID : opts.hubUserId,
     email: AUTH_USER.email,
     name: "Commercial Test",
   });
+  checkHubMailProviderStatusMock.mockResolvedValue(true);
 }
 
 describe("POST /api/mail/send — branche gmail-via-hub", () => {
@@ -99,7 +101,7 @@ describe("POST /api/mail/send — branche gmail-via-hub", () => {
     freshIdempotencyKeyMock.mockReturnValue("33333333-3333-4333-8333-333333333333");
   });
 
-  test("happy path : provider gmail-via-hub → sendMailViaHub appelé avec hubUserId", async () => {
+  test("happy path : Gmail OAuth lié via Hub → sendMailViaHub appelé avec hubUserId", async () => {
     setupHubProvider();
     sendMailViaHubMock.mockResolvedValue({
       ok: true,
@@ -167,18 +169,6 @@ describe("POST /api/mail/send — branche gmail-via-hub", () => {
       expect.objectContaining({ idempotencyKey: CUSTOM_KEY }),
     );
     expect(freshIdempotencyKeyMock).not.toHaveBeenCalled();
-  });
-
-  test("422 provider_not_linked si user n'a pas de hubUserId", async () => {
-    setupHubProvider({ hubUserId: null });
-
-    const res = await POST(
-      makeRequest("/api/mail/send", { method: "POST", body: VALID_BODY }),
-    );
-    expect(res.status).toBe(422);
-    const body = (await readJson(res)) as { reason: string };
-    expect(body.reason).toBe("provider_not_linked");
-    expect(sendMailViaHubMock).not.toHaveBeenCalled();
   });
 
   test("412 needs_reauth si Hub retourne needs_reauth", async () => {
@@ -277,7 +267,7 @@ describe("POST /api/mail/send — branche gmail-via-hub", () => {
     expect(body.reason).toBe("user_not_found");
   });
 
-  test("workspace.mail_provider = 'none' → branche SMTP, sendMailViaHub PAS appelé", async () => {
+  test("Hub status linked=false → branche SMTP, sendMailViaHub PAS appelé", async () => {
     requireAuthMock.mockResolvedValue({ user: AUTH_USER });
     getTenantIdMock.mockResolvedValue("t-1");
     getWorkspaceScopeMock.mockResolvedValue({
@@ -286,12 +276,14 @@ describe("POST /api/mail/send — branche gmail-via-hub", () => {
       userFilter: null,
       ctx: null,
     });
-    prismaMock.workspace.findUnique.mockResolvedValue({
-      mailProvider: "none",
-      gmailConnectedAt: null,
+    prismaMock.user.findUnique.mockResolvedValue({
+      hubUserId: HUB_USER_ID,
+      email: AUTH_USER.email,
+      name: "Commercial Test",
     });
+    checkHubMailProviderStatusMock.mockResolvedValue(false);
 
-    // Pas de SMTP config → 412 missing_credentials (branche SMTP existant)
+    // Pas de SMTP config non plus → 412 missing_credentials (branche SMTP existant)
     const res = await POST(
       makeRequest("/api/mail/send", { method: "POST", body: VALID_BODY }),
     );
@@ -299,14 +291,19 @@ describe("POST /api/mail/send — branche gmail-via-hub", () => {
     expect(sendMailViaHubMock).not.toHaveBeenCalled();
   });
 
-  test("workspaceId null (cas legacy) → fallback SMTP", async () => {
+  test("hubUserId null → branche SMTP (pas de check Hub status nécessaire)", async () => {
     requireAuthMock.mockResolvedValue({ user: AUTH_USER });
     getTenantIdMock.mockResolvedValue("t-1");
     getWorkspaceScopeMock.mockResolvedValue({
       filter: null,
-      insertId: null,
+      insertId: "ws-1",
       userFilter: null,
       ctx: null,
+    });
+    prismaMock.user.findUnique.mockResolvedValue({
+      hubUserId: null,
+      email: AUTH_USER.email,
+      name: "Legacy user",
     });
 
     const res = await POST(
@@ -315,7 +312,7 @@ describe("POST /api/mail/send — branche gmail-via-hub", () => {
     // Tombe sur la branche SMTP → 412 missing_credentials
     expect(res.status).toBe(412);
     expect(sendMailViaHubMock).not.toHaveBeenCalled();
-    expect(prismaMock.workspace.findUnique).not.toHaveBeenCalled();
+    expect(checkHubMailProviderStatusMock).not.toHaveBeenCalled();
   });
 
   test("idempotent_replay=true propagé dans la réponse", async () => {

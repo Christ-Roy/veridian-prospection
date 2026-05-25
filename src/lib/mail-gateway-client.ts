@@ -148,6 +148,109 @@ export function freshIdempotencyKey(): string {
   return randomUUID();
 }
 
+// ─── checkHubMailProviderStatus ─────────────────────────────────────────────
+//
+// Source de vérité dynamique : Hub `GET /api/users/{userId}/mail-provider-status`.
+// Remplace l'ancienne colonne workspace.mail_provider (migration 0035 DROP).
+// Si le user a un Gmail OAuth lié et non révoqué → route /api/mail/send
+// utilise le Hub Gateway. Sinon SMTP BYO.
+//
+// Cache 5 min en mémoire (Map<hubUserId, {linked, expiresAt}>) pour éviter
+// 1 HMAC roundtrip à chaque envoi (latence ~100ms). Best-effort strict :
+// erreur réseau / 5xx Hub → fallback `linked: false` (SMTP BYO).
+
+const STATUS_CACHE_TTL_MS = 5 * 60 * 1000;
+const STATUS_TIMEOUT_MS = 2_000;
+
+type StatusCacheEntry = { linked: boolean; expiresAt: number };
+const statusCache = new Map<string, StatusCacheEntry>();
+
+/** Vide le cache (utile en tests pour isoler les cas). */
+export function _clearMailProviderStatusCache(): void {
+  statusCache.clear();
+}
+
+/**
+ * Détermine si le user a un compte Gmail OAuth lié côté Hub et utilisable.
+ * `linked = true` ssi le Hub répond `provider !== 'none' && !needs_reauth`.
+ *
+ * @param hubUserId  user.hubUserId — l'identifiant Hub du commercial.
+ * @param opts       Overrides tests (fetch / url / secret / timeout).
+ */
+export async function checkHubMailProviderStatus(
+  hubUserId: string,
+  opts: {
+    timeoutMs?: number;
+    hubUrl?: string;
+    secret?: string;
+    fetchImpl?: typeof fetch;
+    /** Bypass cache (tests). */
+    skipCache?: boolean;
+  } = {},
+): Promise<boolean> {
+  const now = Date.now();
+  if (!opts.skipCache) {
+    const hit = statusCache.get(hubUserId);
+    if (hit && hit.expiresAt > now) {
+      return hit.linked;
+    }
+  }
+
+  const url = opts.hubUrl ?? getHubUrl();
+  const secret = opts.secret ?? getMailGatewaySecret();
+  if (!url || !secret) {
+    return false;
+  }
+
+  const timestamp = Date.now();
+  // GET sans body → string canonique = `${ts}.` (symétrique discovery-client).
+  const signature = createHmac("sha256", secret)
+    .update(`${timestamp}.`)
+    .digest("hex");
+
+  const fullUrl = `${url.replace(/\/$/, "")}/api/users/${encodeURIComponent(
+    hubUserId,
+  )}/mail-provider-status`;
+  const fetchFn = opts.fetchImpl ?? fetch;
+
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(),
+    opts.timeoutMs ?? STATUS_TIMEOUT_MS,
+  );
+
+  let linked = false;
+  try {
+    const res = await fetchFn(fullUrl, {
+      method: "GET",
+      headers: {
+        "x-veridian-app": "prospection",
+        "x-veridian-timestamp": String(timestamp),
+        "x-veridian-hub-signature": signature,
+      },
+      signal: controller.signal,
+    });
+    if (res.ok) {
+      const data = (await res.json().catch(() => null)) as
+        | { provider?: string; needs_reauth?: boolean }
+        | null;
+      if (data && typeof data.provider === "string") {
+        linked = data.provider !== "none" && data.needs_reauth !== true;
+      }
+    }
+  } catch {
+    linked = false;
+  } finally {
+    clearTimeout(timer);
+  }
+
+  statusCache.set(hubUserId, {
+    linked,
+    expiresAt: now + STATUS_CACHE_TTL_MS,
+  });
+  return linked;
+}
+
 /**
  * Envoie un mail via le Hub Mail Gateway au nom de l'utilisateur (Gmail OAuth).
  *

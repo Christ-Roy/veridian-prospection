@@ -359,22 +359,6 @@ model Workspace {
   defaultSectorFilters  Json?     @map("default_sector_filters")
   onboardingCompletedAt DateTime? @map("onboarding_completed_at") @db.Timestamptz
 
-  // Mail v2 — provider d'envoi (migration 0025).
-  //
-  // 'none'             : default — SMTP BYO via TenantMailConfig ou pas d'envoi (v1)
-  // 'gmail-via-hub'    : route /api/mail/send envoie via Hub Mail Gateway (Gmail OAuth user)
-  // 'microsoft-via-hub': réservé v2 (Microsoft Mail Sender pas livré v1)
-  //
-  // L'OAuth Gmail lui-même est stocké côté Hub sur user.hubUserId — Prosp
-  // ne persiste que le state "ce workspace utilise cette voie d'envoi".
-  // gmail_connected_at : timestamp du dernier toggle "connecté" pour audit
-  // (peut être null si le user a déconnecté). gmail_quota_per_day : quota
-  // local pour rate-limit côté Prosp avant d'envoyer (Hub fait son propre
-  // rate-limit, on cap côté client pour éviter le 429 inutile).
-  mailProvider       String    @default("none") @map("mail_provider")
-  gmailConnectedAt   DateTime? @map("gmail_connected_at") @db.Timestamptz
-  gmailQuotaPerDay   Int       @default(250) @map("gmail_quota_per_day")
-
   members          WorkspaceMember[]
   leadCreditEvents LeadCreditEvent[]
   leadConsumptions LeadConsumption[]

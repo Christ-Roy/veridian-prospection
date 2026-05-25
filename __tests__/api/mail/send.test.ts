@@ -58,22 +58,24 @@ vi.mock("@/lib/mail/tenant-templates", () => ({
 vi.mock("@/lib/mail/outbox", () => ({
   enqueueMail: enqueueMailMock,
 }));
-const { userFindUniqueMock, workspaceFindUniqueMock, sendMailViaHubMock } = vi.hoisted(
-  () => ({
-    userFindUniqueMock: vi.fn(),
-    workspaceFindUniqueMock: vi.fn(),
-    sendMailViaHubMock: vi.fn(),
-  }),
-);
+const {
+  userFindUniqueMock,
+  sendMailViaHubMock,
+  checkHubMailProviderStatusMock,
+} = vi.hoisted(() => ({
+  userFindUniqueMock: vi.fn(),
+  sendMailViaHubMock: vi.fn(),
+  checkHubMailProviderStatusMock: vi.fn(),
+}));
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     $transaction: (cb: (tx: unknown) => unknown) => prismaTransactionMock(cb),
     user: { findUnique: userFindUniqueMock },
-    workspace: { findUnique: workspaceFindUniqueMock },
   },
 }));
 vi.mock("@/lib/mail-gateway-client", () => ({
   sendMailViaHub: sendMailViaHubMock,
+  checkHubMailProviderStatus: checkHubMailProviderStatusMock,
   freshIdempotencyKey: () => "00000000-0000-4000-8000-000000000abc",
 }));
 vi.mock("@/lib/audit", () => ({ logAudit: logAuditMock }));
@@ -119,6 +121,13 @@ describe("POST /api/mail/send", () => {
     vi.clearAllMocks();
     isRateLimitedMock.mockReturnValue(false);
     getWorkspaceScopeMock.mockResolvedValue({ filter: null, insertId: "ws-1" });
+    // Default : pas de Gmail OAuth lié → branche SMTP BYO.
+    checkHubMailProviderStatusMock.mockResolvedValue(false);
+    userFindUniqueMock.mockResolvedValue({
+      hubUserId: null,
+      email: "u@v.site",
+      name: "U",
+    });
     // Default : execute tx callback in place avec un stub minimal.
     prismaTransactionMock.mockImplementation(async (cb: (tx: unknown) => unknown) =>
       cb({}),
@@ -317,46 +326,18 @@ describe("POST /api/mail/send", () => {
     );
   });
 
-  // ─── Branche Hub Gateway (gmail-via-hub) ───────────────────────────────
-  // Exerce sendViaHubGateway + mapHubFailureToHttp pour garantir que le
-  // sabotage du fichier route.ts est détecté (la branche SMTP seule ne
-  // couvrait pas mapHubFailureToHttp → fonction sabotable en silence).
-
-  test("Hub Gateway provider_not_linked (pas de hubUserId) → 422", async () => {
-    requireAuthMock.mockResolvedValue({
-      user: { id: "u-1", email: "u@v.site" },
-    });
-    getTenantIdMock.mockResolvedValue("t-1");
-    workspaceFindUniqueMock.mockResolvedValue({
-      mailProvider: "gmail-via-hub",
-      gmailConnectedAt: new Date(),
-    });
-    userFindUniqueMock.mockResolvedValue({
-      hubUserId: null,
-      email: "u@v.site",
-      name: "U",
-    });
-
-    const res = await POST(
-      makeRequest("/api/mail/send", {
-        method: "POST",
-        body: { ...VALID_FREEFORM_BODY, idempotencyKey: undefined },
-      }),
-    );
-    expect(res.status).toBe(422);
-    const body = (await readJson(res)) as { reason: string; provider?: string };
-    expect(body.reason).toBe("provider_not_linked");
-  });
+  // ─── Branche Hub Gateway (Gmail OAuth lié via Hub) ──────────────────────
+  // Source de vérité = Hub `mail-provider-status` (HMAC) au lieu de la
+  // colonne workspace.mail_provider (DROP migration 0035). On mock
+  // checkHubMailProviderStatus pour exercer la branche Hub Gateway et
+  // mapHubFailureToHttp.
 
   test("Hub Gateway send OK → 200 ok + messageId + provider=gmail-via-hub", async () => {
     requireAuthMock.mockResolvedValue({
       user: { id: "u-1", email: "u@v.site" },
     });
     getTenantIdMock.mockResolvedValue("t-1");
-    workspaceFindUniqueMock.mockResolvedValue({
-      mailProvider: "gmail-via-hub",
-      gmailConnectedAt: new Date(),
-    });
+    checkHubMailProviderStatusMock.mockResolvedValue(true);
     userFindUniqueMock.mockResolvedValue({
       hubUserId: "00000000-0000-4000-8000-deadbeefcafe",
       email: "u@v.site",
@@ -388,10 +369,7 @@ describe("POST /api/mail/send", () => {
       user: { id: "u-1", email: "u@v.site" },
     });
     getTenantIdMock.mockResolvedValue("t-1");
-    workspaceFindUniqueMock.mockResolvedValue({
-      mailProvider: "gmail-via-hub",
-      gmailConnectedAt: new Date(),
-    });
+    checkHubMailProviderStatusMock.mockResolvedValue(true);
     userFindUniqueMock.mockResolvedValue({
       hubUserId: "00000000-0000-4000-8000-deadbeefcafe",
       email: "u@v.site",
@@ -419,10 +397,7 @@ describe("POST /api/mail/send", () => {
       user: { id: "u-1", email: "u@v.site" },
     });
     getTenantIdMock.mockResolvedValue("t-1");
-    workspaceFindUniqueMock.mockResolvedValue({
-      mailProvider: "gmail-via-hub",
-      gmailConnectedAt: new Date(),
-    });
+    checkHubMailProviderStatusMock.mockResolvedValue(true);
     userFindUniqueMock.mockResolvedValue({
       hubUserId: "00000000-0000-4000-8000-deadbeefcafe",
       email: "u@v.site",
@@ -443,5 +418,32 @@ describe("POST /api/mail/send", () => {
     expect(res.status).toBe(502);
     const body = (await readJson(res)) as { reason: string };
     expect(body.reason).toBe("provider_unreachable");
+  });
+
+  test("Hub status linked=false (Gmail pas connecté) → branche SMTP, sendMailViaHub PAS appelé", async () => {
+    requireAuthMock.mockResolvedValue({
+      user: { id: "u-1", email: "u@v.site" },
+    });
+    getTenantIdMock.mockResolvedValue("t-1");
+    checkHubMailProviderStatusMock.mockResolvedValue(false);
+    userFindUniqueMock.mockResolvedValue({
+      hubUserId: "00000000-0000-4000-8000-deadbeefcafe",
+      email: "u@v.site",
+      name: "Robert",
+    });
+    getMailConfigInternalMock.mockResolvedValue(VALID_CREDS);
+    enqueueMailMock.mockResolvedValue({
+      outboxId: "out-1",
+      leadEmailId: "lead-1",
+      idempotencyKey: "key-1",
+      alreadyEnqueued: false,
+    });
+
+    const res = await POST(
+      makeRequest("/api/mail/send", { method: "POST", body: VALID_FREEFORM_BODY }),
+    );
+    expect(res.status).toBe(202);
+    expect(sendMailViaHubMock).not.toHaveBeenCalled();
+    expect(enqueueMailMock).toHaveBeenCalledOnce();
   });
 });
