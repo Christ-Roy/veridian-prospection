@@ -19,8 +19,9 @@
  * Auth via le compte canonique persistant `e2e-persistent` (cf
  * `e2e/helpers/auth.ts`) — pas de signup éphémère.
  */
-import { test, expect, type ConsoleMessage, type Page, type ViewportSize } from "@playwright/test";
+import { test, expect, type Page, type ViewportSize } from "@playwright/test";
 import { loginAsE2EUser } from "../helpers/auth";
+import { captureConsoleErrorsAfterLogin } from "../helpers/console";
 
 const PROSPECTION_URL =
   process.env.PROSPECTION_URL || "https://prospection.staging.veridian.site";
@@ -41,24 +42,16 @@ const PAGES_TO_TEST = [
 // Tolerance for horizontal overflow (scrollbar + rounding)
 const OVERFLOW_TOLERANCE = 20;
 
-let consoleErrors: string[] = [];
-
-test.beforeEach(async ({ page }) => {
-  consoleErrors = [];
-  page.on("console", (msg: ConsoleMessage) => {
-    if (msg.type() !== "error") return;
-    const t = msg.text();
-    if (t.includes("GTM") || t.includes("dataLayer") || t.includes("favicon")) return;
-    if (t.includes("Failed to load resource")) return;
-    if (t.includes("chrome-extension://")) return;
-    if (t.includes("401") || t.includes("403")) return;
-    if (t.includes("net::ERR_")) return;
-    consoleErrors.push(t);
-  });
-  page.on("pageerror", (err) => {
-    consoleErrors.push(`PAGE_ERROR: ${err.message}`);
-  });
-});
+// Filtres erreurs console — bruits inoffensifs, pas des bugs UI.
+const IGNORE_PATTERNS: RegExp[] = [
+  /GTM/i,
+  /dataLayer/i,
+  /favicon/i,
+  /Failed to load resource/i,
+  /chrome-extension:\/\//i,
+  /\b40[13]\b/, // 401/403 — gérés par captureConsoleErrorsAfterLogin (post-login only)
+  /net::ERR_/,
+];
 
 async function measureHorizontalOverflow(page: Page): Promise<{
   scrollWidth: number;
@@ -85,9 +78,20 @@ for (const viewport of VIEWPORTS) {
         page,
         request,
       }) => {
+        // Login AVANT d'attacher le listener — sinon on capture les 401
+        // légitimes du root layout (AppNav + TrialProvider) qui fetchent
+        // /api/me /api/trial /api/settings au mount sans cookie session.
+        // Cf commit 67d7e38 + e2e/helpers/console.ts.
         await loginAsE2EUser(page, request);
-        await page.goto(`${PROSPECTION_URL}${pg.path}`);
-        await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
+        const { errors: consoleErrors } = captureConsoleErrorsAfterLogin(page, IGNORE_PATTERNS);
+
+        await page.goto(`${PROSPECTION_URL}${pg.path}`, {
+          waitUntil: "load",
+          timeout: 20_000,
+        });
+        // Attendu déterministe vs networkidle qui n'arrive jamais (useSession
+        // Auth.js refresh périodique + polling /api/trial dans le layout).
+        await page.waitForSelector("main", { timeout: 10_000 });
         await page.waitForTimeout(2000); // hydration settle
 
         const bodyText = await page.locator("body").innerText();
