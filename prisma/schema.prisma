@@ -483,6 +483,37 @@ model LeadCreditEvent {
   @@map("lead_credit_events")
 }
 
+// Trace par achat refill ICP (ticket refill ICP page native, migration 0026).
+//
+// Distinct de LeadCreditEvent — dont le rôle est l'évènement business de
+// crédit (purchase ou welcome). LeadOrder porte la configuration ICP utilisée
+// pour la commande refill : on garde `filters_json` structuré (vs perdu dans
+// la metadata Stripe truncate à 500 chars) pour audit + re-livraison future
+// si Prosp doit re-générer le lot exact.
+//
+// Lié à LeadCreditEvent par `idempotencyKey` (string égal) — pas de FK SQL
+// stricte parce qu'un crédit `welcome` n'a PAS de row LeadOrder (welcome
+// n'a pas de configuration ICP).
+model LeadOrder {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId     String   @map("workspace_id") @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  quantity        Int
+  // 'purchase' (Stripe Checkout one-shot) | 'welcome' | 'gift' | 'compensation'.
+  // CHECK SQL côté migration restreint l'enum.
+  source          String   @default("purchase")
+  filtersJson     Json?    @map("filters_json")
+  stripePaymentId String?  @map("stripe_payment_id")
+  idempotencyKey  String   @unique @map("idempotency_key")
+  contractVersion String?  @map("contract_version")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@index([tenantId])
+  @@index([stripePaymentId])
+  @@map("lead_orders")
+}
+
 // Une ligne = une fiche entreprise consommée par un workspace. La clé
 // composite (workspaceId, siren) rend le décompte idempotent : reconsulter
 // la même fiche ne recrée pas de ligne → le client ne paie jamais 2× la
