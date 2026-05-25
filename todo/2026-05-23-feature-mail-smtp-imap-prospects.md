@@ -10,6 +10,25 @@
 >   - **v2 (bonus, ticket dérivé)** : IMAP réception → alimente la **page historique prospect 360** (cf `todo/2026-05-23-fiche-historique-prospect-360.md`). Pas une inbox cross-prospects standalone, mais une timeline mails par prospect dans sa fiche historique.
 >   - Pas de copie cross-prospect/inbox globale dans la v1. La timeline mail vit dans la fiche historique du prospect concerné.
 
+## ✅ Statut v1 — LIVRÉE EN PROD 2026-05-25 (SHA 4f0cee6)
+
+**v1 SMTP + IA livrée** : Agent Q vague 5 (commit 6b7892e) + Agent V vague 6 batteries tests (ebb88da) + Agent W vague 6 IA templates (4f0cee6).
+
+Composants prod actifs :
+- Migration 0022 tenant_mail_config + lead_emails
+- Migration 0024 tenant_ai_config
+- src/lib/mail/ + src/lib/crypto/encrypt-password.ts
+- src/lib/ai/ (4 providers BYO clé chiffrée AES-256-GCM)
+- Routes /api/mail/{config,send,test-connection,generate,ai-config}
+- Page /settings/mail (onglets SMTP + IA)
+- 5 specs E2E flows-mail + 110 unit tests Vitest
+
+**Ce qui reste — v2 IMAP** (ce ticket reste pending pour ça) :
+- Worker IMAP container séparé qui poll/IDLE
+- Réception mails → table lead_emails (direction=incoming)
+- Alimente Phase 2 fiche historique 360° (cf `todo/2026-05-24-fiche-360-phase-2-mails.md`)
+- Page /inbox globale (filtre rattaché/non-rattaché)
+
 ## Vision
 
 Permettre au commercial d'**envoyer** et **recevoir** ses mails directement depuis l'app Prospection, en utilisant ses propres credentials SMTP/IMAP (BYO — Bring Your Own). Pas besoin de quitter Prospection pour rédiger une réponse à un prospect : l'inbox + le compose vivent dans la fiche lead ou dans un onglet dédié.

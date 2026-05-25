@@ -56,10 +56,11 @@ L'incident invitations 2026-05-23 (Supabase mort 5 jours en silence) a prouvé q
 → `todo/done/2026-05-23-tests-lib-business-coverage.md`
 Helpers auth, queries, billing, cache, audit couverts. Voir archive.
 
-### ⏳ Chantier 2 — E2E flows entiers cross-app — EN COURS
-→ `todo/2026-05-23-e2e-coverage-flows-entiers.md`
-**P1**. 7 flows (invitation, login Hub→Prosp, switch compte, provision, welcome leads, login direct, dashboard crawler). Container Playwright sur dev-pub, contre DB staging réelle. Anti-régression directe du bug 2026-05-23.
-**C'est le SEUL chantier robustesse encore ouvert.** Tout le reste a atterri en `done/`.
+### ✅ Chantier 2 — E2E flows entiers cross-app — LIVRÉ
+→ `todo/done/2026-05-23-e2e-coverage-flows-entiers.md`
+Agent T vague 5 (commit c6a0d20 prod 3f927ef) — 7 flows e2e cross-app livrés dans `e2e/flows-cross-app/` + `scripts/e2e/flows-cross-app.sh` + sabotage validé en 16s. Voir archive.
+
+**🎉 LES 4 CHANTIERS DU CADRE SONT LIVRÉS EN PROD.** Ce ticket cadre peut être archivé.
 
 ### ✅ Chantier 3 — Nouveaux checks Husky — LIVRÉ
 → `todo/done/2026-05-23-husky-nouveaux-checks-robustesse.md`
