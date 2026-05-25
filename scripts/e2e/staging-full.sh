@@ -12,6 +12,8 @@
 #   STAGING_URL              = base URL (default https://prospection.staging.veridian.site)
 #   STAGING_USER_EMAIL       = robert.brunon@veridian.site
 #   STAGING_USER_PASSWORD    = obligatoire, depuis ~/credentials/.all-creds.env
+#   DATABASE_URL             = exigé par helper Auth.js v5 (seed user canonique).
+#                              Auto-récupéré via SSH dev-pub si absent.
 set -euo pipefail
 
 STAGING_URL="${STAGING_URL:-https://prospection.staging.veridian.site}"
@@ -48,7 +50,28 @@ if [[ "$STAGING_URL" == *"app.veridian.site"* ]] && [ -z "${PROD_HUB_API_SECRET:
   fi
 fi
 
-export STAGING_URL STAGING_USER_EMAIL STAGING_USER_PASSWORD
+# DATABASE_URL exigé par e2e/helpers/auth.ts (Auth.js v5 seed user
+# canonique via Prisma upsert avant login). Sans, 50+ specs fail
+# avec "DATABASE_URL absent — impossible de seeder le compte canonique".
+# Cf todo/done/2026-05-25-script-staging-full-database-url-manquant.md
+if [ -z "${DATABASE_URL:-}" ]; then
+  echo "ℹ DATABASE_URL absent — récup auto via SSH dev-pub (container Prospection staging)"
+  PROSP_STAGING_CONTAINER=$(ssh dev-pub 'docker ps --filter "name=prospection-staging" --format "{{.Names}}" | grep -v ui-dev | head -1' 2>/dev/null || echo "")
+  if [ -z "$PROSP_STAGING_CONTAINER" ]; then
+    echo "::error::Container Prospection staging introuvable sur dev-pub"
+    echo "Vérifie : ssh dev-pub 'docker ps | grep prospection'"
+    exit 1
+  fi
+  DATABASE_URL=$(ssh dev-pub "docker exec ${PROSP_STAGING_CONTAINER} env 2>/dev/null | grep -E '^DATABASE_URL=' | head -1 | cut -d= -f2-" 2>/dev/null || echo "")
+  if [ -z "$DATABASE_URL" ]; then
+    echo "::error::DATABASE_URL introuvable dans le container ${PROSP_STAGING_CONTAINER}"
+    echo "Le helper Auth.js v5 (e2e/helpers/auth.ts) en a besoin pour seeder le compte canonique."
+    exit 1
+  fi
+  echo "✓ DATABASE_URL récupéré via SSH (${#DATABASE_URL} chars, container=${PROSP_STAGING_CONTAINER})"
+fi
+
+export STAGING_URL STAGING_USER_EMAIL STAGING_USER_PASSWORD DATABASE_URL
 
 # Pré-check : staging répond
 echo "── Pré-check $STAGING_URL/api/health ──"
