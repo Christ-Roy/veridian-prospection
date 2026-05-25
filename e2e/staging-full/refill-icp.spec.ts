@@ -177,13 +177,14 @@ test.describe("Refill ICP — edge cases", () => {
 });
 
 test.describe("Refill ICP — RBAC / sécurité", () => {
-  test("9. non authentifié → /leads/buy redirige /login?next=/leads/buy", async ({
+  test("9. non authentifié → /leads/buy redirige /login?redirect=/leads/buy", async ({
     page,
   }) => {
     // Pas de login — clean context
     await page.context().clearCookies();
     await page.goto("/leads/buy", { waitUntil: "domcontentloaded" });
-    await expect(page).toHaveURL(/\/login.*next=.*\/leads\/buy/i);
+    // Le middleware Prosp utilise `?redirect=` (et pas `?next=` comme côté Hub).
+    await expect(page).toHaveURL(/\/login.*redirect=.*leads(\/|%2F)buy/i);
   });
 
   test("10. POST /api/refill/start sans session → 401", async ({ request }) => {
