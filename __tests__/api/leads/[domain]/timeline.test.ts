@@ -23,6 +23,8 @@ const { requireUserMock, getWorkspaceScopeMock, prismaMock } = vi.hoisted(() => 
     pipelineTransition: { findMany: vi.fn(), create: vi.fn() },
     followup: { findMany: vi.fn() },
     appointment: { findMany: vi.fn() },
+    leadEmail: { findMany: vi.fn() },
+    callLog: { findMany: vi.fn() },
     outreach: { findUnique: vi.fn() },
   },
 }));
@@ -55,6 +57,8 @@ describe("GET /api/leads/[siren]/timeline", () => {
     prismaMock.pipelineTransition.findMany.mockResolvedValue([]);
     prismaMock.followup.findMany.mockResolvedValue([]);
     prismaMock.appointment.findMany.mockResolvedValue([]);
+    prismaMock.leadEmail.findMany.mockResolvedValue([]);
+    prismaMock.callLog.findMany.mockResolvedValue([]);
   });
 
   test("401 si non authentifié", async () => {
@@ -180,6 +184,46 @@ describe("GET /api/leads/[siren]/timeline", () => {
     requireUserMock.mockResolvedValue({ ctx: makeUserContext() });
     await callGet("123456789", { types: "pipeline_transition" });
     expect(prismaMock.pipelineTransition.findMany).toHaveBeenCalled();
+    expect(prismaMock.followup.findMany).not.toHaveBeenCalled();
+    expect(prismaMock.appointment.findMany).not.toHaveBeenCalled();
+    expect(prismaMock.leadEmail.findMany).not.toHaveBeenCalled();
+    expect(prismaMock.callLog.findMany).not.toHaveBeenCalled();
+  });
+
+  test("whitelist ALLOW 'mail_out' (Phase 2)", async () => {
+    requireUserMock.mockResolvedValue({ ctx: makeUserContext() });
+    await callGet("123456789", { types: "mail_out" });
+    expect(prismaMock.leadEmail.findMany).toHaveBeenCalled();
+    expect(prismaMock.pipelineTransition.findMany).not.toHaveBeenCalled();
+    expect(prismaMock.callLog.findMany).not.toHaveBeenCalled();
+  });
+
+  test("whitelist ALLOW 'call' (Phase 3)", async () => {
+    requireUserMock.mockResolvedValue({ ctx: makeUserContext() });
+    await callGet("123456789", { types: "call" });
+    expect(prismaMock.callLog.findMany).toHaveBeenCalled();
+    expect(prismaMock.leadEmail.findMany).not.toHaveBeenCalled();
+    expect(prismaMock.pipelineTransition.findMany).not.toHaveBeenCalled();
+  });
+
+  test("whitelist REJECT type inconnu (mail_in pas encore exposé — Phase 2.5)", async () => {
+    requireUserMock.mockResolvedValue({ ctx: makeUserContext() });
+    await callGet("123456789", { types: "mail_in" });
+    // 'mail_in' filtré par whitelist → types devient []
+    // → toutes les sources sont SKIP (semantique types==[])
+    expect(prismaMock.pipelineTransition.findMany).not.toHaveBeenCalled();
+    expect(prismaMock.followup.findMany).not.toHaveBeenCalled();
+    expect(prismaMock.appointment.findMany).not.toHaveBeenCalled();
+    expect(prismaMock.leadEmail.findMany).not.toHaveBeenCalled();
+    expect(prismaMock.callLog.findMany).not.toHaveBeenCalled();
+  });
+
+  test("mail_out + call dans CSV → les 2 sources interrogées, pas les autres", async () => {
+    requireUserMock.mockResolvedValue({ ctx: makeUserContext() });
+    await callGet("123456789", { types: "mail_out,call" });
+    expect(prismaMock.leadEmail.findMany).toHaveBeenCalled();
+    expect(prismaMock.callLog.findMany).toHaveBeenCalled();
+    expect(prismaMock.pipelineTransition.findMany).not.toHaveBeenCalled();
     expect(prismaMock.followup.findMany).not.toHaveBeenCalled();
     expect(prismaMock.appointment.findMany).not.toHaveBeenCalled();
   });

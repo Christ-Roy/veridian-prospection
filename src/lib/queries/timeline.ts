@@ -1,17 +1,39 @@
 /**
- * Timeline agrégée par prospect — fiche historique 360° Phase 1.
+ * Timeline agrégée par prospect — fiche historique 360° Phase 1+2+3.
  *
  * Agrège plusieurs sources hétérogènes en un seul fil chronologique
- * descending : pipeline_transitions (NOUVEAU), followups, appointments.
+ * descending :
+ *   - pipeline_transitions (Phase 1)
+ *   - followups (Phase 1)
+ *   - appointments (Phase 1)
+ *   - lead_emails (Phase 2 — mails sortants v1 SMTP + v2 Hub Gateway)
+ *   - call_log (Phase 3 — appels Telnyx inbound/outbound)
  *
- * Phase 2/3/4 ajouteront : lead_emails (mail v1), call_logs (Telnyx), notes
- * manuelles tracées, filtres + pagination cursor.
+ * Phase 2.5 ajoutera : mail_in (lead_emails où direction='incoming'),
+ * livré par W8b avec la pipeline IMAP. Le merge sera identique à mail_out,
+ * juste filtré sur direction='incoming' et occurredAt = receivedAt.
  *
  * Auth : la route appelante DOIT déjà avoir validé requireUser() + filtré le
  * tenant. Ce module suppose `tenantId` strict (jamais null) — pas de fallback
  * vers le tenant default qui exposerait du cross-tenant.
  */
 import { prisma } from "@/lib/prisma";
+
+const BODY_PREVIEW_MAX = 220;
+
+function buildBodyPreview(bodyText: string | null, bodyHtml: string | null): string | null {
+  const raw = bodyText ?? bodyHtml ?? null;
+  if (!raw) return null;
+  const stripped = raw
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!stripped) return null;
+  return stripped.length > BODY_PREVIEW_MAX
+    ? `${stripped.slice(0, BODY_PREVIEW_MAX)}…`
+    : stripped;
+}
 
 export type TimelineEvent =
   | {
@@ -37,6 +59,28 @@ export type TimelineEvent =
       status: string;
       notes: string | null;
       sourceStage: string | null;
+    }
+  | {
+      type: "mail_out";
+      id: string;
+      occurredAt: string;
+      subject: string | null;
+      bodyPreview: string | null;
+      templateSlug: string | null;
+      fromEmail: string;
+      toEmails: string[];
+      status: string;
+    }
+  | {
+      type: "call";
+      id: string;
+      occurredAt: string;
+      direction: string;
+      status: string;
+      durationSeconds: number | null;
+      recordingPath: string | null;
+      notes: string | null;
+      provider: string;
     };
 
 export interface TimelineQueryParams {
@@ -146,6 +190,38 @@ export async function getProspectTimeline(
       })
     : [];
 
+  // 4. Mails sortants — table `lead_emails`, direction='outgoing'.
+  // sentAt nullable (queued/failed peuvent rester sans sentAt) → fallback
+  // createdAt. siren nullable côté schéma → filtre strict siren=<id>.
+  const mailsOut = wantType("mail_out")
+    ? await prisma.leadEmail.findMany({
+        where: {
+          siren,
+          tenantId,
+          direction: "outgoing",
+          ...(wsCondition ? { workspaceId: wsCondition } : {}),
+        },
+        orderBy: { sentAt: "desc" },
+        take: limit,
+      })
+    : [];
+
+  // 5. Appels Telnyx — `call_log`. startedAt est un `String` Prisma (legacy
+  // schema sans @db.Timestamptz), donc on ne peut PAS filtrer since/until côté
+  // SQL — post-merge uniquement (cf. pattern followups). tenantId NOT NULL
+  // imposé en filtre malgré le ? côté schéma : RBAC strict.
+  const calls = wantType("call")
+    ? await prisma.callLog.findMany({
+        where: {
+          siren,
+          tenantId,
+          ...(wsCondition ? { workspaceId: wsCondition } : {}),
+        },
+        orderBy: { startedAt: "desc" },
+        take: limit,
+      })
+    : [];
+
   // Normalisation → TimelineEvent[]
   const events: TimelineEvent[] = [
     ...transitions.map((t): TimelineEvent => ({
@@ -172,6 +248,30 @@ export async function getProspectTimeline(
       status: a.status,
       notes: a.notes,
       sourceStage: a.sourceStage,
+    })),
+    ...mailsOut.map((m): TimelineEvent => ({
+      type: "mail_out",
+      id: m.id,
+      // Fallback createdAt si sentAt null (queued/failed).
+      occurredAt: (m.sentAt ?? m.createdAt).toISOString(),
+      subject: m.subject,
+      bodyPreview: buildBodyPreview(m.bodyText, m.bodyHtml),
+      templateSlug: m.templateSlug,
+      fromEmail: m.fromEmail,
+      toEmails: m.toEmails,
+      status: m.sentStatus,
+    })),
+    ...calls.map((c): TimelineEvent => ({
+      type: "call",
+      id: String(c.id),
+      // startedAt est déjà un String ISO côté schéma.
+      occurredAt: c.startedAt,
+      direction: c.direction,
+      status: c.status,
+      durationSeconds: c.durationSeconds,
+      recordingPath: c.recordingPath,
+      notes: c.notes,
+      provider: c.provider,
     })),
   ];
 

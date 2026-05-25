@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
     limit: 5,
   });
 
-  const recentTimeline: TimelineEventCtx[] = timelineRaw.map((ev) => {
+  const recentTimeline: TimelineEventCtx[] = timelineRaw.map((ev): TimelineEventCtx => {
     switch (ev.type) {
       case "pipeline_transition":
         return {
@@ -152,6 +152,18 @@ export async function POST(request: NextRequest) {
           type: "appointment",
           occurredAt: ev.occurredAt,
           summary: `RDV ${ev.title} (${ev.status})${ev.notes ? `: ${ev.notes.slice(0, 80)}` : ""}`,
+        };
+      case "mail_out":
+        return {
+          type: "email_outgoing",
+          occurredAt: ev.occurredAt,
+          summary: `mail envoyé: ${ev.subject ?? "(sans objet)"} (${ev.status})`,
+        };
+      case "call":
+        return {
+          type: "call",
+          occurredAt: ev.occurredAt,
+          summary: `appel ${ev.direction} (${ev.status})${ev.durationSeconds ? ` ${ev.durationSeconds}s` : ""}`,
         };
     }
   });

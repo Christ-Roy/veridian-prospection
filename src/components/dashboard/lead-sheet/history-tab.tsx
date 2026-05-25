@@ -10,10 +10,24 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { History, Repeat, Bell, Calendar, Loader2 } from "lucide-react";
+import {
+  History,
+  Repeat,
+  Bell,
+  Calendar,
+  Loader2,
+  Mail,
+  Phone,
+  PhoneIncoming,
+} from "lucide-react";
 import { useWorkspacePipelineStages, findStageOrFallback } from "@/hooks/use-pipeline-stages";
 
-type EventType = "pipeline_transition" | "followup" | "appointment";
+type EventType =
+  | "pipeline_transition"
+  | "followup"
+  | "appointment"
+  | "mail_out"
+  | "call";
 
 interface PipelineTransitionEvent {
   type: "pipeline_transition";
@@ -39,10 +53,34 @@ interface AppointmentEvent {
   notes: string | null;
   sourceStage: string | null;
 }
+interface MailOutEvent {
+  type: "mail_out";
+  id: string;
+  occurredAt: string;
+  subject: string | null;
+  bodyPreview: string | null;
+  templateSlug: string | null;
+  fromEmail: string;
+  toEmails: string[];
+  status: string;
+}
+interface CallEvent {
+  type: "call";
+  id: string;
+  occurredAt: string;
+  direction: string;
+  status: string;
+  durationSeconds: number | null;
+  recordingPath: string | null;
+  notes: string | null;
+  provider: string;
+}
 type TimelineEvent =
   | PipelineTransitionEvent
   | FollowupEvent
-  | AppointmentEvent;
+  | AppointmentEvent
+  | MailOutEvent
+  | CallEvent;
 
 interface HistoryTabProps {
   siren: string;
@@ -52,7 +90,17 @@ const TYPE_LABELS: Record<EventType, string> = {
   pipeline_transition: "Transitions",
   followup: "Rappels",
   appointment: "RDV",
+  mail_out: "Mails envoyés",
+  call: "Appels",
 };
+
+function formatDuration(seconds: number | null): string {
+  if (seconds === null || seconds === undefined) return "—";
+  if (seconds < 0) return "—";
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
 
 const DATE_RANGES: Array<{ id: string; label: string; days: number | null }> = [
   { id: "7d", label: "7 jours", days: 7 },
@@ -85,7 +133,7 @@ export function HistoryTab({ siren }: HistoryTabProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [enabledTypes, setEnabledTypes] = useState<Set<EventType>>(
-    new Set(["pipeline_transition", "followup", "appointment"]),
+    new Set(["pipeline_transition", "followup", "appointment", "mail_out", "call"]),
   );
   const [range, setRange] = useState<string>("all");
 
@@ -217,6 +265,15 @@ export function HistoryTab({ siren }: HistoryTabProps) {
                 {evt.type === "appointment" && (
                   <Calendar className="h-2.5 w-2.5 text-blue-600" />
                 )}
+                {evt.type === "mail_out" && (
+                  <Mail className="h-2.5 w-2.5 text-emerald-600" />
+                )}
+                {evt.type === "call" && evt.direction === "inbound" && (
+                  <PhoneIncoming className="h-2.5 w-2.5 text-indigo-600" />
+                )}
+                {evt.type === "call" && evt.direction !== "inbound" && (
+                  <Phone className="h-2.5 w-2.5 text-indigo-600" />
+                )}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
@@ -263,6 +320,62 @@ export function HistoryTab({ siren }: HistoryTabProps) {
                     )}
                   </p>
                 )}
+                {evt.type === "mail_out" && (
+                  <div className="text-xs text-slate-700">
+                    <p>
+                      <span className="font-semibold">
+                        {evt.subject ?? "(sans objet)"}
+                      </span>{" "}
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">
+                        {evt.status}
+                      </span>
+                      {evt.templateSlug && (
+                        <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                          {evt.templateSlug}
+                        </span>
+                      )}
+                    </p>
+                    {evt.toEmails.length > 0 && (
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        À&nbsp;: {evt.toEmails.join(", ")}
+                      </p>
+                    )}
+                    <p className="block text-muted-foreground mt-0.5 line-clamp-2">
+                      {evt.bodyPreview ?? "(sans contenu)"}
+                    </p>
+                  </div>
+                )}
+                {evt.type === "call" && (
+                  <div className="text-xs text-slate-700">
+                    <p>
+                      <span className="font-medium">
+                        {evt.direction === "inbound" ? "Appel reçu" : "Appel sortant"}
+                      </span>{" "}
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                        {evt.status}
+                      </span>
+                      <span className="ml-2 font-mono text-[11px] text-slate-600">
+                        {formatDuration(evt.durationSeconds)}
+                      </span>
+                    </p>
+                    {evt.recordingPath && (
+                      <a
+                        href={`/api/calls/${encodeURIComponent(evt.id)}/recording`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-block mt-0.5 text-[11px] px-2 py-0.5 rounded border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                        data-testid="history-call-recording"
+                      >
+                        Écouter
+                      </a>
+                    )}
+                    {evt.notes && (
+                      <span className="block text-muted-foreground mt-0.5 line-clamp-2">
+                        {evt.notes}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             </li>
           ))}
@@ -270,8 +383,8 @@ export function HistoryTab({ siren }: HistoryTabProps) {
       )}
 
       <p className="text-[10px] text-muted-foreground italic flex items-center gap-1 pt-2 border-t">
-        <History className="h-3 w-3" /> Phase 1 — mails (Phase 2), appels Telnyx
-        (Phase 3) et filtres avancés (Phase 4) arrivent.
+        <History className="h-3 w-3" /> Phases 1-3 — mails entrants (Phase 2.5
+        IMAP) et filtres avancés (Phase 4) arrivent.
       </p>
     </div>
   );

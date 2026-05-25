@@ -51,7 +51,12 @@ export interface ContactContext {
 }
 
 export interface TimelineEventCtx {
-  type: "pipeline_transition" | "followup" | "appointment" | "email_outgoing";
+  type:
+    | "pipeline_transition"
+    | "followup"
+    | "appointment"
+    | "email_outgoing"
+    | "call";
   occurredAt: string;
   /** Description courte ("transition: a_qualifier → qualifie", "mail: Relance v2", …). */
   summary: string;

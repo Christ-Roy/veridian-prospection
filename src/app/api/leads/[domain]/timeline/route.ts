@@ -35,14 +35,19 @@ export async function GET(
 
   const { searchParams } = new URL(request.url);
   const typesParam = searchParams.get("types");
-  // Whitelist stricte des types autorisés (Phase 1 = 3 sources). Si le param
+  // Whitelist stricte des types autorisés. Si le param
   // est absent → `undefined` côté query (= tous types). Si l'appelant l'a
   // explicitement fourni → on filtre par whitelist, retourne `[]` au pire
   // (la query interprète ça comme "rien", pas "tout").
+  // Phase 1 : pipeline_transition + followup + appointment.
+  // Phase 2 : mail_out (mails entrants = mail_in, livré par W8b plus tard).
+  // Phase 3 : call (call_log Telnyx in/out).
   const ALLOWED_TYPES: ReadonlyArray<TimelineEvent["type"]> = [
     "pipeline_transition",
     "followup",
     "appointment",
+    "mail_out",
+    "call",
   ];
   const types =
     typesParam === null

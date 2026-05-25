@@ -22,6 +22,8 @@ const mocks = vi.hoisted(() => ({
   transitionFindMany: vi.fn(),
   followupFindMany: vi.fn(),
   appointmentFindMany: vi.fn(),
+  leadEmailFindMany: vi.fn(),
+  callLogFindMany: vi.fn(),
 }));
 
 vi.mock("@/lib/prisma", () => ({
@@ -29,6 +31,8 @@ vi.mock("@/lib/prisma", () => ({
     pipelineTransition: { findMany: mocks.transitionFindMany },
     followup: { findMany: mocks.followupFindMany },
     appointment: { findMany: mocks.appointmentFindMany },
+    leadEmail: { findMany: mocks.leadEmailFindMany },
+    callLog: { findMany: mocks.callLogFindMany },
   },
 }));
 
@@ -39,6 +43,8 @@ beforeEach(() => {
   mocks.transitionFindMany.mockResolvedValue([]);
   mocks.followupFindMany.mockResolvedValue([]);
   mocks.appointmentFindMany.mockResolvedValue([]);
+  mocks.leadEmailFindMany.mockResolvedValue([]);
+  mocks.callLogFindMany.mockResolvedValue([]);
 });
 
 describe("getProspectTimeline — validation", () => {

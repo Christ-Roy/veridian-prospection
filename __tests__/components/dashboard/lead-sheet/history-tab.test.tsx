@@ -63,6 +63,6 @@ describe("lead-sheet/history-tab.tsx — squelette Phase 1", () => {
   test("data-testid pour mega battery E2E", () => {
     expect(source).toMatch(/data-testid="history-timeline"/);
     expect(source).toMatch(/data-testid="history-empty"/);
-    expect(source).toMatch(/data-testid=`history-event-/);
+    expect(source).toMatch(/data-testid=\{`history-event-/);
   });
 });
