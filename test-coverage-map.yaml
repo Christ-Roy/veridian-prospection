@@ -410,3 +410,26 @@
     ai-generate-dialog. Sabotage : retirer le bouton → test rouge.
     Pattern Veridian éprouvé pour les UI mail (cf compose-mail-dialog
     source-level historique).
+
+# ── Mail v2 Hub Gateway — couverture multi-tests d'une seule route ─────
+# La route /api/mail/send/route.ts a été étendue (migration 0025) pour
+# router selon workspace.mail_provider : SMTP BYO v1 (test canonique
+# `__tests__/api/mail/send.test.ts` historique, 10 tests) OU branche Hub
+# Mail Gateway (test dédié `send-via-hub.test.ts`, 12 tests). Les 2 tests
+# cohabitent sur la même source pour ne pas dégrader la lisibilité du
+# fichier send.test.ts historique (déjà 230 lignes).
+
+- sources:
+    - src/app/api/mail/send/route.ts
+  covered_by:
+    - __tests__/api/mail/send.test.ts
+    - __tests__/api/mail/send-via-hub.test.ts
+  reason: |
+    Couverture combinée. send.test.ts couvre la branche SMTP v1 (rate
+    limit, 412 missing_credentials, freeform/template rendering, 502
+    auth_failed). send-via-hub.test.ts couvre la branche gmail-via-hub
+    (12 tests : happy path HMAC vers Hub, mapping needs_reauth/
+    provider_not_linked/rate_limit/user_not_found, idempotency key,
+    fallback SMTP si workspace.mail_provider='none' ou workspaceId
+    absent). Sabotage : casser le routing par provider → l'un des deux
+    tests rougit instantanément.
