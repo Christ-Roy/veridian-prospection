@@ -1,5 +1,13 @@
 # Prospection — Dashboard B2B SaaS
 
+> ## 🔴 Règle d'or Veridian — zéro contournement (gravée Robert 2026-06-10)
+> **Interdit absolu** : cron bricolé, SQLite/store parallèle, job maison pour
+> ÉVITER l'API ou la DB réelle de l'app. On travaille AVEC le vrai système :
+> coder propre → tester staging → fixer la logique → MAJ DB staging si besoin
+> → test lourd → push prod. Un blocage (accès, credential) se débloque via le
+> lead, il ne se contourne pas. Détail : CLAUDE.md racine veridian-platform.
+
+
 > Voir le CLAUDE.md racine (`../CLAUDE.md`) pour la vision globale.
 
 ## Promotion prod = §20 CI-ARCHITECTURE (graduée par risque)
