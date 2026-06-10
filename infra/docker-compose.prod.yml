@@ -21,6 +21,8 @@ services:
       - "traefik.http.routers.prospection-prod.rule=Host(`prospection.app.veridian.site`)"
       - "traefik.http.routers.prospection-prod.entrypoints=websecure"
       - "traefik.http.routers.prospection-prod.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.prospection-prod.middlewares=prospection-prod-noindex@docker"
+      - "traefik.http.middlewares.prospection-prod-noindex.headers.customresponseheaders.X-Robots-Tag=noindex, nofollow, noarchive"
       - "traefik.http.services.prospection-prod.loadbalancer.server.port=3000"
 
 networks:
