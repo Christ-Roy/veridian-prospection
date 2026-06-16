@@ -87,6 +87,36 @@ lecture/recherche existantes** et documenter l'état réel (vert/cassé/lent) :
 - La liste des `CREATE INDEX` à poser (sur entreprises) pour que le moteur IA
   soit rapide — à appliquer staging puis prod (tier 🔴, migration).
 
+## ⚡ Audit préliminaire 2026-06-16 (read-only sur prod, AVANT clonage)
+
+Fait directement contre la DB prod en lecture seule (les API search sont
+read-only) pour répondre tout de suite à l'inquiétude "les API sont cassées" :
+
+- ✅ **Perf saine** : estimate réaliste (CA 80-300k + dept 69 + sans site) =
+  **101ms** sur 996K, via index (`idx_ent_dept` + `idx_ent_ca_score`, BitmapAnd).
+- ✅ **36 index** sur `entreprises` (dont `code_naf`, `secteur_final`, dept, CA).
+  Base bien indexée pour le sourcing.
+- ✅ **Sécurité OK** : /api/prospects, /api/leads/estimate-count,
+  /api/entreprises/segments, /api/stats/overview → **401** sans auth. /api/health
+  + /api/status → 200 (publics, normal).
+- ✅ **Segments peuplés et fonctionnels en PROD** : segment_catalog = 31 entrées ;
+  v_s01_rge_sans_site=26980, v_s14_coiffeurs_sans_site=2923,
+  v_s25_parfait_prospect=5994, v_top_diamond=1797, v_s28_rentables_sans_site=1578.
+
+**VERDICT** : les API ne sont PAS "toutes cassées" en PROD. Ce qui est cassé,
+c'est **STAGING** (DB recréée vide le 2026-06-16 → tout renvoie 0/vide, ui-dev
+inutilisable). Le "full truc à régler" vient de là, pas de la prod.
+
+**RESTE À AUDITER (nécessite auth ou banc)** : la justesse réelle des filtres
+**via HTTP** (le SQL est bon, mais le parsing query-params → ProspectFilters
+peut avoir des bugs) → c'est l'objet du banc + audit complet ci-dessous.
+
+**⚠️ Contrainte clonage** : dev-pub est à **90% disque (7.7G libre)**, DB prod =
+**2.4G**. Un clone complet (dump+restore+index) frôlerait la saturation — c'est
+ce qui a tué la staging la 1ère fois. Options : (a) libérer du disque dev-pub
+d'abord, (b) cloner `entreprises` + référentiel SANS tous les index secondaires,
+(c) env de dev local sur la machine de Robert. À trancher avant de cloner.
+
 ## DoD
 - [ ] DB clonée de prod accessible par un next dev hot-reload sur dev-pub.
 - [ ] `sync-prod-to-staging.sh` (ou équivalent) réparé et rejouable.
