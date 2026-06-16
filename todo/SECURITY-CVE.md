@@ -1,10 +1,10 @@
 # 🔒 Veille CVE automatique — veridian-prospection
 
 > **Généré par** : `veridian-infra/.github/workflows/cron-trivy.yml`
-> **Dernier run** : 2026-06-15 04:11 UTC
-> **Run URL** : local-cron@mail.mybigserveur.local:2026-06-15
+> **Dernier run** : 2026-06-16 04:11 UTC
+> **Run URL** : local-cron@mail.mybigserveur.local:2026-06-16
 > **Image scannée** : `ghcr.io/christ-roy/prospection:latest`
-> **CVE bruts détectés** : 3 (avant filtrage)
+> **CVE bruts détectés** : 12 (avant filtrage)
 > **Scoring** : `veridian-infra/ci/trivy-scoring.yml`
 
 ## TL;DR
@@ -12,7 +12,7 @@
 - 🚨 **0 RED** — fix prioritaire
 - 🔴 **1 HIGH** — action recommandée cette semaine
 - 🟡 **1 MEDIUM** — récap, pas urgent
-- 🟢 **0 NOISE** — annexe collapse
+- 🟢 **3 NOISE** — annexe collapse
 
 
 ---
@@ -41,6 +41,20 @@
 - **Title** : uuid: uuid: Out-of-bounds write vulnerability impacts data integrity and confidentiality
 - **Source** : `package-lock.json`
 - **Fix** : `pnpm up uuid` (jusqu'à >= `13.0.1`)
+
+
+---
+
+## 🟢 NOISE filtré (3 CVE)
+
+<details>
+<summary>Liste complète (1 groupe — clique pour déplier)</summary>
+
+| Package | Installed | Fix | CVE count | Max score |
+|---|---|---|---|---|
+| `nodemailer` | 7.0.13 | 8.0.9 | 3 | 6 |
+
+</details>
 
 
 ---
