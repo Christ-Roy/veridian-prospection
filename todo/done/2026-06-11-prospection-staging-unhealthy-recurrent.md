@@ -33,3 +33,28 @@ alertes containers du dev server sont mutées (journald only, cf.
 `veridian-infra/infra/monitoring/README.md`) — donc **plus personne ne les
 verra passer** : si le flapping cache un vrai problème staging, c'est ce
 ticket qui en garde la trace.
+
+---
+
+## ✅ Résolu — 2026-06-16 (agent prospection)
+
+**Cause racine** : le flapping unhealthy n'était pas un healthcheck trop strict — le
+container **et le volume `postgres-staging`** avaient été **supprimés** de dev-pub
+(probablement un `docker volume prune` lors d'un cleanup disque, dev-pub à 83%).
+L'app pointait sur `postgres-staging:5432` injoignable → 503 permanent → unhealthy,
+et la CI staging plantait à `prisma migrate deploy`.
+
+**Défaut de conception sous-jacent** : Prospection était la **seule** app dont la DB
+staging n'était PAS déclarée dans son compose versionné (contrairement à
+hub-staging-db / notifuse-staging-db / crm-postgres). DB "à la main" = non
+reproductible = un cleanup l'efface définitivement.
+
+**Fix (voie propre)** :
+1. Service `postgres-staging` (postgres:16-alpine, volume nommé, healthcheck)
+   déclaré dans `infra/docker-compose.staging.yml` → reproductible, survit aux cleanups.
+2. DB recréée + schéma cible via `prisma db push` (35 models) car l'historique de
+   migrations est cassé from-scratch (→ ticket 2026-06-16-historique-migrations-prisma-divergent).
+3. 31 migrations baselinées `--applied` → `migrate deploy` CI redevient idempotent.
+4. App recréée → healthy en 15s, `/api/status` db:ok auth:ok.
+
+Prod intacte (fix isolé à l'override staging, base+prod inchangés).

@@ -5,8 +5,38 @@
 # Hôte routé : prospection.staging.veridian.site
 
 services:
+  # ─── DB staging dédiée ──────────────────────────────────────────────────
+  # Déclarée DANS le compose versionné (comme hub-staging-db / notifuse-staging-db)
+  # pour être reproductible et survivre aux cleanups disque de dev-pub.
+  # Auparavant lancée "à la main" hors compose → un `docker volume prune` l'a
+  # supprimée (container + volume) le 2026-06-10, cassant staging 6 jours
+  # (cf todo/2026-06-11-prospection-staging-unhealthy-recurrent.md).
+  # Le container_name fixe `postgres-staging` est requis : le DATABASE_URL des
+  # apps pointe sur ce hostname interne sur le réseau staging-edge.
+  postgres-staging:
+    image: postgres:16-alpine
+    container_name: postgres-staging
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${STAGING_DB_USER:-app}
+      POSTGRES_PASSWORD: ${STAGING_DB_PASSWORD:?STAGING_DB_PASSWORD requis dans .env}
+      POSTGRES_DB: ${STAGING_DB_NAME:-prospection}
+    volumes:
+      - postgres-staging_pgdata:/var/lib/postgresql/data
+    networks:
+      - staging-edge
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${STAGING_DB_USER:-app} -d ${STAGING_DB_NAME:-prospection}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   prospection:
     image: ghcr.io/christ-roy/prospection:${PROSPECTION_IMAGE_TAG:-staging-latest}
+    depends_on:
+      postgres-staging:
+        condition: service_healthy
     networks:
       - staging-edge
       - default
@@ -30,3 +60,6 @@ networks:
   staging-edge:
     external: true
   default:
+
+volumes:
+  postgres-staging_pgdata:
