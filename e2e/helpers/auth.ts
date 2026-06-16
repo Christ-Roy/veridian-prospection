@@ -148,31 +148,25 @@ export async function ensureCanonicalUser(): Promise<void> {
   //    `access_token` d'un Account `provider="credentials"`. Clé unique
   //    Prisma : (provider, providerAccountId). On utilise l'email comme
   //    providerAccountId (stable, unique par user).
-  const existingAccount = await prisma.account.findUnique({
+  // upsert atomique sur la clé unique (provider, providerAccountId) : sûr face
+  // à la race entre workers Playwright parallèles sur DB fraîche (sinon
+  // findUnique→null partout puis create simultanés = P2002, cf flaky-workers4).
+  await prisma.account.upsert({
     where: {
       provider_providerAccountId: {
         provider: "credentials",
         providerAccountId: E2E_USER_EMAIL,
       },
     },
-    select: { id: true },
+    update: { userId: user.id, access_token: passwordHash },
+    create: {
+      userId: user.id,
+      type: "credentials",
+      provider: "credentials",
+      providerAccountId: E2E_USER_EMAIL,
+      access_token: passwordHash,
+    },
   });
-  if (existingAccount) {
-    await prisma.account.update({
-      where: { id: existingAccount.id },
-      data: { userId: user.id, access_token: passwordHash },
-    });
-  } else {
-    await prisma.account.create({
-      data: {
-        userId: user.id,
-        type: "credentials",
-        provider: "credentials",
-        providerAccountId: E2E_USER_EMAIL,
-        access_token: passwordHash,
-      },
-    });
-  }
 
   // 3) Tenant — owner = user. On cherche un tenant vivant déjà détenu par ce
   //    user (même filtre `deletedAt: null` que getUserContext) ; sinon upsert
@@ -244,31 +238,23 @@ export async function ensureCanonicalUser(): Promise<void> {
     },
     select: { id: true },
   });
-  const existingInvitedAccount = await prisma.account.findUnique({
+  // upsert atomique (même raison que l'account owner ci-dessus : anti-race workers).
+  await prisma.account.upsert({
     where: {
       provider_providerAccountId: {
         provider: "credentials",
         providerAccountId: E2E_INVITED_EMAIL,
       },
     },
-    select: { id: true },
+    update: { userId: invitedUser.id, access_token: invitedPasswordHash },
+    create: {
+      userId: invitedUser.id,
+      type: "credentials",
+      provider: "credentials",
+      providerAccountId: E2E_INVITED_EMAIL,
+      access_token: invitedPasswordHash,
+    },
   });
-  if (existingInvitedAccount) {
-    await prisma.account.update({
-      where: { id: existingInvitedAccount.id },
-      data: { userId: invitedUser.id, access_token: invitedPasswordHash },
-    });
-  } else {
-    await prisma.account.create({
-      data: {
-        userId: invitedUser.id,
-        type: "credentials",
-        provider: "credentials",
-        providerAccountId: E2E_INVITED_EMAIL,
-        access_token: invitedPasswordHash,
-      },
-    });
-  }
   await prisma.workspaceMember.upsert({
     where: {
       workspaceId_userId: { workspaceId: workspace.id, userId: invitedUser.id },
