@@ -42,6 +42,26 @@ Pour remettre staging vert après suppression de `postgres-staging` :
 
 C'est une **baseline**, pas un fix de l'historique. La dette reste.
 
+## ⚠️ 2e couche de dette découverte le même jour : objets HORS-Prisma
+
+En recréant la DB on a aussi découvert que `schema.prisma` ne déclare PAS tout le
+schéma réel. Tables gérées partiellement hors Prisma (ETL INSEE/INPI + ALTER
+manuels prod) → absentes d'un `db push` :
+- 11 colonnes INPI sur `entreprises` + table `inpi_history` → `scripts/2026-04-06_inpi-v36-columns.sql`
+- `segment_catalog` + 31 vues `v_*` → `scripts/2026-04-05_create-segments-views.sql`
+- colonnes pipeline outreach (`real_value`, `upsell_estimated`, `last_interaction_at`)
+  + `dirigeant_annee_naissance` → étaient ORPHELINES (jamais versionnées) →
+  nouveau `scripts/2026-06-16_outreach-pipeline-value-columns.sql`
+
+Ces scripts existaient mais **la CI ne les appliquait jamais** (elle ne faisait que
+`prisma migrate deploy`). Corrigé 2026-06-16 : nouveau step CI applique les 3 scripts
+hors-Prisma après migrate deploy (idempotent). Une DB recréée se répare désormais seule.
+
+→ Le vrai fix (option A ci-dessous) devra **réconcilier Prisma ET les scripts
+hors-Prisma** : soit tout ramener dans Prisma, soit documenter clairement la
+frontière "Prisma vs ETL" et garder les 2 chemins. Aujourd'hui la frontière est
+implicite et c'est ce qui a piégé.
+
 ## Le vrai fix (à froid)
 
 Repartir d'un historique de migrations propre et **reproductible from-scratch** :
