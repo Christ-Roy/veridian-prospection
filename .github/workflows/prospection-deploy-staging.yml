@@ -168,6 +168,20 @@ jobs:
           TELNYX_PUBLIC_KEY=${{ secrets.STAGING_TELNYX_PUBLIC_KEY }}
           ENV_EOF
           chmod 600 $DEST/.env"
+          # Le service postgres-staging (docker-compose.staging.yml) a besoin de
+          # POSTGRES_USER/PASSWORD/DB. On les DÉRIVE du DATABASE_URL (source unique,
+          # pas de secret dupliqué / drift) directement sur dev-pub où le .env vit.
+          # Format : postgresql://USER:PASS@host:5432/DB?params
+          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 "
+            cd $DEST &&
+            URL=\$(grep '^DATABASE_URL=' .env | cut -d= -f2-) &&
+            CREDS=\$(echo \"\$URL\" | sed -E 's#^postgresql://([^@]+)@.*#\1#') &&
+            DB_USER=\$(echo \"\$CREDS\" | cut -d: -f1) &&
+            DB_PASS=\$(echo \"\$CREDS\" | cut -d: -f2) &&
+            DB_NAME=\$(echo \"\$URL\" | sed -E 's#.*/([^/?]+)(\?.*)?\$#\1#') &&
+            { echo \"STAGING_DB_USER=\$DB_USER\"; echo \"STAGING_DB_PASSWORD=\$DB_PASS\"; echo \"STAGING_DB_NAME=\$DB_NAME\"; } >> .env &&
+            echo \"DB vars dérivées : user=\$DB_USER db=\$DB_NAME\"
+          "
 
       - name: Login GHCR on dev (pull image)
         run: |
