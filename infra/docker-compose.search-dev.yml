@@ -1,0 +1,48 @@
+# Banc d'essai moteur de recherche IA — veridian-prospection
+#
+# next dev (hot reload) sur :3200, branché sur la DB CLONÉE DE PROD
+# (prospection_devclone dans le container postgres-staging) = 996K entreprises
+# réelles, pour itérer sur l'archi des API de recherche IA sur de la VRAIE data.
+#
+# ⚠️ NE PAS confondre avec :
+#   - prospection-staging (DB prospection, tests E2E, recréée vide)
+#   - prospection-ui-dev  (revue UI, même DB staging vide)
+# Ce banc-ci est le SEUL avec de la vraie data (clone read-only de prod).
+#
+# Cf todo/2026-06-16-ia-search-06-banc-essai-db-clonee-prod-audit-parano.md
+# Démarrer : docker compose -f docker-compose.search-dev.yml up -d
+# Refresh data : re-cloner prod → prospection_devclone (cf ticket -06)
+# Couper (libère ~2G RAM) : docker compose -f docker-compose.search-dev.yml down
+services:
+  search-dev:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "npm install --no-audit --no-fund && npm run dev -- -p 3200 -H 0.0.0.0"
+    volumes:
+      - /home/ubuntu/prospection-ui-dev:/app
+    env_file:
+      - /home/ubuntu/prospection-staging/.env
+    environment:
+      - NODE_ENV=development
+      - PORT=3200
+      - HOSTNAME=0.0.0.0
+      - NEXT_TELEMETRY_DISABLED=1
+      # Override : pointe sur la CLONE de prod (vraie data), pas la staging vide.
+      # DEVCLONE_DATABASE_URL fourni par ~/prospection-staging/.env sur dev-pub
+      # (pas de credential en clair dans le repo).
+      - DATABASE_URL=${DEVCLONE_DATABASE_URL}
+    networks:
+      - staging-edge
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=staging-edge"
+      - "traefik.http.routers.prosp-searchdev.rule=Host(`search-dev.staging.veridian.site`)"
+      - "traefik.http.routers.prosp-searchdev.entrypoints=websecure"
+      - "traefik.http.routers.prosp-searchdev.tls.certresolver=letsencrypt"
+      - "traefik.http.services.prosp-searchdev.loadbalancer.server.port=3200"
+    mem_limit: 2g
+    restart: unless-stopped
+
+networks:
+  staging-edge:
+    external: true
