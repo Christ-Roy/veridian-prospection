@@ -231,6 +231,41 @@ jobs:
               node:22-alpine sh -c 'apk add --no-cache openssl >/dev/null && npm install --no-package-lock --silent prisma@6.19.2 2>&1 | tail -3 && npx prisma migrate deploy'
           "
 
+      # Scripts SQL HORS-PRISMA (objets que schema.prisma ne déclare pas :
+      # colonnes INPI/ETL sur entreprises, table inpi_history, segment_catalog,
+      # les 31 vues v_*, colonnes pipeline outreach). Ces tables sont gérées
+      # partiellement hors Prisma ; sans ce step, une DB recréée from-scratch
+      # est incomplète → 42703 "column/relation does not exist" → 500 (vécu
+      # 2026-06-16, DB staging supprimée puis recréée). Tous idempotents
+      # (ADD COLUMN IF NOT EXISTS / CREATE ... IF NOT EXISTS / DROP+CREATE VIEW).
+      - name: Copy hors-Prisma SQL scripts to dev
+        run: |
+          DEST=/home/ubuntu/prospection-staging
+          rsync -az -e "ssh -i ~/.ssh/id_ed25519" \
+            scripts/2026-04-06_inpi-v36-columns.sql \
+            scripts/2026-04-05_create-segments-views.sql \
+            scripts/2026-06-16_outreach-pipeline-value-columns.sql \
+            ubuntu@37.187.199.185:$DEST/sql-hors-prisma/
+
+      - name: Apply hors-Prisma SQL scripts (staging DB)
+        # On passe le DATABASE_URL complet (secret) à psql — pas de credential
+        # en clair dans le workflow, source unique (même secret que migrate deploy).
+        run: |
+          DEST=/home/ubuntu/prospection-staging
+          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 "
+            cd $DEST &&
+            docker run --rm \
+              --network staging-edge \
+              -v \$PWD/sql-hors-prisma:/sql \
+              -e DBURL=\"${{ secrets.STAGING_DATABASE_URL }}\" \
+              postgres:16-alpine sh -c '
+                for f in /sql/2026-04-06_inpi-v36-columns.sql /sql/2026-04-05_create-segments-views.sql /sql/2026-06-16_outreach-pipeline-value-columns.sql; do
+                  echo \"== applying \$f ==\" &&
+                  psql \"\$DBURL\" -v ON_ERROR_STOP=1 -f \"\$f\" 2>&1 | tail -3 || exit 1
+                done
+              '
+          "
+
       - name: Wait healthcheck (max 90s)
         run: |
           ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 '
