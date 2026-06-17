@@ -819,3 +819,44 @@
     invalide, fail-closed AUTH_SECRET manquant ou trop court. Extrait
     de connect/route.ts à cause de la règle Next.js "no custom export
     in route.ts" qui cassait le build.
+
+# ── Moteur de recherche IA (/api/search/*) — 2026-06-17 ──────────────────────
+- sources:
+    - src/lib/search/query.ts
+    - src/lib/search/query.test.ts
+  covered_by:
+    - src/lib/search/query.test.ts
+  reason: |
+    Test COLOCALISÉ (src/lib/search/query.test.ts, 15 tests) : valide le schéma
+    Zod (rejet champ/opérateur/enum invalides, anti-injection par nom de colonne)
+    et le builder SQL paramétré (placeholders positionnels, valeurs jamais
+    interpolées, all/any, between/in/exists/contains). Cœur sécurité du moteur.
+- sources:
+    - src/lib/search/fields.ts
+    - src/lib/search/fields.test.ts
+  covered_by:
+    - src/lib/search/fields.test.ts
+  reason: |
+    Test COLOCALISÉ (6 tests) : intégrité du catalogue (sql non vide, alias e./o.
+    uniquement, enum→allowed_values, booléens→eq/exists, resolveField rejette
+    l'inconnu). Garantit qu'aucun champ ne peut exposer du SQL hors whitelist.
+- sources:
+    - src/lib/search/auth.ts
+    - src/lib/search/auth.test.ts
+  covered_by:
+    - src/lib/search/auth.test.ts
+  reason: |
+    Test COLOCALISÉ (6 tests) : auth M2M bearer (accept/refus token, sans header,
+    sans préfixe Bearer, fallback TENANT_API_SECRET, 500 si aucun secret).
+- sources:
+    - src/app/api/search/estimate/route.ts
+    - src/app/api/search/companies/route.ts
+    - src/app/api/search/fields/route.ts
+  covered_by:
+    - __tests__/api/search/search-api.test.ts
+  reason: |
+    Un seul test API groupé (__tests__/api/search/search-api.test.ts, 9 tests)
+    couvre les 3 routes search : auth 401 sans token, validation 400 (champ
+    inconnu/injection, filtres vides, projection inconnue), contrat de réponse
+    200 (prisma mocké). Le SQL réel est validé sur le banc search-dev (clone
+    prod 996K) — non rejouable en unitaire sans DB.

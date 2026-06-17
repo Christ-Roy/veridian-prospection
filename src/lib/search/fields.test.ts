@@ -1,0 +1,46 @@
+import { describe, it, expect } from "vitest";
+import { FIELD_CATALOG, FIELD_KEYS, resolveField } from "./fields";
+
+describe("FIELD_CATALOG — intégrité du catalogue", () => {
+  it("chaque champ a une expression SQL non vide et des opérateurs", () => {
+    for (const [key, def] of Object.entries(FIELD_CATALOG)) {
+      expect(def.sql, `${key}.sql`).toBeTruthy();
+      expect(def.ops.length, `${key}.ops`).toBeGreaterThan(0);
+      expect(def.label, `${key}.label`).toBeTruthy();
+    }
+  });
+
+  it("les expressions SQL ne référencent que les alias e. ou o. (pas d'input)", () => {
+    for (const [key, def] of Object.entries(FIELD_CATALOG)) {
+      expect(def.sql.includes("e.") || def.sql.includes("o."), `${key} alias`).toBe(true);
+    }
+  });
+
+  it("les champs enum déclarent des allowed_values", () => {
+    for (const [key, def] of Object.entries(FIELD_CATALOG)) {
+      if (def.type === "enum") {
+        expect(def.enumValues, `${key}.enumValues`).toBeDefined();
+        expect(def.enumValues!.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("les champs booléens n'autorisent que eq/exists", () => {
+    for (const [key, def] of Object.entries(FIELD_CATALOG)) {
+      if (def.type === "boolean") {
+        expect(def.ops.every((o) => o === "eq" || o === "exists"), `${key}.ops`).toBe(true);
+      }
+    }
+  });
+
+  it("resolveField renvoie null pour un champ inconnu (anti-injection)", () => {
+    expect(resolveField("siren")).not.toBeNull();
+    expect(resolveField("siren; DROP TABLE x")).toBeNull();
+    expect(resolveField("")).toBeNull();
+  });
+
+  it("FIELD_KEYS reflète bien les clés du catalogue", () => {
+    expect(FIELD_KEYS.length).toBe(Object.keys(FIELD_CATALOG).length);
+    expect(FIELD_KEYS).toContain("chiffre_affaires");
+  });
+});

@@ -28,9 +28,9 @@ services:
       - HOSTNAME=0.0.0.0
       - NEXT_TELEMETRY_DISABLED=1
       # Override : pointe sur la CLONE de prod (vraie data), pas la staging vide.
-      # DEVCLONE_DATABASE_URL fourni par ~/prospection-staging/.env sur dev-pub
-      # (pas de credential en clair dans le repo).
-      - DATABASE_URL=${DEVCLONE_DATABASE_URL}
+      # DB clone staging derrière Tailscale (pas un secret prod). En dur ici car
+      # l'interpolation ${VAR} via --env-file ne propage pas au contexte compose.
+      - DATABASE_URL=postgresql://app:zfuwRV7wll1pVYj9iREMyiL8wpCLwkIQ@postgres-staging:5432/prospection_devclone?connection_limit=10
     networks:
       - staging-edge
     labels:

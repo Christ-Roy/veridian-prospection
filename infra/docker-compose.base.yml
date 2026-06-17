@@ -27,6 +27,10 @@ services:
       AUTH_SECRET: ${AUTH_SECRET}
       AUTH_TRUST_HOST: "true"
       TENANT_API_SECRET: ${TENANT_API_SECRET}
+      # Bearer machine du moteur de recherche IA (/api/search/*). Si absent,
+      # fallback sur TENANT_API_SECRET (cf src/lib/search/auth.ts). Dédié =
+      # rotation indépendante du secret cross-app.
+      SEARCH_API_SECRET: ${SEARCH_API_SECRET:-}
       # Bearer Prospection→Hub /api/webhooks/prospection (contrat §6.3 pattern C).
       # Lu par src/lib/hub/webhooks.ts. Côté Hub ce token s'appelle
       # PROSPECTION_WEBHOOK_TOKEN (token attribué à Prospection).
