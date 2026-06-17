@@ -13,10 +13,10 @@
  * }
  */
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { isRateLimited } from "@/lib/rate-limit";
 import { authenticateSearch } from "@/lib/search/auth";
 import { SearchFiltersSchema, buildSearchWhereSql } from "@/lib/search/query";
+import { withSearchTimeout, isStatementTimeout } from "@/lib/search/exec";
 import { FIELD_CATALOG } from "@/lib/search/fields";
 import { DEFAULT_ENTREPRISES_WHERE, bigIntToNumber } from "@/lib/queries/shared";
 
@@ -94,17 +94,19 @@ export async function POST(req: Request) {
   try {
     const limIdx = nextIndex;
     const offIdx = nextIndex + 1;
-    const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-      `SELECT ${selectExprs.join(", ")} ${baseFrom} ORDER BY ${orderBy} LIMIT $${limIdx} OFFSET $${offIdx}`,
-      ...params, pageSize, offset,
-    );
-
-    // COUNT plafonné : exact jusqu'à 10000, sinon "10000+" (évite un COUNT lent
-    // sur un segment énorme — l'IA affine via /estimate si besoin du chiffre exact).
-    const [cnt] = await prisma.$queryRawUnsafe<{ c: bigint }[]>(
-      `SELECT COUNT(*)::bigint AS c FROM (SELECT 1 ${baseFrom} LIMIT 10001) sub`,
-      ...params,
-    );
+    const { rows, cnt } = await withSearchTimeout(async (q) => {
+      const rows = await q<Record<string, unknown>[]>(
+        `SELECT ${selectExprs.join(", ")} ${baseFrom} ORDER BY ${orderBy} LIMIT $${limIdx} OFFSET $${offIdx}`,
+        ...params, pageSize, offset,
+      );
+      // COUNT plafonné : exact jusqu'à 10000, sinon "10000+" (évite un COUNT lent
+      // sur un segment énorme — l'IA affine via /estimate si besoin du chiffre exact).
+      const [cnt] = await q<{ c: bigint }[]>(
+        `SELECT COUNT(*)::bigint AS c FROM (SELECT 1 ${baseFrom} LIMIT 10001) sub`,
+        ...params,
+      );
+      return { rows, cnt };
+    });
     const rawCount = Number(cnt.c);
     const total = rawCount > 10000 ? null : rawCount;
 
@@ -124,6 +126,12 @@ export async function POST(req: Request) {
       results,
     });
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Recherche trop coûteuse — affine les filtres (secteur, département)." },
+        { status: 400 },
+      );
+    }
     console.error("[search/companies] query failed", err);
     return NextResponse.json({ error: "Query failed" }, { status: 500 });
   }

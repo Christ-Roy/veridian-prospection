@@ -9,10 +9,10 @@
  * Body : { filters: SearchFilters }  (cf src/lib/search/query.ts)
  */
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { isRateLimited } from "@/lib/rate-limit";
 import { authenticateSearch } from "@/lib/search/auth";
 import { SearchFiltersSchema, buildSearchWhereSql } from "@/lib/search/query";
+import { withSearchTimeout, isStatementTimeout } from "@/lib/search/exec";
 import { DEFAULT_ENTREPRISES_WHERE } from "@/lib/queries/shared";
 
 export const dynamic = "force-dynamic";
@@ -44,41 +44,45 @@ export async function POST(req: Request) {
   const baseFrom = `FROM entreprises e WHERE ${DEFAULT_ENTREPRISES_WHERE}${whereSql}`;
 
   try {
-    // COUNT global + volumes actionnables en une passe.
-    const [agg] = await prisma.$queryRawUnsafe<
-      { total: bigint; with_phone: bigint; with_email: bigint; with_both: bigint }[]
-    >(
-      `SELECT COUNT(*)::bigint AS total,
-              COUNT(*) FILTER (WHERE e.best_phone_e164 IS NOT NULL)::bigint AS with_phone,
-              COUNT(*) FILTER (WHERE e.best_email_normalized IS NOT NULL)::bigint AS with_email,
-              COUNT(*) FILTER (WHERE e.best_phone_e164 IS NOT NULL AND e.best_email_normalized IS NOT NULL)::bigint AS with_both
-       ${baseFrom}`,
-      ...params,
-    );
+    const { agg, breakdown } = await withSearchTimeout(async (q) => {
+      // COUNT global + volumes actionnables en une passe.
+      const [agg] = await q<
+        { total: bigint; with_phone: bigint; with_email: bigint; with_both: bigint }[]
+      >(
+        `SELECT COUNT(*)::bigint AS total,
+                COUNT(*) FILTER (WHERE e.best_phone_e164 IS NOT NULL)::bigint AS with_phone,
+                COUNT(*) FILTER (WHERE e.best_email_normalized IS NOT NULL)::bigint AS with_email,
+                COUNT(*) FILTER (WHERE e.best_phone_e164 IS NOT NULL AND e.best_email_normalized IS NOT NULL)::bigint AS with_both
+         ${baseFrom}`,
+        ...params,
+      );
+
+      const total = Number(agg.total);
+
+      // Breakdown par dimension — top 8, uniquement si le segment n'est pas vide.
+      let breakdown: Record<string, { key: string; count: number }[]> = {};
+      if (total > 0) {
+        const [bySecteur, byDept] = await Promise.all([
+          q<{ key: string; count: bigint }[]>(
+            `SELECT COALESCE(e.secteur_final,'(inconnu)') AS key, COUNT(*)::bigint AS count
+             ${baseFrom} GROUP BY 1 ORDER BY 2 DESC LIMIT 8`,
+            ...params,
+          ),
+          q<{ key: string; count: bigint }[]>(
+            `SELECT COALESCE(e.departement,'(inconnu)') AS key, COUNT(*)::bigint AS count
+             ${baseFrom} GROUP BY 1 ORDER BY 2 DESC LIMIT 8`,
+            ...params,
+          ),
+        ]);
+        breakdown = {
+          by_secteur: bySecteur.map((r) => ({ key: r.key, count: Number(r.count) })),
+          by_departement: byDept.map((r) => ({ key: r.key, count: Number(r.count) })),
+        };
+      }
+      return { agg, breakdown };
+    });
 
     const total = Number(agg.total);
-
-    // Breakdown par dimension — limité au top 8 par dimension pour rester rapide.
-    // On ne calcule le breakdown que si le segment n'est pas vide.
-    let breakdown: Record<string, { key: string; count: number }[]> = {};
-    if (total > 0) {
-      const [bySecteur, byDept] = await Promise.all([
-        prisma.$queryRawUnsafe<{ key: string; count: bigint }[]>(
-          `SELECT COALESCE(e.secteur_final,'(inconnu)') AS key, COUNT(*)::bigint AS count
-           ${baseFrom} GROUP BY 1 ORDER BY 2 DESC LIMIT 8`,
-          ...params,
-        ),
-        prisma.$queryRawUnsafe<{ key: string; count: bigint }[]>(
-          `SELECT COALESCE(e.departement,'(inconnu)') AS key, COUNT(*)::bigint AS count
-           ${baseFrom} GROUP BY 1 ORDER BY 2 DESC LIMIT 8`,
-          ...params,
-        ),
-      ]);
-      breakdown = {
-        by_secteur: bySecteur.map((r) => ({ key: r.key, count: Number(r.count) })),
-        by_departement: byDept.map((r) => ({ key: r.key, count: Number(r.count) })),
-      };
-    }
 
     return NextResponse.json({
       estimated_count: total,
@@ -90,6 +94,12 @@ export async function POST(req: Request) {
       breakdown,
     });
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Segment trop coûteux à estimer — affine les filtres (secteur, département)." },
+        { status: 400 },
+      );
+    }
     console.error("[search/estimate] query failed", err);
     return NextResponse.json({ error: "Query failed" }, { status: 500 });
   }

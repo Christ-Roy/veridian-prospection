@@ -7,9 +7,18 @@ import { describe, expect, test, vi, beforeEach, afterEach } from "vitest";
 
 const SECRET = "test-search-secret-xyz";
 
-const { prismaMock } = vi.hoisted(() => ({
-  prismaMock: { $queryRawUnsafe: vi.fn() },
-}));
+const { prismaMock } = vi.hoisted(() => {
+  const txQuery = vi.fn();
+  return {
+    prismaMock: {
+      // $queryRawUnsafe direct (compat) + $transaction qui passe un `tx` au callback.
+      $queryRawUnsafe: txQuery,
+      $transaction: vi.fn(async (cb: (tx: unknown) => unknown) =>
+        cb({ $executeRawUnsafe: vi.fn(), $queryRawUnsafe: txQuery }),
+      ),
+    },
+  };
+});
 
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
 vi.mock("@/lib/rate-limit", () => ({ isRateLimited: () => false }));

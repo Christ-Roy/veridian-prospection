@@ -860,3 +860,13 @@
     inconnu/injection, filtres vides, projection inconnue), contrat de réponse
     200 (prisma mocké). Le SQL réel est validé sur le banc search-dev (clone
     prod 996K) — non rejouable en unitaire sans DB.
+- sources:
+    - src/lib/search/exec.ts
+    - src/lib/search/exec.test.ts
+  covered_by:
+    - src/lib/search/exec.test.ts
+  reason: |
+    Test COLOCALISÉ (5 tests) : isStatementTimeout (détection SQLSTATE 57014 +
+    message Postgres, rejet faux positifs, input non-Error) et borne du timeout.
+    Garde-fou anti-DoS. withSearchTimeout (transaction + SET LOCAL) est exercé
+    end-to-end par les tests API search (mock $transaction).
