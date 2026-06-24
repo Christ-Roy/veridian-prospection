@@ -43,4 +43,16 @@ describe("FIELD_CATALOG — intégrité du catalogue", () => {
     expect(FIELD_KEYS.length).toBe(Object.keys(FIELD_CATALOG).length);
     expect(FIELD_KEYS).toContain("chiffre_affaires");
   });
+
+  it("fiche_confiance (réservoir ODH) est un enum filtrable avec les bons tiers", () => {
+    const f = resolveField("fiche_confiance");
+    expect(f).not.toBeNull();
+    expect(f!.type).toBe("enum");
+    expect(f!.sql).toBe("e.fiche_confiance");
+    // les 3 tiers du réservoir ODH, ni plus ni moins (contrat avec niveau_0.tier)
+    expect(f!.enumValues).toEqual(["fr_dur", "fr_corrobore", "gris_geo"]);
+    // filtrable par eq/in (pour cibler "fr_dur uniquement" ou "fr_dur+fr_corrobore")
+    expect(f!.ops).toContain("eq");
+    expect(f!.ops).toContain("in");
+  });
 });

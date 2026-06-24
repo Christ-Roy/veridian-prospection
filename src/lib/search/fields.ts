@@ -114,6 +114,14 @@ export const FIELD_CATALOG: Record<string, FieldDef> = {
   // ─── Scoring ───
   prospect_score: { sql: "e.prospect_score", type: "number", ops: NUM_OPS, label: "Score prospect (0-100)" },
   prospect_tier: { sql: "e.prospect_tier", type: "text", ops: TEXT_OPS, label: "Tier prospect" },
+  // Fiabilité du rattachement SIREN↔site (réservoir ODH importé en bulk). NULL = legacy 996K.
+  fiche_confiance: {
+    sql: "e.fiche_confiance",
+    type: "enum",
+    ops: ENUM_OPS,
+    label: "Confiance du rattachement (réservoir ODH)",
+    enumValues: ["fr_dur", "fr_corrobore", "gris_geo"],
+  },
   data_completeness: { sql: "e.data_completeness", type: "number", ops: NUM_OPS, label: "Complétude data" },
   signal_count: { sql: "e.signal_count", type: "number", ops: NUM_OPS, label: "Nombre de signaux" },
 
