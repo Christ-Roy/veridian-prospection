@@ -56,4 +56,22 @@ describe("FIELD_CATALOG — intégrité du catalogue", () => {
     expect(f!.ops).toContain("eq");
     expect(f!.ops).toContain("in");
   });
+
+  it("web_tier (scoring web ODH) filtre la qualité du site — cible refonte", () => {
+    const f = resolveField("web_tier");
+    expect(f).not.toBeNull();
+    expect(f!.type).toBe("enum");
+    expect(f!.sql).toBe("e.web_tier");
+    expect(f!.enumValues).toEqual(["moderne", "correct", "vieillissant", "obsolete"]);
+    // "obsolete" doit être une valeur valide (le filtre vente de site repose dessus)
+    expect(f!.enumValues).toContain("obsolete");
+  });
+
+  it("web_is_obsolete est un flag booléen filtrable (eq/exists)", () => {
+    const f = resolveField("web_is_obsolete");
+    expect(f).not.toBeNull();
+    expect(f!.type).toBe("boolean");
+    expect(f!.sql).toBe("e.web_is_obsolete");
+    expect(f!.ops).toContain("eq");
+  });
 });

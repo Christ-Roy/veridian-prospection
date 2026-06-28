@@ -129,6 +129,15 @@ export const FIELD_CATALOG: Record<string, FieldDef> = {
 
   // ─── Web (présence + qualité) ───
   web_domain: { sql: "e.web_domain_normalized", type: "text", ops: TEXT_OPS, label: "Domaine web" },
+  // Scoring web ODH (enrichi 2026-06-30 sur ~632K fiches) — cible vente de site.
+  web_tier: {
+    sql: "e.web_tier",
+    type: "enum",
+    ops: ENUM_OPS,
+    label: "Qualité du site (ODH)",
+    enumValues: ["moderne", "correct", "vieillissant", "obsolete"],
+  },
+  web_is_obsolete: boolField("web_is_obsolete", "Site obsolète (cible refonte)"),
   web_cms: { sql: "e.web_cms", type: "text", ops: TEXT_OPS, label: "CMS détecté" },
   web_tech_score: { sql: "e.web_tech_score", type: "number", ops: NUM_OPS, label: "Score technique du site" },
   web_obsolescence_score: { sql: "e.web_obsolescence_score", type: "number", ops: NUM_OPS, label: "Score d'obsolescence du site" },
