@@ -120,7 +120,9 @@ export const FIELD_CATALOG: Record<string, FieldDef> = {
     type: "enum",
     ops: ENUM_OPS,
     label: "Confiance du rattachement (réservoir ODH)",
-    enumValues: ["fr_dur", "fr_corrobore", "gris_geo"],
+    // bulk 1 (niveau_0) : fr_dur/fr_corrobore/gris_geo
+    // bulk 2 (candidats_siren_scored) : certain/haute/moyenne (1 SIREN tranché net/domaine)
+    enumValues: ["fr_dur", "fr_corrobore", "gris_geo", "certain", "haute", "moyenne"],
   },
   data_completeness: { sql: "e.data_completeness", type: "number", ops: NUM_OPS, label: "Complétude data" },
   signal_count: { sql: "e.signal_count", type: "number", ops: NUM_OPS, label: "Nombre de signaux" },

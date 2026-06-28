@@ -50,7 +50,8 @@ describe("FIELD_CATALOG — intégrité du catalogue", () => {
     expect(f!.type).toBe("enum");
     expect(f!.sql).toBe("e.fiche_confiance");
     // les 3 tiers du réservoir ODH, ni plus ni moins (contrat avec niveau_0.tier)
-    expect(f!.enumValues).toEqual(["fr_dur", "fr_corrobore", "gris_geo"]);
+    // bulk 1 (niveau_0) + bulk 2 (candidats_siren_scored)
+    expect(f!.enumValues).toEqual(["fr_dur", "fr_corrobore", "gris_geo", "certain", "haute", "moyenne"]);
     // filtrable par eq/in (pour cibler "fr_dur uniquement" ou "fr_dur+fr_corrobore")
     expect(f!.ops).toContain("eq");
     expect(f!.ops).toContain("in");
