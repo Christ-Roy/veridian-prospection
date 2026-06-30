@@ -180,3 +180,32 @@ describe("getProspects — sort tech_debt (mode agence)", () => {
     expect(countSql).not.toMatch(/\bnull\b/);
   });
 });
+
+// ── Régression critique (2026-06-30) : recherche prospects par DOMAINE web ──
+// Un commercial tapait un nom de domaine → 0 résultat (buildFilterWhere ne
+// cherchait que denomination/dirigeant/email). Doit aussi chercher le domaine.
+import { buildFilterWhere } from "@/lib/queries/prospects";
+
+describe("buildFilterWhere — recherche par domaine web", () => {
+  test("inclut web_domain_normalized dans la recherche texte", () => {
+    const { sql, params } = buildFilterWhere({ search: "decibel49.com" });
+    expect(sql).toContain("e.web_domain_normalized ILIKE ?");
+    expect(params).toContain("%decibel49.com%");
+  });
+
+  test("normalise le domaine (retire https://, www., path)", () => {
+    const { params } = buildFilterWhere({ search: "https://www.decibel49.com/contact" });
+    expect(params).toContain("%decibel49.com%");
+  });
+
+  test("ne référence PAS web_domain (legacy=SIREN, non indexé → seq scan)", () => {
+    const { sql } = buildFilterWhere({ search: "monsite" });
+    expect(sql).not.toContain("e.web_domain ILIKE");
+  });
+
+  test("une recherche SIREN ne tombe pas dans la recherche domaine", () => {
+    const { sql } = buildFilterWhere({ search: "508880044" });
+    expect(sql).toContain("e.siren = ?");
+    expect(sql).not.toContain("web_domain_normalized ILIKE");
+  });
+});

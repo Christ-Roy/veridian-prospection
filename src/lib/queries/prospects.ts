@@ -257,11 +257,22 @@ export function buildFilterWhere(filters: ProspectFilters): { sql: string; param
       clauses.push(`e.best_phone_e164 LIKE ?`);
       params.push(`%${digits}%`);
     }
-    // Text search: use trigram similarity on indexed columns (GIN trgm)
+    // Text search: use trigram similarity on indexed columns (GIN trgm).
+    // Inclut le DOMAINE WEB : en prospection de sites, taper un domaine
+    // (ex "decibel49.com") est le cas le plus fréquent — sans ça, 0 résultat.
+    // On normalise le terme domaine (retire le protocole/www/path éventuel)
+    // pour matcher web_domain_normalized.
+    // NB : on cherche dans web_domain_normalized (indexé GIN trgm), PAS dans
+    // web_domain — ce dernier est un champ legacy qui porte en réalité un SIREN
+    // (refactor SIREN-centric), pas un domaine, et n'a pas d'index trgm (un OR
+    // dessus forcerait un seq scan sur 1,3M lignes).
     else {
       const term = `%${q}%`;
-      clauses.push(`(e.denomination ILIKE ? OR e.dirigeant_nom ILIKE ? OR e.best_email_normalized ILIKE ?)`);
-      params.push(term, term, term);
+      const domainTerm = `%${q.replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "")}%`;
+      clauses.push(
+        `(e.denomination ILIKE ? OR e.dirigeant_nom ILIKE ? OR e.best_email_normalized ILIKE ? OR e.web_domain_normalized ILIKE ?)`,
+      );
+      params.push(term, term, term, domainTerm);
     }
   }
 

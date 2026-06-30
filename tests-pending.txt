@@ -69,7 +69,6 @@ src/lib/naf.ts
 src/lib/prisma.ts
 src/lib/queries/prospects-filters.test.ts
 src/lib/queries/prospects.test.ts
-src/lib/queries/prospects.ts
 src/lib/queries/segments.ts
 src/lib/queries/shared.test.ts
 src/lib/queries/shared.ts
