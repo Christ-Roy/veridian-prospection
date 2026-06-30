@@ -234,7 +234,16 @@ export interface ProspectFilters {
   quotaPool?: string[];
 }
 
-export function buildFilterWhere(filters: ProspectFilters): { sql: string; params: (string | number)[] } {
+export function buildFilterWhere(filtersInput: ProspectFilters): { sql: string; params: (string | number)[] } {
+  // En RECHERCHE, on cherche dans TOUT le référentiel : on neutralise les
+  // filtres "masquants" (non-vus seulement / téléphone requis), sinon une fiche
+  // déjà consultée ou sans téléphone reste introuvable — d'où le commercial qui
+  // ne retrouve pas un prospect déjà travaillé. La liste hors-recherche garde
+  // son comportement par défaut (nouveaux leads d'abord).
+  const filters: ProspectFilters = filtersInput.search
+    ? { ...filtersInput, unseenOnly: false, requirePhone: false }
+    : filtersInput;
+
   const clauses: string[] = [];
   const params: (string | number)[] = [];
 

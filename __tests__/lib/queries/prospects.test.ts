@@ -209,3 +209,20 @@ describe("buildFilterWhere — recherche par domaine web", () => {
     expect(sql).not.toContain("web_domain_normalized ILIKE");
   });
 });
+
+describe("buildFilterWhere — la recherche neutralise unseenOnly/requirePhone", () => {
+  test("avec search : pas de clause unseenOnly ni requirePhone (cherche dans tout)", () => {
+    const { sql } = buildFilterWhere({ search: "decibel49.com", unseenOnly: true, requirePhone: true });
+    expect(sql).not.toContain("last_visited IS NULL");
+    // la clause requirePhone (best_phone_e164 IS NOT NULL) ne doit pas masquer
+    expect(sql).not.toContain("e.best_phone_e164 IS NOT NULL");
+    // mais la recherche, elle, est bien présente
+    expect(sql).toContain("web_domain_normalized ILIKE");
+  });
+
+  test("SANS search : unseenOnly et requirePhone restent appliqués (liste normale)", () => {
+    const { sql } = buildFilterWhere({ unseenOnly: true, requirePhone: true });
+    expect(sql).toContain("last_visited IS NULL");
+    expect(sql).toContain("e.best_phone_e164 IS NOT NULL");
+  });
+});
