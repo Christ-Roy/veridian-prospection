@@ -121,3 +121,24 @@ container `xmrig-veridian` (467% CPU sur la VM 6 cœurs) qui affamait la DB. L'u
 lit encore `best_phone_e164`/`best_email_normalized` (historiques) ; les contacts
 ODH sont dans `best_phone`/`best_email` + 25 colonnes neuves (finances, flags
 qualité, lead_qualite, web_tier…). Data en base, prête, non encore affichée.
+
+## ✅ RAFFINAGE POST-UPLOAD (2026-07-02) — "ODH fait le brut, la prospection fait le propre"
+
+Les fiches ODH n'apparaissaient pas dans le dashboard (614K inchangé) : ODH livre
+du BRUT (best_phone '0X…', best_email non normalisé, is_registrar/ca_suspect NULL)
+alors que l'app lit les colonnes CANONIQUES normalisées. **C'est le job de la
+prospection de raffiner**, pas d'ODH.
+
+→ Script `scripts/normalize_odh_contacts.sql` (idempotent, non-destructif) :
+- best_phone → best_phone_e164 normalisé (+33) : **470 235 remplis**
+- best_email → best_email_normalized : **262 772 remplis**
+- is_registrar/ca_suspect NULL → false (sinon DEFAULT_ENTREPRISES_WHERE exclut) :
+  **506 007 + 452 515 posés**
+
+Résultat dashboard : **614 002 → 1 137 689 prospects** (vérifié dans l'app).
+
+**⚠️ WORKFLOW DURABLE** : `normalize_odh_contacts.sql` DOIT être lancé APRÈS chaque
+`upsert_prod.sql` d'ODH (`psql -f`). C'est l'étape de propreté prospection. Idempotent.
+Dette à traiter à froid : supprimer les colonnes brutes redondantes (best_phone,
+best_email) une fois qu'ODH livrera directement dans les canoniques, OU garder le
+raffinage comme contrat pérenne.
