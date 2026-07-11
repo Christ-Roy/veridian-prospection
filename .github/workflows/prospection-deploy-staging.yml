@@ -221,7 +221,11 @@ jobs:
           # AVEC l'auth ghcr du nœud (docker login déjà en place) : quand Nomad
           # démarre la task, l'image est déjà locale → pas de pull non-auth.
           echo "== pré-pull image sur ovh-dev (auth ghcr du nœud) =="
-          ssh -o BatchMode=yes -o ConnectTimeout=15 dev-pub \
+          # -n IMPÉRATIF : sans lui, ce ssh lit le stdin du heredoc REMOTE et
+          # AVALE les commandes nomad job validate/plan/run suivantes → elles ne
+          # s'exécutent jamais (faux vert : la CI passe mais l'ancienne version
+          # reste, incident 2026-07-11). -n redirige stdin depuis /dev/null.
+          ssh -n -o BatchMode=yes -o ConnectTimeout=15 dev-pub \
             "docker pull ghcr.io/christ-roy/prospection:${IMAGE_TAG}"
 
           echo "== nomad job validate =="
@@ -291,7 +295,8 @@ jobs:
           # On passe DB_CT/WORK en variables d'environnement de la session SSH
           # (pas de heredoc imbriqué fragile) et le script dev-pub est en quotes
           # simples → aucune expansion prématurée côté bastion.
-          ssh -o BatchMode=yes -o ConnectTimeout=15 dev-pub "rm -rf '$WORK' && mkdir -p '$WORK'"
+          # -n : sinon ce ssh avale le stdin du heredoc REMOTE (scp + migrate ci-dessous).
+          ssh -n -o BatchMode=yes -o ConnectTimeout=15 dev-pub "rm -rf '$WORK' && mkdir -p '$WORK'"
           scp /tmp/prisma-${RUN_ID}.tgz "dev-pub:${WORK}/prisma.tgz"
           ssh -o BatchMode=yes dev-pub \
             "DB_CT='$DB_CT' WORK='$WORK' bash -s" <<'DEVPUB'
