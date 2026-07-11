@@ -113,6 +113,24 @@ describe("computeDistribution — group_by catégoriel", () => {
     expect(capturedSql[0]).toContain("'(inconnu)'");
     if (res.mode === "group_by") expect(res.buckets[0].key).toBe("(inconnu)");
   });
+
+  it("group_by sur un champ BOOLÉEN : cast ::text → clés 'true'/'false' lisibles", async () => {
+    // Un booléen physique (ecom_has_payment) est groupable : le COALESCE((col)::text)
+    // homogénéise en clés texte pour le top-N (chemin distinct des enum/text).
+    queueRows = [[
+      { key: "true", count: BigInt(90), with_phone: BigInt(50), with_email: BigInt(30) },
+      { key: "false", count: BigInt(10), with_phone: BigInt(4), with_email: BigInt(2) },
+    ]];
+    const res = await computeDistribution({ group_by: "ecom_has_payment" });
+    // colonne whitelistée castée en texte, jamais l'input.
+    expect(capturedSql[0]).toContain("(e.ecom_has_payment)::text");
+    expect(res.mode).toBe("group_by");
+    if (res.mode === "group_by") {
+      expect(res.field).toBe("ecom_has_payment");
+      expect(res.buckets.map((b) => b.key)).toEqual(["true", "false"]);
+      expect(res.buckets[0]).toMatchObject({ key: "true", count: 90, with_phone: 50 });
+    }
+  });
 });
 
 describe("computeDistribution — metric numérique (percentiles + histogramme)", () => {

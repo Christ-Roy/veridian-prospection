@@ -20,7 +20,7 @@
 // ============================================================================
 
 import { z } from "zod";
-import { FIELD_CATALOG, resolveField, type FieldDef } from "./fields";
+import { resolveField, type FieldDef } from "./fields";
 import { buildSearchWhereSql, SearchFiltersSchema, type SearchFilters } from "./query";
 import { withSearchTimeout } from "./exec";
 import { DEFAULT_ENTREPRISES_WHERE } from "@/lib/queries/shared";
