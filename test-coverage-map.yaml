@@ -852,14 +852,28 @@
     - src/app/api/search/estimate/route.ts
     - src/app/api/search/companies/route.ts
     - src/app/api/search/fields/route.ts
+    - src/app/api/search/distribution/route.ts
   covered_by:
     - __tests__/api/search/search-api.test.ts
   reason: |
-    Un seul test API groupé (__tests__/api/search/search-api.test.ts, 9 tests)
-    couvre les 3 routes search : auth 401 sans token, validation 400 (champ
-    inconnu/injection, filtres vides, projection inconnue), contrat de réponse
-    200 (prisma mocké). Le SQL réel est validé sur le banc search-dev (clone
-    prod 996K) — non rejouable en unitaire sans DB.
+    Un seul test API groupé (__tests__/api/search/search-api.test.ts) couvre les
+    4 routes search : auth 401 sans token, validation 400 (champ inconnu/injection,
+    filtres vides, projection inconnue, group_by/metric exclusifs ou sur mauvais
+    type), contrat de réponse 200 (prisma mocké — incl. breakdown e-commerce de
+    estimate et modes group_by/metric de distribution). Le SQL réel est validé sur
+    le banc search-dev (clone prod 996K) — non rejouable en unitaire sans DB.
+- sources:
+    - src/lib/search/distribution.ts
+    - src/lib/search/distribution.test.ts
+  covered_by:
+    - src/lib/search/distribution.test.ts
+  reason: |
+    Test COLOCALISÉ (distribution.test.ts, ~18 tests) : validation du body
+    (group_by XOR metric, strict, filtres de contexte), anti-injection (champ hors
+    FIELD_CATALOG rejeté, colonne toujours whitelistée), group_by catégoriel
+    (top-N borné, COALESCE (inconnu), volumes actionnables) et metric numérique
+    (PERCENTILE_CONT, width_bucket, min/max bindés en $n, histogramme dense).
+    Cœur de "explorer les distributions comme une vraie DB", 100% SQL paramétré.
 - sources:
     - src/lib/search/exec.ts
     - src/lib/search/exec.test.ts

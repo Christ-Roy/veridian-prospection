@@ -145,13 +145,35 @@ export const FIELD_CATALOG: Record<string, FieldDef> = {
   copyright_year: { sql: "e.web_copyright_year", type: "number", ops: NUM_OPS, label: "Année copyright du site" },
   has_https: boolField("web_has_https", "Site en HTTPS"),
   has_responsive: boolField("web_has_responsive", "Site responsive"),
-  has_ecommerce: boolField("web_has_ecommerce", "Site e-commerce"),
+  // ⚠️ Flag e-commerce LEGACY (buggé/périmé) — conservé pour rétro-compat, mais
+  // préférer ecom_level/ecom_platform (détecteur ODH v13, fiable).
+  has_ecommerce: boolField("web_has_ecommerce", "Site e-commerce (legacy, préférer ecom_level)"),
   has_contact_form: boolField("web_has_contact_form", "Formulaire de contact"),
   has_booking_system: boolField("web_has_booking_system", "Système de réservation"),
   has_blog: boolField("web_has_blog", "Blog"),
   has_old_html: boolField("web_has_old_html", "HTML obsolète"),
   has_flash: boolField("web_has_flash", "Flash (obsolète)"),
   has_recruiting_page: boolField("web_has_recruiting_page", "Page recrutement (signal croissance)"),
+
+  // ─── E-commerce fin (détecteur ODH v13, 2026-07-06) ───
+  // Signal FIABLE de vente en ligne. Le vrai filtre de fiabilité = ecom_platform
+  // renseigné (boutique + plateforme = e-commerce confirmé). catalogue = piste
+  // LÂCHE ("potentiel"). ecom_has_payment est SOUS-détecté → ne PAS filtrer dessus.
+  ecom_level: {
+    sql: "e.ecom_level",
+    type: "enum",
+    ops: ENUM_OPS,
+    label: "Niveau e-commerce (boutique=vente en ligne, catalogue=potentiel)",
+    enumValues: ["aucun", "catalogue", "boutique"],
+  },
+  ecom_platform: {
+    sql: "e.ecom_platform",
+    type: "text",
+    ops: TEXT_OPS,
+    label: "Plateforme e-commerce (woocommerce/prestashop/shopify… = signal fiable)",
+  },
+  ecom_has_payment: boolField("ecom_has_payment", "Prestataire de paiement détecté (SOUS-détecté, ne pas filtrer dessus)"),
+  ecom_keyword_score: { sql: "e.ecom_keyword_score", type: "number", ops: NUM_OPS, label: "Score mots-clés e-commerce" },
 
   // ─── Social ───
   social_linkedin: { sql: "e.social_linkedin", type: "text", ops: TEXT_OPS, label: "LinkedIn" },

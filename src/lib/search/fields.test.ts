@@ -74,4 +74,52 @@ describe("FIELD_CATALOG — intégrité du catalogue", () => {
     expect(f!.sql).toBe("e.web_is_obsolete");
     expect(f!.ops).toContain("eq");
   });
+
+  // ─── Segmentation e-commerce (détecteur ODH v13) ───────────────────────────
+  it("ecom_level est un enum aux 3 niveaux exacts du détecteur (aucun/catalogue/boutique)", () => {
+    const f = resolveField("ecom_level");
+    expect(f).not.toBeNull();
+    expect(f!.type).toBe("enum");
+    expect(f!.sql).toBe("e.ecom_level");
+    // contrat strict avec ecom_signals : ni plus, ni moins que ces 3 niveaux.
+    expect(f!.enumValues).toEqual(["aucun", "catalogue", "boutique"]);
+    // filtrable eq/in pour cibler "boutique" ou "boutique+catalogue".
+    expect(f!.ops).toContain("eq");
+    expect(f!.ops).toContain("in");
+  });
+
+  it("ecom_platform est le champ texte du filtre de FIABILITÉ (plateforme = e-com confirmé)", () => {
+    const f = resolveField("ecom_platform");
+    expect(f).not.toBeNull();
+    expect(f!.type).toBe("text");
+    expect(f!.sql).toBe("e.ecom_platform");
+    // 'contains'/'in' permettent de cibler une plateforme (woocommerce/shopify…).
+    expect(f!.ops).toContain("in");
+    expect(f!.ops).toContain("exists"); // exists=true → toutes les boutiques HAUTE CONF
+  });
+
+  it("ecom_has_payment est booléen mais reste filtrable (même s'il est sous-détecté)", () => {
+    const f = resolveField("ecom_has_payment");
+    expect(f).not.toBeNull();
+    expect(f!.type).toBe("boolean");
+    expect(f!.sql).toBe("e.ecom_has_payment");
+  });
+
+  it("ecom_keyword_score est numérique (comparaisons + between)", () => {
+    const f = resolveField("ecom_keyword_score");
+    expect(f).not.toBeNull();
+    expect(f!.type).toBe("number");
+    expect(f!.sql).toBe("e.ecom_keyword_score");
+    expect(f!.ops).toContain("gte");
+    expect(f!.ops).toContain("between");
+  });
+
+  it("has_ecommerce legacy pointe toujours sur la colonne buggée web_has_ecommerce (rétro-compat)", () => {
+    const f = resolveField("has_ecommerce");
+    expect(f).not.toBeNull();
+    expect(f!.sql).toBe("e.web_has_ecommerce");
+    // le vrai signal fiable est ecom_level/ecom_platform, has_ecommerce reste dispo
+    // mais son label doit signaler qu'il est legacy.
+    expect(f!.label.toLowerCase()).toContain("legacy");
+  });
 });

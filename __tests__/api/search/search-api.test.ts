@@ -26,6 +26,7 @@ vi.mock("@/lib/rate-limit", () => ({ isRateLimited: () => false }));
 import { POST as estimatePOST } from "@/app/api/search/estimate/route";
 import { POST as companiesPOST } from "@/app/api/search/companies/route";
 import { GET as fieldsGET } from "@/app/api/search/fields/route";
+import { POST as distributionPOST } from "@/app/api/search/distribution/route";
 
 function req(body: unknown, auth?: string, method = "POST"): Request {
   const headers = new Headers({ "content-type": "application/json" });
@@ -102,11 +103,14 @@ describe("/api/search/* — validation", () => {
     expect(res.status).toBe(400);
   });
 
-  test("estimate: 200 + contrat de réponse sur filtre valide", async () => {
+  test("estimate: 200 + contrat de réponse (incl. breakdown e-commerce) sur filtre valide", async () => {
+    // 5 requêtes désormais : agg, puis Promise.all([secteur, dept, ecom_level, ecom_platform]).
     prismaMock.$queryRawUnsafe
       .mockResolvedValueOnce([{ total: BigInt(42), with_phone: BigInt(30), with_email: BigInt(20), with_both: BigInt(15) }])
       .mockResolvedValueOnce([{ key: "RESTAURATION", count: BigInt(42) }])
-      .mockResolvedValueOnce([{ key: "69", count: BigInt(42) }]);
+      .mockResolvedValueOnce([{ key: "69", count: BigInt(42) }])
+      .mockResolvedValueOnce([{ key: "boutique", count: BigInt(25) }, { key: "aucun", count: BigInt(17) }])
+      .mockResolvedValueOnce([{ key: "woocommerce", count: BigInt(15) }, { key: "shopify", count: BigInt(10) }]);
     const res = await estimatePOST(
       req({ filters: { all: [{ field: "departement", op: "eq", value: "69" }] } }, BEARER),
     );
@@ -114,6 +118,80 @@ describe("/api/search/* — validation", () => {
     const json = await res.json();
     expect(json.estimated_count).toBe(42);
     expect(json.actionable.with_phone_and_email).toBe(15);
+    // le breakdown e-commerce est bien exposé (ventilation niveau + plateforme).
+    expect(json.breakdown.by_ecom_level).toEqual([
+      { key: "boutique", count: 25 },
+      { key: "aucun", count: 17 },
+    ]);
+    expect(json.breakdown.by_ecom_platform[0]).toEqual({ key: "woocommerce", count: 15 });
+  });
+});
+
+describe("/api/search/distribution — auth, validation, contrat", () => {
+  const orig = { ...process.env };
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.SEARCH_API_SECRET = SECRET;
+  });
+  afterEach(() => {
+    process.env = { ...orig };
+  });
+
+  test("401 sans token", async () => {
+    const res = await distributionPOST(req({ group_by: "ecom_platform" }));
+    expect(res.status).toBe(401);
+  });
+
+  test("400 si ni group_by ni metric", async () => {
+    const res = await distributionPOST(req({}, BEARER));
+    expect(res.status).toBe(400);
+  });
+
+  test("400 si group_by ET metric ensemble (exclusifs)", async () => {
+    const res = await distributionPOST(req({ group_by: "ecom_level", metric: "chiffre_affaires" }, BEARER));
+    expect(res.status).toBe(400);
+  });
+
+  test("400 sur champ inconnu (anti-injection)", async () => {
+    const res = await distributionPOST(req({ group_by: "evil; DROP TABLE entreprises" }, BEARER));
+    expect(res.status).toBe(400);
+  });
+
+  test("400 group_by sur un champ numérique → guide vers metric", async () => {
+    const res = await distributionPOST(req({ group_by: "chiffre_affaires" }, BEARER));
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(String(json.error)).toMatch(/metric/);
+  });
+
+  test("200 group_by catégoriel : top-N + volumes actionnables", async () => {
+    prismaMock.$queryRawUnsafe.mockResolvedValueOnce([
+      { key: "woocommerce", count: BigInt(100), with_phone: BigInt(60), with_email: BigInt(40) },
+      { key: "shopify", count: BigInt(30), with_phone: BigInt(20), with_email: BigInt(15) },
+    ]);
+    const res = await distributionPOST(
+      req({ group_by: "ecom_platform", filters: { all: [{ field: "ecom_level", op: "eq", value: "boutique" }] } }, BEARER),
+    );
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.mode).toBe("group_by");
+    expect(json.field).toBe("ecom_platform");
+    expect(json.buckets[0]).toMatchObject({ key: "woocommerce", count: 100, with_phone: 60, with_email: 40 });
+    expect(json.total).toBe(130);
+  });
+
+  test("200 metric numérique : stats percentiles + histogramme dense", async () => {
+    prismaMock.$queryRawUnsafe
+      .mockResolvedValueOnce([{ count: BigInt(1000), min: 0, max: 1000, avg: 400, median: 350, p25: 200, p75: 700, p90: 900 }])
+      .mockResolvedValueOnce([{ bucket: 1, count: BigInt(500) }, { bucket: 10, count: BigInt(50) }]);
+    const res = await distributionPOST(req({ metric: "chiffre_affaires", buckets: 10 }, BEARER));
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.mode).toBe("metric");
+    expect(json.stats).toMatchObject({ count: 1000, min: 0, max: 1000, median: 350, p90: 900 });
+    // histogramme reconstruit dense (tous les buckets, même vides).
+    expect(json.histogram).toHaveLength(10);
+    expect(json.histogram[0]).toMatchObject({ bucket: 1, count: 500 });
   });
 
   test("companies: 200 + résultats projetés sur filtre valide", async () => {

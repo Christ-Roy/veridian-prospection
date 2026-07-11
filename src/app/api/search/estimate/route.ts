@@ -62,7 +62,7 @@ export async function POST(req: Request) {
       // Breakdown par dimension — top 8, uniquement si le segment n'est pas vide.
       let breakdown: Record<string, { key: string; count: number }[]> = {};
       if (total > 0) {
-        const [bySecteur, byDept] = await Promise.all([
+        const [bySecteur, byDept, byEcomLevel, byEcomPlatform] = await Promise.all([
           q<{ key: string; count: bigint }[]>(
             `SELECT COALESCE(e.secteur_final,'(inconnu)') AS key, COUNT(*)::bigint AS count
              ${baseFrom} GROUP BY 1 ORDER BY 2 DESC LIMIT 8`,
@@ -73,10 +73,25 @@ export async function POST(req: Request) {
              ${baseFrom} GROUP BY 1 ORDER BY 2 DESC LIMIT 8`,
             ...params,
           ),
+          // Ventilation e-commerce : aucun / catalogue (potentiel) / boutique (vente).
+          q<{ key: string; count: bigint }[]>(
+            `SELECT COALESCE(e.ecom_level,'(inconnu)') AS key, COUNT(*)::bigint AS count
+             ${baseFrom} GROUP BY 1 ORDER BY 2 DESC LIMIT 8`,
+            ...params,
+          ),
+          // Plateformes e-commerce détectées (signal FIABLE) — on exclut les NULL
+          // (= pas de plateforme identifiée) pour ne garder que le top des CMS ecom.
+          q<{ key: string; count: bigint }[]>(
+            `SELECT e.ecom_platform AS key, COUNT(*)::bigint AS count
+             ${baseFrom} AND e.ecom_platform IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 8`,
+            ...params,
+          ),
         ]);
         breakdown = {
           by_secteur: bySecteur.map((r) => ({ key: r.key, count: Number(r.count) })),
           by_departement: byDept.map((r) => ({ key: r.key, count: Number(r.count) })),
+          by_ecom_level: byEcomLevel.map((r) => ({ key: r.key, count: Number(r.count) })),
+          by_ecom_platform: byEcomPlatform.map((r) => ({ key: r.key, count: Number(r.count) })),
         };
       }
       return { agg, breakdown };

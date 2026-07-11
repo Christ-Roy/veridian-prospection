@@ -102,6 +102,19 @@ model Entreprise {
   webHasHoraires        Boolean? @map("web_has_horaires")
   webHasGoogleMaps      Boolean? @map("web_has_google_maps")
 
+  // --- Ecommerce fin (source ODH, détecteur ecom_signals v13, 2026-07-06) ---
+  // Colonnes de qualité pour cibler les vrais e-commerçants. Le webHasEcommerce
+  // legacy ci-dessus est buggé/périmé — on ne s'appuie PAS dessus.
+  // ⭐ Filtre de FIABILITÉ = ecomPlatform renseigné (248K en boutique HAUTE CONF).
+  //   - ecomLevel='boutique' + ecomPlatform NON NULL  → e-commerce confirmé
+  //   - ecomLevel='catalogue'                          → signal LÂCHE ("potentiel")
+  // ecomHasPayment est SOUS-DÉTECTÉ (9K) → NE JAMAIS l'utiliser comme filtre qualité.
+  ecomLevel            String?  @map("ecom_level") // aucun|catalogue|boutique
+  ecomPlatform         String?  @map("ecom_platform") // woocommerce|prestashop|shopify|magento|wix|wizishop|sylius|...
+  ecomHasPayment       Boolean? @map("ecom_has_payment")
+  ecomKeywordScore     Int?     @map("ecom_keyword_score") @db.SmallInt
+  ecomHasProductSchema Boolean? @map("ecom_has_product_schema")
+
   // --- Finances ---
   chiffreAffaires BigInt?   @map("chiffre_affaires")
   resultatNet     BigInt?   @map("resultat_net")
@@ -371,9 +384,9 @@ model Workspace {
   // (peut être null si le user a déconnecté). gmail_quota_per_day : quota
   // local pour rate-limit côté Prosp avant d'envoyer (Hub fait son propre
   // rate-limit, on cap côté client pour éviter le 429 inutile).
-  mailProvider       String    @default("none") @map("mail_provider")
-  gmailConnectedAt   DateTime? @map("gmail_connected_at") @db.Timestamptz
-  gmailQuotaPerDay   Int       @default(250) @map("gmail_quota_per_day")
+  mailProvider     String    @default("none") @map("mail_provider")
+  gmailConnectedAt DateTime? @map("gmail_connected_at") @db.Timestamptz
+  gmailQuotaPerDay Int       @default(250) @map("gmail_quota_per_day")
 
   members          WorkspaceMember[]
   leadCreditEvents LeadCreditEvent[]
@@ -407,41 +420,41 @@ model Workspace {
 // stage est soft-deleted (l'API DELETE refuse le soft-delete s'il reste
 // des leads dessus).
 model WorkspacePipelineStage {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  workspaceId String   @map("workspace_id") @db.Uuid
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String    @map("workspace_id") @db.Uuid
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   // Slug technique stable (utilisé dans outreach.pipeline_stage). Lowercase
   // snake_case. Unique par workspace. 64 chars — assez large pour des
   // libellés métier verticaux.
-  slug        String   @db.VarChar(64)
+  slug String @db.VarChar(64)
 
   // Label affiché à l'utilisateur. Edit live possible sans casser la DB
   // (le slug reste figé même quand le label change).
-  label       String   @db.VarChar(80)
+  label String @db.VarChar(80)
 
   // Ordre d'affichage du kanban (gauche → droite). Les API reorder font un
   // bulk update transactionnel pour éviter les races.
-  position    Int      @default(0)
+  position Int @default(0)
 
   // Token couleur du badge UI. Token Tailwind ("bg-emerald-500") ou hex.
   // NULL = couleur par défaut (slate).
-  color       String?  @db.VarChar(32)
+  color String? @db.VarChar(32)
 
   // Stage terminal : sort le lead du funnel actif (badge différent, exclu
   // des stats "pipeline en cours"). Ex: "client", "perdu".
-  isTerminal  Boolean  @default(false) @map("is_terminal")
+  isTerminal Boolean @default(false) @map("is_terminal")
 
   // Stage caché du board principal (mais reste filtrable côté historique).
   // Ex: "archive", "spam".
-  isHidden    Boolean  @default(false) @map("is_hidden")
+  isHidden Boolean @default(false) @map("is_hidden")
 
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   // Soft-delete : on garde la row pour ne pas orphaniser un lead dont le
   // pipeline_stage pointait dessus. Le code masque les rows where deletedAt
   // IS NOT NULL.
-  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
 
   @@unique([workspaceId, slug])
   @@index([workspaceId, position])
@@ -764,9 +777,9 @@ model User {
   // humaine côté Hub, PK locale `id` reste inchangée.
   hubUserId String? @unique @map("hub_user_id") @db.Uuid
 
-  accounts Account[]
-  sessions Session[]
-  mfaCodes MfaCode[]
+  accounts       Account[]
+  sessions       Session[]
+  mfaCodes       MfaCode[]
   openrouterLink UserOpenRouterLink?
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
@@ -956,46 +969,46 @@ model PlanHistory {
 /// AES-256-GCM via AUTH_SECRET (lib/crypto/encrypt-password.ts) — JAMAIS
 /// stocké en clair, JAMAIS retourné par les routes API au client.
 model TenantMailConfig {
-  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId         String   @unique @map("tenant_id") @db.Uuid
-  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId String @unique @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  smtpHost         String?  @map("smtp_host") @db.VarChar(255)
-  smtpPort         Int?     @map("smtp_port")
-  smtpUsername     String?  @map("smtp_username") @db.VarChar(320)
+  smtpHost        String? @map("smtp_host") @db.VarChar(255)
+  smtpPort        Int?    @map("smtp_port")
+  smtpUsername    String? @map("smtp_username") @db.VarChar(320)
   /// Format : "<iv_b64>:<tag_b64>:<ciphertext_b64>" — voir encrypt-password.ts.
-  smtpPasswordEnc  String?  @map("smtp_password_enc")
-  smtpTls          Boolean  @default(true) @map("smtp_tls")
-  smtpFromEmail    String?  @map("smtp_from_email") @db.VarChar(320)
-  smtpFromName     String?  @map("smtp_from_name") @db.VarChar(120)
+  smtpPasswordEnc String? @map("smtp_password_enc")
+  smtpTls         Boolean @default(true) @map("smtp_tls")
+  smtpFromEmail   String? @map("smtp_from_email") @db.VarChar(320)
+  smtpFromName    String? @map("smtp_from_name") @db.VarChar(120)
 
-  lastTestAt       DateTime? @map("last_test_at") @db.Timestamptz
-  lastTestStatus   String?   @map("last_test_status") @db.VarChar(32)
-  lastTestError    String?   @map("last_test_error")
+  lastTestAt     DateTime? @map("last_test_at") @db.Timestamptz
+  lastTestStatus String?   @map("last_test_status") @db.VarChar(32)
+  lastTestError  String?   @map("last_test_error")
 
   /// IMAP réception (migration 0027, cron 5 min). Mêmes conventions de
   /// chiffrement que SMTP : passwordEnc = "<iv_b64>:<tag_b64>:<ct_b64>"
   /// dérivé de AUTH_SECRET. imapFolder par défaut "INBOX". imapLastUidSeen
   /// = high-water mark du fetch UID, alimenté par le cron.
-  imapHost            String?   @map("imap_host") @db.VarChar(255)
-  imapPort            Int?      @map("imap_port")
-  imapUsername        String?   @map("imap_username") @db.VarChar(320)
-  imapPasswordEnc     String?   @map("imap_password_enc")
-  imapTls             Boolean   @default(true) @map("imap_tls")
-  imapFolder          String    @default("INBOX") @map("imap_folder") @db.VarChar(64)
-  imapLastUidSeen     Int?      @map("imap_last_uid_seen")
-  imapLastSyncAt      DateTime? @map("imap_last_sync_at") @db.Timestamptz
-  imapLastSyncStatus  String?   @map("imap_last_sync_status") @db.VarChar(32)
-  imapLastSyncError   String?   @map("imap_last_sync_error")
+  imapHost           String?   @map("imap_host") @db.VarChar(255)
+  imapPort           Int?      @map("imap_port")
+  imapUsername       String?   @map("imap_username") @db.VarChar(320)
+  imapPasswordEnc    String?   @map("imap_password_enc")
+  imapTls            Boolean   @default(true) @map("imap_tls")
+  imapFolder         String    @default("INBOX") @map("imap_folder") @db.VarChar(64)
+  imapLastUidSeen    Int?      @map("imap_last_uid_seen")
+  imapLastSyncAt     DateTime? @map("imap_last_sync_at") @db.Timestamptz
+  imapLastSyncStatus String?   @map("imap_last_sync_status") @db.VarChar(32)
+  imapLastSyncError  String?   @map("imap_last_sync_error")
 
   /// Signature commerciale auto (migration 0030, ticket follow-ups §J).
   /// Appendée au body_html par /api/mail/send au flush outbox si
   /// mail_signature_enabled=true et mail_signature_html non vide.
-  mailSignatureHtml    String?   @map("mail_signature_html")
-  mailSignatureEnabled Boolean   @default(true) @map("mail_signature_enabled")
+  mailSignatureHtml    String? @map("mail_signature_html")
+  mailSignatureEnabled Boolean @default(true) @map("mail_signature_enabled")
 
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   @@map("tenant_mail_config")
 }
@@ -1005,18 +1018,18 @@ model TenantMailConfig {
 /// via AUTH_SECRET (réutilise lib/crypto/encrypt-password.ts). 1 config
 /// par tenant, admin only côté UI. Coût IA porté par le client (BYO).
 model TenantAiConfig {
-  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId      String   @unique @map("tenant_id") @db.Uuid
-  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId String @unique @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   /// "anthropic" | "openai" | "mistral" | "openrouter"
-  provider      String   @db.VarChar(32)
+  provider      String @db.VarChar(32)
   /// "claude-opus-4-7" | "gpt-4o" | "mistral-large-latest" | …
-  model         String   @db.VarChar(64)
+  model         String @db.VarChar(64)
   /// Format : "<iv_b64>:<tag_b64>:<ciphertext_b64>" — voir encrypt-password.ts.
-  apiKeyEnc     String   @map("api_key_enc")
+  apiKeyEnc     String @map("api_key_enc")
   /// "fr" | "en" — locale par défaut de la génération.
-  defaultLocale String   @default("fr") @map("default_locale") @db.VarChar(8)
+  defaultLocale String @default("fr") @map("default_locale") @db.VarChar(8)
 
   /// Métriques d'usage (souple, fire-and-forget après chaque generate()).
   lastUsedAt     DateTime? @map("last_used_at") @db.Timestamptz
@@ -1034,25 +1047,25 @@ model TenantAiConfig {
 /// pour le user qui appelle /api/mail/generate, prend le pas sur la config
 /// tenant et sur la clé Veridian globale (résolution dans resolveAdapter()).
 model UserOpenRouterLink {
-  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId          String    @unique @map("user_id") @db.Uuid
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId String @unique @map("user_id") @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   /// Format : "<iv_b64>:<tag_b64>:<ciphertext_b64>" — voir encrypt-password.ts.
-  apiKeyEnc       String    @map("api_key_enc")
+  apiKeyEnc       String  @map("api_key_enc")
   /// Email du compte OpenRouter — affichage UI seulement. Nullable car
   /// OpenRouter ne retourne pas l'email au callback PKCE v1.
-  openrouterEmail String?   @map("openrouter_email") @db.VarChar(320)
+  openrouterEmail String? @map("openrouter_email") @db.VarChar(320)
   /// Scope OAuth (réservé futur — OpenRouter expose à terme des scopes).
-  scope           String?   @db.VarChar(64)
+  scope           String? @db.VarChar(64)
 
-  connectedAt     DateTime  @default(now()) @map("connected_at") @db.Timestamptz
-  lastUsedAt      DateTime? @map("last_used_at") @db.Timestamptz
+  connectedAt DateTime  @default(now()) @map("connected_at") @db.Timestamptz
+  lastUsedAt  DateTime? @map("last_used_at") @db.Timestamptz
   /// Soft delete — disconnect = poser deleted_at, garde l'audit trail.
-  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
 
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   @@index([userId], map: "user_openrouter_link_active_idx")
   @@map("user_openrouter_link")
@@ -1063,35 +1076,35 @@ model UserOpenRouterLink {
 /// Pas de FK vers Outreach (même raisonnement que pipeline_transitions :
 /// PK composite outreach + archives possibles → on stocke siren + tenant_id).
 model LeadEmail {
-  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId      String   @map("tenant_id") @db.Uuid
-  workspaceId   String?  @map("workspace_id") @db.Uuid
-  userId        String?  @map("user_id") @db.Uuid
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String  @map("tenant_id") @db.Uuid
+  workspaceId String? @map("workspace_id") @db.Uuid
+  userId      String? @map("user_id") @db.Uuid
 
-  siren         String?  @db.VarChar(9)
+  siren     String? @db.VarChar(9)
   /// "outgoing" | "incoming"
-  direction     String   @default("outgoing") @db.VarChar(16)
+  direction String  @default("outgoing") @db.VarChar(16)
 
-  messageId     String   @unique @map("message_id") @db.VarChar(255)
-  inReplyTo     String?  @map("in_reply_to") @db.VarChar(255)
-  references    String?
+  messageId  String  @unique @map("message_id") @db.VarChar(255)
+  inReplyTo  String? @map("in_reply_to") @db.VarChar(255)
+  references String?
 
-  fromEmail     String   @map("from_email") @db.VarChar(320)
-  fromName      String?  @map("from_name") @db.VarChar(120)
-  toEmails      String[] @default([]) @map("to_emails")
-  ccEmails      String[] @default([]) @map("cc_emails")
-  subject       String?  @db.VarChar(500)
-  bodyText      String?  @map("body_text")
-  bodyHtml      String?  @map("body_html")
+  fromEmail String   @map("from_email") @db.VarChar(320)
+  fromName  String?  @map("from_name") @db.VarChar(120)
+  toEmails  String[] @default([]) @map("to_emails")
+  ccEmails  String[] @default([]) @map("cc_emails")
+  subject   String?  @db.VarChar(500)
+  bodyText  String?  @map("body_text")
+  bodyHtml  String?  @map("body_html")
 
-  templateSlug  String?  @map("template_slug") @db.VarChar(64)
+  templateSlug String? @map("template_slug") @db.VarChar(64)
 
   /// "queued" | "sent" | "failed"
-  sentStatus    String   @default("queued") @map("sent_status") @db.VarChar(16)
-  sentError     String?  @map("sent_error")
-  sentAt        DateTime? @map("sent_at") @db.Timestamptz
+  sentStatus String    @default("queued") @map("sent_status") @db.VarChar(16)
+  sentError  String?   @map("sent_error")
+  sentAt     DateTime? @map("sent_at") @db.Timestamptz
 
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   @@index([siren, tenantId, sentAt(sort: Desc)])
   @@index([tenantId, sentAt(sort: Desc)])
@@ -1204,15 +1217,15 @@ model MailOutbox {
 /// — sert à l'UI editor (auto-complétion) et à la preview pour
 /// pré-remplir. Pas une contrainte stricte côté render.
 model TenantMailTemplate {
-  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId  String    @map("tenant_id") @db.Uuid
+  id       String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
 
-  slug      String    @db.VarChar(64)
-  label     String    @db.VarChar(120)
-  subject   String    @db.VarChar(500)
-  bodyText  String    @map("body_text")
-  bodyHtml  String    @map("body_html")
-  variables Json      @default("[]")
+  slug      String @db.VarChar(64)
+  label     String @db.VarChar(120)
+  subject   String @db.VarChar(500)
+  bodyText  String @map("body_text")
+  bodyHtml  String @map("body_html")
+  variables Json   @default("[]")
 
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
