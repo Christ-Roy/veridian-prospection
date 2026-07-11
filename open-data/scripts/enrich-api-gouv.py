@@ -13,7 +13,12 @@ import os, sys, time, json, urllib.request, psycopg2
 
 WORKER_ID = int(os.environ.get("WORKER_ID", "0"))
 WORKER_COUNT = int(os.environ.get("WORKER_COUNT", "2"))
-DB_URL = os.environ.get("DB_URL", "postgresql://postgres:prospection-prod-2026@100.103.69.21:15433/prospection")
+# ⚠️ SÉCURITÉ : JAMAIS de credential en dur ici (repo PUBLIC). DB_URL est OBLIGATOIRE
+# via l'environnement. Exemple (à sourcer depuis ~/credentials, jamais commité) :
+#   export DB_URL="postgresql://<user>:<pwd>@<host tailscale>:15433/prospection"
+DB_URL = os.environ.get("DB_URL")
+if not DB_URL:
+    sys.exit("DB_URL manquant : exporte-le depuis ton vault local (aucun défaut hardcodé — repo public).")
 API_BASE = "https://recherche-entreprises.api.gouv.fr/search?q={siren}"
 RATE_LIMIT = 1.5  # req/s per worker (3 total, conservative)
 
