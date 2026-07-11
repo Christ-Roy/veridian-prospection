@@ -263,37 +263,14 @@ jobs:
           echo "== nomad job plan (diff, inoffensif) =="
           # plan renvoie exit 1 quand il y a des allocs à créer : by design → `|| true`.
           /usr/bin/nomad job plan -var "image_tag=${IMAGE_TAG}" "$REMOTE_HCL" || true
-          echo "== nomad job run -detach (image_tag=${IMAGE_TAG}) =="
-          /usr/bin/nomad job run -detach -var "image_tag=${IMAGE_TAG}" "$REMOTE_HCL"
-          REMOTE
-
-      # run -detach est ASYNC : on poll jusqu'à Latest Deployment == successful.
-      # ⚠️ Le job prod est STATEFUL (DB co-localisée, count=1) → un run recrée
-      # l'alloc, donc un bref redémarrage DB. Attendu, pas zéro-downtime.
-      - name: Wait deployment healthy (poll bastion)
-        run: |
-          ssh -i ~/.ssh/id_ed25519 \
-            "${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}" \
-            "NOMAD_JOB='${{ env.NOMAD_JOB }}' bash -s" <<'REMOTE'
-          set -euo pipefail
-          source ~/credentials/nomad-bastion.env
-          export NOMAD_ADDR NOMAD_TOKEN="$NOMAD_MGMT_TOKEN"
-          for i in $(seq 1 90); do
-            ST=$(/usr/bin/nomad job status "$NOMAD_JOB" 2>/dev/null \
-                  | sed -n '/Latest Deployment/,/^$/p' \
-                  | grep -oE 'successful|failed|running' | head -1 || echo pending)
-            echo "[$i/30] deployment: ${ST:-pending}"
-            [ "$ST" = "successful" ] && exit 0
-            if [ "$ST" = "failed" ]; then
-              echo "::error::Deployment failed"
-              /usr/bin/nomad job status "$NOMAD_JOB" | tail -40
-              exit 1
-            fi
-            sleep 10
-          done
-          echo "::error::deployment not successful after 900s (healthy_deadline 15m)"
-          /usr/bin/nomad job status "$NOMAD_JOB" | tail -40
-          exit 1
+          # run BLOQUANT (SANS -detach) : nomad monitore le déploiement de cette
+          # nouvelle version et rend un exit correct (0 healthy / ≠0 échec ou
+          # auto-revert). Évite la RACE du `job status` (faux vert sur l'ancien
+          # déploiement — incident staging 2026-07-11). Pré-pull → démarrage rapide.
+          # ⚠️ Job prod STATEFUL (DB co-localisée, count=1) → un run recrée l'alloc
+          # (bref redémarrage DB, attendu, pas zéro-downtime).
+          echo "== nomad job run (bloquant, monitore le déploiement) image_tag=${IMAGE_TAG} =="
+          /usr/bin/nomad job run -var "image_tag=${IMAGE_TAG}" "$REMOTE_HCL"
           REMOTE
 
       # ── Prisma migrate deploy (gate idempotent) ────────────────────────────

@@ -232,37 +232,14 @@ jobs:
           # by design, PAS une erreur → `|| true`. Le plan ne réserve rien.
           /usr/bin/nomad job plan -var "image_tag=${IMAGE_TAG}" "$REMOTE_HCL" || true
 
-          echo "== nomad job run -detach (image_tag=${IMAGE_TAG}) =="
-          /usr/bin/nomad job run -detach -var "image_tag=${IMAGE_TAG}" "$REMOTE_HCL"
-          REMOTE
-
-      # ── Attendre que le déploiement soit healthy ───────────────────────────
-      # run -detach est ASYNC : ne PAS conclure "livré" sur l'exit-code du run.
-      # On poll `nomad job status` jusqu'à Latest Deployment == successful.
-      - name: Wait deployment healthy (poll bastion)
-        run: |
-          ssh -i ~/.ssh/id_ed25519 \
-            "${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}" \
-            "NOMAD_JOB='${{ env.NOMAD_JOB }}' bash -s" <<'REMOTE'
-          set -euo pipefail
-          source ~/credentials/nomad-bastion.env
-          export NOMAD_ADDR NOMAD_TOKEN="$NOMAD_MGMT_TOKEN"
-          for i in $(seq 1 90); do
-            ST=$(/usr/bin/nomad job status "$NOMAD_JOB" 2>/dev/null \
-                  | sed -n '/Latest Deployment/,/^$/p' \
-                  | grep -oE 'successful|failed|running' | head -1 || echo pending)
-            echo "[$i/30] deployment: ${ST:-pending}"
-            [ "$ST" = "successful" ] && exit 0
-            if [ "$ST" = "failed" ]; then
-              echo "::error::Deployment failed"
-              /usr/bin/nomad job status "$NOMAD_JOB" | tail -40
-              exit 1
-            fi
-            sleep 10
-          done
-          echo "::error::deployment not successful after 900s (healthy_deadline 15m)"
-          /usr/bin/nomad job status "$NOMAD_JOB" | tail -40
-          exit 1
+          # run BLOQUANT (SANS -detach) : nomad monitore le déploiement de CE
+          # nouveau job et ne rend la main qu'à la fin — exit 0 si la nouvelle
+          # version devient healthy, exit ≠0 si elle échoue/auto-revert. On évite
+          # ainsi la RACE du `job status` (qui pouvait lire "successful" de
+          # l'ANCIEN déploiement avant que le nouveau ne s'enregistre → faux vert,
+          # incident 2026-07-11). Le pré-pull garantit un démarrage rapide.
+          echo "== nomad job run (bloquant, monitore le déploiement) image_tag=${IMAGE_TAG} =="
+          /usr/bin/nomad job run -var "image_tag=${IMAGE_TAG}" "$REMOTE_HCL"
           REMOTE
 
       # ── Pousse prisma/ vers le bastion (matériel du migrate) ───────────────

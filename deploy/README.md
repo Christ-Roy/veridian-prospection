@@ -305,8 +305,11 @@ Une fois le deploy Nomad éprouvé, retirer l'héritage compose/Dokploy :
 2. **`/usr/bin/nomad` brut**, pas le wrapper `nomad-v` (hors PATH headless + ne passe pas `-var`).
    Var d'env : le fichier la nomme `NOMAD_MGMT_TOKEN`, l'exporter en `NOMAD_TOKEN`.
 3. **`nomad job plan` renvoie exit 1** quand il y a des allocs à créer (by design) → `|| true`.
-4. **`run -detach` est async** → toujours poller `nomad job status` (deployment successful)
-   AVANT de curler `/api/health`, sinon on smoke l'ancienne version.
+4. **`nomad job run` BLOQUANT (sans `-detach`)** : nomad monitore le déploiement de la nouvelle
+   version et rend l'exit correct (0 healthy / ≠0 échec/auto-revert). ⚠️ NE PAS repartir sur
+   `-detach` + poll `nomad job status` : "Latest Deployment" peut afficher le "successful" de
+   l'ANCIEN déploiement une fraction de seconde avant que le nouveau ne s'enregistre → **faux vert**
+   qui laisse tourner l'ancienne version (incident 2026-07-11). Le run bloquant élimine cette race.
 5. **Migration = manuelle hors-CI pour le destructif** (§5) ; le `migrate deploy` de la CI
    est idempotent/additif seulement.
 6. **Auth GHCR = au niveau daemon des nœuds** → PAS de `docker login`/`auth` dans les jobs
