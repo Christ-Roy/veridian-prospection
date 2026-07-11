@@ -28,6 +28,18 @@ job "prospection-staging" {
   group "stack" {
     count = 1
 
+    # Stratégie de déploiement. healthy_deadline LARGE : le 1er pull de l'image
+    # Next.js (~grosse) sur un nœud qui ne l'a pas en cache peut dépasser les 5min
+    # par défaut → l'alloc était marquée unhealthy alors qu'elle finissait de puller
+    # (incident 2026-07-11, staging 502). auto_revert = filet de sécurité : un deploy
+    # qui échoue restaure automatiquement la dernière version saine (pas de trou).
+    update {
+      healthy_deadline  = "15m"
+      progress_deadline  = "20m"
+      min_healthy_time  = "10s"
+      auto_revert       = true
+    }
+
     # Épinglé à ovh-dev : la DB bind sur /opt/veridian-staging du nœud ovh-dev,
     # et le search-dev bind le code source /home/ubuntu/prospection-ui-dev (ovh-dev).
     # Stateful à volume local → PAS de reschedule (le volume ne suit pas).

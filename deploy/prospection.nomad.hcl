@@ -27,6 +27,17 @@ job "prospection" {
   group "stack" {
     count = 1
 
+    # Stratégie de déploiement. healthy_deadline LARGE : le 1er pull de l'image
+    # Next.js sur un nœud sans cache peut dépasser les 5min par défaut (cf incident
+    # staging 2026-07-11). auto_revert = filet de sécurité : un deploy prod qui
+    # échoue restaure automatiquement la dernière version saine (zéro trou prod).
+    update {
+      healthy_deadline  = "15m"
+      progress_deadline  = "20m"
+      min_healthy_time  = "15s"
+      auto_revert       = true
+    }
+
     # Épinglé au bastion : la DB bind sur /opt/veridian-lab/prospection du bastion.
     constraint {
       attribute = "${meta.provider}"

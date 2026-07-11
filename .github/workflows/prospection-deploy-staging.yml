@@ -237,7 +237,7 @@ jobs:
           set -euo pipefail
           source ~/credentials/nomad-bastion.env
           export NOMAD_ADDR NOMAD_TOKEN="$NOMAD_MGMT_TOKEN"
-          for i in $(seq 1 30); do
+          for i in $(seq 1 90); do
             ST=$(/usr/bin/nomad job status "$NOMAD_JOB" 2>/dev/null \
                   | sed -n '/Latest Deployment/,/^$/p' \
                   | grep -oE 'successful|failed|running' | head -1 || echo pending)
@@ -250,7 +250,7 @@ jobs:
             fi
             sleep 10
           done
-          echo "::error::deployment not successful after 300s"
+          echo "::error::deployment not successful after 900s (healthy_deadline 15m)"
           /usr/bin/nomad job status "$NOMAD_JOB" | tail -40
           exit 1
           REMOTE
