@@ -31,6 +31,19 @@ WHERE best_email_normalized IS NULL
   AND best_email IS NOT NULL
   AND best_email ~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$';
 
+-- Domaine web canonique depuis le brut ODH. ODH livre web_domain au format
+-- 'http://www.exemple.fr/' ; la recherche prospects (buildFilterWhere) et
+-- l'affichage lisent web_domain_normalized ('exemple.fr', indexé GIN trgm).
+-- Sans ça, un domaine ODH est INTROUVABLE dans la barre de recherche.
+-- ⚠️ PIÈGE : web_domain legacy porte parfois un SIREN (refactor SIREN-centric) —
+-- on ne normalise QUE les vrais domaines (contiennent un point, pas que des chiffres).
+UPDATE entreprises SET web_domain_normalized =
+  lower(regexp_replace(regexp_replace(regexp_replace(web_domain, '^https?://', '', 'i'), '^www\.', '', 'i'), '/.*$', ''))
+WHERE web_domain_normalized IS NULL
+  AND web_domain IS NOT NULL
+  AND web_domain ~ '\.'
+  AND web_domain !~ '^[0-9]+$';
+
 -- Flags par défaut manquants sur les fiches ODH. Le filtre par défaut du
 -- dashboard (DEFAULT_ENTREPRISES_WHERE = "is_registrar=false AND
 -- COALESCE(ca_suspect,false)=false") EXCLUT les NULL (NULL != false en SQL).
