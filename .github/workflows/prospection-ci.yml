@@ -252,6 +252,12 @@ jobs:
           set -euo pipefail
           source ~/credentials/nomad-bastion.env
           export NOMAD_ADDR NOMAD_TOKEN="$NOMAD_MGMT_TOKEN"
+          # ── PRÉ-PULL authentifié sur le nœud cible (prod = LE BASTION, provider=contabo) ──
+          # Nomad ne pull pas les images PRIVÉES ghcr (plugin sans bloc auth). On
+          # pré-pull EN LOCAL sur le bastion (auth ghcr en place) → image déjà
+          # présente quand la task démarre. Cf deploy/README.md §ghcr auth.
+          echo "== pré-pull image prod sur le bastion (auth ghcr local) =="
+          docker pull "ghcr.io/christ-roy/prospection:${IMAGE_TAG}"
           echo "== nomad job validate =="
           /usr/bin/nomad job validate -var "image_tag=${IMAGE_TAG}" "$REMOTE_HCL"
           echo "== nomad job plan (diff, inoffensif) =="

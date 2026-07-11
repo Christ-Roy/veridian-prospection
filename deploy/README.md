@@ -320,3 +320,16 @@ Une fois le deploy Nomad éprouvé, retirer l'héritage compose/Dokploy :
    (cible : Patroni HA, cf `nomad-veridian/tickets/TICKET-001`).
 10. **Tag différent par env** : staging = `staging-<sha7>`, prod = `<sha7>` sans préfixe (+ `latest`).
     Mauvais `-var image_tag` → `ImagePullBackOff`.
+11. **Auth ghcr des IMAGES PRIVÉES — le piège n°1 (incident 2026-07-11)** : le plugin docker de
+    Nomad n'a **pas** de bloc `auth` → Nomad **ne peut pas puller une image privée ghcr** (manifest
+    HEAD → `401 unauthorized`) et l'alloc reste `pending` jusqu'au `healthy_deadline` (staging 502).
+    Les images publiques (postgres, node) passent ; SEULE l'image app privée coince. **Solution
+    retenue** (déterministe, sans toucher au Nomad agent) : la CI **pré-pull l'image AVEC auth sur
+    le nœud cible AVANT `nomad job run`** — staging via `ssh dev-pub 'docker pull …'`, prod via
+    `docker pull` local sur le bastion. **Prérequis node (one-shot)** : chaque nœud qui ordonnance
+    l'app doit avoir un `docker login ghcr.io` valide pour **root** (le user du Nomad agent) ET pour
+    le user SSH (dev-pub=ubuntu, bastion=brunon5). Vérifié posé sur ovh-dev + bastion le 2026-07-11.
+    → Une autre app qui copie ce patron : s'assurer que ses nœuds ont l'auth ghcr root + garder le
+    step pré-pull. (Durcissement futur : `auth { config = "/root/.docker/config.json" }` dans le
+    plugin docker de `/etc/nomad.d` + reload agent — rend le pré-pull superflu, mais touche l'infra
+    node → coordonné avec l'agent nomad-veridian.)

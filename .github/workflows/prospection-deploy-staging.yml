@@ -214,6 +214,16 @@ jobs:
           source ~/credentials/nomad-bastion.env
           export NOMAD_ADDR NOMAD_TOKEN="$NOMAD_MGMT_TOKEN"
 
+          # ── PRÉ-PULL authentifié sur le nœud cible (ovh-dev == dev-pub) ──────
+          # Le plugin docker de Nomad n'a PAS de bloc auth → il ne peut pas puller
+          # une image PRIVÉE ghcr (manifest HEAD → 401), et l'alloc reste pending
+          # jusqu'au healthy_deadline (incident 2026-07-11). On pré-pull l'image
+          # AVEC l'auth ghcr du nœud (docker login déjà en place) : quand Nomad
+          # démarre la task, l'image est déjà locale → pas de pull non-auth.
+          echo "== pré-pull image sur ovh-dev (auth ghcr du nœud) =="
+          ssh -o BatchMode=yes -o ConnectTimeout=15 dev-pub \
+            "docker pull ghcr.io/christ-roy/prospection:${IMAGE_TAG}"
+
           echo "== nomad job validate =="
           /usr/bin/nomad job validate -var "image_tag=${IMAGE_TAG}" "$REMOTE_HCL"
 
