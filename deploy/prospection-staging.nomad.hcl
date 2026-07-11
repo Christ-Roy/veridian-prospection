@@ -1,0 +1,225 @@
+# prospection-staging.nomad.hcl — SOURCE DE VÉRITÉ GITOPS du déploiement staging.
+#
+# Miroir versionné (dans CE repo) du job Nomad réellement déployé, cf ticket
+# tickets/NOMAD-GITOPS.md. La CI (.github/workflows/prospection-deploy-staging.yml)
+# injecte le tag d'image buildé (var image_tag) puis `nomad job plan`→`run`.
+#
+# Placement : ovh-dev (provider=ovh-dev == dev-pub). Réseau PRIVÉ (host_network
+# tailscale) + middleware internal-only@nomad (ipAllowList 100.64/10 → 403 hors
+# tailnet). Secrets = Nomad Variable nomad/jobs/prospection-staging (JAMAIS en clair).
+#
+# Group unique co-localisé (network namespace bridge partagé → 127.0.0.1:5432) :
+#   - task db          : postgres:16, DEUX bases — `prospection` (app staging, ~13 MB)
+#                        et `prospection_devclone` (clone prod, 4.2 GB, 996K entreprises).
+#   - task prospection : app Next.js (:3000), DB `prospection`.
+#   - task search-dev  : banc moteur de recherche IA — `next dev` (:3200) sur le code
+#                        monté /home/ubuntu/prospection-ui-dev, DB `prospection_devclone`.
+
+variable "image_tag" {
+  type        = string
+  description = "Tag de l'image ghcr.io/christ-roy/prospection à déployer (injecté par la CI)."
+  default     = "staging-5133a6e"
+}
+
+job "prospection-staging" {
+  datacenters = ["veridian-eu"]
+  type        = "service"
+
+  group "stack" {
+    count = 1
+
+    # Épinglé à ovh-dev : la DB bind sur /opt/veridian-staging du nœud ovh-dev,
+    # et le search-dev bind le code source /home/ubuntu/prospection-ui-dev (ovh-dev).
+    # Stateful à volume local → PAS de reschedule (le volume ne suit pas).
+    constraint {
+      attribute = "${meta.provider}"
+      value     = "ovh-dev"
+    }
+
+    restart {
+      attempts = 10
+      interval = "10m"
+      delay    = "15s"
+      mode     = "delay"
+    }
+
+    network {
+      mode = "bridge"
+      # host_network tailscale : les ports CNI bind sur l'IP Tailscale du nœud uniquement
+      # → apps injoignables en public, Traefik route via Tailscale, ipAllowList non-bypassable.
+      port "http" {
+        to           = 3000
+        host_network = "tailscale"
+      }
+      port "searchhttp" {
+        to           = 3200
+        host_network = "tailscale"
+      }
+    }
+
+    # ---- service prospection-staging (app Next.js) ----
+    service {
+      name     = "prospection-staging"
+      provider = "nomad"
+      port     = "http"
+      tags = [
+        "traefik.enable=true",
+        "traefik.http.middlewares.internal-only.ipallowlist.sourcerange=100.64.0.0/10,127.0.0.1/32",
+        "traefik.http.routers.prospection-staging.rule=Host(`prospection.staging.veridian.site`)",
+        "traefik.http.routers.prospection-staging.entrypoints=web",
+        "traefik.http.routers.prospection-staging.middlewares=internal-only@nomad",
+        "traefik.http.routers.prospection-stagingsec.rule=Host(`prospection.staging.veridian.site`)",
+        "traefik.http.routers.prospection-stagingsec.entrypoints=websecure",
+        "traefik.http.routers.prospection-stagingsec.tls=true",
+        "traefik.http.routers.prospection-stagingsec.tls.certresolver=letsencrypt",
+        "traefik.http.routers.prospection-stagingsec.middlewares=internal-only@nomad",
+      ]
+      check {
+        type     = "http"
+        path     = "/api/health"
+        interval = "15s"
+        timeout  = "5s"
+      }
+    }
+
+    # ---- service prospection-search-staging (banc IA, next dev) ----
+    service {
+      name     = "prospection-search-staging"
+      provider = "nomad"
+      port     = "searchhttp"
+      tags = [
+        "traefik.enable=true",
+        "traefik.http.routers.prospection-search-staging.rule=Host(`search-dev.staging.veridian.site`)",
+        "traefik.http.routers.prospection-search-staging.entrypoints=web",
+        "traefik.http.routers.prospection-search-staging.middlewares=internal-only@nomad",
+        "traefik.http.routers.prospection-search-stagingsec.rule=Host(`search-dev.staging.veridian.site`)",
+        "traefik.http.routers.prospection-search-stagingsec.entrypoints=websecure",
+        "traefik.http.routers.prospection-search-stagingsec.tls=true",
+        "traefik.http.routers.prospection-search-stagingsec.tls.certresolver=letsencrypt",
+        "traefik.http.routers.prospection-search-stagingsec.middlewares=internal-only@nomad",
+      ]
+      # next dev : port ouvert dès qu'il écoute, compile à la volée → check tcp tolérant.
+      check {
+        type     = "tcp"
+        interval = "30s"
+        timeout  = "10s"
+      }
+    }
+
+    # ---- db (postgres:16 : prospection + prospection_devclone) ----
+    task "db" {
+      driver = "docker"
+      config {
+        image = "postgres:16-alpine"
+        volumes = [
+          "/opt/veridian-staging/prospection/db:/var/lib/postgresql/data",
+        ]
+      }
+      template {
+        destination = "secrets/pg.env"
+        env         = true
+        data        = <<EOH
+TZ=UTC
+POSTGRES_USER=app
+POSTGRES_DB=prospection
+{{ with nomadVar "nomad/jobs/prospection-staging" }}
+POSTGRES_PASSWORD={{ .DB_PASSWORD }}
+{{ end }}
+EOH
+      }
+      resources {
+        cpu = 400
+        # devclone = 4.2 GB : réserve 512 MB, burst jusqu'à 3 GB pour absorber
+        # le restore (build d'index) sans se faire OOM-killer.
+        memory     = 512
+        memory_max = 3072
+      }
+    }
+
+    # ---- prospection (Next.js compilé, node server.js, :3000) ----
+    task "prospection" {
+      driver = "docker"
+      config {
+        image = "ghcr.io/christ-roy/prospection:${var.image_tag}"
+        ports = ["http"]
+      }
+      template {
+        destination = "secrets/app.env"
+        env         = true
+        data        = <<EOH
+NODE_ENV=production
+HOSTNAME=0.0.0.0
+PORT=3000
+AUTH_TRUST_HOST=true
+DEPLOY_ENV=staging
+TRIAL_DAYS=7
+NEXT_PUBLIC_TRIAL_DAYS=7
+VAPID_SUBJECT=mailto:contact@veridian.site
+
+NEXTAUTH_URL=https://prospection.staging.veridian.site
+APP_URL=https://prospection.staging.veridian.site
+NEXT_PUBLIC_SITE_URL=https://prospection.staging.veridian.site
+NEXT_PUBLIC_HUB_URL=https://app.veridian.site
+HUB_API_URL=https://app.veridian.site
+
+{{ with nomadVar "nomad/jobs/prospection-staging" }}
+DATABASE_URL=postgresql://app:{{ .DB_PASSWORD }}@127.0.0.1:5432/prospection?connection_limit=10
+AUTH_SECRET={{ .AUTH_SECRET }}
+TENANT_API_SECRET={{ .TENANT_API_SECRET }}
+SEARCH_API_SECRET={{ .SEARCH_API_SECRET }}
+HUB_WEBHOOK_TOKEN={{ .HUB_WEBHOOK_TOKEN }}
+TELNYX_PUBLIC_KEY={{ .TELNYX_PUBLIC_KEY }}
+{{ end }}
+EOH
+      }
+      resources {
+        cpu    = 400
+        memory = 512
+      }
+    }
+
+    # ---- search-dev (banc IA : node:22 + next dev sur code monté, :3200) ----
+    task "search-dev" {
+      driver = "docker"
+      config {
+        image      = "node:22-alpine"
+        entrypoint = ["docker-entrypoint.sh"]
+        command    = "sh"
+        args       = ["-c", "npm install --no-audit --no-fund && npm run dev -- -p 3200 -H 0.0.0.0"]
+        work_dir   = "/app"
+        ports      = ["searchhttp"]
+        volumes = [
+          "/home/ubuntu/prospection-ui-dev:/app",
+        ]
+      }
+      template {
+        destination = "secrets/search.env"
+        env         = true
+        data        = <<EOH
+NODE_ENV=development
+HOSTNAME=0.0.0.0
+PORT=3200
+NEXT_TELEMETRY_DISABLED=1
+HUB_API_URL=https://app.veridian.site
+STAGING_DB_USER=app
+STAGING_DB_NAME=prospection
+
+{{ with nomadVar "nomad/jobs/prospection-staging" }}
+DATABASE_URL=postgresql://app:{{ .DB_PASSWORD }}@127.0.0.1:5432/prospection_devclone?connection_limit=10
+STAGING_DB_PASSWORD={{ .DB_PASSWORD }}
+AUTH_SECRET={{ .AUTH_SECRET }}
+TENANT_API_SECRET={{ .TENANT_API_SECRET }}
+SEARCH_API_SECRET={{ .SEARCH_API_SECRET }}
+HUB_WEBHOOK_TOKEN={{ .HUB_WEBHOOK_TOKEN }}
+TELNYX_PUBLIC_KEY={{ .TELNYX_PUBLIC_KEY }}
+{{ end }}
+EOH
+      }
+      resources {
+        cpu        = 500
+        memory     = 1024
+        memory_max = 2048
+      }
+    }
+  }
+}
