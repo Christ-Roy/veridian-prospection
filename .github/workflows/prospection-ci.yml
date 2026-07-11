@@ -263,14 +263,27 @@ jobs:
           echo "== nomad job plan (diff, inoffensif) =="
           # plan renvoie exit 1 quand il y a des allocs à créer : by design → `|| true`.
           /usr/bin/nomad job plan -var "image_tag=${IMAGE_TAG}" "$REMOTE_HCL" || true
-          # run BLOQUANT (SANS -detach) : nomad monitore le déploiement de cette
-          # nouvelle version et rend un exit correct (0 healthy / ≠0 échec ou
-          # auto-revert). Évite la RACE du `job status` (faux vert sur l'ancien
-          # déploiement — incident staging 2026-07-11). Pré-pull → démarrage rapide.
+          # Déploiement + vérification CIBLÉE (cf staging) : run -detach → résout le
+          # Deployment de cet eval → `deployment status -monitor <id>` (bloque, exit
+          # ≠0 si échec/auto-revert). Évite la race du poll (faux positif) ET le 404
+          # du `job run` bloquant (faux négatif) — incident 2026-07-11.
           # ⚠️ Job prod STATEFUL (DB co-localisée, count=1) → un run recrée l'alloc
           # (bref redémarrage DB, attendu, pas zéro-downtime).
-          echo "== nomad job run (bloquant, monitore le déploiement) image_tag=${IMAGE_TAG} =="
-          /usr/bin/nomad job run -var "image_tag=${IMAGE_TAG}" "$REMOTE_HCL"
+          echo "== nomad job run -detach + monitoring du déploiement ciblé (image_tag=${IMAGE_TAG}) =="
+          EVAL=$(/usr/bin/nomad job run -detach -var "image_tag=${IMAGE_TAG}" "$REMOTE_HCL" | grep -oP 'Evaluation ID:\s+\K\S+')
+          echo "eval: ${EVAL:-none}"
+          DEP=""
+          for i in $(seq 1 15); do
+            DEP=$(/usr/bin/nomad eval status -json "$EVAL" 2>/dev/null | python3 -c 'import sys,json;print(json.load(sys.stdin).get("DeploymentID") or "")' 2>/dev/null || true)
+            [ -n "$DEP" ] && break
+            sleep 2
+          done
+          if [ -z "$DEP" ]; then
+            echo "Pas de déploiement créé (job inchangé = no-op) → OK"
+          else
+            echo "deployment: $DEP — monitoring jusqu'à terminal…"
+            /usr/bin/nomad deployment status -monitor "$DEP"
+          fi
           REMOTE
 
       # ── Prisma migrate deploy (gate idempotent) ────────────────────────────

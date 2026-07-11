@@ -305,11 +305,17 @@ Une fois le deploy Nomad éprouvé, retirer l'héritage compose/Dokploy :
 2. **`/usr/bin/nomad` brut**, pas le wrapper `nomad-v` (hors PATH headless + ne passe pas `-var`).
    Var d'env : le fichier la nomme `NOMAD_MGMT_TOKEN`, l'exporter en `NOMAD_TOKEN`.
 3. **`nomad job plan` renvoie exit 1** quand il y a des allocs à créer (by design) → `|| true`.
-4. **`nomad job run` BLOQUANT (sans `-detach`)** : nomad monitore le déploiement de la nouvelle
-   version et rend l'exit correct (0 healthy / ≠0 échec/auto-revert). ⚠️ NE PAS repartir sur
-   `-detach` + poll `nomad job status` : "Latest Deployment" peut afficher le "successful" de
-   l'ANCIEN déploiement une fraction de seconde avant que le nouveau ne s'enregistre → **faux vert**
-   qui laisse tourner l'ancienne version (incident 2026-07-11). Le run bloquant élimine cette race.
+4. **Vérif du deploy = `deployment status -monitor` CIBLÉ** (pas de poll, pas de run bloquant) :
+   `run -detach` → récupère l'`Evaluation ID` → résout le `DeploymentID` de cet eval (retry) →
+   `nomad deployment status -monitor <id>` (bloque jusqu'à terminal, exit ≠0 si échec/auto-revert).
+   ⚠️ Deux fausses pistes écartées (incident 2026-07-11) : (a) poll `job status | grep successful`
+   → lit le "successful" de l'ANCIEN déploiement → **faux positif** (ancienne version laissée live) ;
+   (b) `job run` bloquant → son monitor lève un `404 deployment not found` transitoire → **faux
+   négatif**. Le monitor sur l'ID précis évite les deux. Si aucun deployment n'est créé (job
+   inchangé), c'est un no-op → OK.
+   ⚠️ **`ssh` dans un heredoc = TOUJOURS `ssh -n`** (le pré-pull, le rm/scp du migrate) : sans `-n`,
+   le ssh lit le stdin du heredoc et AVALE les commandes suivantes (dont `nomad job run`) → elles ne
+   s'exécutent jamais, faux vert silencieux.
 5. **Migration = manuelle hors-CI pour le destructif** (§5) ; le `migrate deploy` de la CI
    est idempotent/additif seulement.
 6. **Auth GHCR = au niveau daemon des nœuds** → PAS de `docker login`/`auth` dans les jobs

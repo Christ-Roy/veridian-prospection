@@ -236,14 +236,31 @@ jobs:
           # by design, PAS une erreur → `|| true`. Le plan ne réserve rien.
           /usr/bin/nomad job plan -var "image_tag=${IMAGE_TAG}" "$REMOTE_HCL" || true
 
-          # run BLOQUANT (SANS -detach) : nomad monitore le déploiement de CE
-          # nouveau job et ne rend la main qu'à la fin — exit 0 si la nouvelle
-          # version devient healthy, exit ≠0 si elle échoue/auto-revert. On évite
-          # ainsi la RACE du `job status` (qui pouvait lire "successful" de
-          # l'ANCIEN déploiement avant que le nouveau ne s'enregistre → faux vert,
-          # incident 2026-07-11). Le pré-pull garantit un démarrage rapide.
-          echo "== nomad job run (bloquant, monitore le déploiement) image_tag=${IMAGE_TAG} =="
-          /usr/bin/nomad job run -var "image_tag=${IMAGE_TAG}" "$REMOTE_HCL"
+          # Déploiement + vérification CIBLÉE (ni race, ni 404) :
+          #   1. `run -detach` → récupère l'Evaluation ID de CETTE soumission.
+          #   2. résout le Deployment créé par cet eval (petit retry, le scheduler
+          #      le crée juste après).
+          #   3. `deployment status -monitor <id>` sur CE déploiement précis :
+          #      bloque jusqu'à terminal, exit ≠0 si échec/auto-revert.
+          # Pourquoi pas `job run` bloquant : son monitor lève un 404 transitoire
+          # ("deployment not found") → faux négatif (incident 2026-07-11). Pourquoi
+          # pas le poll `job status | grep successful` : il lit le "successful" de
+          # l'ANCIEN déploiement → faux positif. Cette approche évite les deux.
+          echo "== nomad job run -detach + monitoring du déploiement ciblé (image_tag=${IMAGE_TAG}) =="
+          EVAL=$(/usr/bin/nomad job run -detach -var "image_tag=${IMAGE_TAG}" "$REMOTE_HCL" | grep -oP 'Evaluation ID:\s+\K\S+')
+          echo "eval: ${EVAL:-none}"
+          DEP=""
+          for i in $(seq 1 15); do
+            DEP=$(/usr/bin/nomad eval status -json "$EVAL" 2>/dev/null | python3 -c 'import sys,json;print(json.load(sys.stdin).get("DeploymentID") or "")' 2>/dev/null || true)
+            [ -n "$DEP" ] && break
+            sleep 2
+          done
+          if [ -z "$DEP" ]; then
+            echo "Pas de déploiement créé (job inchangé = no-op) → OK"
+          else
+            echo "deployment: $DEP — monitoring jusqu'à terminal…"
+            /usr/bin/nomad deployment status -monitor "$DEP"
+          fi
           REMOTE
 
       # ── Pousse prisma/ vers le bastion (matériel du migrate) ───────────────
