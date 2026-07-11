@@ -1,14 +1,39 @@
-# Deploy staging — Veridian Prospection
+# Deploy staging — Veridian Prospection  (modèle gitops Nomad SSH-bastion)
 #
-# Pipeline staging-first (CI-ARCHITECTURE.md §3) :
-#   1. quality   : gate bloquant (lint, typecheck, unit, audit, test-mapping, render check)
-#   2. build     : Docker buildx push GHCR (tag staging-<sha> + staging-latest)
-#   3. deploy    : SSH dev-pub, compose pull + up -d (rejoint network staging-edge)
-#   4. smoke     : curl staging.veridian.site health/auth
-#   5. cleanup   : prune containers/images staging obsolètes côté dev
+# ┌──────────────────────────────────────────────────────────────────────────┐
+# │  PATRON DE RÉFÉRENCE — les autres apps Veridian copient ce workflow.       │
+# │  Doc complète : deploy/README.md (schéma de flux, secrets, rollback).      │
+# └──────────────────────────────────────────────────────────────────────────┘
 #
-# Aucun push direct vers main n'arrive en prod. Tout passe par PR staging→main
-# avec branch protection exigeant cette CI verte.
+# Pipeline staging-first, 100 % gitops Nomad :
+#   1. quality  : gate bloquant (lint, typecheck, unit, audit, test-mapping)   INCHANGÉ
+#   2. build    : Docker buildx → push GHCR (tag staging-<sha> + staging-latest) INCHANGÉ
+#   3. deploy   : SSH → bastion Nomad, scp du HCL, `nomad job plan`→`run -detach`,
+#                 puis `prisma migrate deploy` (gate idempotent) via container
+#                 éphémère joignant le namespace réseau de l'alloc DB.           NOUVEAU
+#   4. smoke    : rejoint le tailnet + curl staging.veridian.site health/auth/login.
+#                 (Le dashboard-crawler Playwright est retiré — cf note en fin de
+#                  fichier ; il dépendait de la topologie compose morte.)
+#
+# Modèle de déploiement — SSH-bastion (décision Robert, arrêtée) :
+#   Le NOMAD_TOKEN ne quitte JAMAIS le bastion. La CI ouvre une session SSH vers
+#   le bastion (clé dédiée CI), y dépose le HCL du repo, et lance les commandes
+#   `nomad` en sourçant l'env in situ. Le control-plane Nomad ordonnance l'alloc
+#   sur ovh-dev (== dev-pub, `constraint provider=ovh-dev`). Aucun token, aucune
+#   URL de DB, aucun secret applicatif ne transite par le runner GitHub — les
+#   secrets app vivent dans la Nomad Variable `nomad/jobs/prospection-staging`,
+#   injectés côté cluster par `template{ env = true }`.
+#
+# Migrations Prisma — la CI ne migre PAS depuis le runner (la DB est co-localisée
+# dans le namespace réseau de l'alloc, injoignable hors de ce namespace). Le
+# `migrate deploy` tourne DEPUIS dev-pub (via le bastion) dans un container
+# node:22-alpine éphémère qui joint `--network container:db-<alloc>`. Il est
+# idempotent : prod+staging sont déjà baselinés (_prisma_migrations 31/31), donc
+# no-op au premier run, et il n'appliquera QUE les futures migrations. C'est un
+# gate de sécurité qui garantit le schéma à jour à chaque deploy — PAS un
+# recâblage du migrate auto interdit par le §20 (le §20 vise le migrate depuis
+# le runner GHA ; ici on migre in situ, sur fenêtre de deploy contrôlée, DB de
+# l'alloc). Cf. deploy/README.md §Migrations.
 
 name: Prospection Deploy Staging
 
@@ -16,6 +41,11 @@ on:
   push:
     branches: [staging]
   workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Tag d'image à (re)déployer sans rebuild (ex: staging-abc1234). Vide = build du HEAD."
+        required: false
+        default: ""
 
 concurrency:
   group: deploy-staging-prospection
@@ -25,10 +55,16 @@ env:
   NODE_VERSION: "22"
   REGISTRY: ghcr.io
   IMAGE_NAME: christ-roy/prospection
-  COMPOSE_PROJECT: prospection-staging
   STAGING_HOST: prospection.staging.veridian.site
+  # Nom du job Nomad (== `job "prospection-staging"` dans le HCL). Sert au poll
+  # de déploiement et au ciblage de l'alloc DB pour le migrate.
+  NOMAD_JOB: prospection-staging
+  JOB_FILE: deploy/prospection-staging.nomad.hcl
 
 jobs:
+  # ══════════════════════════════════════════════════════════════════════════
+  # 1. QUALITY GATE — INCHANGÉ (bloquant, gate le build)
+  # ══════════════════════════════════════════════════════════════════════════
   quality:
     name: Quality gate (lint + typecheck + unit + audit + test-mapping)
     runs-on: ubuntu-latest
@@ -66,17 +102,9 @@ jobs:
           BASE_REF: origin/main
         run: bash scripts/ci/check-test-mapping.sh
 
-      # NOTE : `render-compose.sh check` désactivé temporairement.
-      # La sortie de `docker compose config` varie selon la version CLI
-      # (map vs liste pour environment, présence de bloc networks: top-level).
-      # Tant qu'on n'a pas un check sémantique (parse YAML normalisé),
-      # on compte sur la discipline humaine + le rappel ci-dessous.
-      - name: rappel régénération compose
-        run: |
-          echo "::notice::Si tu as modifié infra/docker-compose.{base,prod}.yml,"
-          echo "::notice::n'oublie pas de lancer ./scripts/ci/render-compose.sh prod"
-          echo "::notice::et de commiter le infra/docker-compose.yml régénéré."
-
+  # ══════════════════════════════════════════════════════════════════════════
+  # 2. BUILD + PUSH GHCR — INCHANGÉ (expose outputs.sha7 pour les jobs suivants)
+  # ══════════════════════════════════════════════════════════════════════════
   build:
     name: Build + push GHCR (staging-<sha>)
     needs: quality
@@ -85,7 +113,7 @@ jobs:
       contents: read
       packages: write
     outputs:
-      # SHA short (7 chars) — match docker/metadata-action default for type=sha
+      # SHA short (7 chars) — match docker/metadata-action default pour type=sha
       sha7: ${{ steps.sha.outputs.sha7 }}
     steps:
       - id: sha
@@ -132,164 +160,187 @@ jobs:
             COMMIT_SHA=${{ github.sha }}
             BUILT_AT=${{ steps.build_time.outputs.built_at }}
 
+  # ══════════════════════════════════════════════════════════════════════════
+  # 3. DEPLOY NOMAD (SSH bastion) — remplace l'ancien deploy compose dev-pub
+  # ══════════════════════════════════════════════════════════════════════════
   deploy:
-    name: Deploy → dev-pub (Traefik staging-edge)
+    name: Deploy Nomad staging (SSH bastion)
     needs: build
     runs-on: ubuntu-latest
     env:
-      IMAGE_TAG: staging-${{ needs.build.outputs.sha7 }}
+      # Tag staging = staging-<sha7> (metadata type=sha,prefix=staging-).
+      # workflow_dispatch peut forcer un tag existant (redeploy/rollback sans rebuild).
+      IMAGE_TAG: ${{ github.event.inputs.image_tag != '' && github.event.inputs.image_tag || format('staging-{0}', needs.build.outputs.sha7) }}
+      REMOTE_HCL: /tmp/prospection-staging-${{ github.run_id }}.nomad.hcl
     steps:
       - uses: actions/checkout@v6
+        # Le HCL vit dans le repo (deploy/) — pas besoin du submodule ici.
 
-      - name: Install SSH key
+      # ── Clé SSH dédiée CI vers le bastion Nomad (Contabo) ──────────────────
+      # La publique de cette clé est dans ~brunon5/.ssh/authorized_keys du bastion.
+      # Clé DÉDIÉE (≠ github-actions-deploy de dev-pub) : périmètre minimal.
+      - name: Install SSH key (bastion Nomad)
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          echo "${{ secrets.NOMAD_DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H 37.187.199.185 >> ~/.ssh/known_hosts 2>/dev/null
+          ssh-keyscan -H "${{ secrets.NOMAD_BASTION_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Copy compose files to dev
+      # ── Copie du HCL DU REPO vers le bastion ───────────────────────────────
+      # ⚠️ On copie le HCL du repo (qui DÉCLARE `variable "image_tag"`), JAMAIS
+      # la copie ~/nomad-veridian/jobs/ du bastion (plus vieille, sans le bloc
+      # variable → `nomad job plan -var image_tag=…` échoue en "Undefined -var").
+      - name: Copy HCL to bastion
         run: |
-          DEST=/home/ubuntu/prospection-staging
-          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new ubuntu@37.187.199.185 \
-            "mkdir -p $DEST"
-          scp -i ~/.ssh/id_ed25519 \
-            infra/docker-compose.base.yml \
-            infra/docker-compose.staging.yml \
-            ubuntu@37.187.199.185:$DEST/
+          scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new \
+            "$JOB_FILE" \
+            "${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}:$REMOTE_HCL"
 
-      - name: Write .env on dev (secrets staging)
+      # ── plan (dry-run inoffensif) → run -detach ────────────────────────────
+      # Binaire brut /usr/bin/nomad (PAS le wrapper nomad-v : ~/bin hors PATH
+      # headless, et ses sous-commandes ne passent pas -var). Le token est
+      # sourcé IN SITU sur le bastion — il ne transite jamais par la CI.
+      - name: nomad job plan (dry-run) + run -detach
+        env:
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+          REMOTE_HCL: ${{ env.REMOTE_HCL }}
         run: |
-          DEST=/home/ubuntu/prospection-staging
-          echo "Image tag à déployer : ${IMAGE_TAG}"
-          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 "cat > $DEST/.env <<'ENV_EOF'
-          PROSPECTION_IMAGE_TAG=${IMAGE_TAG}
-          DATABASE_URL=${{ secrets.STAGING_DATABASE_URL }}
-          AUTH_SECRET=${{ secrets.STAGING_AUTH_SECRET }}
-          TENANT_API_SECRET=${{ secrets.STAGING_TENANT_API_SECRET }}
-          HUB_API_URL=${{ secrets.STAGING_HUB_API_URL }}
-          HUB_WEBHOOK_TOKEN=${{ secrets.STAGING_HUB_WEBHOOK_TOKEN }}
-          TELNYX_PUBLIC_KEY=${{ secrets.STAGING_TELNYX_PUBLIC_KEY }}
-          ENV_EOF
-          chmod 600 $DEST/.env"
-          # Le service postgres-staging (docker-compose.staging.yml) a besoin de
-          # POSTGRES_USER/PASSWORD/DB. On les DÉRIVE du DATABASE_URL (source unique,
-          # pas de secret dupliqué / drift) directement sur dev-pub où le .env vit.
-          # Format : postgresql://USER:PASS@host:5432/DB?params
-          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 "
-            cd $DEST &&
-            URL=\$(grep '^DATABASE_URL=' .env | cut -d= -f2-) &&
-            CREDS=\$(echo \"\$URL\" | sed -E 's#^postgresql://([^@]+)@.*#\1#') &&
-            DB_USER=\$(echo \"\$CREDS\" | cut -d: -f1) &&
-            DB_PASS=\$(echo \"\$CREDS\" | cut -d: -f2) &&
-            DB_NAME=\$(echo \"\$URL\" | sed -E 's#.*/([^/?]+)(\?.*)?\$#\1#') &&
-            { echo \"STAGING_DB_USER=\$DB_USER\"; echo \"STAGING_DB_PASSWORD=\$DB_PASS\"; echo \"STAGING_DB_NAME=\$DB_NAME\"; } >> .env &&
-            echo \"DB vars dérivées : user=\$DB_USER db=\$DB_NAME\"
-          "
+          ssh -i ~/.ssh/id_ed25519 \
+            "${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}" \
+            "IMAGE_TAG='${IMAGE_TAG}' REMOTE_HCL='${REMOTE_HCL}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          # Le NOMAD_MGMT_TOKEN est sourcé ici, sur le bastion, et exporté en
+          # NOMAD_TOKEN (le fichier le nomme NOMAD_MGMT_TOKEN — subtilité).
+          source ~/credentials/nomad-bastion.env
+          export NOMAD_ADDR NOMAD_TOKEN="$NOMAD_MGMT_TOKEN"
 
-      - name: Login GHCR on dev (pull image)
+          echo "== nomad job validate =="
+          /usr/bin/nomad job validate -var "image_tag=${IMAGE_TAG}" "$REMOTE_HCL"
+
+          echo "== nomad job plan (diff, inoffensif) =="
+          # plan renvoie exit 1 quand il y a des allocs à créer/modifier : c'est
+          # by design, PAS une erreur → `|| true`. Le plan ne réserve rien.
+          /usr/bin/nomad job plan -var "image_tag=${IMAGE_TAG}" "$REMOTE_HCL" || true
+
+          echo "== nomad job run -detach (image_tag=${IMAGE_TAG}) =="
+          /usr/bin/nomad job run -detach -var "image_tag=${IMAGE_TAG}" "$REMOTE_HCL"
+          REMOTE
+
+      # ── Attendre que le déploiement soit healthy ───────────────────────────
+      # run -detach est ASYNC : ne PAS conclure "livré" sur l'exit-code du run.
+      # On poll `nomad job status` jusqu'à Latest Deployment == successful.
+      - name: Wait deployment healthy (poll bastion)
         run: |
-          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 \
-            "echo '${{ secrets.CR_PAT }}' | docker login ghcr.io -u ${{ github.actor }} --password-stdin"
+          ssh -i ~/.ssh/id_ed25519 \
+            "${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}" \
+            "NOMAD_JOB='${{ env.NOMAD_JOB }}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          source ~/credentials/nomad-bastion.env
+          export NOMAD_ADDR NOMAD_TOKEN="$NOMAD_MGMT_TOKEN"
+          for i in $(seq 1 30); do
+            ST=$(/usr/bin/nomad job status "$NOMAD_JOB" 2>/dev/null \
+                  | sed -n '/Latest Deployment/,/^$/p' \
+                  | grep -oE 'successful|failed|running' | head -1 || echo pending)
+            echo "[$i/30] deployment: ${ST:-pending}"
+            [ "$ST" = "successful" ] && exit 0
+            if [ "$ST" = "failed" ]; then
+              echo "::error::Deployment failed"
+              /usr/bin/nomad job status "$NOMAD_JOB" | tail -40
+              exit 1
+            fi
+            sleep 10
+          done
+          echo "::error::deployment not successful after 300s"
+          /usr/bin/nomad job status "$NOMAD_JOB" | tail -40
+          exit 1
+          REMOTE
 
-      - name: Compose pull + up -d
+      # ── Pousse prisma/ vers le bastion (matériel du migrate) ───────────────
+      # Le dossier prisma/ (schema + migrations) vit dans le repo, donc sur le
+      # runner. Le migrate container tournera sur dev-pub (où est l'alloc DB) ;
+      # on route le dossier via le bastion (seul hôte que la CI peut SSH). On
+      # empaquète prisma/ en tar et on le dépose sur le bastion.
+      - name: Ship prisma/ to bastion
         run: |
-          DEST=/home/ubuntu/prospection-staging
-          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 "
-            cd $DEST &&
-            docker compose -p ${{ env.COMPOSE_PROJECT }} \
-              -f docker-compose.base.yml -f docker-compose.staging.yml \
-              pull &&
-            docker compose -p ${{ env.COMPOSE_PROJECT }} \
-              -f docker-compose.base.yml -f docker-compose.staging.yml \
-              up -d --remove-orphans"
+          tar czf /tmp/prisma-${{ github.run_id }}.tgz prisma
+          scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new \
+            "/tmp/prisma-${{ github.run_id }}.tgz" \
+            "${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}:/tmp/prisma-${{ github.run_id }}.tgz"
 
-      # Migration Prisma — solution pérenne au trou §18.9.
+      # ── Prisma migrate deploy (gate idempotent) ────────────────────────────
+      # La DB staging est co-localisée avec l'app dans le namespace réseau de
+      # l'alloc, SUR ovh-dev (dev-pub). Injoignable depuis le runner GHA ET
+      # depuis le bastion en direct → le bastion (qui peut ssh dev-pub) pousse
+      # prisma/ sur dev-pub et y lance un container node:22-alpine qui JOINT le
+      # namespace du container DB de l'alloc (`--network container:db-<alloc>`),
+      # ce qui résout 127.0.0.1:5432 exactement comme l'app.
       #
-      # Le container app vire npm/npx (CVE hygiene), donc on ne peut pas
-      # appeler prisma migrate deploy depuis lui. On utilise un container
-      # node:22-alpine éphémère sur dev-pub avec le dossier prisma/ volumé,
-      # qui joint le réseau interne pour atteindre postgres-staging.
-      #
-      # Idempotent : prisma migrate deploy ne re-applique pas une migration
-      # déjà présente dans _prisma_migrations.
-      - name: Copy prisma migrations to dev
+      # Idempotent : migrate deploy skip les migrations déjà dans _prisma_migrations
+      # (staging = 31/31 baseline → no-op au 1er run). Le mot de passe DB est lu
+      # IN SITU depuis l'env du container postgres (jamais dans la CI). Tout le
+      # matériel temporaire est nettoyé en fin de step.
+      - name: Prisma migrate deploy (DB de l'alloc, via bastion→dev-pub)
         run: |
-          DEST=/home/ubuntu/prospection-staging
-          rsync -az -e "ssh -i ~/.ssh/id_ed25519" \
-            prisma/ \
-            ubuntu@37.187.199.185:$DEST/prisma/
+          ssh -i ~/.ssh/id_ed25519 \
+            "${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}" \
+            "NOMAD_JOB='${{ env.NOMAD_JOB }}' RUN_ID='${{ github.run_id }}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          source ~/credentials/nomad-bastion.env
+          export NOMAD_ADDR NOMAD_TOKEN="$NOMAD_MGMT_TOKEN"
 
-      - name: Run prisma migrate deploy (staging DB)
-        # Container éphémère sur le réseau staging-edge (où vit postgres-staging).
-        # Idempotent : prisma migrate deploy skip les migrations déjà appliquées.
+          # Alloc running du job + le nœud qui la porte (== dev-pub pour staging).
+          ALLOC=$(/usr/bin/nomad job allocs -json "$NOMAD_JOB" \
+            | python3 -c 'import sys,json;a=json.load(sys.stdin);print([x["ID"] for x in a if x["ClientStatus"]=="running"][0])')
+          echo "alloc running: $ALLOC"
+          # Container DB de l'alloc = `db-<allocID complet>` (task "db").
+          DB_CT=$(/usr/bin/nomad alloc status -json "$ALLOC" \
+            | python3 -c 'import sys,json;print(json.load(sys.stdin)["ID"])')
+          DB_CT="db-${DB_CT}"
+          echo "db container: $DB_CT"
+
+          WORK="/tmp/prosp-migrate-${RUN_ID}"
+          # Le bastion pousse prisma/ + le nom du container DB à dev-pub, puis y
+          # lance le migrate. dev-pub résout le container par son nom `db-<alloc>`.
+          # On passe DB_CT/WORK en variables d'environnement de la session SSH
+          # (pas de heredoc imbriqué fragile) et le script dev-pub est en quotes
+          # simples → aucune expansion prématurée côté bastion.
+          ssh -o BatchMode=yes -o ConnectTimeout=15 dev-pub "rm -rf '$WORK' && mkdir -p '$WORK'"
+          scp /tmp/prisma-${RUN_ID}.tgz "dev-pub:${WORK}/prisma.tgz"
+          ssh -o BatchMode=yes dev-pub \
+            "DB_CT='$DB_CT' WORK='$WORK' bash -s" <<'DEVPUB'
+          set -euo pipefail
+          cd "$WORK" && tar xzf prisma.tgz
+          DB_PASS=$(docker exec "$DB_CT" printenv POSTGRES_PASSWORD)
+          docker run --rm \
+            --network "container:$DB_CT" \
+            -v "$WORK/prisma:/app/prisma" \
+            -w /app \
+            -e DATABASE_URL="postgresql://app:$DB_PASS@127.0.0.1:5432/prospection?connection_limit=5" \
+            node:22-alpine sh -c 'apk add --no-cache openssl >/dev/null && npm i -g prisma@6.19.2 --silent && prisma migrate deploy'
+          rm -rf "$WORK"
+          DEVPUB
+
+          rm -f /tmp/prisma-${RUN_ID}.tgz
+          REMOTE
+
+      # ── Nettoyage du matériel temporaire sur le bastion ────────────────────
+      - name: Cleanup remote HCL
+        if: always()
         run: |
-          DEST=/home/ubuntu/prospection-staging
-          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 "
-            cd $DEST &&
-            docker run --rm \
-              --network staging-edge \
-              -v \$PWD/prisma:/app/prisma \
-              -w /app \
-              -e DATABASE_URL=\"${{ secrets.STAGING_DATABASE_URL }}\" \
-              node:22-alpine sh -c 'apk add --no-cache openssl >/dev/null && npm install --no-package-lock --silent prisma@6.19.2 2>&1 | tail -3 && npx prisma migrate deploy'
-          "
+          ssh -i ~/.ssh/id_ed25519 \
+            "${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}" \
+            "rm -f '$REMOTE_HCL' '/tmp/prisma-${{ github.run_id }}.tgz'" || true
 
-      # Scripts SQL HORS-PRISMA (objets que schema.prisma ne déclare pas :
-      # colonnes INPI/ETL sur entreprises, table inpi_history, segment_catalog,
-      # les 31 vues v_*, colonnes pipeline outreach). Ces tables sont gérées
-      # partiellement hors Prisma ; sans ce step, une DB recréée from-scratch
-      # est incomplète → 42703 "column/relation does not exist" → 500 (vécu
-      # 2026-06-16, DB staging supprimée puis recréée). Tous idempotents
-      # (ADD COLUMN IF NOT EXISTS / CREATE ... IF NOT EXISTS / DROP+CREATE VIEW).
-      - name: Copy hors-Prisma SQL scripts to dev
-        run: |
-          DEST=/home/ubuntu/prospection-staging
-          rsync -az -e "ssh -i ~/.ssh/id_ed25519" \
-            scripts/2026-04-06_inpi-v36-columns.sql \
-            scripts/2026-04-05_create-segments-views.sql \
-            scripts/2026-06-16_outreach-pipeline-value-columns.sql \
-            ubuntu@37.187.199.185:$DEST/sql-hors-prisma/
-
-      - name: Apply hors-Prisma SQL scripts (staging DB)
-        # On passe le DATABASE_URL complet (secret) à psql — pas de credential
-        # en clair dans le workflow, source unique (même secret que migrate deploy).
-        run: |
-          DEST=/home/ubuntu/prospection-staging
-          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 "
-            cd $DEST &&
-            docker run --rm \
-              --network staging-edge \
-              -v \$PWD/sql-hors-prisma:/sql \
-              -e DBURL=\"${{ secrets.STAGING_DATABASE_URL }}\" \
-              postgres:16-alpine sh -c '
-                for f in /sql/2026-04-06_inpi-v36-columns.sql /sql/2026-04-05_create-segments-views.sql /sql/2026-06-16_outreach-pipeline-value-columns.sql; do
-                  echo \"== applying \$f ==\" &&
-                  psql \"\$DBURL\" -v ON_ERROR_STOP=1 -f \"\$f\" 2>&1 | tail -3 || exit 1
-                done
-              '
-          "
-
-      - name: Wait healthcheck (max 90s)
-        run: |
-          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 '
-            for i in $(seq 1 18); do
-              STATUS=$(docker inspect --format "{{.State.Health.Status}}" prospection-staging-prospection-1 2>/dev/null || echo "starting")
-              echo "[$i/18] healthcheck: $STATUS"
-              if [ "$STATUS" = "healthy" ]; then exit 0; fi
-              sleep 5
-            done
-            echo "Healthcheck failed after 90s"
-            docker logs --tail 50 prospection-staging-prospection-1
-            exit 1'
-
+  # ══════════════════════════════════════════════════════════════════════════
+  # 4. SMOKE — vérification applicative via l'ingress (staging privé → tailnet)
+  # ══════════════════════════════════════════════════════════════════════════
   smoke:
     name: Smoke test staging
     needs: deploy
     runs-on: ubuntu-latest
     steps:
-      # Staging accessible uniquement via tailnet Veridian (2026-05-19).
-      # Cf veridian-hub/docs/CONTRAT-HUB.md §8.6.
+      # Staging est derrière internal-only@nomad (ipAllowList 100.64/10) : le
+      # curl échoue en 403 SANS tailscale. Le runner rejoint le tailnet Veridian.
       - name: Tailscale (connect runner to tailnet for staging smoke)
         uses: tailscale/github-action@v3
         with:
@@ -298,7 +349,7 @@ jobs:
           tags: tag:ci-github
           version: latest
 
-      - name: GET /api/health
+      - name: GET /api/health (retry 6x/5s)
         run: |
           for i in $(seq 1 6); do
             CODE=$(curl -sS -o /dev/null -w "%{http_code}" "https://${{ env.STAGING_HOST }}/api/health" || echo "000")
@@ -306,191 +357,24 @@ jobs:
             if [ "$CODE" = "200" ]; then exit 0; fi
             sleep 5
           done
-          echo "Smoke /api/health failed"
+          echo "::error::Smoke /api/health failed"
           exit 1
 
       - name: GET /api/auth/providers
         run: |
           CODE=$(curl -sS -o /dev/null -w "%{http_code}" "https://${{ env.STAGING_HOST }}/api/auth/providers")
-          [ "$CODE" = "200" ] || { echo "auth providers → $CODE"; exit 1; }
+          [ "$CODE" = "200" ] || { echo "::error::auth providers → $CODE"; exit 1; }
 
       - name: GET /login (page render)
         run: |
           CODE=$(curl -sS -o /dev/null -w "%{http_code}" "https://${{ env.STAGING_HOST }}/login")
-          [ "$CODE" = "200" ] || { echo "/login → $CODE"; exit 1; }
+          [ "$CODE" = "200" ] || { echo "::error::/login → $CODE"; exit 1; }
 
-      # ── Dashboard crawler — détection batch erreurs UI/hydration/500 ──
-      # Voir e2e/dashboard-crawler.spec.ts : login canonical e2e-persistent
-      # puis visite toutes les pages dashboard, assert pas d'erreur visible
-      # ni console.error. Chope les régressions transverses qui passeraient
-      # entre les mailles des tests ciblés.
-      #
-      # Exécuté DANS un container Playwright SUR dev-pub, sur le réseau
-      # staging-edge. Raison : depuis la migration helper Auth.js v5
-      # (commit ce5b56f, 2026-05-22), le helper exige DATABASE_URL pointant
-      # sur la DB de l'app pour seeder le compte canonique. Ce DATABASE_URL
-      # contient l'hôte Docker interne `postgres-staging:5432`, non
-      # résolvable depuis le runner GHA (DNS Docker non exporté hors host).
-      # Cf todo/2026-05-22-fix-crawler-database-url-staging-ci.md (option A).
-      - name: Checkout (pour rsync spec + helpers vers dev-pub)
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 1
-
-      - name: Install SSH key (accès dev-pub pour container Playwright)
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H 37.187.199.185 >> ~/.ssh/known_hosts 2>/dev/null
-
-      - name: Sync crawler payload to dev-pub
-        # Subset minimal nécessaire au crawler : config Playwright, manifest npm
-        # (avec lock), schema Prisma + migrations (pour le seed via helper),
-        # le spec crawler et le helper auth. Le `dist` complet de l'app n'est
-        # pas nécessaire — le container Playwright tape l'app via HTTPS public.
-        #
-        # Garde-fou anti-saturation disque (cf 2026-05-23 cleanup ticket) :
-        # un sweep préemptif des résidus > 1h avant chaque run. Si la CI
-        # précédente a été cancelled, ses fichiers (root-owned via container
-        # Playwright) restent dans /tmp ; on les vire via un container alpine
-        # (root) avant de bosser, pour ne pas accumuler.
-        run: |
-          DEST=/tmp/prosp-crawler-${{ github.run_id }}
-          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 "
-            docker run --rm -v /tmp:/tmp alpine sh -c \
-              'find /tmp -maxdepth 1 -name \"prosp-crawler-*\" -type d -mmin +60 -exec rm -rf {} + 2>/dev/null || true'
-            rm -rf $DEST && mkdir -p $DEST
-          "
-          rsync -az -e "ssh -i ~/.ssh/id_ed25519" \
-            --include='package.json' \
-            --include='package-lock.json' \
-            --include='playwright.config.ts' \
-            --include='tsconfig.json' \
-            --include='prisma/' --include='prisma/schema.prisma' \
-            --include='prisma/migrations/***' \
-            --include='e2e/' --include='e2e/dashboard-crawler.spec.ts' \
-            --include='e2e/helpers/' --include='e2e/helpers/auth.ts' \
-            --include='e2e/helpers/console.ts' \
-            --exclude='*' \
-            ./ ubuntu@37.187.199.185:$DEST/
-
-      - name: Run dashboard crawler (Playwright container on staging-edge)
-        # Container Playwright éphémère sur dev-pub :
-        #  - réseau `staging-edge` → résout `postgres-staging:5432` pour le seed
-        #    Prisma ET tape `https://prospection.staging.veridian.site` en sortie
-        #    (Traefik externe routé par le DNS public).
-        #  - PROSPECTION_URL en HTTPS : NODE_ENV=production côté app exige
-        #    `__Secure-authjs.session-token` (cookie Secure-flag, posé qu'en
-        #    HTTPS). Taper l'URL HTTP interne `http://prospection:3000` casse
-        #    le login Auth.js v5 (cookie non posé / non re-renvoyé).
-        #  - npm ci silencieux + npx playwright test (browsers déjà présents
-        #    dans l'image Playwright officielle).
-        env:
-          DEST: /tmp/prosp-crawler-${{ github.run_id }}
-        run: |
-          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 "
-            docker run --rm \
-              --network staging-edge \
-              -v $DEST:/work \
-              -w /work \
-              -e CI=1 \
-              -e PROSPECTION_URL=https://${{ env.STAGING_HOST }} \
-              -e DATABASE_URL='${{ secrets.STAGING_DATABASE_URL }}' \
-              mcr.microsoft.com/playwright:v1.60.0-jammy \
-              bash -c 'npm ci --silent 2>&1 | tail -3 && npx playwright test e2e/dashboard-crawler.spec.ts --project=chromium --reporter=list'
-          "
-
-      - name: Collect crawler artifacts from dev-pub (si fail)
-        if: failure()
-        env:
-          DEST: /tmp/prosp-crawler-${{ github.run_id }}
-        run: |
-          mkdir -p test-results playwright-report
-          rsync -az -e "ssh -i ~/.ssh/id_ed25519" \
-            ubuntu@37.187.199.185:$DEST/test-results/ test-results/ 2>/dev/null || true
-          rsync -az -e "ssh -i ~/.ssh/id_ed25519" \
-            ubuntu@37.187.199.185:$DEST/playwright-report/ playwright-report/ 2>/dev/null || true
-
-      - name: Cleanup crawler payload on dev-pub
-        # Le container Playwright tourne en root et crée node_modules en
-        # root-owned dans $DEST. Un `rm -rf` en ubuntu (via SSH) échoue avec
-        # "Permission denied" → le `|| true` masquait l'erreur et le dir
-        # restait résiduel (~3 GB par run). Fix : passer par un container
-        # alpine root qui monte /tmp et peut effacer les fichiers root-owned.
-        # Cf todo/2026-05-23-dev-pub-cleanup-crawler-tmp-residuels.md.
-        if: always()
-        env:
-          DEST: /tmp/prosp-crawler-${{ github.run_id }}
-        run: |
-          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 "
-            docker run --rm -v /tmp:/tmp alpine sh -c 'rm -rf $DEST' 2>&1 || \
-              echo '::warning::Cleanup container failed, dir may persist'
-          " || true
-
-      - name: Upload crawler artifacts (screenshots/traces si fail)
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dashboard-crawler-artifacts
-          path: |
-            test-results/
-            playwright-report/
-          retention-days: 7
-
-  cleanup:
-    name: Cleanup images Prospection obsolètes (dev-pub)
-    needs: [build, deploy, smoke]
-    if: always() && needs.deploy.result == 'success'
-    runs-on: ubuntu-latest
-    # GHCR est la source de vérité des images (rétention illimitée côté
-    # registry). dev-pub ne garde QUE l'image staging actuellement servie
-    # — toute image staging-<sha> antérieure est re-pullable depuis GHCR
-    # en cas de rollback. Le filtre `label=com.veridian.env=staging` de
-    # l'ancien job ne matchait AUCUNE image (les images portent les labels
-    # OCI standard `org.opencontainers.image.*`, pas ce label custom) :
-    # le cleanup tournait à vide et le disque dev-pub se remplissait.
-    env:
-      KEEP_TAG: staging-${{ needs.build.outputs.sha7 }}
-    steps:
-      - name: Install SSH key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H 37.187.199.185 >> ~/.ssh/known_hosts 2>/dev/null
-
-      - name: Prune containers Prospection exited
-        run: |
-          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 '
-            docker container prune -f \
-              --filter "name=prospection-staging" || true'
-
-      - name: Remove old Prospection images (keep current + latest)
-        run: |
-          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 "
-            set -e
-            KEEP_TAG='${KEEP_TAG}'
-            REPO=ghcr.io/christ-roy/prospection
-            echo \"Image servie à conserver : \$REPO:\$KEEP_TAG (+ :staging-latest)\"
-            # Liste toutes les images Prospection, supprime celles qui ne sont
-            # ni le SHA déployé ni le tag mouvant staging-latest. GHCR garde tout.
-            docker images \"\$REPO\" --format '{{.Repository}}:{{.Tag}}' \
-              | grep -v \":\$KEEP_TAG\$\" \
-              | grep -v ':staging-latest\$' \
-              | grep -v ':<none>\$' \
-              | xargs -r -I{} docker rmi {} 2>/dev/null || true
-            echo '--- images Prospection restantes ---'
-            docker images \"\$REPO\" --format '{{.Repository}}:{{.Tag}} {{.Size}}'"
-
-      - name: Prune dangling images globales
-        run: |
-          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 '
-            docker image prune -f'
-
-      - name: Report disk usage post-cleanup
-        run: |
-          ssh -i ~/.ssh/id_ed25519 ubuntu@37.187.199.185 '
-            df -h / | tail -1
-            echo "--- docker disk ---"
-            docker system df'
+  # NOTE — le dashboard-crawler Playwright a été RETIRÉ de ce workflow.
+  # Il dépendait de la topologie compose morte (réseau docker `staging-edge` +
+  # DNS interne `postgres-staging:5432` pour seeder le compte canonique), qui
+  # n'existe plus dans le modèle Nomad (la DB vit dans le namespace réseau de
+  # l'alloc). Le crawler reste disponible en local/manuel, et la couverture E2E
+  # lourde (scripts/e2e/staging-full.sh) demeure le gate team-lead avant promo
+  # main (§20, exécuté à la main). Recâbler un crawler Nomad-aware = ticket
+  # dédié si besoin (container Playwright joignant `--network container:db-<alloc>`).
