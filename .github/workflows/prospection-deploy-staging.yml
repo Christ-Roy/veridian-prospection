@@ -8,9 +8,11 @@
 # Pipeline staging-first, 100 % gitops Nomad :
 #   1. quality  : gate bloquant (lint, typecheck, unit, audit, test-mapping)   INCHANGÉ
 #   2. build    : Docker buildx → push GHCR (tag staging-<sha> + staging-latest) INCHANGÉ
-#   3. deploy   : SSH → bastion Nomad, scp du HCL, `nomad job plan`→`run -detach`,
-#                 puis `prisma migrate deploy` (gate idempotent) via container
-#                 éphémère joignant le namespace réseau de l'alloc DB.           NOUVEAU
+#   3. deploy   : SSH → bastion Nomad, pré-pull image (auth ghcr du nœud), scp du
+#                 HCL, `nomad job plan` → `run -detach` → `deployment status
+#                 -monitor <id>` (vérif ciblée), puis `prisma migrate deploy`
+#                 (gate idempotent) via container éphémère joignant le namespace
+#                 réseau de l'alloc DB.                                          NOUVEAU
 #   4. smoke    : rejoint le tailnet + curl staging.veridian.site health/auth/login.
 #                 (Le dashboard-crawler Playwright est retiré — cf note en fin de
 #                  fichier ; il dépendait de la topologie compose morte.)
@@ -56,8 +58,8 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: christ-roy/prospection
   STAGING_HOST: prospection.staging.veridian.site
-  # Nom du job Nomad (== `job "prospection-staging"` dans le HCL). Sert au poll
-  # de déploiement et au ciblage de l'alloc DB pour le migrate.
+  # Nom du job Nomad (== `job "prospection-staging"` dans le HCL). Sert au
+  # ciblage de l'alloc DB pour le migrate.
   NOMAD_JOB: prospection-staging
   JOB_FILE: deploy/prospection-staging.nomad.hcl
 
