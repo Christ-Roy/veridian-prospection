@@ -1,5 +1,14 @@
 # Deploy Guide — Prospection Dashboard
 
+> ⚠️ **OBSOLÈTE (Dokploy décommissionné 2026-07-10) → déploiement = cluster Nomad
+> (`nomad-v` / skill `/nomad`).** Le runbook de déploiement À JOUR est
+> [`../deploy/README.md`](../deploy/README.md) (CI SSH-bastion → `nomad job run`,
+> secrets en Nomad Variables). Les recettes `compose.deploy`/`DOKPLOY_API_KEY`
+> ci-dessous ne fonctionnent plus — bloc conservé pour l'historique.
+>
+> Aide-mémoire Nomad : `nomad-v state` (dashboard), `nomad-v logs prospection`,
+> `nomad-v deploy deploy/prospection.nomad.hcl`, `nomad-v run prospection`.
+
 ## Auto-deploy (CI/CD)
 
 ### Staging

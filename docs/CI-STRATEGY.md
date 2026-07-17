@@ -81,7 +81,7 @@ integration    (1 min, bloquant)
 docker-staging  (3 min, bloquant)
   └─ build GHCR + push :staging tag
 deploy-staging  (1 min, bloquant)
-  └─ Dokploy API redeploy + wait healthy
+  └─ Nomad job run (CI SSH-bastion) + wait healthy
 e2e-staging-fast (1 min, bloquant)  ← à créer
   └─ 1 seul spec smoke critique
 e2e-staging-full (6 min, non-bloquant) ← rename de l'actuel e2e-staging

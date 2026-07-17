@@ -164,7 +164,7 @@ Le refactor SIREN a laissé `lead.domain` = SIREN (9 chiffres) par compat API, a
 ## Déploiement
 
 Automatique via GitHub Actions sur `origin/staging` → dev-server + `origin/main` → OVH prod.
-**Voir [`../CLAUDE.md`](../CLAUDE.md)** à la racine du repo pour le flow complet (Dokploy, GHCR, secrets).
+**Voir [`../CLAUDE.md`](../CLAUDE.md)** à la racine du repo pour le flow complet (Nomad, GHCR, secrets).
 
 ## Convention de commit
 

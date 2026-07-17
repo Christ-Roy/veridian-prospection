@@ -1,5 +1,12 @@
 # Prospection - infra/services/prospection
 
+> ⚠️ **OBSOLÈTE (Dokploy décommissionné 2026-07-10) → déploiement = cluster Nomad
+> (`nomad-v` / skill `/nomad`).** Ce dossier décrivait la stack compose Dokploy ;
+> le déploiement passe désormais par les jobs Nomad `deploy/prospection.nomad.hcl`
+> (prod) / `deploy/prospection-staging.nomad.hcl` (staging), documentés dans
+> [`../deploy/README.md`](../deploy/README.md). Secrets = Nomad Variables
+> (`nomad/jobs/prospection`), plus l'UI Dokploy. Bloc conservé pour l'historique.
+
 Compose Git-clean pour la stack Dokploy `compose-connect-redundant-firewall-l5fmki`.
 
 Sprint GitOps Veridian (2026-05-13) : migration provider Raw -> Git. La stack Dokploy

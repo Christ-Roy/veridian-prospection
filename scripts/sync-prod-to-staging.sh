@@ -2,7 +2,8 @@
 # sync-prod-to-staging.sh — Nightly sync of prod DB → staging DB
 #
 # Purpose: Keep staging data identical to prod so e2e tests run against
-# realistic data. Designed to run as a Dokploy Schedule Job.
+# realistic data. (Historiquement lancé comme Dokploy Schedule Job ; Dokploy
+# décommissionné 2026-07-10 — planifier via ~/all-cron ou un job Nomad periodic.)
 #
 # Usage:
 #   ./scripts/sync-prod-to-staging.sh

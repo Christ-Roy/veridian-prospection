@@ -33,7 +33,7 @@ la promo autonome** sauf tier 💀 CRITIQUE.
 3. Reco écrite dans le chat (audit, pas demande)
 4. `git checkout main && git pull --ff-only && git merge --ff-only origin/staging && git push origin main`
 5. Watch CI prod jusqu'à vert
-6. **Vérif SHA container actif** (`docker inspect`) — si stale > 5min après push, `compose.deploy` API Dokploy forcé (le webhook foire silencieusement, cf [[project_prospection_dokploy_webhook_fail]])
+6. **Vérif SHA actif** (`/api/version` / `nomad-v state`) — si stale > 5min après push, re-déployer via Nomad (`nomad-v deploy deploy/prospection.nomad.hcl` ou re-run la CI). (Dokploy décommissionné 2026-07-10 ; l'ancien webhook GitHub→Dokploy qui foirait en silence n'existe plus.)
 7. **Si migration Prisma** : appliquer manuellement (cf [[project_prisma_migrate_pattern]]) — la CI prod ne le fait pas
 8. **Re-run E2E headfull contre PROD** (`STAGING_URL=https://prospection.app.veridian.site bash scripts/e2e/staging-full.sh`) — un test vert sur staging ne garantit pas la prod
 9. Monitoring 10 min via `bash /tmp/monitor_prod_postdeploy.sh` (auto-rollback si 3 fails consécutifs)
@@ -55,7 +55,7 @@ la promo autonome** sauf tier 💀 CRITIQUE.
 ### Pièges à connaître (avant chaque promo)
 
 - ⚠️ CI prod **ne fait PAS** `prisma migrate deploy` — appliquer manuellement
-- ⚠️ Webhook GitHub→Dokploy peut foirer en silence — vérifier le SHA actif post-deploy
+- ⚠️ Toujours vérifier le SHA actif post-deploy (`/api/version` / `nomad-v state`) — un deploy Nomad peut ne pas prendre (image stale, ImagePullBackOff)
 - ⚠️ E2E headfull staging ≠ E2E headfull prod — toujours re-runner contre prod après promo
 
 ---

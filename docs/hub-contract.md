@@ -139,7 +139,7 @@ Pendant la migration coordonnée avec l'agent Hub :
 
 **Plan de coupure** : 30j après que l'agent Hub aura migré son client
 `prospection` vers le format standard. Coupure = poser les 2 flags à `0`
-dans Dokploy env vars.
+dans la Nomad Variable du job (`nomad/jobs/prospection`, `template{env=true}`).
 
 ### Sécurité
 
@@ -175,8 +175,8 @@ Pour les webhooks app→Hub. Token statique `HUB_WEBHOOK_TOKEN` côté Prospecti
 
 État : code câblé dans `src/lib/hub/webhooks.ts` mais env var pas encore
 provisionnée côté Hub. **À fixer** : créer `PROSPECTION_WEBHOOK_TOKEN` dans
-`~/credentials/.all-creds.env` + GitHub Secrets veridian-hub + Dokploy ENV
-Hub prod + Dokploy ENV staging.
+`~/credentials/.all-creds.env` + GitHub Secrets veridian-hub + les Nomad Variables
+du Hub (`nomad/jobs/hub` prod + staging).
 
 ---
 
@@ -306,7 +306,7 @@ Spec dans `CONTRAT-HUB-API-REF.md` sections RM, RESTM, FREEZE, UNFREEZE.
 
 | Var | Rôle | Source |
 |---|---|---|
-| `HUB_API_SECRET` | Secret HMAC partagé Hub/Prospection | Dokploy ENV (prod) + `.env.staging` (staging) |
+| `HUB_API_SECRET` | Secret HMAC partagé Hub/Prospection | Nomad Variable `nomad/jobs/prospection` (prod) + `.env.staging` (staging) |
 | `TENANT_API_SECRET` | Alias historique de `HUB_API_SECRET` (lu en fallback) | idem |
 | `HUB_WEBHOOK_TOKEN` | Token Bearer pour webhooks app→Hub | À provisionner côté Hub |
 | `ACCEPT_LEGACY_HMAC` | `1`=on (default) / `0`=off | À set `0` après coupure 30j |

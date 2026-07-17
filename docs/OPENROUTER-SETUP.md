@@ -28,9 +28,10 @@ Action requise pour activer le fallback Veridian :
    avec robert.brunon@veridian.site
 2. Déposer 10 USD pour passer de 50 à 1000 req/jour (cap RPM 20/min reste partagé)
 3. Générer une clé "Veridian Prospection Production" (Settings › Keys)
-4. Poser dans Dokploy ENV des composes prod + staging :
-   - `OPENROUTER_VERIDIAN_KEY=sk-or-v1-...`
-5. Redeploy via `POST /api/compose.deploy` (composeId prod : `0mJI-sSt6jcOMr_2QJ1iI`)
+4. Poser `OPENROUTER_VERIDIAN_KEY=sk-or-v1-...` dans les Nomad Variables
+   des jobs prod + staging (`nomad/jobs/prospection`, `nomad/jobs/prospection-staging`,
+   `template{env=true}`)
+5. Re-déployer : `nomad-v deploy deploy/prospection.nomad.hcl` (ou re-run la CI)
 
 Sans cette étape, les tenants sans config IA voient `412 not_configured` sur
 `/api/mail/generate` — pas de régression, juste pas de free tier.

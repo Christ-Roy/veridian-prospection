@@ -77,7 +77,7 @@ https://prospection.staging.veridian.site/api/cron/imap-sync
 
 ## Vérifier le bon fonctionnement
 
-Logs Next.js (Dokploy `docker.getContainerLogs` ou `ssh prod-pub`) :
+Logs Next.js (`nomad-v logs prospection` ou `ssh prod-pub`) :
 
 ```
 [cron:imap-sync] tenants=3 ok=3 failed=0 inserted=7 duration_ms=2841
@@ -111,7 +111,7 @@ Le tenant disparaît du sélecteur `listImapEnabledTenants()` au prochain run.
 - Chaque password IMAP est chiffré AES-256-GCM (lib `encrypt-password.ts`,
   dérivé de `AUTH_SECRET`).
 - Le secret CRON_SECRET est commun à tous les crons Prospection. Rotation
-  via Dokploy ENV → restart container.
+  via la Nomad Variable `nomad/jobs/prospection` → re-deploy du job.
 - L'endpoint est public-facing (besoin pour systemd externe sans VPN), donc
   l'auth Bearer est la seule défense — d'où la nécessité d'un secret long
   et de la rotation périodique.

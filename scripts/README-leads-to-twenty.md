@@ -145,7 +145,7 @@ d'un record) :
 Le search API (`/api/search/*`, staging **et** prod) répond **401** avec la
 valeur de `PROSPECTION_TENANT_API_SECRET` du vault. La route est bien déployée
 (elle renvoie 401, pas 404), donc le container attend un secret **différent** de
-celui du vault (`SEARCH_API_SECRET` / `TENANT_API_SECRET` côté Dokploy).
+celui du vault (`SEARCH_API_SECRET` / `TENANT_API_SECRET` injecté dans le conteneur via la Nomad Variable `nomad/jobs/prospection`).
 
 **À réconcilier par le lead avant push réel** : aligner la clé du vault
 `PROSPECTION_TENANT_API_SECRET` sur la valeur réellement injectée dans le

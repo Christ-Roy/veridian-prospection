@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# ⚠️ OBSOLÈTE (Dokploy décommissionné 2026-07-10) → déploiement = cluster Nomad
+#    (jobs deploy/*.nomad.hcl, `nomad-v` / skill /nomad). Ce script générait le
+#    compose consolidé que Dokploy consommait ; conservé pour l'historique / dev local.
+#
 # render-compose.sh — Génère le compose consolidé pour Dokploy
 #
 # Pourquoi : Dokploy lit un seul fichier docker-compose. On veut rester DRY

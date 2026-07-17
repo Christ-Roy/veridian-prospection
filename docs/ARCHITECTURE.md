@@ -14,7 +14,7 @@ graph TB
         ProspectionDB[(Prospection DB<br/>Postgres 15<br/>996K entreprises)]
         SupabaseAuth[Supabase Auth<br/>GoTrue + Kong]
         SupabaseDB[(Supabase DB<br/>Postgres<br/>tenants, users)]
-        Dokploy[Dokploy<br/>Deploy Manager]
+        Nomad[Nomad client<br/>ordonnanceur<br/>ex-Dokploy]
     end
 
     subgraph "Dev Server (Staging)"
@@ -43,8 +43,8 @@ graph TB
 
     Repo -->|push staging| CI
     CI -->|build + push| GHCR
-    CI -->|deploy| Dokploy
-    Dokploy --> Prospection
+    CI -->|ssh-bastion: nomad job run| Nomad
+    Nomad --> Prospection
     CI -->|notify| Telegram
 
     Prospection -->|checkout| Stripe
@@ -60,7 +60,7 @@ graph TB
 | ORM | Prisma | 6.19.2 |
 | DB | PostgreSQL | 15 |
 | Auth | Supabase (GoTrue) | Self-hosted |
-| Deploy | Dokploy + Docker | Latest |
+| Deploy | Nomad (ex-Dokploy, décommissionné 2026-07-10) | via CI SSH-bastion |
 | CI/CD | GitHub Actions | — |
 | E2E | Playwright | Multi-browser |
 | Monitoring | Custom /api/status + Telegram | — |
@@ -100,7 +100,7 @@ staging push → unit (tsc+eslint+vitest, 1min)
   → build (next build, 2min)
   → integration (prisma+postgres, 1min)
   → docker-staging (build+push :staging, 3min)
-  → deploy-staging (Dokploy redeploy, 30s)
+  → deploy-staging (Nomad job run via SSH-bastion, 30s)
   → e2e-staging (Playwright 3 blocking + 17 non-blocking, 8min)
   → promote-to-main (ff-only merge, 6s)
 
