@@ -1,8 +1,8 @@
 # 🔒 Veille CVE automatique — veridian-prospection
 
 > **Généré par** : `veridian-infra/.github/workflows/cron-trivy.yml`
-> **Dernier run** : 2026-07-29 04:10 UTC
-> **Run URL** : local-cron@mail.mybigserveur.local:2026-07-29
+> **Dernier run** : 2026-07-30 04:10 UTC
+> **Run URL** : local-cron@mail.mybigserveur.local:2026-07-30
 > **Image scannée** : `ghcr.io/christ-roy/prospection:latest`
 > **CVE bruts détectés** : 33 (avant filtrage)
 > **Scoring** : `veridian-infra/ci/trivy-scoring.yml`
@@ -11,8 +11,8 @@
 
 - 🚨 **1 RED** — fix prioritaire
 - 🔴 **5 HIGH** — action recommandée cette semaine
-- 🟡 **8 MEDIUM** — récap, pas urgent
-- 🟢 **5 NOISE** — annexe collapse
+- 🟡 **11 MEDIUM** — récap, pas urgent
+- 🟢 **2 NOISE** — annexe collapse
 
 
 ---
@@ -38,7 +38,7 @@
 - **CVE** : `CVE-2026-64645` (HIGH/SSRF), `CVE-2026-64649` (HIGH/SSRF)
 - **Type** : SSRF
 - **Score max** : 45
-- **Title** : Next.js: Server-Side Request Forgery in rewrites via attacker-controlled destination hostname
+- **Title** : next: Next.js: Server-Side Request Forgery vulnerability
 - **Source** : `package-lock.json`
 - **Fix** : `pnpm up next` (jusqu'à >= `16.2.11`)
 
@@ -74,7 +74,7 @@
 
 ---
 
-## 🟡 MEDIUM — 8 CVE en 6 groupes
+## 🟡 MEDIUM — 11 CVE en 6 groupes
 
 ### 1. `@auth/core` — 0.41.0 → **0.41.3**
 
@@ -97,10 +97,10 @@
 
 ### 3. `next` — 15.5.18 → **16.2.11**
 
-- **CVE** : `CVE-2026-64641` (HIGH/DoS)
-- **Type** : DoS
+- **CVE** : `CVE-2026-64641` (HIGH/DoS), `CVE-2026-64643` (MEDIUM/Data leak), `CVE-2026-64647` (MEDIUM/Data leak), `CVE-2026-64648` (MEDIUM/Data leak)
+- **Type** : Data leak, DoS
 - **Score max** : 15
-- **Title** : Next.js: Denial of Service in App Router using Server Actions
+- **Title** : next: Next.js: Denial of Service via crafted requests to App Router with Server Actions
 - **Source** : `package-lock.json`
 - **Fix** : `pnpm up next` (jusqu'à >= `16.2.11`)
 
@@ -135,14 +135,14 @@
 
 ---
 
-## 🟢 NOISE filtré (5 CVE)
+## 🟢 NOISE filtré (2 CVE)
 
 <details>
 <summary>Liste complète (1 groupe — clique pour déplier)</summary>
 
 | Package | Installed | Fix | CVE count | Max score |
 |---|---|---|---|---|
-| `next` | 15.5.18 | 16.2.11 | 5 | 6 |
+| `next` | 15.5.18 | 16.2.11 | 2 | 6 |
 
 </details>
 
