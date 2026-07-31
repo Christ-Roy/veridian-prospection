@@ -72,7 +72,7 @@ le curl est direct (public) + vérif anti-stale du SHA actif (`/api/version`).
 | Fichier | Rôle |
 |---|---|
 | `deploy/prospection.nomad.hcl` | **PROD** — job Nomad `prospection`, `provider=contabo`, DB postgres:15 co-localisée, var `image_tag` (défaut `latest`). |
-| `deploy/prospection-staging.nomad.hcl` | **STAGING** — job Nomad `prospection-staging`, `provider=ovh-dev`, DB postgres:16 (`prospection` + `prospection_devclone` 996K), banc `search-dev`, privé (`internal-only@nomad`), var `image_tag` (défaut `staging-<sha>`). |
+| `deploy/prospection-staging.nomad.hcl` | **STAGING** — job Nomad `prospection-staging`, `provider=ovh-dev`, DB postgres:16 (`prospection` + `prospection_devclone` 996K), banc `search-dev` servi par une seconde instance de la même image staging, privé (`internal-only@file`), var `image_tag` (défaut `staging-<sha>`). |
 | `.github/workflows/prospection-deploy-staging.yml` | Pipeline staging (push `staging`). Jobs : `quality` → `build` → `deploy` (Nomad SSH-bastion) → `smoke`. |
 | `.github/workflows/prospection-ci.yml` | Pipeline prod (push `main`). Jobs : `quality` → `audit` → `build` → `integration` → `docker` (build+push) → `deploy-prod` (Nomad SSH-bastion). |
 
