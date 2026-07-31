@@ -161,12 +161,11 @@
 
 ## Exception temporaire du 2026-07-31
 
-Le lot `a7b59f9` corrige toutes les alertes critiques et les alertes hautes
-patchables sans rupture. Deux avis racines restent ouverts :
+Le lot de sécurité corrige toutes les alertes critiques et toutes les alertes
+hautes runtime. `sharp 0.35.0` est forcé au-dessus de la plage déclarée par
+Next 15.5.21 ; le build et le smoke staging sont donc bloquants avant toute
+promotion. Un seul avis racine reste ouvert :
 
-- `sharp 0.34.5` est une dépendance runtime de Next 15.5.21. Le correctif
-  `0.35.0` sort de la plage `^0.34.3` déclarée par Next ; forcer cet override
-  sans validation d'image ferait courir un risque de régression native.
 - `brace-expansion 1.x` ne dispose pas de backport sûr. Cette copie est
   uniquement dans l'outillage de développement ; sa suppression exige une
   montée majeure de minimatch/ESLint.
