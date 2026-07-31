@@ -291,15 +291,16 @@ describe("POST /api/tenants/provision", () => {
     inst.tenant.findFirst.mockResolvedValueOnce(null); // 1er appel = ensureOwnerWorkspace
     inst.tenant.findFirst.mockResolvedValueOnce({ id: "tenant-id-42" }); // 2e appel = persistance token
 
+    const timestamp = Date.now();
     const req = makeRequest("/api/tenants/provision", {
       method: "POST",
       headers: { "x-forwarded-for": `10.0.7.${Math.floor(Math.random() * 250)}` },
       body: {
         email: "test-autologin@example.com",
         user_id: uid,
-        timestamp: Date.now(),
+        timestamp,
         signature: createHmac("sha256", SECRET)
-          .update(`test-autologin@example.com:${Date.now()}`)
+          .update(`test-autologin@example.com:${timestamp}`)
           .digest("hex"),
       },
     });
