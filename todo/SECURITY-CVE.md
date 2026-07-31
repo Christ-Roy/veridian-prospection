@@ -158,3 +158,19 @@
 > Tu peux **supprimer ce fichier librement**. Il sera recréé au prochain tick s'il reste des items à signaler. C'est l'idempotence qui garantit qu'on ne perd rien.
 
 *Pour ajuster les règles : [`veridian-infra/ci/trivy-scoring.yml`](https://github.com/Christ-Roy/veridian-infra/blob/main/ci/trivy-scoring.yml). Ping infra-agent.*
+
+## Exception temporaire du 2026-07-31
+
+Le lot `a7b59f9` corrige toutes les alertes critiques et les alertes hautes
+patchables sans rupture. Deux avis racines restent ouverts :
+
+- `sharp 0.34.5` est une dépendance runtime de Next 15.5.21. Le correctif
+  `0.35.0` sort de la plage `^0.34.3` déclarée par Next ; forcer cet override
+  sans validation d'image ferait courir un risque de régression native.
+- `brace-expansion 1.x` ne dispose pas de backport sûr. Cette copie est
+  uniquement dans l'outillage de développement ; sa suppression exige une
+  montée majeure de minimatch/ESLint.
+
+**Décision** : autoriser une seule poussée staging avec `SKIP_DEPS_CVE=1`,
+sans promotion production. **Échéance** : réévaluation et test des montées
+majeures avant le 2026-08-07. **Propriétaire** : infra Veridian.
