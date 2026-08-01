@@ -47,6 +47,7 @@ jobs:
         with:
           fetch-depth: 0  # full history pour test-mapping vs origin/main
           submodules: recursive  # shared/ submodule veridian-infra
+          token: ${{ secrets.CR_PAT }}  # accès cross-repo au submodule privé
 
       - uses: actions/setup-node@v6
         with:
@@ -85,6 +86,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           submodules: recursive  # shared/ submodule veridian-infra
+          token: ${{ secrets.CR_PAT }}  # accès cross-repo au submodule privé
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -113,6 +115,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           submodules: recursive  # shared/ submodule veridian-infra
+          token: ${{ secrets.CR_PAT }}  # accès cross-repo au submodule privé
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -150,6 +153,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           submodules: recursive  # shared/ submodule veridian-infra
+          token: ${{ secrets.CR_PAT }}  # accès cross-repo au submodule privé
 
       - uses: docker/setup-buildx-action@v3
 
