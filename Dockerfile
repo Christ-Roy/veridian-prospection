@@ -51,9 +51,13 @@ RUN apk add --no-cache openssl && \
            /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack && \
     addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
-COPY --from=builder /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+# Next 15 standalone tracing keeps Sharp's native binding but omits the
+# separate libvips package introduced by Sharp 0.35 on Alpine. Without this
+# explicit copy, image optimization crashes at runtime with ERR_DLOPEN_FAILED.
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/@img/sharp-libvips-linuxmusl-x64 ./node_modules/@img/sharp-libvips-linuxmusl-x64
 USER nextjs
 EXPOSE 3000
 ENV PORT=3000
