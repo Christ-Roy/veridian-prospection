@@ -26,6 +26,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           submodules: recursive  # shared/ submodule veridian-infra — requis par le build (@veridian/shared)
+          token: ${{ secrets.CR_PAT }}  # accès cross-repo au submodule privé
 
       - uses: docker/setup-buildx-action@v3
 
@@ -41,6 +42,33 @@ jobs:
             NEXT_PUBLIC_HUB_URL=https://app.veridian.site
             NEXT_PUBLIC_SITE_URL=https://prospection.app.veridian.site
             NEXT_PUBLIC_TRIAL_DAYS=7
+
+      - name: Smoke Sharp in delivered Alpine image
+        run: |
+          docker run --rm --entrypoint node "prospection:${{ github.sha }}" -e '
+            const sharp = require("sharp");
+            if (sharp.versions.sharp !== "0.35.0") {
+              throw new Error(`Unexpected Sharp version: ${sharp.versions.sharp}`);
+            }
+            sharp({
+              create: {
+                width: 2,
+                height: 2,
+                channels: 4,
+                background: { r: 255, g: 0, b: 0, alpha: 1 },
+              },
+            })
+              .png()
+              .toBuffer()
+              .then((buffer) => {
+                if (buffer.length === 0) throw new Error("Sharp returned an empty PNG");
+                console.log(`Sharp ${sharp.versions.sharp}, libvips ${sharp.versions.vips}, PNG ${buffer.length} bytes`);
+              })
+              .catch((error) => {
+                console.error(error);
+                process.exit(1);
+              });
+          '
 
       - name: Trivy — scan image (CRITICAL+HIGH bloquant, ignore-unfixed)
         uses: aquasecurity/trivy-action@master
