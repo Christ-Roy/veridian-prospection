@@ -7,16 +7,14 @@
 # MODE PAR DÉFAUT = WRAPPER DEV-PUB (depuis 2026-05-25, ticket
 # mega-battery-doit-tourner-sur-devpub) :
 #   - Le helper Auth.js v5 (e2e/helpers/auth.ts) fait un `prisma.user.upsert()`
-#     direct contre `postgres-staging:5432`, qui n'est résolvable QUE depuis
-#     le réseau Docker `staging-edge` sur dev-pub. Lancer en local → erreur
-#     PrismaClientInitializationError "Can't reach database server".
+#     direct contre PostgreSQL. Depuis la migration Nomad, la DB et l'app
+#     partagent le même namespace CNI et DATABASE_URL pointe sur 127.0.0.1.
 #   - On wrap donc tout dans un container Playwright lancé sur dev-pub,
-#     joint au réseau staging-edge. Le script :
-#       1. Récupère DATABASE_URL et autres secrets côté local (SSH dev-pub).
-#       2. Rsync le code local vers /tmp/prosp-megabattery sur dev-pub.
-#       3. Lance `docker run --network staging-edge mcr.microsoft.com/playwright:v1.55.0-jammy`
-#          qui fait `npm ci` + `xvfb-run npx playwright test`.
-#       4. Récupère le rapport JSON via scp.
+#     joint au namespace réseau privé de l'allocation Nomad. Le script :
+#       1. Résout le container de la task Nomad `prospection` active.
+#       2. Récupère DATABASE_URL sans l'afficher et identifie son namespace.
+#       3. Rsync le code local vers /tmp/prosp-megabattery sur dev-pub.
+#       4. Lance Playwright dans ce namespace, puis récupère le rapport JSON.
 #
 # Usage :
 #   bash scripts/e2e/staging-full.sh                                # mode dev-pub (défaut)
@@ -70,12 +68,20 @@ fi
 # canonique via Prisma upsert avant login). Sans, 50+ specs fail
 # avec "DATABASE_URL absent — impossible de seeder le compte canonique".
 # Cf todo/done/2026-05-25-script-staging-full-database-url-manquant.md
+resolve_staging_container() {
+  ssh dev-pub \
+    'docker ps --filter "label=com.hashicorp.nomad.alloc_id" --format "{{.ID}} {{.Names}}" | grep -E "^[0-9a-f]+ prospection-[0-9a-f-]+$" | head -1 | cut -d" " -f1' \
+    2>/dev/null || true
+}
+
+PROSP_STAGING_CONTAINER=""
+
 if [ -z "${DATABASE_URL:-}" ]; then
-  echo "ℹ DATABASE_URL absent — récup auto via SSH dev-pub (container Prospection staging)"
-  PROSP_STAGING_CONTAINER=$(ssh dev-pub 'docker ps --filter "name=prospection-staging" --format "{{.Names}}" | grep -v ui-dev | head -1' 2>/dev/null || echo "")
+  echo "ℹ DATABASE_URL absent, récupération depuis la task Nomad staging"
+  PROSP_STAGING_CONTAINER=$(resolve_staging_container)
   if [ -z "$PROSP_STAGING_CONTAINER" ]; then
-    echo "::error::Container Prospection staging introuvable sur dev-pub"
-    echo "Vérifie : ssh dev-pub 'docker ps | grep prospection'"
+    echo "::error::Task Nomad Prospection staging introuvable sur dev-pub"
+    echo "Vérifie : nomad-v allocs prospection-staging"
     exit 1
   fi
   DATABASE_URL=$(ssh dev-pub "docker exec ${PROSP_STAGING_CONTAINER} env 2>/dev/null | grep -E '^DATABASE_URL=' | head -1 | cut -d= -f2-" 2>/dev/null || echo "")
@@ -84,7 +90,7 @@ if [ -z "${DATABASE_URL:-}" ]; then
     echo "Le helper Auth.js v5 (e2e/helpers/auth.ts) en a besoin pour seeder le compte canonique."
     exit 1
   fi
-  echo "✓ DATABASE_URL récupéré via SSH (${#DATABASE_URL} chars, container=${PROSP_STAGING_CONTAINER})"
+  echo "✓ DATABASE_URL récupéré via SSH (${#DATABASE_URL} chars)"
 fi
 
 export STAGING_URL STAGING_USER_EMAIL STAGING_USER_PASSWORD DATABASE_URL
@@ -117,13 +123,30 @@ if [ "${LOCAL_E2E:-0}" = "1" ]; then
   exit $?
 fi
 
+if [ -z "$PROSP_STAGING_CONTAINER" ]; then
+  PROSP_STAGING_CONTAINER=$(resolve_staging_container)
+fi
+if [ -z "$PROSP_STAGING_CONTAINER" ]; then
+  echo "::error::Task Nomad Prospection staging introuvable sur dev-pub"
+  echo "Vérifie : nomad-v allocs prospection-staging"
+  exit 1
+fi
+
+PLAYWRIGHT_NETWORK=$(ssh dev-pub \
+  "docker inspect ${PROSP_STAGING_CONTAINER} --format '{{.HostConfig.NetworkMode}}'" \
+  2>/dev/null || echo "")
+if [[ "$PLAYWRIGHT_NETWORK" != container:* ]]; then
+  echo "::error::Namespace réseau Nomad introuvable pour ${PROSP_STAGING_CONTAINER}"
+  exit 1
+fi
+
 ###############################################################################
 # MODE DEV-PUB (défaut) — wrap dans container Playwright sur dev-pub.
 ###############################################################################
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 REMOTE_DIR="/tmp/prosp-megabattery"
-PLAYWRIGHT_IMAGE="mcr.microsoft.com/playwright:v1.55.0-jammy"
+PLAYWRIGHT_IMAGE="mcr.microsoft.com/playwright:v1.60.0-jammy"
 LOCAL_REPORT="${REPO_ROOT}/e2e-headfull-staging.json"
 
 echo
@@ -131,7 +154,7 @@ echo "── Mode wrapper dev-pub (défaut) ──"
 echo "  Repo local       : ${REPO_ROOT}"
 echo "  Remote dev-pub   : dev-pub:${REMOTE_DIR}"
 echo "  Image            : ${PLAYWRIGHT_IMAGE}"
-echo "  Réseau Docker    : staging-edge"
+echo "  Réseau Docker    : namespace Nomad privé"
 echo
 
 # 1. Préparer le remote dir et sync le code
@@ -142,6 +165,7 @@ rsync -az --delete \
   --exclude .next \
   --exclude test-results \
   --exclude .git \
+  --exclude '.env*' \
   --exclude '.claude/worktrees' \
   --exclude 'e2e-headfull-staging.json' \
   --exclude 'playwright-report' \
@@ -154,37 +178,40 @@ echo "✓ Code synchronisé"
 #    Note : DATABASE_URL contient souvent `?schema=public&...` avec des
 #    caractères spéciaux — fichier env via --env-file = robuste.
 ENV_FILE_REMOTE="${REMOTE_DIR}/.megabattery.env"
-ssh dev-pub "cat > ${ENV_FILE_REMOTE}" <<EOF
+cleanup_remote_env() {
+  ssh dev-pub "rm -f ${ENV_FILE_REMOTE}" >/dev/null 2>&1 || true
+}
+trap cleanup_remote_env EXIT INT TERM
+
+ssh dev-pub "umask 077; cat > ${ENV_FILE_REMOTE}" <<EOF
 STAGING_URL=${STAGING_URL}
+PROSPECTION_URL=${STAGING_URL}
 STAGING_USER_EMAIL=${STAGING_USER_EMAIL}
 STAGING_USER_PASSWORD=${STAGING_USER_PASSWORD}
 DATABASE_URL=${DATABASE_URL}
 PROD_HUB_API_SECRET=${PROD_HUB_API_SECRET:-}
+PLAYWRIGHT_TEST_ARGS=${PLAYWRIGHT_TEST_ARGS:-}
 CI=1
 HEADED=1
 EOF
 ssh dev-pub "chmod 600 ${ENV_FILE_REMOTE}"
 
 # 3. Lance le container Playwright
-#    - --network staging-edge → résoud postgres-staging:5432
+#    - --network container:*  → partage le namespace CNI Nomad ; la DB
+#                               reste privée sur 127.0.0.1:5432
 #    - --env-file              → injecte STAGING_URL/DATABASE_URL/etc.
-#    - npm ci sans audit/fund (postinstall fait prisma generate auto)
-#    - xvfb-run pour le mode headfull sans X11 (container = headless box)
+#    - le helper run-headfull-container.sh installe les dépendances, démarre
+#      Xvfb avec un readiness check explicite, puis lance Playwright headfull
 echo
 echo "── docker run Playwright sur dev-pub (~5-10 min, npm ci + tests) ──"
 set +e
 ssh dev-pub "docker run --rm \
-  --network staging-edge \
+  --network ${PLAYWRIGHT_NETWORK} \
   --env-file ${ENV_FILE_REMOTE} \
   -v ${REMOTE_DIR}:/work \
   -w /work \
   ${PLAYWRIGHT_IMAGE} \
-  bash -c 'set -e; \
-    echo \"── npm ci ──\"; \
-    npm ci --no-audit --no-fund; \
-    echo; echo \"── xvfb-run npx playwright test ──\"; \
-    xvfb-run --auto-servernum --server-args=\"-screen 0 1280x800x24\" \
-      npx playwright test --config=playwright.staging-full.config.ts'"
+  bash scripts/e2e/run-headfull-container.sh"
 EXIT=$?
 set -e
 
@@ -200,7 +227,8 @@ fi
 
 # 5. Cleanup minimal : on garde le code synchro pour debug (rsync écrasera
 #    au prochain run). On retire juste le fichier env (contient le password).
-ssh dev-pub "rm -f ${ENV_FILE_REMOTE}" || true
+cleanup_remote_env
+trap - EXIT INT TERM
 
 echo
 if [ "$EXIT" = "0" ]; then

@@ -47,13 +47,12 @@ test.describe("Provider presets — IMAP tab", () => {
 
     // CTA bouton App Password — vérifie l'URL et target
     const cta = page.getByTestId("mail-provider-app-password-cta");
-    const href = await cta.locator("a").getAttribute("href");
-    expect(href).toBe("https://myaccount.google.com/apppasswords");
-    await expect(cta.locator("a")).toHaveAttribute("target", "_blank");
-    await expect(cta.locator("a")).toHaveAttribute(
-      "rel",
-      /noopener|noreferrer/,
+    await expect(cta).toHaveAttribute(
+      "href",
+      "https://myaccount.google.com/apppasswords",
     );
+    await expect(cta).toHaveAttribute("target", "_blank");
+    await expect(cta).toHaveAttribute("rel", /noopener|noreferrer/);
   });
 
   test("Outlook : auto-fill outlook.office365.com + STARTTLS 587", async ({
@@ -71,11 +70,10 @@ test.describe("Provider presets — IMAP tab", () => {
 
     const hint = page.getByTestId("mail-provider-hint");
     await expect(hint).toHaveAttribute("data-provider", "outlook");
-    const href = await page
-      .getByTestId("mail-provider-app-password-cta")
-      .locator("a")
-      .getAttribute("href");
-    expect(href).toContain("account.microsoft.com");
+    await expect(page.getByTestId("mail-provider-app-password-cta")).toHaveAttribute(
+      "href",
+      /account\.microsoft\.com/,
+    );
   });
 
   test("OVH : auto-fill ssl0.ovh.net + PAS de bandeau App Password (pas requis)", async ({
