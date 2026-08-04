@@ -1,66 +1,48 @@
 # 🔒 Veille CVE automatique — veridian-prospection
 
 > **Généré par** : `veridian-infra/.github/workflows/cron-trivy.yml`
-> **Dernier run** : 2026-08-03 04:11 UTC
-> **Run URL** : local-cron@mail.mybigserveur.local:2026-08-03
+> **Dernier run** : 2026-08-04 04:12 UTC
+> **Run URL** : local-cron@mail.mybigserveur.local:2026-08-04
 > **Image scannée** : `ghcr.io/christ-roy/prospection:latest`
-> **CVE bruts détectés** : 12 (avant filtrage)
+> **CVE bruts détectés** : 6 (avant filtrage)
 > **Scoring** : `veridian-infra/ci/trivy-scoring.yml`
 
 ## TL;DR
 
 - 🚨 **0 RED** — fix prioritaire
-- 🔴 **3 HIGH** — action recommandée cette semaine
-- 🟡 **6 MEDIUM** — récap, pas urgent
-- 🟢 **2 NOISE** — annexe collapse
+- 🔴 **1 HIGH** — action recommandée cette semaine
+- 🟡 **3 MEDIUM** — récap, pas urgent
+- 🟢 **1 NOISE** — annexe collapse
 
 
 ---
 
-## 🔴 HIGH — 3 CVE en 2 groupes
+## 🔴 HIGH — 1 CVE en 1 groupe
 
-### 1. `next` — 15.5.18 → **16.2.11**
+### 1. `ip-address` — 10.2.0 → **10.3.1**
 
-- **CVE** : `CVE-2026-64645` (HIGH/SSRF), `CVE-2026-64649` (HIGH/SSRF)
+- **CVE** : `CVE-2026-69192` (HIGH/SSRF)
 - **Type** : SSRF
 - **Score max** : 45
-- **Title** : next: Next.js: Server-Side Request Forgery vulnerability
-- **Source** : `Node.js`
-- **Fix** : `pnpm up next` (jusqu'à >= `16.2.11`)
-
-### 2. `postcss` — 8.5.15 → **8.5.18**
-
-- **CVE** : `GHSA-r28c-9q8g-f849` (HIGH/Data leak)
-- **Type** : Data leak
-- **Score max** : 30
-- **Title** : PostCSS: Path Traversal in Previous Source Map Auto-Loading (sourceMappingURL) leads to Arbitrary .map File Disclosure
-- **Source** : `Node.js`
-- **Fix** : `pnpm up postcss` (jusqu'à >= `8.5.18`)
+- **Title** : ip-address: Address4 decodes leading-zero octets as decimal while resolvers decode them as octal, allowing SSRF and trust-boundary bypass
+- **Source** : `package-lock.json`
+- **Fix** : `pnpm up ip-address` (jusqu'à >= `10.3.1`)
 
 
 ---
 
-## 🟡 MEDIUM — 6 CVE en 3 groupes
+## 🟡 MEDIUM — 3 CVE en 2 groupes
 
-### 1. `next` — 15.5.18 → **16.2.11**
+### 1. `ip-address` — 10.2.0 → **10.2.2**
 
-- **CVE** : `CVE-2026-64641` (HIGH/DoS), `CVE-2026-64643` (MEDIUM/Data leak), `CVE-2026-64647` (MEDIUM/Data leak), `CVE-2026-64648` (MEDIUM/Data leak)
-- **Type** : Data leak, DoS
-- **Score max** : 15
-- **Title** : next: Next.js: Denial of Service via crafted requests to App Router with Server Actions
-- **Source** : `Node.js`
-- **Fix** : `pnpm up next` (jusqu'à >= `16.2.11`)
+- **CVE** : `CVE-2026-54272` (MEDIUM/SSRF), `CVE-2026-69198` (MEDIUM/SSRF)
+- **Type** : SSRF
+- **Score max** : 18
+- **Title** : ip-address: ip-address: Server-Side Request Forgery via IPv4-mapped/NAT64 IPv6 address misclassification
+- **Source** : `package-lock.json`
+- **Fix** : `pnpm up ip-address` (jusqu'à >= `10.2.2`)
 
-### 2. `sharp` — 0.34.5 → **0.35.0**
-
-- **CVE** : `GHSA-f88m-g3jw-g9cj` (HIGH/Unclassified)
-- **Type** : Unclassified
-- **Score max** : 15
-- **Title** : sharp inherited vulnerabilities in libvips: CVE-2026-33327, CVE-2026-33328, CVE-2026-35590, CVE-2026-35591
-- **Source** : `Node.js`
-- **Fix** : `pnpm up sharp` (jusqu'à >= `0.35.0`)
-
-### 3. `uuid` — 7.0.3 → **13.0.1**
+### 2. `uuid` — 7.0.3 → **13.0.1**
 
 - **CVE** : `CVE-2026-41907` (MEDIUM/Memory corruption)
 - **Type** : Memory corruption
@@ -72,14 +54,14 @@
 
 ---
 
-## 🟢 NOISE filtré (2 CVE)
+## 🟢 NOISE filtré (1 CVE)
 
 <details>
 <summary>Liste complète (1 groupe — clique pour déplier)</summary>
 
 | Package | Installed | Fix | CVE count | Max score |
 |---|---|---|---|---|
-| `next` | 15.5.18 | 16.2.11 | 2 | 6 |
+| `postcss` | 8.5.18 | 8.5.23 | 1 | 6 |
 
 </details>
 
