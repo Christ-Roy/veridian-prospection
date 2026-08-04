@@ -18,7 +18,7 @@
 variable "image_tag" {
   type        = string
   description = "Tag de l'image ghcr.io/christ-roy/prospection à déployer (injecté par la CI)."
-  default     = "staging-5133a6e"
+  default     = "staging-d8d8a4e"
 }
 
 job "prospection-staging" {
@@ -124,10 +124,11 @@ POSTGRES_PASSWORD={{ .DB_PASSWORD }}
 EOH
       }
       resources {
-        cpu = 400
-        # devclone = 4.2 GB : réserve 512 MB, burst jusqu'à 3 GB pour absorber
+        cpu = 100
+        # Pic 7 j observé : 43 MiB. devclone = 4,2 Go : réserve x3 et burst
+        # jusqu'à 3 Go pour absorber
         # le restore (build d'index) sans se faire OOM-killer.
-        memory     = 512
+        memory     = 128
         memory_max = 3072
       }
     }
@@ -169,8 +170,10 @@ TELNYX_PUBLIC_KEY={{ .TELNYX_PUBLIC_KEY }}
 EOH
       }
       resources {
-        cpu    = 400
-        memory = 512
+        # Pic 7 j observé : 172 MiB. Réserve +48 %, fusible x6.
+        cpu        = 400
+        memory     = 256
+        memory_max = 1024
       }
     }
 
@@ -209,8 +212,9 @@ TELNYX_PUBLIC_KEY={{ .TELNYX_PUBLIC_KEY }}
 EOH
       }
       resources {
-        cpu        = 500
-        memory     = 1024
+        # Pics 7 j observés : 97 MHz / 142 MiB.
+        cpu        = 150
+        memory     = 192
         memory_max = 2048
       }
     }
