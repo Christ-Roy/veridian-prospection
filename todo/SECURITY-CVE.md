@@ -1,46 +1,34 @@
 # 🔒 Veille CVE automatique — veridian-prospection
 
 > **Généré par** : `veridian-infra/.github/workflows/cron-trivy.yml`
-> **Dernier run** : 2026-08-04 04:12 UTC
-> **Run URL** : local-cron@mail.mybigserveur.local:2026-08-04
+> **Dernier run** : 2026-08-05 04:12 UTC
+> **Run URL** : local-cron@mail.mybigserveur.local:2026-08-05
 > **Image scannée** : `ghcr.io/christ-roy/prospection:latest`
-> **CVE bruts détectés** : 6 (avant filtrage)
+> **CVE bruts détectés** : 3 (avant filtrage)
 > **Scoring** : `veridian-infra/ci/trivy-scoring.yml`
 
 ## TL;DR
 
 - 🚨 **0 RED** — fix prioritaire
-- 🔴 **1 HIGH** — action recommandée cette semaine
-- 🟡 **3 MEDIUM** — récap, pas urgent
-- 🟢 **1 NOISE** — annexe collapse
+- 🔴 **0 HIGH** — action recommandée cette semaine
+- 🟡 **2 MEDIUM** — récap, pas urgent
+- 🟢 **0 NOISE** — annexe collapse
+
+✅ **Rien d'urgent.** Quelques items MEDIUM à voir quand t'as 5 min.
 
 
 ---
 
-## 🔴 HIGH — 1 CVE en 1 groupe
+## 🟡 MEDIUM — 2 CVE en 2 groupes
 
-### 1. `ip-address` — 10.2.0 → **10.3.1**
+### 1. `postcss` — 8.5.18 → **8.5.23**
 
-- **CVE** : `CVE-2026-69192` (HIGH/SSRF)
-- **Type** : SSRF
-- **Score max** : 45
-- **Title** : ip-address: Address4 decodes leading-zero octets as decimal while resolvers decode them as octal, allowing SSRF and trust-boundary bypass
+- **CVE** : `CVE-2026-69153` (MEDIUM/Data leak)
+- **Type** : Data leak
+- **Score max** : 12
+- **Title** : postcss: PostCSS: Information disclosure via crafted sourceMappingURL
 - **Source** : `package-lock.json`
-- **Fix** : `pnpm up ip-address` (jusqu'à >= `10.3.1`)
-
-
----
-
-## 🟡 MEDIUM — 3 CVE en 2 groupes
-
-### 1. `ip-address` — 10.2.0 → **10.2.2**
-
-- **CVE** : `CVE-2026-54272` (MEDIUM/SSRF), `CVE-2026-69198` (MEDIUM/SSRF)
-- **Type** : SSRF
-- **Score max** : 18
-- **Title** : ip-address: ip-address: Server-Side Request Forgery via IPv4-mapped/NAT64 IPv6 address misclassification
-- **Source** : `package-lock.json`
-- **Fix** : `pnpm up ip-address` (jusqu'à >= `10.2.2`)
+- **Fix** : `pnpm up postcss` (jusqu'à >= `8.5.23`)
 
 ### 2. `uuid` — 7.0.3 → **13.0.1**
 
@@ -50,20 +38,6 @@
 - **Title** : uuid: uuid: Out-of-bounds write vulnerability impacts data integrity and confidentiality
 - **Source** : `package-lock.json`
 - **Fix** : `pnpm up uuid` (jusqu'à >= `13.0.1`)
-
-
----
-
-## 🟢 NOISE filtré (1 CVE)
-
-<details>
-<summary>Liste complète (1 groupe — clique pour déplier)</summary>
-
-| Package | Installed | Fix | CVE count | Max score |
-|---|---|---|---|---|
-| `postcss` | 8.5.18 | 8.5.23 | 1 | 6 |
-
-</details>
 
 
 ---
