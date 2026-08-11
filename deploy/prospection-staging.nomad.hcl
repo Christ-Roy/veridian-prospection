@@ -170,7 +170,7 @@ EOH
       }
       resources {
         # Pic live 2026-08-11: 102 MiB. Réserve x1,9; fusible inchangé.
-        cpu        = 400
+        cpu        = 100
         memory     = 192
         memory_max = 1024
       }
