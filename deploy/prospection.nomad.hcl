@@ -90,9 +90,9 @@ POSTGRES_PASSWORD={{ .DB_PASSWORD }}
 EOH
       }
       resources {
-        cpu        = 300
+        cpu        = 400
         memory     = 256
-        memory_max = 7000
+        memory_max = 3072
       }
     }
 
@@ -152,9 +152,9 @@ OPENROUTER_VERIDIAN_KEY={{ .OPENROUTER_VERIDIAN_KEY }}
 EOH
       }
       resources {
-        cpu        = 500
+        cpu        = 150
         memory     = 256
-        memory_max = 7000
+        memory_max = 512
       }
     }
   }
