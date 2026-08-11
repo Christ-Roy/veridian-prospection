@@ -1,8 +1,8 @@
 # prospection.nomad.hcl — source de vérité GitOps du déploiement PROD.
 #
-# La CI injecte le tag d'image promu avec `-var image_tag=<tag>`. La base
-# Postgres et l'application partagent le même groupe réseau. Le volume DB est
-# local à ovh-prod : ce job stateful ne doit pas être déplacé sans migration.
+# La CI injecte le tag d'image promu avec `-var image_tag=<tag>`. La base PROD
+# vit dans le job Patroni `prospection-db` du repo nomad-veridian. Chaque
+# allocation embarque uniquement l'app et un HAProxy local qui suit le leader.
 # Secrets = Nomad Variable `nomad/jobs/prospection`, jamais en clair ici.
 
 variable "image_tag" {
@@ -17,11 +17,24 @@ job "prospection" {
   priority    = 80
 
   group "stack" {
-    count = 1
+    count = 2
 
+    # PROD stateless sur les deux origines publiques. distinct_hosts interdit
+    # à Nomad de poser les deux allocations sur le même serveur.
     constraint {
       attribute = "${meta.provider}"
-      value     = "ovh-prod"
+      operator  = "regexp"
+      value     = "^(contabo|ovh-prod)$"
+    }
+    constraint {
+      operator = "distinct_hosts"
+      value    = "true"
+    }
+    spread {
+      attribute = "${meta.provider}"
+      weight    = 100
+      target "contabo"  { percent = 50 }
+      target "ovh-prod" { percent = 50 }
     }
 
     restart {
@@ -36,6 +49,13 @@ job "prospection" {
       min_healthy_time = "15s"
       healthy_deadline = "5m"
       auto_revert      = true
+    }
+
+    reschedule {
+      delay          = "15s"
+      delay_function = "exponential"
+      max_delay      = "2m"
+      unlimited      = true
     }
 
     network {
@@ -69,30 +89,46 @@ job "prospection" {
       }
     }
 
-    task "prospection-saas-db" {
+    # HAProxy écoute seulement dans le netns du groupe. Il sonde /primary sur
+    # Patroni et ferme les connexions vers l'ancien leader lors d'une bascule.
+    task "pgproxy" {
       driver = "docker"
       config {
-        image = "postgres:15-alpine"
-        volumes = [
-          "/opt/veridian-lab/prospection/db:/var/lib/postgresql/data",
-        ]
+        image   = "haproxy:3.0-alpine"
+        command = "haproxy"
+        args    = ["-f", "/local/haproxy.cfg"]
       }
       template {
-        destination = "secrets/pg.env"
-        env         = true
+        destination = "local/haproxy.cfg"
+        change_mode = "restart"
         data        = <<EOH
-TZ=UTC
-POSTGRES_USER=postgres
-POSTGRES_DB=prospection
-{{ with nomadVar "nomad/jobs/prospection" }}
-POSTGRES_PASSWORD={{ .DB_PASSWORD }}
-{{ end }}
+global
+    maxconn 200
+    log stdout format raw local0 info
+
+defaults
+    log global
+    mode tcp
+    option tcplog
+    retries 2
+    timeout connect 5s
+    timeout client 30m
+    timeout server 30m
+    timeout check 5s
+
+listen postgres-primary
+    bind 127.0.0.1:5432
+    option httpchk GET /primary
+    http-check expect status 200
+    default-server inter 3s fall 2 rise 2 on-marked-down shutdown-sessions
+    server patroni-contabo 100.108.136.89:5435 check port 8012
+    server patroni-ovhprod 100.88.202.29:5435 check port 8012
 EOH
       }
       resources {
-        cpu        = 300
-        memory     = 256
-        memory_max = 7000
+        cpu        = 50
+        memory     = 32
+        memory_max = 128
       }
     }
 
@@ -153,7 +189,7 @@ EOH
       }
       resources {
         cpu        = 500
-        memory     = 256
+        memory     = 224
         memory_max = 7000
       }
     }
