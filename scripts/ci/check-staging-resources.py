@@ -6,9 +6,10 @@ import re
 
 JOB = Path("deploy/prospection-staging.nomad.hcl")
 EXPECTED = {
-    "db": (100, 128, 3072),
-    "prospection": (400, 256, 1024),
-    "search-dev": (150, 192, 2048),
+    # Réservations live recalibrées le 2026-08-11; les fusibles restent.
+    "db": (50, 64, 3072),
+    "prospection": (400, 192, 1024),
+    "search-dev": (50, 64, 2048),
 }
 
 
