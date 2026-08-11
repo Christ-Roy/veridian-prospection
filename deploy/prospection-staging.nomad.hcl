@@ -124,11 +124,10 @@ POSTGRES_PASSWORD={{ .DB_PASSWORD }}
 EOH
       }
       resources {
-        cpu = 100
-        # Pic 7 j observé : 43 MiB. devclone = 4,2 Go : réserve x3 et burst
-        # jusqu'à 3 Go pour absorber
-        # le restore (build d'index) sans se faire OOM-killer.
-        memory     = 128
+        # Pics live 2026-08-11: 30 MHz / 13 MiB. Le burst jusqu'à 3 GiB
+        # reste disponible pour le restore et la construction d'index.
+        cpu        = 50
+        memory     = 64
         memory_max = 3072
       }
     }
@@ -170,9 +169,9 @@ TELNYX_PUBLIC_KEY={{ .TELNYX_PUBLIC_KEY }}
 EOH
       }
       resources {
-        # Pic 7 j observé : 172 MiB. Réserve +48 %, fusible x6.
+        # Pic live 2026-08-11: 102 MiB. Réserve x1,9; fusible inchangé.
         cpu        = 400
-        memory     = 256
+        memory     = 192
         memory_max = 1024
       }
     }
@@ -212,9 +211,9 @@ TELNYX_PUBLIC_KEY={{ .TELNYX_PUBLIC_KEY }}
 EOH
       }
       resources {
-        # Pics 7 j observés : 97 MHz / 142 MiB.
-        cpu        = 150
-        memory     = 192
+        # Pics live 2026-08-11: 4 MHz / 17 MiB; fusible inchangé.
+        cpu        = 50
+        memory     = 64
         memory_max = 2048
       }
     }
