@@ -59,6 +59,9 @@ jobs:
           BASE_REF: origin/main
         run: bash scripts/ci/check-test-mapping.sh
 
+      - name: Nomad stateful/stateless split guard
+        run: python3 scripts/ci/check-nomad-stateful-split.py deploy/prospection.nomad.hcl
+
       - name: tsc --noEmit
         run: npx tsc --noEmit
 
