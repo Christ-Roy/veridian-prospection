@@ -79,6 +79,8 @@ if 'host_network = "tailscale"' not in postgres:
     fail("PostgreSQL port must bind on host_network=tailscale only.")
 if "/opt/veridian-lab/prospection/db:/var/lib/postgresql/data" not in postgres:
     fail("PostgreSQL group must preserve the existing local volume path.")
+if 'static       = 15432' not in postgres and 'static = 15432' not in postgres:
+    fail("PostgreSQL group must expose the planned Tailscale cutover port 15432.")
 
 if "reschedule" not in app:
     fail("Stateless app group must declare reschedule.")
@@ -87,5 +89,7 @@ for required in ("auto_revert", "canary", "prospection.app.veridian.site", 'task
         fail(f"Stateless app group missing required safety element: {required}")
 if 'DATABASE_URL=postgresql://postgres:{{ .DB_PASSWORD }}@127.0.0.1:5432/prospection' not in app:
     fail("App must keep DATABASE_URL pointed at local pgproxy, not directly at the DB container.")
+if 'server prospection-db-ovhprod 100.88.202.29:15432 check' not in app:
+    fail("pgproxy must point to the dedicated Postgres Tailscale port 15432.")
 
 print(f"✓ Nomad stateful/stateless split guard OK ({HCL_PATH})")

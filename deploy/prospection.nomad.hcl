@@ -13,8 +13,8 @@
 
 variable "image_tag" {
   type        = string
-  description = "Tag de l'image ghcr.io/christ-roy/prospection promue en prod (injecté par la CI)."
-  default     = "latest"
+  description = "Tag de l'image ghcr.io/christ-roy/prospection promue en prod. Pour nomad-v deploy, mettre à jour ce défaut puis committer."
+  default     = "1ea6a39"
 }
 
 job "prospection" {
