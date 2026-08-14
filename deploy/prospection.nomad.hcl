@@ -8,7 +8,7 @@
 variable "image_tag" {
   type        = string
   description = "Tag de l'image ghcr.io/christ-roy/prospection promue en prod (injecté par la CI)."
-  default     = "latest"
+  default     = "07b0b0e"
 }
 
 job "prospection" {
@@ -90,9 +90,9 @@ POSTGRES_PASSWORD={{ .DB_PASSWORD }}
 EOH
       }
       resources {
-        cpu        = 400
+        cpu        = 300
         memory     = 256
-        memory_max = 3072
+        memory_max = 7000
       }
     }
 
@@ -152,9 +152,9 @@ OPENROUTER_VERIDIAN_KEY={{ .OPENROUTER_VERIDIAN_KEY }}
 EOH
       }
       resources {
-        cpu        = 150
+        cpu        = 500
         memory     = 256
-        memory_max = 512
+        memory_max = 7000
       }
     }
   }
