@@ -1,17 +1,17 @@
 # 🔒 Veille CVE automatique — veridian-prospection
 
 > **Généré par** : `veridian-infra/.github/workflows/cron-trivy.yml`
-> **Dernier run** : 2026-08-17 04:11 UTC
-> **Run URL** : local-cron@mail.mybigserveur.local:2026-08-17
+> **Dernier run** : 2026-08-18 04:11 UTC
+> **Run URL** : local-cron@mail.mybigserveur.local:2026-08-18
 > **Image scannée** : `ghcr.io/christ-roy/prospection:latest`
-> **CVE bruts détectés** : 2 (avant filtrage)
+> **CVE bruts détectés** : 3 (avant filtrage)
 > **Scoring** : `veridian-infra/ci/trivy-scoring.yml`
 
 ## TL;DR
 
 - 🚨 **0 RED** — fix prioritaire
 - 🔴 **0 HIGH** — action recommandée cette semaine
-- 🟡 **1 MEDIUM** — récap, pas urgent
+- 🟡 **2 MEDIUM** — récap, pas urgent
 - 🟢 **0 NOISE** — annexe collapse
 
 ✅ **Rien d'urgent.** Quelques items MEDIUM à voir quand t'as 5 min.
@@ -19,9 +19,18 @@
 
 ---
 
-## 🟡 MEDIUM — 1 CVE en 1 groupe
+## 🟡 MEDIUM — 2 CVE en 2 groupes
 
-### 1. `uuid` — 7.0.3 → **13.0.1**
+### 1. `deepmerge-ts` — 7.1.5 → **8.0.0**
+
+- **CVE** : `CVE-2026-40345` (HIGH/Unclassified)
+- **Type** : Unclassified
+- **Score max** : 15
+- **Title** : DeepmergeTS has stack exhaustion when merging recursive object graphs
+- **Source** : `package-lock.json`
+- **Fix** : `pnpm up deepmerge-ts` (jusqu'à >= `8.0.0`)
+
+### 2. `uuid` — 7.0.3 → **13.0.1**
 
 - **CVE** : `CVE-2026-41907` (MEDIUM/Memory corruption)
 - **Type** : Memory corruption
