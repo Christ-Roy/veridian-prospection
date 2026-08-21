@@ -81,7 +81,7 @@ job "prospection" {
         # Image officielle postgres:15-alpine + pgBackRest epingle. La BASE est
         # identique au bit pres : changer d'image de base changerait la
         # collation (musl/glibc) et fausserait silencieusement les index.
-        image = "ghcr.io/christ-roy/veridian-postgres-pgbackrest:15-alpine@sha256:082fce24525018eab02058da98567931d93b2592d222090e8e9577f88f4bffdf"
+        image = "ghcr.io/christ-roy/veridian-postgres-pgbackrest:15-alpine@sha256:e872b9618b68103f1c8789923946f5aca3b4065009f00e8734f4c13603c8ee19"
         args = [
           # --- Archivage continu des WAL vers le depot pgBackRest ---
           # C'est CE reglage, et non la sauvegarde nocturne, qui borne la perte
@@ -164,7 +164,7 @@ EOH
     task "pgbackrest" {
       driver = "docker"
       config {
-        image      = "ghcr.io/christ-roy/veridian-postgres-pgbackrest:15-alpine@sha256:082fce24525018eab02058da98567931d93b2592d222090e8e9577f88f4bffdf"
+        image      = "ghcr.io/christ-roy/veridian-postgres-pgbackrest:15-alpine@sha256:e872b9618b68103f1c8789923946f5aca3b4065009f00e8734f4c13603c8ee19"
         entrypoint = ["/usr/local/bin/pgbackrest-scheduler"]
         command    = ""
         volumes = [
