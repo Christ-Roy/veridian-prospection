@@ -23,6 +23,9 @@ variable "image_tag" {
 
 job "prospection-staging" {
   datacenters = ["veridian-eu"]
+  # Staging réversible derrière Sablier : sans cette valeur, Nomad applique
+  # silencieusement 50 (niveau prod) et fausse les décisions de placement.
+  priority    = 30
   type        = "service"
 
   group "stack" {
