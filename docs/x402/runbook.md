@@ -6,7 +6,7 @@
 2. Vérifier que `search-dev` reçoit `ODH_CLICKHOUSE_URL`, `ODH_CLICKHOUSE_USER`,
    `ODH_CLICKHOUSE_PASSWORD`, `ODH_CLICKHOUSE_DATABASE=odh` et
    `ODH_CLICKHOUSE_SEARCH_TABLE=company_search_current`.
-3. Vérifier le catalogue et le skill comme le ferait un agent sans connaissance du dépôt.
+3. Vérifier le manifeste, le catalogue et le skill comme le ferait un agent sans connaissance du dépôt. Si le point de départ est `prospection.staging.veridian.site`, les documents doivent annoncer des URLs absolues vers `https://search-dev.staging.veridian.site` ou les routes x402 doivent rediriger vers ce host.
 4. Appeler chaque route payante sans paiement : attendre `402` et `PAYMENT-REQUIRED`, sans accès PostgreSQL ni ClickHouse métier.
 5. Décoder les exigences et contrôler méthode, chemin, prix, réseau et adresse de réception.
 6. Effectuer un paiement Base Sepolia avec un client x402 officiel, puis vérifier le JSON métier et `PAYMENT-RESPONSE`.
@@ -15,7 +15,7 @@
 
 ## Critères agent-first
 
-- Un agent partant seulement de `/.well-known/x402` doit trouver le skill, le catalogue et les deux routes.
+- Un agent partant seulement de `/.well-known/x402` doit trouver le skill, le catalogue et les deux routes via des URLs absolues canoniques, sans supposer le same-origin.
 - Le catalogue doit correspondre au code, notamment `page_size_max=50` et les opérateurs `exists` pour `email`/`phone`.
 - Les exemples du skill doivent passer la validation Zod sans adaptation humaine.
 - Une route inexistante ou future ne doit pas être annoncée.

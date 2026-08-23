@@ -10,6 +10,7 @@ afterEach(() => {
 describe("POST /api/x402/odh/estimate", () => {
   it("reste ferme avant activation explicite", async () => {
     delete process.env.X402_ENABLED;
+    delete process.env.X402_PUBLIC_BASE_URL;
     const request = new Request("https://example.test/api/x402/odh/estimate", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -20,6 +21,7 @@ describe("POST /api/x402/odh/estimate", () => {
 
   it("echoue clairement si l'activation est incomplete", async () => {
     process.env.X402_ENABLED = "1";
+    delete process.env.X402_PUBLIC_BASE_URL;
     delete process.env.X402_NETWORK;
     delete process.env.X402_PAY_TO;
     const request = new Request("https://example.test/api/x402/odh/estimate", {

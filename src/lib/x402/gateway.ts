@@ -19,9 +19,10 @@ import {
   validateBazaarRouteExtensions,
 } from "@x402/extensions/bazaar";
 import { isRateLimited } from "@/lib/rate-limit";
+import { X402_ROUTE_PATHS, X402_ROUTE_PRICES, type X402Endpoint } from "./contract";
+import { redirectDisabledX402ToCanonical } from "./discovery";
 import { X402_COMPANY_PUBLIC_FIELDS } from "./public-fields";
 
-type X402Endpoint = "estimate" | "companies";
 type Handler = (request: NextRequest) => Promise<NextResponse>;
 type PaymentVerifiedResult = Extract<
   Awaited<ReturnType<x402HTTPResourceServer["processHTTPRequest"]>>,
@@ -36,15 +37,7 @@ const CDP_FACILITATOR_URL = "https://api.cdp.coinbase.com/platform/v2/x402";
 const PREPAY_LIMIT = 30;
 const PREPAY_WINDOW_MS = 60_000;
 
-export const X402_ROUTE_PATHS: Record<X402Endpoint, string> = {
-  estimate: "/api/x402/odh/estimate",
-  companies: "/api/x402/odh/companies",
-};
-
-const ROUTE_PRICES: Record<X402Endpoint, string> = {
-  estimate: "$0.003",
-  companies: "$0.01",
-};
+export { X402_ROUTE_PATHS, X402_ROUTE_PRICES };
 
 function searchFiltersSchema(fieldSchema: Record<string, unknown> = { type: "string", minLength: 1, maxLength: 64 }) {
   const scalarSchema = { oneOf: [{ type: "string", maxLength: 200 }, { type: "number" }, { type: "boolean" }] };
@@ -136,7 +129,7 @@ function routeConfig(args: {
       scheme: "exact",
       network: args.network as `${string}:${string}`,
       payTo: args.payTo,
-      price: ROUTE_PRICES[args.endpoint],
+      price: X402_ROUTE_PRICES[args.endpoint],
     },
     description: args.description,
     mimeType: "application/json",
@@ -154,7 +147,7 @@ function routeConfig(args: {
       body: {
         error: "payment_required",
         endpoint: args.endpoint,
-        price: ROUTE_PRICES[args.endpoint],
+        price: X402_ROUTE_PRICES[args.endpoint],
         network: args.network,
       },
     }),
@@ -168,6 +161,8 @@ function routeConfig(args: {
 export function createX402RouteHandler(endpoint: X402Endpoint, handler: Handler): Handler {
   return async (request) => {
     if (process.env.X402_ENABLED !== "1") {
+      const redirect = redirectDisabledX402ToCanonical(request, X402_ROUTE_PATHS[endpoint]);
+      if (redirect) return redirect;
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 

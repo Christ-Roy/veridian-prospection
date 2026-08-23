@@ -23,12 +23,28 @@ describe("x402 gateway", () => {
 
   it("reste fermé en 404 quand X402_ENABLED n'est pas explicitement activé", async () => {
     delete process.env.X402_ENABLED;
+    delete process.env.X402_PUBLIC_BASE_URL;
     const handler = vi.fn(async () => NextResponse.json({ ok: true }));
     const route = createX402RouteHandler("estimate", handler);
 
     const res = await route(request());
 
     expect(res.status).toBe(404);
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("redirige une facade x402 désactivée vers le host canonique si la découverte y pointe", async () => {
+    process.env.X402_ENABLED = "0";
+    process.env.X402_PUBLIC_BASE_URL = "https://search-dev.staging.veridian.site";
+    const handler = vi.fn(async () => NextResponse.json({ ok: true }));
+    const route = createX402RouteHandler("estimate", handler);
+
+    const res = await route(request(`${X402_ROUTE_PATHS.estimate}?source=agent`));
+
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toBe(
+      `https://search-dev.staging.veridian.site${X402_ROUTE_PATHS.estimate}?source=agent`,
+    );
     expect(handler).not.toHaveBeenCalled();
   });
 

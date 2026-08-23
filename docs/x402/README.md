@@ -2,10 +2,17 @@
 
 Cette V1 transforme deux capacités ODH existantes en produits achetables directement par un agent IA, sans compte ni clé API : estimation d'un segment et page bornée d'entreprises avec coordonnées professionnelles publiques.
 
-Le contrat de découverte public est servi par :
+Le contrat de découverte public est servi par le host canonique annoncé dans
+`X402_PUBLIC_BASE_URL` quand il est configuré. Sur staging, les documents
+peuvent être découverts depuis `prospection.staging.veridian.site`, mais toutes
+les URLs x402 pointent explicitement vers
+`https://search-dev.staging.veridian.site` pour éviter les routes same-origin
+404.
 
-- `/.well-known/x402` : manifeste compact ;
-- `/.well-known/agent-skills/odh-market-intelligence/SKILL.md` : procédure autonome pour agents ;
+Endpoints de découverte :
+
+- `/.well-known/x402` : manifeste compact avec URLs absolues ;
+- `/.well-known/agent-skills/odh-market-intelligence/SKILL.md` : procédure autonome pour agents avec URLs absolues ;
 - `/api/x402/odh/catalog` : catalogue vivant des champs, opérateurs, prix et limites ;
 - `/llms.txt` : orientation minimale pour crawlers et modèles.
 
