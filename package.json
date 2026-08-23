@@ -34,6 +34,9 @@
     "@tanstack/react-table": "^8.21.3",
     "@telnyx/webrtc": "^2.25.25",
     "@types/pg": "^8.20.0",
+    "@x402/core": "~2.23.0",
+    "@x402/evm": "~2.23.0",
+    "@x402/extensions": "~2.23.0",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -87,6 +90,7 @@
     "ip-address": "^10.3.1",
     "postcss": "^8.5.18",
     "nodemailer": "^9.0.1",
+    "fast-uri": "^3.1.6",
     "sharp": "0.35.0"
   }
 }
