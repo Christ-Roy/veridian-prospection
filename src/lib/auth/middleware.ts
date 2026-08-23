@@ -13,6 +13,8 @@ export async function updateSession(request: NextRequest) {
 
   // Public routes — no auth required
   const isPublicRoute =
+    path === "/llms.txt" ||
+    path.startsWith("/.well-known/") ||
     path.startsWith("/login") ||
     path.startsWith("/signup") ||
     path.startsWith("/auth/") ||

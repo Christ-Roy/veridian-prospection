@@ -5,7 +5,7 @@
  * fail-OPEN sur les pages protégées (= fuite massive) ou redirect cassé.
  *
  * Contrat protégé :
- *   - Routes publiques (/login, /signup, /auth/*, /api/auth/*, /invite/*,
+ *   - Routes publiques (/.well-known/*, /llms.txt, /login, /signup, /auth/*, /api/auth/*, /invite/*,
  *     /api/invitations/*, /api/tenants/provision, /api/auth/token, /api/health,
  *     /api/status, /api/errors) → next() sans toucher à edgeAuth
  *   - Sans session :
@@ -56,6 +56,10 @@ beforeEach(() => {
 // ──────────────────────────────────────────────────────────────────────────
 describe("routes publiques — bypass total de edgeAuth", () => {
   const publicRoutes = [
+    "/.well-known/x402",
+    "/.well-known/agent-skills/index.json",
+    "/.well-known/agent-skills/odh-market-intelligence/SKILL.md",
+    "/llms.txt",
     "/login",
     "/login/callback",
     "/signup",
