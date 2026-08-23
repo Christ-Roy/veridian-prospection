@@ -5,8 +5,8 @@ vi.mock("@/lib/rate-limit", () => ({ isRateLimited: () => false }));
 
 import { X402_ROUTE_PATHS, buildX402Routes, createX402RouteHandler, protectX402Request } from "./gateway";
 
-function request(path = X402_ROUTE_PATHS.estimate): NextRequest {
-  return new Request(`https://prospection.staging.veridian.site${path}`, {
+function request(path = X402_ROUTE_PATHS.estimate, origin = "https://prospection.staging.veridian.site"): NextRequest {
+  return new Request(`${origin}${path}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ filters: { all: [{ field: "departement", op: "eq", value: "69" }] } }),
@@ -73,6 +73,34 @@ describe("x402 gateway", () => {
     expect(res.headers.get("PAYMENT-REQUIRED")).toBe("encoded-requirements");
     expect(handler).not.toHaveBeenCalled();
     expect(server.processSettlement).not.toHaveBeenCalled();
+  });
+
+  it("annonce l'URL publique canonique aux acheteurs derrière le proxy Nomad", async () => {
+    process.env.APP_URL = "https://search-dev.staging.veridian.site";
+    const server = {
+      requiresPayment: vi.fn(() => true),
+      initialize: vi.fn(async () => undefined),
+      processHTTPRequest: vi.fn(async (context: { adapter: { getUrl(): string } }) => {
+        expect(context.adapter.getUrl()).toContain(X402_ROUTE_PATHS.estimate);
+        return {
+          type: "payment-error",
+          response: { status: 402, headers: {}, body: { error: "payment_required" } },
+        };
+      }),
+    };
+
+    await protectX402Request({
+      request: request(`${X402_ROUTE_PATHS.estimate}?source=agent`, "https://0.0.0.0:3200"),
+      endpoint: "estimate",
+      routePath: X402_ROUTE_PATHS.estimate,
+      handler: vi.fn(),
+      server: server as never,
+    });
+
+    const [context] = server.processHTTPRequest.mock.calls[0];
+    expect(context.adapter.getUrl()).toBe(
+      `https://search-dev.staging.veridian.site${X402_ROUTE_PATHS.estimate}?source=agent`,
+    );
   });
 
   it("déclare seulement les routes x402 explicites, sans wildcard Bazaar", () => {

@@ -338,7 +338,7 @@ class NextRequestAdapter implements HTTPAdapter {
   }
 
   getUrl(): string {
-    return this.request.url;
+    return getUrl(this.request).toString();
   }
 
   getAcceptHeader(): string {
@@ -376,7 +376,20 @@ class NextRequestAdapter implements HTTPAdapter {
 }
 
 function getUrl(request: NextRequest): URL {
-  return request.nextUrl ?? new URL(request.url);
+  const requestUrl = request.nextUrl ?? new URL(request.url);
+  const configuredOrigin = process.env.APP_URL || process.env.NEXTAUTH_URL;
+  if (!configuredOrigin) return requestUrl;
+
+  try {
+    const publicUrl = new URL(configuredOrigin);
+    if (publicUrl.protocol !== "https:" && publicUrl.protocol !== "http:") return requestUrl;
+    publicUrl.pathname = requestUrl.pathname;
+    publicUrl.search = requestUrl.search;
+    publicUrl.hash = "";
+    return publicUrl;
+  } catch {
+    return requestUrl;
+  }
 }
 
 const initializedServers = new WeakSet<x402HTTPResourceServer>();
