@@ -10,6 +10,14 @@ const ECOM_SQL = readFileSync(
   join(process.cwd(), "prisma/migrations/0032a_add_ecommerce_columns/migration.sql"),
   "utf8",
 );
+const ECOM_LEVEL_INDEX_SQL = readFileSync(
+  join(process.cwd(), "prisma/migrations/0032b_add_ecommerce_level_index/migration.sql"),
+  "utf8",
+);
+const ECOM_PLATFORM_INDEX_SQL = readFileSync(
+  join(process.cwd(), "prisma/migrations/0032c_add_ecommerce_platform_index/migration.sql"),
+  "utf8",
+);
 
 describe("migration 0032a_add_ecommerce_columns", () => {
   it("rend le schéma ecommerce reproductible avant l'index x402", () => {
@@ -22,8 +30,9 @@ describe("migration 0032a_add_ecommerce_columns", () => {
     ]) {
       expect(ECOM_SQL).toContain(`ADD COLUMN IF NOT EXISTS ${column}`);
     }
-    expect(ECOM_SQL).toContain("CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ent_ecom_level");
-    expect(ECOM_SQL).toContain("CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ent_ecom_platform");
+    expect(ECOM_SQL).not.toContain("CREATE INDEX");
+    expect(ECOM_LEVEL_INDEX_SQL).toContain("CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ent_ecom_level");
+    expect(ECOM_PLATFORM_INDEX_SQL).toContain("CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ent_ecom_platform");
   });
 });
 
