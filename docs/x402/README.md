@@ -16,4 +16,10 @@ Les routes payantes V1 sont uniquement :
 
 Les appels acceptent des filtres structurés, jamais du SQL. Une page contient au maximum 50 entreprises et 20 champs. Les emails, téléphones et domaines professionnels publics sont inclus ; les personnes et dirigeants ne le sont pas dans cette façade.
 
+Les routes payantes lisent la projection ClickHouse ODH `odh.company_search_current`
+via HTTP interne Tailscale. PostgreSQL reste réservé à l'auth, au paiement, aux
+commandes longues et à l'état opérationnel. Il n'y a pas de fallback PostgreSQL
+pour les lectures x402 payantes : une config ClickHouse absente, un timeout ou
+une limite de lecture renvoie une erreur explicite et annule le règlement.
+
 Les tables de commandes longues sont préparées dans PostgreSQL, mais aucun job payant asynchrone n'est publié avant qu'un worker et son lien de règlement soient testés.
