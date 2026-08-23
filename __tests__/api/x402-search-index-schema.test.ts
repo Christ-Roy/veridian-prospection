@@ -6,6 +6,26 @@ const SQL = readFileSync(
   join(process.cwd(), "prisma/migrations/0033_add_x402_department_covering_index/migration.sql"),
   "utf8",
 );
+const ECOM_SQL = readFileSync(
+  join(process.cwd(), "prisma/migrations/0032a_add_ecommerce_columns/migration.sql"),
+  "utf8",
+);
+
+describe("migration 0032a_add_ecommerce_columns", () => {
+  it("rend le schéma ecommerce reproductible avant l'index x402", () => {
+    for (const column of [
+      "ecom_level",
+      "ecom_platform",
+      "ecom_has_payment",
+      "ecom_keyword_score",
+      "ecom_has_product_schema",
+    ]) {
+      expect(ECOM_SQL).toContain(`ADD COLUMN IF NOT EXISTS ${column}`);
+    }
+    expect(ECOM_SQL).toContain("CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ent_ecom_level");
+    expect(ECOM_SQL).toContain("CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ent_ecom_platform");
+  });
+});
 
 describe("migration 0033_add_x402_department_covering_index", () => {
   it("construit l'index sans bloquer les écritures", () => {
