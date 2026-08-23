@@ -288,11 +288,13 @@ jobs:
       # namespace du container DB de l'alloc (`--network container:db-<alloc>`),
       # ce qui résout 127.0.0.1:5432 exactement comme l'app.
       #
-      # Idempotent : migrate deploy skip les migrations déjà dans _prisma_migrations
-      # (staging = 31/31 baseline → no-op au 1er run). Le mot de passe DB est lu
+      # Idempotent : migrate deploy skip les migrations déjà dans _prisma_migrations.
+      # Les DEUX bases sont migrées : `prospection` sert l'app staging normale,
+      # `prospection_devclone` sert le banc IA/x402. Oublier la seconde donne un
+      # déploiement vert avec un schéma x402 obsolète. Le mot de passe DB est lu
       # IN SITU depuis l'env du container postgres (jamais dans la CI). Tout le
       # matériel temporaire est nettoyé en fin de step.
-      - name: Prisma migrate deploy (DB de l'alloc, via bastion→dev-pub)
+      - name: Prisma migrate deploy (app + banc IA, via bastion→dev-pub)
         run: |
           ssh -i ~/.ssh/id_ed25519 \
             "${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}" \
@@ -325,12 +327,15 @@ jobs:
           set -euo pipefail
           cd "$WORK" && tar xzf prisma.tgz
           DB_PASS=$(docker exec "$DB_CT" printenv POSTGRES_PASSWORD)
-          docker run --rm \
-            --network "container:$DB_CT" \
-            -v "$WORK/prisma:/app/prisma" \
-            -w /app \
-            -e DATABASE_URL="postgresql://app:$DB_PASS@127.0.0.1:5432/prospection?connection_limit=5" \
-            node:22-alpine sh -c 'apk add --no-cache openssl >/dev/null && npm i -g prisma@6.19.2 --silent && prisma migrate deploy'
+          for DB_NAME in prospection prospection_devclone; do
+            echo "migrate target: $DB_NAME"
+            docker run --rm \
+              --network "container:$DB_CT" \
+              -v "$WORK/prisma:/app/prisma" \
+              -w /app \
+              -e DATABASE_URL="postgresql://app:$DB_PASS@127.0.0.1:5432/$DB_NAME?connection_limit=5" \
+              node:22-alpine sh -c 'apk add --no-cache openssl >/dev/null && npm i -g prisma@6.19.2 --silent && prisma migrate deploy'
+          done
           rm -rf "$WORK"
           DEVPUB
 
