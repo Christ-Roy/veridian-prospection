@@ -52,6 +52,40 @@ describe("x402 search handlers", () => {
     });
   });
 
+  it("retourne le volume actionnable et les ventilations d'un segment publiable", async () => {
+    const queue = [
+      [{ total: BigInt(12), with_phone: BigInt(8), with_email: BigInt(9), with_both: BigInt(6) }],
+      [{ key: "Commerce", count: BigInt(7) }],
+      [{ key: "69", count: BigInt(5) }],
+      [{ key: "confirmed", count: BigInt(4) }],
+      [{ key: "shopify", count: BigInt(3) }],
+    ];
+    withSearchTimeout.mockImplementationOnce(async (fn) => fn(async () => queue.shift() ?? []));
+
+    const res = await handleX402Estimate(
+      post({
+        filters: { all: [{ field: "departement", op: "eq", value: "69" }] },
+      }) as never,
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      estimated_count: 12,
+      actionable: {
+        with_phone: 8,
+        with_email: 9,
+        with_phone_and_email: 6,
+      },
+      breakdown: {
+        by_secteur: [{ key: "Commerce", count: 7 }],
+        by_departement: [{ key: "69", count: 5 }],
+        by_ecom_level: [{ key: "confirmed", count: 4 }],
+        by_ecom_platform: [{ key: "shopify", count: 3 }],
+      },
+    });
+    expect(withSearchTimeout).toHaveBeenCalledOnce();
+  });
+
   it("rejette un payload companies hors bornes avant toute requête DB", async () => {
     const res = await handleX402Companies(
       post({
