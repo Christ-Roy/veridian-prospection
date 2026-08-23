@@ -50,6 +50,7 @@
     Le test du service exerce les schemas, le JSON canonique, le hash et les
     exports utilises pour l'idempotence des commandes longues.
 - sources:
+    - src/app/api/x402/jobs/route.ts
     - src/app/api/x402/jobs/[id]/route.ts
   covered_by:
     - __tests__/api/x402-jobs.test.ts

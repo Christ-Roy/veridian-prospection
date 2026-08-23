@@ -8,10 +8,12 @@ afterEach(() => {
 });
 
 describe("GET /api/x402/odh/catalog", () => {
-  it("publie un parcours agent borne seulement quand x402 est active", async () => {
+  it("reste invisible tant que x402 n'est pas active", async () => {
     delete process.env.X402_ENABLED;
     expect((await GET()).status).toBe(404);
+  });
 
+  it("publie un parcours agent borne quand x402 est active", async () => {
     process.env.X402_ENABLED = "1";
     process.env.X402_NETWORK = "eip155:84532";
     const response = await GET();

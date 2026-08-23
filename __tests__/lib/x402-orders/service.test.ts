@@ -7,6 +7,10 @@ import {
 } from "@/lib/x402-orders/service";
 import { sha256HexForJson } from "@/lib/x402-orders/json";
 import type { VerifiedX402Identity } from "@/lib/x402-orders/identity";
+import {
+  MAX_X402_CARTOGRAPHY_ROWS,
+  X402CreateJobRequestSchema,
+} from "@/lib/x402-orders/payload";
 
 const NOW = new Date("2026-08-23T10:00:00.000Z");
 
@@ -86,6 +90,18 @@ function mockDb() {
 }
 
 describe("createX402Job", () => {
+  it("refuse une cartographie qui depasse la borne de lignes", () => {
+    const parsed = X402CreateJobRequestSchema.safeParse(
+      validBody({
+        payload: {
+          ...validBody().payload,
+          maxRows: MAX_X402_CARTOGRAPHY_ROWS + 1,
+        },
+      }),
+    );
+    expect(parsed.success).toBe(false);
+  });
+
   it("crée buyer/order/payment avec wallet injecté, rattachements nullable, payload hashé et montants entiers", async () => {
     const db = mockDb();
     const result = await createX402Job(identity(), validBody(), db as never, NOW);
