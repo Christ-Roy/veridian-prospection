@@ -31,6 +31,13 @@
     Test colocalise du handshake x402 : fermeture par defaut, configuration
     obligatoire, 402 avant acces metier et routes Bazaar explicites.
 - sources:
+    - src/lib/x402/gateway.test.ts
+  covered_by:
+    - src/lib/x402/gateway.test.ts
+  reason: |
+    Le test Vitest est colocalise avec gateway.ts ; cette auto-declaration
+    neutralise le faux chemin canonique gateway.test.test.ts du hook historique.
+- sources:
     - src/lib/x402/search.ts
     - src/lib/x402/public-fields.ts
   covered_by:
@@ -38,6 +45,13 @@
   reason: |
     Test colocalise des bornes, projections, filtres contacts et requetes
     metier de la facade ODH payante.
+- sources:
+    - src/lib/x402/search.test.ts
+  covered_by:
+    - src/lib/x402/search.test.ts
+  reason: |
+    Le test Vitest est colocalise avec search.ts ; cette auto-declaration
+    neutralise le faux chemin canonique search.test.test.ts du hook historique.
 - sources:
     - src/lib/x402-orders/index.ts
     - src/lib/x402-orders/json.ts
@@ -125,6 +139,14 @@
     Test colocalisé. 22 tests : bypass 13 routes publiques, API sans
     session → next() (délègue 401 handler), pages → redirect
     `/login?redirect=`, session OK → passe.
+
+- sources:
+    - src/lib/auth/middleware.test.ts
+  covered_by:
+    - src/lib/auth/middleware.test.ts
+  reason: |
+    Le test Vitest est colocalise avec middleware.ts ; cette auto-declaration
+    neutralise le faux chemin canonique middleware.test.test.ts du hook historique.
 
 - sources:
     - src/lib/auth/roles.ts
