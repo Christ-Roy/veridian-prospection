@@ -1,0 +1,4 @@
+interface:
+  display_name: "ODH Market Intelligence"
+  short_description: "Buy French B2B intelligence via x402"
+  default_prompt: "Use $odh-market-intelligence to inspect the live catalog, estimate a useful French B2B segment, and buy only the bounded company data needed."

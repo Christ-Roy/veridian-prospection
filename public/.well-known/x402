@@ -1,0 +1,27 @@
+{
+  "x402Version": 2,
+  "serviceName": "Veridian ODH Market Intelligence",
+  "status": "testnet",
+  "description": "Agent-first French company intelligence with public professional contacts, web and ecommerce signals.",
+  "discovery": {
+    "catalog": "/api/x402/odh/catalog",
+    "skill": "/.well-known/agent-skills/odh-market-intelligence/SKILL.md",
+    "skillsIndex": "/.well-known/agent-skills/index.json",
+    "llmsTxt": "/llms.txt"
+  },
+  "resources": [
+    {
+      "method": "POST",
+      "path": "/api/x402/odh/estimate",
+      "price": "$0.003",
+      "network": "eip155:84532"
+    },
+    {
+      "method": "POST",
+      "path": "/api/x402/odh/companies",
+      "price": "$0.01",
+      "network": "eip155:84532"
+    }
+  ],
+  "externallyIndexed": false
+}

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://schemas.agentskills.io/discovery/0.2.0/schema.json",
+  "skills": [
+    {
+      "name": "odh-market-intelligence",
+      "type": "skill-md",
+      "description": "Buy French company intelligence and public professional contacts through x402: inspect the free catalog, estimate a segment, then fetch bounded company pages.",
+      "url": "/.well-known/agent-skills/odh-market-intelligence/SKILL.md"
+    }
+  ]
+}

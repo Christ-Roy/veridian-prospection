@@ -10,7 +10,7 @@ vi.mock("@/lib/search/exec", () => ({
 import { handleX402Companies, handleX402Estimate } from "./search";
 
 function post(body: unknown): Request {
-  return new Request("https://prospection.staging.veridian.site/api/x402/search/companies", {
+  return new Request("https://prospection.staging.veridian.site/api/x402/odh/companies", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),

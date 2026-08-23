@@ -37,8 +37,8 @@ const PREPAY_LIMIT = 30;
 const PREPAY_WINDOW_MS = 60_000;
 
 export const X402_ROUTE_PATHS: Record<X402Endpoint, string> = {
-  estimate: "/api/x402/search/estimate",
-  companies: "/api/x402/search/companies",
+  estimate: "/api/x402/odh/estimate",
+  companies: "/api/x402/odh/companies",
 };
 
 const ROUTE_PRICES: Record<X402Endpoint, string> = {

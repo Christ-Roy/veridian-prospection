@@ -1,0 +1,16 @@
+# Veridian ODH Market Intelligence
+
+Agent-first x402 v2 API for French company intelligence and public professional contacts.
+
+Start here:
+
+- `GET /api/x402/odh/catalog` — free live schemas, operators, prices and limits.
+- `GET /.well-known/agent-skills/odh-market-intelligence/SKILL.md` — exact agent workflow and examples.
+- `GET /.well-known/x402` — compact service manifest.
+
+Paid testnet resources:
+
+- `POST /api/x402/odh/estimate` — $0.003 USDC on Base Sepolia.
+- `POST /api/x402/odh/companies` — $0.01 USDC on Base Sepolia, at most 50 companies and 20 fields per call.
+
+Call a paid route without `PAYMENT-SIGNATURE` to obtain its `402` and `PAYMENT-REQUIRED` metadata. Use an x402-compatible client to pay and retry. A successful paid response must include `PAYMENT-RESPONSE`.
