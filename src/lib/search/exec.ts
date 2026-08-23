@@ -17,6 +17,13 @@ import { prisma } from "@/lib/prisma";
 export const SEARCH_STATEMENT_TIMEOUT_MS = 5000;
 
 /**
+ * Plafond de la transaction qui peut enchaîner plusieurs requêtes bornées.
+ * Il doit être supérieur au statement_timeout : Prisma applique sinon son
+ * timeout interactif de 5 s à l'ensemble estimate + breakdowns.
+ */
+export const SEARCH_TRANSACTION_TIMEOUT_MS = 30000;
+
+/**
  * Exécute une série de requêtes SQL paramétrées dans une transaction avec
  * `statement_timeout` posé. Retourne un runner `q(sql, ...params)`.
  *
@@ -30,13 +37,16 @@ export const SEARCH_STATEMENT_TIMEOUT_MS = 5000;
 export async function withSearchTimeout<T>(
   fn: (q: <R>(sql: string, ...params: unknown[]) => Promise<R>) => Promise<T>,
 ): Promise<T> {
-  return prisma.$transaction(async (tx) => {
-    // SET LOCAL : portée transaction uniquement, réinitialisé au COMMIT/ROLLBACK.
-    await tx.$executeRawUnsafe(`SET LOCAL statement_timeout = ${SEARCH_STATEMENT_TIMEOUT_MS}`);
-    const q = <R>(sql: string, ...params: unknown[]): Promise<R> =>
-      tx.$queryRawUnsafe<R>(sql, ...params) as Promise<R>;
-    return fn(q);
-  });
+  return prisma.$transaction(
+    async (tx) => {
+      // SET LOCAL : portée transaction uniquement, réinitialisé au COMMIT/ROLLBACK.
+      await tx.$executeRawUnsafe(`SET LOCAL statement_timeout = ${SEARCH_STATEMENT_TIMEOUT_MS}`);
+      const q = <R>(sql: string, ...params: unknown[]): Promise<R> =>
+        tx.$queryRawUnsafe<R>(sql, ...params) as Promise<R>;
+      return fn(q);
+    },
+    { timeout: SEARCH_TRANSACTION_TIMEOUT_MS },
+  );
 }
 
 /**

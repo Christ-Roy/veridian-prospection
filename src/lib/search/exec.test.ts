@@ -1,14 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { txMock } = vi.hoisted(() => {
+const { txMock, transactionMock } = vi.hoisted(() => {
   const tx = { $executeRawUnsafe: vi.fn(), $queryRawUnsafe: vi.fn() };
-  return { txMock: tx };
+  return {
+    txMock: tx,
+    transactionMock: vi.fn(async (cb: (transaction: unknown) => unknown) => cb(tx)),
+  };
 });
 vi.mock("@/lib/prisma", () => ({
-  prisma: { $transaction: vi.fn(async (cb: (tx: unknown) => unknown) => cb(txMock)) },
+  prisma: { $transaction: transactionMock },
 }));
 
-import { isStatementTimeout, SEARCH_STATEMENT_TIMEOUT_MS, withSearchTimeout } from "./exec";
+import {
+  isStatementTimeout,
+  SEARCH_STATEMENT_TIMEOUT_MS,
+  SEARCH_TRANSACTION_TIMEOUT_MS,
+  withSearchTimeout,
+} from "./exec";
 
 describe("isStatementTimeout", () => {
   it("détecte le SQLSTATE 57014", () => {
@@ -38,6 +46,7 @@ describe("isStatementTimeout", () => {
 
 describe("withSearchTimeout", () => {
   beforeEach(() => {
+    transactionMock.mockClear();
     txMock.$executeRawUnsafe.mockReset();
     txMock.$queryRawUnsafe.mockReset();
   });
@@ -48,6 +57,15 @@ describe("withSearchTimeout", () => {
     expect(txMock.$executeRawUnsafe).toHaveBeenCalledOnce();
     expect(txMock.$executeRawUnsafe.mock.calls[0][0]).toContain("statement_timeout");
     expect(txMock.$executeRawUnsafe.mock.calls[0][0]).toContain(String(SEARCH_STATEMENT_TIMEOUT_MS));
+  });
+
+  it("laisse à la transaction le temps d'enchaîner plusieurs requêtes bornées", async () => {
+    await withSearchTimeout(async () => "ok");
+
+    expect(SEARCH_TRANSACTION_TIMEOUT_MS).toBeGreaterThan(SEARCH_STATEMENT_TIMEOUT_MS);
+    expect(transactionMock).toHaveBeenCalledWith(expect.any(Function), {
+      timeout: SEARCH_TRANSACTION_TIMEOUT_MS,
+    });
   });
 
   it("fournit un runner q qui exécute via tx et remonte le résultat", async () => {
