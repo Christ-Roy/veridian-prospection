@@ -192,7 +192,7 @@ export function getOdhClickHouseConfig(env: NodeJS.ProcessEnv = process.env): Od
   };
 }
 
-export function buildClickHouseWhere(
+function buildClickHouseWhere(
   filters: SearchFilters,
   config: Pick<OdhClickHouseConfig, "database" | "table"> = getOdhClickHouseConfig(),
 ): { sql: string; params: ClickHouseParams } {
@@ -288,7 +288,7 @@ class OdhClickHouseClient {
   }
 }
 
-export class ClickHouseParams {
+class ClickHouseParams {
   private next = 1;
   private readonly values: { name: string; value: string }[] = [];
 

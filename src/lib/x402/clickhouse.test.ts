@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   OdhClickHouseConfigError,
+  OdhClickHouseQueryError,
   getOdhClickHouseConfig,
   queryX402Companies,
   queryX402Estimate,
@@ -103,5 +104,14 @@ describe("x402 ClickHouse adapter", () => {
     expect(result.suppressSmallSegment).toBe(true);
     expect(result.breakdown).toEqual({});
     expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("échoue fermé et classe une réponse ClickHouse invalide", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(jsonResponse("not-json\n")));
+
+    await expect(queryX402Estimate({ all: [] })).rejects.toMatchObject({
+      name: OdhClickHouseQueryError.name,
+      kind: "invalid_response",
+    });
   });
 });

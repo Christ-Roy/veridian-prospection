@@ -53,6 +53,16 @@
     Le test Vitest est colocalise avec search.ts ; cette auto-declaration
     neutralise le faux chemin canonique search.test.test.ts du hook historique.
 - sources:
+    - src/lib/x402/clickhouse.ts
+    - src/lib/x402/clickhouse.test.ts
+  covered_by:
+    - src/lib/x402/clickhouse.test.ts
+  reason: |
+    Le test Vitest colocalise couvre la configuration fail-closed, les requetes
+    parametrees, les bornes de lecture, les timeouts et la classification des
+    erreurs ClickHouse. L'auto-declaration du fichier test neutralise le faux
+    chemin clickhouse.test.test.ts du hook historique.
+- sources:
     - src/lib/x402-orders/index.ts
     - src/lib/x402-orders/json.ts
     - src/lib/x402-orders/payload.ts
