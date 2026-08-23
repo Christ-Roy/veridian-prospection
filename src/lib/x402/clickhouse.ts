@@ -282,7 +282,7 @@ class OdhClickHouseClient {
         .map((line) => line.trim())
         .filter(Boolean)
         .map((line) => JSON.parse(line) as T);
-    } catch (error) {
+    } catch {
       throw new OdhClickHouseQueryError("ClickHouse returned invalid JSONEachRow", "invalid_response");
     }
   }
