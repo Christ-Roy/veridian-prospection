@@ -392,6 +392,8 @@ model Workspace {
   leadCreditEvents LeadCreditEvent[]
   leadConsumptions LeadConsumption[]
   pipelineStages   WorkspacePipelineStage[]
+  x402Buyers       X402Buyer[]
+  x402Orders       X402Order[]
 
   @@unique([tenantId, slug])
   @@index([tenantId])
@@ -781,6 +783,7 @@ model User {
   sessions       Session[]
   mfaCodes       MfaCode[]
   openrouterLink UserOpenRouterLink?
+  x402Orders     X402Order[]
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
@@ -933,6 +936,10 @@ model Tenant {
   planHistory PlanHistory[]
   mailConfig  TenantMailConfig?
   aiConfig    TenantAiConfig?
+  x402Buyers X402Buyer[]
+  x402Orders X402Order[]
+  x402Payments X402Payment[]
+  x402JobResults X402JobResult[]
 
   @@index([userId])
   @@index([status])
@@ -1233,4 +1240,131 @@ model TenantMailTemplate {
 
   @@index([tenantId, deletedAt])
   @@map("tenant_mail_templates")
+}
+
+// ============================================================================
+// X402 JOBS — commandes longues ODH liées à un wallet CAIP-10
+// ============================================================================
+
+/// Identité acheteur x402 normalisée par wallet CAIP-10.
+/// Le wallet est injecté par le core x402 après vérification paiement/identité ;
+/// cette app ne forge pas de preuve on-chain et ne stocke pas de secret wallet.
+/// tenant/workspace/user sont des rattachements optionnels, posés plus tard
+/// après SIWX/auth ou contexte Veridian explicite.
+model X402Buyer {
+  id            String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String?    @map("tenant_id") @db.Uuid
+  tenant        Tenant?    @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  workspaceId   String?    @map("workspace_id") @db.Uuid
+  workspace     Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  walletAccount String     @unique @map("wallet_account") @db.VarChar(192)
+
+  firstSeenAt DateTime @default(now()) @map("first_seen_at") @db.Timestamptz
+  lastSeenAt  DateTime @default(now()) @map("last_seen_at") @db.Timestamptz
+
+  orders X402Order[]
+
+  @@index([tenantId])
+  @@map("x402_buyers")
+}
+
+/// Commande longue x402 pour une cartographie ODH.
+/// Idempotence double : `paymentIdentifier` (preuve paiement vérifiée par le
+/// core) + `clientIdempotencyKey` (retry client). Payload validé côté code,
+/// persisté en JSONB et hashé SHA-256 canonique pour détecter les replays
+/// incohérents.
+model X402Order {
+  id      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  buyerId String    @map("buyer_id") @db.Uuid
+  buyer   X402Buyer @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+
+  tenantId    String?    @map("tenant_id") @db.Uuid
+  tenant      Tenant?    @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  workspaceId String?    @map("workspace_id") @db.Uuid
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  userId      String?    @map("user_id") @db.Uuid
+  user        User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  walletAccount        String @map("wallet_account") @db.VarChar(192)
+  jobKind              String @default("odh_cartography") @map("job_kind") @db.VarChar(32)
+  status               String @default("queued") @db.VarChar(16)
+  clientIdempotencyKey String @map("client_idempotency_key") @db.VarChar(128)
+  paymentIdentifier    String @unique @map("payment_identifier") @db.VarChar(192)
+
+  costAsset           String @map("cost_asset") @db.VarChar(64)
+  costNetwork         String @map("cost_network") @db.VarChar(64)
+  costAuthorizedUnits BigInt @map("cost_authorized_units")
+  costSettledUnits    BigInt @default(0) @map("cost_settled_units")
+
+  payload     Json
+  payloadHash String @map("payload_hash") @db.Char(64)
+
+  queuedAt    DateTime  @default(now()) @map("queued_at") @db.Timestamptz
+  startedAt   DateTime? @map("started_at") @db.Timestamptz
+  completedAt DateTime? @map("completed_at") @db.Timestamptz
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz
+  errorCode   String?   @map("error_code") @db.VarChar(64)
+  errorMessage String?  @map("error_message")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  payment X402Payment?
+  result  X402JobResult?
+
+  @@unique([walletAccount, clientIdempotencyKey], map: "x402_orders_wallet_client_idempotency_key")
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([walletAccount, createdAt(sort: Desc)])
+  @@index([tenantId, status, createdAt(sort: Desc)])
+  @@index([expiresAt])
+  @@map("x402_orders")
+}
+
+/// Trace paiement consommée par la commande. La vérification x402 réelle reste
+/// dans le core ; Prospection conserve l'identifiant, les unités entières et le
+/// raw minimal utile à la réconciliation.
+model X402Payment {
+  id      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId String    @unique @map("order_id") @db.Uuid
+  order   X402Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  tenantId      String? @map("tenant_id") @db.Uuid
+  tenant        Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  walletAccount String @map("wallet_account") @db.VarChar(192)
+
+  paymentIdentifier     String @unique @map("payment_identifier") @db.VarChar(192)
+  asset                 String @db.VarChar(64)
+  network               String @db.VarChar(64)
+  authorizedAmountUnits BigInt @map("authorized_amount_units")
+  settledAmountUnits    BigInt @default(0) @map("settled_amount_units")
+  status                String @default("authorized") @db.VarChar(16)
+  rawPayment            Json?  @map("raw_payment")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([tenantId, walletAccount, createdAt(sort: Desc)])
+  @@map("x402_payments")
+}
+
+/// Résultat de job : uniquement pointeur R2 + métadonnées légères.
+/// Les blobs de cartographie restent hors Postgres.
+model X402JobResult {
+  id      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId String    @unique @map("order_id") @db.Uuid
+  order   X402Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  tenantId String? @map("tenant_id") @db.Uuid
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+
+  rawResultUri    String  @map("raw_result_uri")
+  rawResultSha256 String? @map("raw_result_sha256") @db.Char(64)
+  rowCount        Int?    @map("row_count")
+  summary         Json?
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@map("x402_job_results")
 }
