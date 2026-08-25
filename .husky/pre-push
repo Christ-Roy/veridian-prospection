@@ -208,4 +208,8 @@ if [ -n "$INFRA_CHANGES" ]; then
   echo "     ./scripts/ci/render-compose.sh prod"
 fi
 
+# Contrat GitOps Nomad co-localisé : criticité, RTO/RPO, staging obligatoire
+# et images immuables sont vérifiés avant chaque push.
+scripts/ci/check-nomad-contract.sh
+
 exit 0

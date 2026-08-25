@@ -22,6 +22,25 @@ job "prospection" {
   type        = "service"
   priority    = 80
 
+# veridian-contract:start
+  meta = {
+    "veridian.contract.version"  = "1"
+    "veridian.managed_by"        = "repo"
+    "veridian.environment"       = "production"
+    "veridian.tier"              = "saas-prod"
+    "veridian.criticality"       = "B"
+    "veridian.owner"             = "growth"
+    "veridian.objective"         = "availability-99.9"
+    "veridian.rto_minutes"       = "5"
+    "veridian.rpo_minutes"       = "15"
+    "veridian.state"             = "local-state"
+    "veridian.mobility"          = "local-gap"
+    "veridian.preemptible"       = "false"
+    "veridian.staging_job"       = "prospection-staging"
+    "veridian.promotion_policy"  = "staging-required"
+  }
+# veridian-contract:end
+
   group "stack" {
     count = 1
 
