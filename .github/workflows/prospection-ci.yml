@@ -11,7 +11,7 @@
 #   3. build       : npm run build (Next.js standalone)                                            (~90s)
 #   4. integration : vitest e2e/integration vs Postgres éphémère                                   (~60s)
 #   5. docker      : buildx + push GHCR (latest + sha) + cache GHA (push main uniquement)          (~3min cold / ~30s warm)
-#   6. deploy-prod : SSH bastion → nomad job plan/run prospection + prisma migrate (push main)      (~1-2min)
+#   6. deploy-prod : SSH bastion en verbes contraints (put-job/deploy/put-migrations/migrate)         (~1-2min)
 #
 # Promotion prod (modèle gitops Nomad SSH-bastion — 2026-07-11) :
 #   Sur push main, `docker` build+push l'image GHCR (:latest + :<sha>) puis
@@ -208,9 +208,15 @@ jobs:
   #   - JOB_FILE = deploy/prospection.nomad.hcl  (job Nomad "prospection")
   #   - IMAGE_TAG = <sha7> SANS préfixe (metadata type=sha,prefix= côté docker)
   #   - Prod PUBLIQUE : pas de middleware internal-only → curl direct, PAS de tailscale.
-  #   - DB prod co-localisée SUR LE BASTION (provider=contabo) → le migrate tourne
-  #     EN LOCAL sur le bastion (pas de hop dev-pub), container DB
+  #   - DB prod co-localisée SUR LE BASTION (provider=contabo), container DB
   #     `prospection-saas-db-<alloc>`, user `postgres`, db `prospection`.
+  #
+  # Depuis le constat C4 (2026-08-29), la clé CI n'ouvre plus de shell sur le
+  # bastion : sa ligne d'authorized_keys porte
+  # `command="/usr/local/sbin/veridian-ci-deploy prospection"`. La CI ne fournit
+  # que le verbe, le tier et le tag, tous validés par motif strict côté serveur
+  # (tout le reste sort en code 64). Le jeton management Nomad ne traverse plus
+  # la session SSH. Contrat : veridian/secrets-migration/C4-CONTRAT-CI.md.
   deploy-prod:
     name: Deploy Nomad prod (SSH bastion)
     needs: docker
@@ -218,9 +224,10 @@ jobs:
     runs-on: ubuntu-latest
     env:
       IMAGE_TAG: ${{ needs.docker.outputs.sha7 }}
-      NOMAD_JOB: prospection
       JOB_FILE: deploy/prospection.nomad.hcl
-      REMOTE_HCL: /tmp/prospection-${{ github.run_id }}.nomad.hcl
+      # Cible SSH unique de tous les verbes. Plus aucun chemin distant côté CI :
+      # le bastion range lui-même ce qu'il reçoit (commande forcée).
+      BASTION: ${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}
       PROD_URL: https://prospection.app.veridian.site
     steps:
       - uses: actions/checkout@v6
@@ -233,97 +240,49 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.NOMAD_BASTION_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
 
-      # ⚠️ On copie le HCL DU REPO (qui déclare `variable "image_tag"`), jamais
-      # la copie bastion ~/nomad-veridian/jobs/ (plus vieille, sans la variable).
-      - name: Copy HCL to bastion
+      # ── Dépôt du HCL sur le bastion (verbe put-job) ───────────────────────
+      # ⚠️ C'est le HCL DU REPO qui part (il déclare `variable "image_tag"`),
+      # jamais la copie bastion ~/nomad-veridian/jobs/ (plus vieille, sans la
+      # variable). Il arrive sur STDIN : la clé CI est en commande forcée, elle
+      # ne choisit plus de chemin d'écriture sur le bastion, et le serveur refuse
+      # un HCL qui ne déclare pas le job attendu pour ce couple app/tier.
+      - name: Dépose le HCL sur le bastion (put-job prod)
         run: |
-          scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new \
-            "$JOB_FILE" \
-            "${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}:$REMOTE_HCL"
+          set -eo pipefail
+          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes "$BASTION" "put-job prod" < "$JOB_FILE"
 
-      - name: nomad job plan (dry-run) + run -detach
-        env:
-          IMAGE_TAG: ${{ env.IMAGE_TAG }}
-          REMOTE_HCL: ${{ env.REMOTE_HCL }}
+      # ── Déploiement (verbe deploy) ─────────────────────────────────────────
+      # Tout ce que faisait le heredoc est CÔTÉ SERVEUR, et rien n'est perdu :
+      #   - pré-pull authentifié de l'image (le plugin docker de Nomad n'a pas de
+      #     bloc auth : sans lui, l'alloc reste pending sur un 401 ghcr jusqu'au
+      #     healthy_deadline, incident 2026-07-11) ;
+      #   - `nomad job validate` puis `plan` ;
+      #   - `run -detach -check-index` lié au Modify Index observé au plan ;
+      #   - résolution du DeploymentID de CET eval puis `deployment status
+      #     -monitor` sur CE déploiement précis (ni la race du poll, ni le 404
+      #     transitoire du `job run` bloquant).
+      # ⚠️ Job prod STATEFUL (DB co-localisée, count=1) : un run recrée l'alloc,
+      # donc un bref redémarrage de la DB. Attendu, ce n'est pas du zéro-downtime.
+      - name: Déploie le job Nomad prod (deploy prod <tag>)
         run: |
-          ssh -i ~/.ssh/id_ed25519 \
-            "${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}" \
-            "IMAGE_TAG='${IMAGE_TAG}' REMOTE_HCL='${REMOTE_HCL}' bash -s" <<'REMOTE'
-          set -euo pipefail
-          source ~/credentials/nomad-bastion.env
-          export NOMAD_ADDR NOMAD_TOKEN="$NOMAD_MGMT_TOKEN"
-          # ── PRÉ-PULL authentifié sur le nœud cible (prod = LE BASTION, provider=contabo) ──
-          # Nomad ne pull pas les images PRIVÉES ghcr (plugin sans bloc auth). On
-          # pré-pull EN LOCAL sur le bastion (auth ghcr en place) → image déjà
-          # présente quand la task démarre. Cf deploy/README.md §ghcr auth.
-          echo "== pré-pull image prod sur le bastion (auth ghcr local) =="
-          docker pull "ghcr.io/christ-roy/prospection:${IMAGE_TAG}"
-          echo "== nomad job validate =="
-          /usr/bin/nomad job validate -var "image_tag=${IMAGE_TAG}" "$REMOTE_HCL"
-          echo "== nomad job plan (diff, inoffensif) =="
-          # plan renvoie exit 1 quand il y a des allocs à créer : by design → `|| true`.
-          /usr/bin/nomad job plan -var "image_tag=${IMAGE_TAG}" "$REMOTE_HCL" || true
-          # Déploiement + vérification CIBLÉE (cf staging) : run -detach → résout le
-          # Deployment de cet eval → `deployment status -monitor <id>` (bloque, exit
-          # ≠0 si échec/auto-revert). Évite la race du poll (faux positif) ET le 404
-          # du `job run` bloquant (faux négatif) — incident 2026-07-11.
-          # ⚠️ Job prod STATEFUL (DB co-localisée, count=1) → un run recrée l'alloc
-          # (bref redémarrage DB, attendu, pas zéro-downtime).
-          echo "== nomad job run -detach + monitoring du déploiement ciblé (image_tag=${IMAGE_TAG}) =="
-          EVAL=$(/usr/bin/nomad job run -detach -var "image_tag=${IMAGE_TAG}" "$REMOTE_HCL" | grep -oP 'Evaluation ID:\s+\K\S+')
-          echo "eval: ${EVAL:-none}"
-          DEP=""
-          for i in $(seq 1 15); do
-            DEP=$(/usr/bin/nomad eval status -json "$EVAL" 2>/dev/null | python3 -c 'import sys,json;print(json.load(sys.stdin).get("DeploymentID") or "")' 2>/dev/null || true)
-            [ -n "$DEP" ] && break
-            sleep 2
-          done
-          if [ -z "$DEP" ]; then
-            echo "Pas de déploiement créé (job inchangé = no-op) → OK"
-          else
-            echo "deployment: $DEP — monitoring jusqu'à terminal…"
-            /usr/bin/nomad deployment status -monitor "$DEP"
-          fi
-          REMOTE
+          set -eo pipefail
+          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes "$BASTION" "deploy prod $IMAGE_TAG"
 
-      # ── Prisma migrate deploy (gate idempotent) ────────────────────────────
-      # DB prod co-localisée sur le bastion → migrate en LOCAL (pas de hop dev-pub).
-      # Container éphémère joignant `--network container:prospection-saas-db-<alloc>`.
-      # Mot de passe lu in situ depuis l'env du container postgres. Idempotent
-      # (prod baseline 31/31 → no-op au 1er run).
-      - name: Ship prisma/ to bastion
+      # ── Migrations Prisma (verbes put-migrations puis migrate) ─────────────
+      # L'archive prisma/ part sur STDIN, puis le bastion lance lui-même le
+      # `prisma migrate deploy` dans un container éphémère joignant le namespace
+      # réseau du container DB de l'alloc. Le mot de passe est lu in situ, il ne
+      # transite jamais par la CI. Idempotent : rien de déjà appliqué n'est rejoué.
+      # La liste des bases à migrer est dans la table serveur, pas ici.
+      - name: Dépose prisma/ sur le bastion (put-migrations prod)
         run: |
-          tar czf /tmp/prisma-${{ github.run_id }}.tgz prisma
-          scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new \
-            "/tmp/prisma-${{ github.run_id }}.tgz" \
-            "${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}:/tmp/prisma-${{ github.run_id }}.tgz"
+          set -eo pipefail
+          tar czf - prisma | ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes "$BASTION" "put-migrations prod"
 
-      - name: Prisma migrate deploy (DB prod locale au bastion)
+      - name: prisma migrate deploy (migrate prod)
         run: |
-          ssh -i ~/.ssh/id_ed25519 \
-            "${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}" \
-            "NOMAD_JOB='${{ env.NOMAD_JOB }}' RUN_ID='${{ github.run_id }}' bash -s" <<'REMOTE'
-          set -euo pipefail
-          source ~/credentials/nomad-bastion.env
-          export NOMAD_ADDR NOMAD_TOKEN="$NOMAD_MGMT_TOKEN"
-
-          ALLOC=$(/usr/bin/nomad job allocs -json "$NOMAD_JOB" \
-            | python3 -c 'import sys,json;a=json.load(sys.stdin);print([x["ID"] for x in a if x["ClientStatus"]=="running"][0])')
-          DB_CT="prospection-saas-db-${ALLOC}"
-          echo "db container: $DB_CT"
-
-          WORK="/tmp/prosp-migrate-${RUN_ID}"
-          rm -rf "$WORK" && mkdir -p "$WORK"
-          tar xzf "/tmp/prisma-${RUN_ID}.tgz" -C "$WORK"
-          DB_PASS=$(docker exec "$DB_CT" printenv POSTGRES_PASSWORD)
-          docker run --rm \
-            --network "container:$DB_CT" \
-            -v "$WORK/prisma:/app/prisma" \
-            -w /app \
-            -e DATABASE_URL="postgresql://postgres:$DB_PASS@127.0.0.1:5432/prospection?connection_limit=5" \
-            node:22-alpine sh -c 'apk add --no-cache openssl >/dev/null && npm i -g prisma@6.19.2 --silent && prisma migrate deploy'
-          rm -rf "$WORK" "/tmp/prisma-${RUN_ID}.tgz"
-          REMOTE
+          set -eo pipefail
+          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes "$BASTION" "migrate prod"
 
       # ── Smoke prod (public, pas de tailscale) + anti-stale SHA ─────────────
       - name: Smoke /api/health (retry 6x/5s)
@@ -355,9 +314,14 @@ jobs:
           curl -sS "$PROD_URL/api/version" || true
           exit 1
 
-      - name: Cleanup remote HCL
+      # ── Nettoyage du matériel temporaire sur le bastion (verbe cleanup) ────
+      - name: Nettoie le matériel déposé (cleanup prod)
         if: always()
         run: |
-          ssh -i ~/.ssh/id_ed25519 \
-            "${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}" \
-            "rm -f '$REMOTE_HCL' '/tmp/prisma-${{ github.run_id }}.tgz'" || true
+          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes "$BASTION" "cleanup prod" || true
+
+      # La clé de déploiement n'a plus rien à faire sur le runner une fois le
+      # job terminé, y compris quand une étape a échoué.
+      - name: Efface la clé de déploiement du runner
+        if: always()
+        run: shred -u ~/.ssh/id_ed25519 2>/dev/null || rm -f ~/.ssh/id_ed25519
