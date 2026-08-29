@@ -132,6 +132,7 @@ job "prospection" {
       }
       template {
         destination = "secrets/pg.env"
+        perms       = "600"   # secret: lisible du seul proprietaire
         env         = true
         data        = <<EOH
 TZ=UTC
@@ -198,6 +199,7 @@ EOH
 
       template {
         destination = "secrets/pgbackrest.env"
+        perms       = "600"   # secret: lisible du seul proprietaire
         env         = true
         data        = <<EOH
 TZ=UTC
@@ -284,6 +286,7 @@ EOH
       }
       template {
         destination = "secrets/app.env"
+        perms       = "600"   # secret: lisible du seul proprietaire
         env         = true
         data        = <<EOH
 NODE_ENV=production
