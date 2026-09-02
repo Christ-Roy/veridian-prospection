@@ -119,6 +119,13 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # Voir prospection-ci.yml pour le raisonnement complet : `--no-cache`
+          # est une option d'apk et ne désactive pas le cache de couches, donc
+          # sans cette exclusion la couche `apk upgrade` du stage `runner` est
+          # servie depuis le cache et l'image staging ne reçoit aucun correctif
+          # système. Staging doit porter la même image que prod, défauts compris.
+          no-cache-filters: runner
+          pull: true
           build-args: |
             NEXT_PUBLIC_SUPABASE_URL=https://api.app.veridian.site
             NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.STAGING_SUPABASE_ANON_KEY }}

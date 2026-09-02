@@ -37,6 +37,12 @@ jobs:
           push: false
           load: true
           tags: prospection:${{ github.sha }}
+          # Le scan ne vaut que s'il mesure la MÊME image que celle publiée.
+          # prospection-ci.yml exclut le stage `runner` du cache et re-résout la
+          # base ; sans les mêmes options ici, on scannerait une image qui n'est
+          # pas celle qui part en production.
+          no-cache-filters: runner
+          pull: true
           build-args: |
             NEXT_PUBLIC_SUPABASE_URL=https://api.app.veridian.site
             NEXT_PUBLIC_HUB_URL=https://app.veridian.site
@@ -99,10 +105,25 @@ jobs:
           sarif_file: 'trivy-results.sarif'
           category: 'trivy-prospection'
 
-  # Scan de l'image DEPLOYED en prod (cron quotidien).
-  # Login GHCR nécessaire car le package est privé.
+  # Scan de l'image RÉELLEMENT DÉPLOYÉE en prod (cron quotidien).
+  #
+  # 🔴 CE JOB A MENTI PENDANT QUATRE NUITS (30/08 → 02/09/2026). Il lisait le
+  # tag dans `infra/docker-compose.yml`, hérité de l'époque Dokploy :
+  #   1. ce fichier n'est plus la source de vérité — le déploiement passe par le
+  #      job Nomad versionné, qui épingle l'image PAR DIGEST ;
+  #   2. la valeur lue était la chaîne littérale
+  #      `ghcr.io/christ-roy/prospection:${PROSPECTION_IMAGE_TAG:-latest}`, non
+  #      substituée, donc `docker pull` rendait « denied ».
+  # Résultat : un rouge quotidien qui ressemblait à une alerte CVE et n'était
+  # qu'une panne d'outil, pendant que l'image de production n'était plus scannée
+  # du tout. Un contrôle qui vise la mauvaise cible ne mesure rien, même en
+  # fonctionnant parfaitement.
+  #
+  # La source de vérité est désormais le jobspec Nomad. La lecture est
+  # fail-closed : un digest introuvable rend 2 (MESURE NON ABOUTIE), jamais un
+  # vert et jamais un rouge trompeur.
   trivy-deployed:
-    name: Trivy scan — image deployed en prod (cron)
+    name: Trivy scan — image déployée en prod (digest Nomad, cron)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
@@ -111,17 +132,37 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Checkout du dépôt des jobs Nomad (source de vérité du déploiement)
+        uses: actions/checkout@v6
+        with:
+          repository: Christ-Roy/nomad-veridian
+          token: ${{ secrets.CR_PAT }}
+          path: .nomad-veridian
+          ref: main
+
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Resolve deployed image SHA from infra/docker-compose.yml
+      - name: Résoudre l'image déployée depuis le jobspec Nomad
         id: image
         run: |
-          IMG=$(grep -E '^\s*image:\s*ghcr.io/christ-roy/prospection' infra/docker-compose.yml | head -1 | sed -E 's/^\s*image:\s*//')
-          echo "Deployed image (from Git compose): $IMG"
+          set -euo pipefail
+          SPEC=.nomad-veridian/jobs/saas-prod/prospection.nomad.hcl
+          if [ ! -f "$SPEC" ]; then
+            echo "::error::Jobspec $SPEC introuvable — MESURE NON ABOUTIE, l'image déployée n'est ni confirmée ni infirmée."
+            exit 2
+          fi
+          # On exige un digest : un tag mouvant ne prouve pas ce qui tourne.
+          IMG=$(grep -oE 'ghcr\.io/christ-roy/prospection@sha256:[0-9a-f]{64}' "$SPEC" | head -1)
+          if [ -z "$IMG" ]; then
+            echo "::error::Aucune image épinglée par digest dans $SPEC — MESURE NON ABOUTIE."
+            echo "::error::Le jobspec contient pourtant $(grep -c 'image' "$SPEC") lignes 'image' : ce n'est pas un défaut de lecture."
+            exit 2
+          fi
+          echo "Image déployée (digest du jobspec Nomad) : $IMG"
           echo "ref=$IMG" >> "$GITHUB_OUTPUT"
 
       - name: Pull image (private GHCR)

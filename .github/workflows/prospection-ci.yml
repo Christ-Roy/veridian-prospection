@@ -184,6 +184,22 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # === 2026-09-02 === le stage `runner` (Dockerfile) est EXCLU du cache
+          # de couches, et l'image de base est re-résolue à chaque construction.
+          #
+          # Pourquoi : `RUN apk upgrade --no-cache` ne se réexécute jamais tant
+          # que sa clé de cache est stable, or elle l'est (le tag node:22-alpine
+          # pointe le même digest pendant des semaines). `--no-cache` est une
+          # option d'apk, PAS du cache de couches. Mesuré sur notifuse-veridian
+          # (run 33254429451) : `RUN apk upgrade … CACHED`, image publiée avec
+          # libpq 17.10-r0 alors que le miroir servait déjà le correctif.
+          # Sans cette exclusion, ce dépôt ne recevrait AUCUN correctif système,
+          # quel que soit le nombre de constructions.
+          #
+          # Coût : quelques secondes d'apk. Les stages `deps` et `builder`
+          # (npm ci, next build) restent cachés.
+          no-cache-filters: runner
+          pull: true
           build-args: |
             NEXT_PUBLIC_SUPABASE_URL=https://api.app.veridian.site
             NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.PROD_SUPABASE_ANON_KEY }}

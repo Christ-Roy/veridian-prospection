@@ -46,7 +46,22 @@ ENV BUILT_AT=$BUILT_AT
 # Retire npm + corepack du runner (Next.js standalone tourne avec node server.js).
 # Eradique CVE node-pkg embarques dans /usr/local/lib/node_modules/npm/* (ex
 # CVE-2026-33671 sur picomatch 4.0.3 embedded dans npm). Cf sprint GitOps 2026-05-13.
-RUN apk add --no-cache openssl && \
+# `apk upgrade` AVANT le `apk add` : sans lui, les paquets DÉJÀ présents dans
+# node:22-alpine (libssl3, libcrypto3, busybox, zlib…) restent à la version
+# publiée le jour où l'image de base a été construite. `apk add` n'y touche pas :
+# il installe ce qui manque, il ne remonte pas ce qui est déjà satisfait. Une
+# image reconstruite aujourd'hui repartait donc avec les CVE OpenSSL d'il y a
+# plusieurs semaines, quel que soit le nombre de constructions.
+#
+# 🔴 Cette couche n'a d'effet que si elle est RÉELLEMENT EXÉCUTÉE. `--no-cache`
+# est une option d'apk, elle ne désactive PAS le cache de couches de buildkit :
+# tant que le digest de node:22-alpine ne bouge pas, `cache-from: type=gha`
+# resservirait indéfiniment un jeu de paquets figé (mesuré sur notifuse, run
+# 33254429451 : `RUN apk upgrade … CACHED`). C'est pourquoi le stage s'appelle
+# `runner` et que les workflows portent `no-cache-filters: runner` + `pull: true`.
+# Ne PAS renommer ce stage sans corriger les trois workflows qui le nomment.
+RUN apk upgrade --no-cache && \
+    apk add --no-cache openssl && \
     rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
            /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack && \
     addgroup --system --gid 1001 nodejs && \
