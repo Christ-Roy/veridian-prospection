@@ -126,6 +126,12 @@ job "prospection-staging" {
     task "db" {
       driver = "docker"
       config {
+        # Durcissement Unix : empeche un processus non privilegie d'elever ses
+        # droits via un binaire setuid. C'est le maillon entre « shell dans le
+        # conteneur » et « root sur l'hote ». N'affecte PAS un processus qui
+        # ABANDONNE ses droits au demarrage, seulement celui qui en gagne.
+        security_opt = ["no-new-privileges:true"]
+
         image = "postgres:16-alpine"
         volumes = [
           "/opt/veridian-staging/prospection/db:/var/lib/postgresql/data",
@@ -156,6 +162,12 @@ EOH
     task "prospection" {
       driver = "docker"
       config {
+        # Durcissement Unix : empeche un processus non privilegie d'elever ses
+        # droits via un binaire setuid. C'est le maillon entre « shell dans le
+        # conteneur » et « root sur l'hote ». N'affecte PAS un processus qui
+        # ABANDONNE ses droits au demarrage, seulement celui qui en gagne.
+        security_opt = ["no-new-privileges:true"]
+
         image = "ghcr.io/christ-roy/prospection:${var.image_tag}"
         ports = ["http"]
       }
@@ -202,6 +214,12 @@ EOH
     task "search-dev" {
       driver = "docker"
       config {
+        # Durcissement Unix : empeche un processus non privilegie d'elever ses
+        # droits via un binaire setuid. C'est le maillon entre « shell dans le
+        # conteneur » et « root sur l'hote ». N'affecte PAS un processus qui
+        # ABANDONNE ses droits au demarrage, seulement celui qui en gagne.
+        security_opt = ["no-new-privileges:true"]
+
         image = "ghcr.io/christ-roy/prospection:${var.image_tag}"
         ports = ["searchhttp"]
       }
