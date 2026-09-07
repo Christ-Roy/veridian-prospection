@@ -126,6 +126,20 @@ job "prospection-staging" {
     task "db" {
       driver = "docker"
       config {
+        # Identification lisible du conteneur (2026-09-07). Nomad ne pose que
+        # `com.hashicorp.nomad.alloc_id` : rien ne disait a quelle application
+        # appartenait un conteneur. Les quatre premieres valeurs sont
+        # interpolees par Nomad a l'execution, les deux dernieres sont des
+        # proprietes du fichier (dossier jobs/<tier>/ et table du script
+        # scripts/poser-labels-conteneurs.py).
+        labels = {
+          "site.veridian.job"   = "${NOMAD_JOB_NAME}"
+          "site.veridian.group" = "${NOMAD_GROUP_NAME}"
+          "site.veridian.task"  = "${NOMAD_TASK_NAME}"
+          "site.veridian.node"  = "${node.unique.name}"
+          "site.veridian.tier"  = "saas-staging"
+          "site.veridian.app"   = "prospection"
+        }
         image = "postgres:16-alpine"
         volumes = [
           "/opt/veridian-staging/prospection/db:/var/lib/postgresql/data",
@@ -156,6 +170,20 @@ EOH
     task "prospection" {
       driver = "docker"
       config {
+        # Identification lisible du conteneur (2026-09-07). Nomad ne pose que
+        # `com.hashicorp.nomad.alloc_id` : rien ne disait a quelle application
+        # appartenait un conteneur. Les quatre premieres valeurs sont
+        # interpolees par Nomad a l'execution, les deux dernieres sont des
+        # proprietes du fichier (dossier jobs/<tier>/ et table du script
+        # scripts/poser-labels-conteneurs.py).
+        labels = {
+          "site.veridian.job"   = "${NOMAD_JOB_NAME}"
+          "site.veridian.group" = "${NOMAD_GROUP_NAME}"
+          "site.veridian.task"  = "${NOMAD_TASK_NAME}"
+          "site.veridian.node"  = "${node.unique.name}"
+          "site.veridian.tier"  = "saas-staging"
+          "site.veridian.app"   = "prospection"
+        }
         image = "ghcr.io/christ-roy/prospection:${var.image_tag}"
         ports = ["http"]
       }
@@ -202,6 +230,20 @@ EOH
     task "search-dev" {
       driver = "docker"
       config {
+        # Identification lisible du conteneur (2026-09-07). Nomad ne pose que
+        # `com.hashicorp.nomad.alloc_id` : rien ne disait a quelle application
+        # appartenait un conteneur. Les quatre premieres valeurs sont
+        # interpolees par Nomad a l'execution, les deux dernieres sont des
+        # proprietes du fichier (dossier jobs/<tier>/ et table du script
+        # scripts/poser-labels-conteneurs.py).
+        labels = {
+          "site.veridian.job"   = "${NOMAD_JOB_NAME}"
+          "site.veridian.group" = "${NOMAD_GROUP_NAME}"
+          "site.veridian.task"  = "${NOMAD_TASK_NAME}"
+          "site.veridian.node"  = "${node.unique.name}"
+          "site.veridian.tier"  = "saas-staging"
+          "site.veridian.app"   = "prospection"
+        }
         image = "ghcr.io/christ-roy/prospection:${var.image_tag}"
         ports = ["searchhttp"]
       }
