@@ -175,11 +175,20 @@ jobs:
           # YAML, seulement en le voyant passer au vert.
           ref: master
 
+      # 🔴 CR_PAT, PAS GITHUB_TOKEN — la couche d'échec SUIVANTE, que `ref: main`
+      # masquait depuis le 02/09 en tuant le job avant d'arriver ici.
+      # Avec `GITHUB_TOKEN`, `docker pull` sur le digest rend « manifest
+      # unknown », ce qui se lit comme « l'image n'existe pas » et ne l'est pas :
+      # mesuré le 2026-09-07, le même digest rend HTTP 200 sur l'API du registre
+      # avec `CR_PAT` (contrôle négatif à côté : un digest inventé rend bien
+      # 404, donc l'instrument discrimine). Le `packages: read` du workflow ne
+      # suffit pas — l'accès à GHCR se donne PAR PAQUET.
+      # `CR_PAT` est déjà le jeton utilisé plus haut pour le sous-module privé.
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: Christ-Roy
+          password: ${{ secrets.CR_PAT }}
 
       - name: Résoudre l'image déployée depuis le jobspec Nomad
         id: image
