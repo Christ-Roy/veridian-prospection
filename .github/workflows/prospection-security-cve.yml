@@ -26,6 +26,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           submodules: recursive  # shared/ submodule veridian-infra — requis par le build (@veridian/shared)
+          token: ${{ secrets.CR_PAT }}  # PAT cross-repo (veridian-infra prive depuis 2026-07-10)
 
       - uses: docker/setup-buildx-action@v3
 
