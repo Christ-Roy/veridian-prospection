@@ -123,7 +123,7 @@ job "prospection-staging" {
     }
 
     # ---- db (postgres:16 : prospection + prospection_devclone) ----
-    task "db" {
+    task "prospection-staging-db" {
       driver = "docker"
       config {
         # Durcissement Unix : empeche un processus non privilegie d'elever ses
@@ -173,7 +173,7 @@ EOH
     }
 
     # ---- prospection (Next.js compilé, node server.js, :3000) ----
-    task "prospection" {
+    task "prospection-staging" {
       driver = "docker"
       config {
         # Durcissement Unix : empeche un processus non privilegie d'elever ses
@@ -239,7 +239,7 @@ EOH
     }
 
     # ---- search-dev (banc IA : image staging reproductible, DB clone, :3200) ----
-    task "search-dev" {
+    task "prospection-staging-search-dev" {
       driver = "docker"
       config {
         # Durcissement Unix : empeche un processus non privilegie d'elever ses
