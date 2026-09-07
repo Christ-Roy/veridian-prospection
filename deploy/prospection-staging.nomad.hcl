@@ -126,6 +126,12 @@ job "prospection-staging" {
     task "db" {
       driver = "docker"
       config {
+        # Durcissement Unix : empeche un processus non privilegie d'elever ses
+        # droits via un binaire setuid. C'est le maillon entre « shell dans le
+        # conteneur » et « root sur l'hote ». N'affecte PAS un processus qui
+        # ABANDONNE ses droits au demarrage, seulement celui qui en gagne.
+        security_opt = ["no-new-privileges:true"]
+
         # Identification lisible du conteneur (2026-09-07). Nomad ne pose que
         # `com.hashicorp.nomad.alloc_id` : rien ne disait a quelle application
         # appartenait un conteneur. Les quatre premieres valeurs sont
@@ -170,6 +176,12 @@ EOH
     task "prospection" {
       driver = "docker"
       config {
+        # Durcissement Unix : empeche un processus non privilegie d'elever ses
+        # droits via un binaire setuid. C'est le maillon entre « shell dans le
+        # conteneur » et « root sur l'hote ». N'affecte PAS un processus qui
+        # ABANDONNE ses droits au demarrage, seulement celui qui en gagne.
+        security_opt = ["no-new-privileges:true"]
+
         # Identification lisible du conteneur (2026-09-07). Nomad ne pose que
         # `com.hashicorp.nomad.alloc_id` : rien ne disait a quelle application
         # appartenait un conteneur. Les quatre premieres valeurs sont
@@ -230,6 +242,12 @@ EOH
     task "search-dev" {
       driver = "docker"
       config {
+        # Durcissement Unix : empeche un processus non privilegie d'elever ses
+        # droits via un binaire setuid. C'est le maillon entre « shell dans le
+        # conteneur » et « root sur l'hote ». N'affecte PAS un processus qui
+        # ABANDONNE ses droits au demarrage, seulement celui qui en gagne.
+        security_opt = ["no-new-privileges:true"]
+
         # Identification lisible du conteneur (2026-09-07). Nomad ne pose que
         # `com.hashicorp.nomad.alloc_id` : rien ne disait a quelle application
         # appartenait un conteneur. Les quatre premieres valeurs sont
