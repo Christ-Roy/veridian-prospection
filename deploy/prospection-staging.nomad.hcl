@@ -153,6 +153,10 @@ job "prospection-staging" {
       }
       template {
         destination = "secrets/pg.env"
+        # Rendu 0600 : par defaut Nomad ecrit 0644 root:root, et un uid tiers du
+        # conteneur lisait ce fichier (mesure du 2026-09-07). La tache tourne en
+        # root, donc aucun `uid` n'est necessaire ici — root lit un 0600 root.
+        perms       = "0600"
         env         = true
         data        = <<EOH
 TZ=UTC
