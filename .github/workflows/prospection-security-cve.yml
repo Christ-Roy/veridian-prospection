@@ -51,11 +51,32 @@ jobs:
             NEXT_PUBLIC_TRIAL_DAYS=7
 
       - name: Smoke Sharp in delivered Alpine image
+        # Ce contrôle prouve que Sharp se CHARGE et PRODUIT une image dans
+        # l'Alpine livrée (musl). C'est lui qui a de la valeur, il est conservé
+        # entier ci-dessous.
+        #
+        # 2026-09-21 : l'attendu de version était une ÉGALITÉ STRICTE sur
+        # "0.35.0". Effet non voulu : tout correctif de sécurité de Sharp
+        # faisait échouer cette étape, donc la CI, donc le correctif ne pouvait
+        # jamais passer. C'est exactement ce qui est arrivé avec
+        # GHSA-rgj7-g3m4-5g8c (libheif), corrigé en 0.35.4.
+        #
+        # Remplacé par un PLANCHER : on refuse toujours un retour en arrière
+        # sous la version corrigée, on laisse passer les patchs suivants.
+        # Le plancher se relève à chaque nouvelle CVE Sharp corrigée.
         run: |
           docker run --rm --entrypoint node "prospection:${{ github.sha }}" -e '
             const sharp = require("sharp");
-            if (sharp.versions.sharp !== "0.35.0") {
-              throw new Error(`Unexpected Sharp version: ${sharp.versions.sharp}`);
+            const MIN = [0, 35, 4]; // GHSA-rgj7-g3m4-5g8c corrigé en 0.35.4
+            const got = sharp.versions.sharp.split(".").map(Number);
+            const tropVieux =
+              got[0] < MIN[0] ||
+              (got[0] === MIN[0] && got[1] < MIN[1]) ||
+              (got[0] === MIN[0] && got[1] === MIN[1] && got[2] < MIN[2]);
+            if (tropVieux) {
+              throw new Error(
+                `Sharp ${sharp.versions.sharp} est antérieur au plancher ${MIN.join(".")} (CVE libheif)`,
+              );
             }
             sharp({
               create: {
