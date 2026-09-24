@@ -14,7 +14,9 @@ variable "image_tag" {
   # rattraper par auto_revert. L'image reellement en production a ete retaguee
   # `prod-20260815` sur GHCR (meme contenu, sha256:07b0b0ec…) pour que ce defaut
   # designe enfin quelque chose.
-  default     = "prod-20260815"
+  # Recale le 2026-09-24 (chantier durcissement conteneurs) : mesure sur le
+  # job Nomad vivant = c70ba3c, juste avant ce commit.
+  default     = "c70ba3c"
 }
 
 job "prospection" {
@@ -301,6 +303,7 @@ EOH
 
     task "prospection" {
       driver         = "docker"
+      user           = "nextjs"
       shutdown_delay = "10s"
       kill_timeout   = "30s"
       service {
@@ -325,7 +328,9 @@ EOH
         # droits via un binaire setuid. C'est le maillon entre « shell dans le
         # conteneur » et « root sur l'hote ». N'affecte PAS un processus qui
         # ABANDONNE ses droits au demarrage, seulement celui qui en gagne.
-        security_opt = ["no-new-privileges:true"]
+        security_opt    = ["no-new-privileges:true"]
+        readonly_rootfs = true
+        cap_drop        = ["ALL"]
 
         # Identification lisible du conteneur (2026-09-07). Nomad ne pose que
         # `com.hashicorp.nomad.alloc_id` : rien ne disait a quelle application
@@ -343,6 +348,19 @@ EOH
         }
         image = "ghcr.io/christ-roy/prospection:${var.image_tag}"
         ports = ["http"]
+
+        mount {
+          type     = "tmpfs"
+          target   = "/tmp"
+          readonly = false
+          tmpfs_options { size = 67108864 }
+        }
+        mount {
+          type     = "tmpfs"
+          target   = "/app/.next/cache"
+          readonly = false
+          tmpfs_options { size = 134217728 }
+        }
       }
       template {
         destination = "secrets/app.env"
