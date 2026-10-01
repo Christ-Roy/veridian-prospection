@@ -126,7 +126,7 @@ job "prospection" {
         # Image officielle postgres:15-alpine + pgBackRest epingle. La BASE est
         # identique au bit pres : changer d'image de base changerait la
         # collation (musl/glibc) et fausserait silencieusement les index.
-        image = "ghcr.io/christ-roy/veridian-postgres-pgbackrest:15-alpine@sha256:e872b9618b68103f1c8789923946f5aca3b4065009f00e8734f4c13603c8ee19"
+        image = "ghcr.io/christ-roy/veridian-postgres-pgbackrest:15-alpine-gosu-20261002@sha256:83b440901608d54bac4fd2bfe32bf4000ca896954b2dfe0a0eb61a770d0ebe6e"
         args = [
           # --- Archivage continu des WAL vers le depot pgBackRest ---
           # C'est CE reglage, et non la sauvegarde nocturne, qui borne la perte
@@ -196,7 +196,10 @@ EOH
       }
       resources {
         cpu        = 300
-        memory     = 256
+        # 256 -> 1184 Mio (2026-10-02) : working set mesure sur 7 j = 899 Mio max (cAdvisor,
+        # sans page cache) x 1,3. Avec 256 reserves, le scheduler laissait le noeud se
+        # surcharger autour d'une base cliente. memory_max inchange (fusible).
+        memory     = 1184
         memory_max = 7000
       }
     }
@@ -230,7 +233,7 @@ EOH
           "site.veridian.tier"  = "saas-prod"
           "site.veridian.app"   = "prospection"
         }
-        image      = "ghcr.io/christ-roy/veridian-postgres-pgbackrest:15-alpine@sha256:e872b9618b68103f1c8789923946f5aca3b4065009f00e8734f4c13603c8ee19"
+        image      = "ghcr.io/christ-roy/veridian-postgres-pgbackrest:15-alpine-gosu-20261002@sha256:83b440901608d54bac4fd2bfe32bf4000ca896954b2dfe0a0eb61a770d0ebe6e"
         entrypoint = ["/usr/local/bin/pgbackrest-scheduler"]
         command    = ""
         volumes = [
