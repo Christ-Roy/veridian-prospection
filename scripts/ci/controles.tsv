@@ -1,0 +1,22 @@
+# =============================================================================
+# controles.tsv — ce que veridian-prospection contrôle lui-même. Six colonnes, tabulation.
+# Standard : ~/nomad-veridian/standards/controles-portables/CLAUDE.md
+# Joué au push par `gardes pre-push` (palier rapide), à la main par
+# `gardes verifier <palier>`. Trivy et les secrets du diff sortant sont joués
+# par gardes lui-même, ils ne se déclarent pas ici.
+# Palier rapide = l'ancien .husky/pre-push (13 étapes, même ordre, mêmes
+# conditions), migré le 03/10/2026.
+# =============================================================================
+rapide	test-mapping	.	scripts/ci/check-test-mapping.sh	-	Fichier critique modifié sans test correspondant : refusé.
+rapide	route-safety	.	scripts/ci/check-route-safety.sh	-	Chaque route a son try/catch sur request.json et ses garde-fous requireAdmin (bloquant depuis 2026-05-21).
+rapide	secrets	.	scripts/ci/check-secrets.sh	-	Aucun secret en clair (Stripe, GitHub, AWS, clés privées) dans le diff : une clé poussée est publique.
+rapide	deps-cve	.	scripts/ci/check-deps-cve.sh	-	CVE critical/high sur les dépendances de prod, miroir de la CI (seulement si package.json ou lockfile change, géré par le script).
+rapide	hygiene	.	scripts/ci/check-hygiene.sh	-	Pas de fichier de plus de 1 Mo ; console.log dans src/ en avertissement.
+rapide	env-sync	.	scripts/ci/check-env-sync.sh	-	process.env du code, .env.example et compose déclarent les mêmes variables : sinon l'app tourne dégradée en silence.
+rapide	ui-build	.	if git diff --name-only "${BASE_REF:-origin/main}"...HEAD 2>/dev/null | grep -qE '^src/(components|app)/|^next\.config\.ts$|^src/app/globals\.css$|^package\.json$'; then scripts/ci/check-ui-build.sh; fi	-	Seulement si le frontend change : next build réel et manifests, chunks et routes critiques intacts (les tests jsdom ne voient pas le build de prod).
+rapide	sabotage-test	.	if git diff --name-only "${BASE_REF:-origin/main}"...HEAD 2>/dev/null | grep -qE '\.test\.(ts|tsx)$'; then scripts/ci/check-sabotage-test.sh; fi	-	Seulement si un test change : un test qui n'observe rien d'utile doit mourir au sabotage léger de sa source (bug invitations 2026-05-23).
+rapide	cross-app-contracts	.	if git diff --name-only "${BASE_REF:-origin/main}"...HEAD 2>/dev/null | grep -E '^src/(lib|app|components)/' | grep -qv '\.test\.'; then scripts/ci/check-cross-app-contracts.sh; fi	reseau	Seulement si le code applicatif change : chaque endpoint cross-app appelé existe en staging (bug invitations 2026-05-23, Supabase mort cinq jours).
+rapide	prisma-drift	.	if git diff --name-only "${BASE_REF:-origin/main}"...HEAD 2>/dev/null | grep -qE '^prisma/(schema\.prisma|migrations/)'; then scripts/ci/check-prisma-drift.sh || true; fi	-	Seulement si prisma change : schema.prisma reflète la base réelle. Avertissement seul en v1 (drifts connus), comme l'ancien hook.
+rapide	typecheck-lint	.	if git diff --name-only "${BASE_REF:-origin/main}"...HEAD 2>/dev/null | grep -qE '^(src|__tests__|e2e)/'; then scripts/ci/check-typecheck-lint.sh; fi	-	Seulement si src, tests ou e2e changent : tsc strict et eslint comme la CI (incident 2026-05-23, trois push pour un test).
+rapide	rappel-compose	.	if git diff --name-only "${BASE_REF:-origin/main}"...HEAD 2>/dev/null | grep -qE '^infra/docker-compose\.(base|prod)\.yml$'; then echo 'Rappel : infra/docker-compose.base|prod.yml modifié, régénère infra/docker-compose.yml avec ./scripts/ci/render-compose.sh prod'; fi	-	Rappel informatif (ne bloque jamais) : le compose rendu doit être régénéré quand base ou prod change.
+rapide	contrat-nomad	.	scripts/ci/check-nomad-contract.sh	-	Contrat GitOps Nomad co-localisé : criticité, RTO/RPO, staging obligatoire, images immuables.
