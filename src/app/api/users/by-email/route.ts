@@ -19,10 +19,8 @@
  *   500 { error: "Server misconfigured" }
  */
 import { NextRequest, NextResponse } from "next/server";
-import { verifyHubHmac, verifyLegacyBearer } from "@/lib/hub/hmac";
+import { verifyHubHmac } from "@/lib/hub/hmac";
 import { prisma } from "@/lib/prisma";
-
-const ACCEPT_LEGACY_BEARER = process.env.ACCEPT_LEGACY_BEARER !== "0";
 
 function getSecret(): string | undefined {
   return process.env.HUB_API_SECRET || process.env.TENANT_API_SECRET;
@@ -52,29 +50,18 @@ export async function GET(request: NextRequest) {
   const sig = request.headers.get("x-veridian-hub-signature");
   const ts = Number(request.headers.get("x-veridian-timestamp"));
 
-  if (sig) {
-    // Pour GET, rawBody = "" (pas de body envoyé). Le Hub doit signer
-    // exactement `${ts}.` (la chaîne avec point final).
-    const v = verifyHubHmac(secret, ts, "", sig);
-    if (!v.ok) {
-      const error =
-        v.reason === "timestamp_drift" || v.reason === "invalid_timestamp"
-          ? "Timestamp expired or invalid"
-          : "Invalid signature";
-      return NextResponse.json({ error }, { status: 401 });
-    }
-  } else if (ACCEPT_LEGACY_BEARER) {
-    const v = verifyLegacyBearer(secret, request.headers.get("authorization"));
-    if (!v.ok) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    // Log explicite pour pouvoir flipper ACCEPT_LEGACY_BEARER=0 en confiance
-    // après une fenêtre d'observation 7j à 0 occurrence.
-    console.warn(
-      "[by-email] legacy Bearer accepted — migrate Hub to standard HMAC {ts}.",
-    );
-  } else {
+  if (!sig) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  // Pour GET, rawBody = "" (pas de body envoyé). Le Hub doit signer
+  // exactement `${ts}.` (la chaîne avec point final).
+  const v = verifyHubHmac(secret, ts, "", sig);
+  if (!v.ok) {
+    const error =
+      v.reason === "timestamp_drift" || v.reason === "invalid_timestamp"
+        ? "Timestamp expired or invalid"
+        : "Invalid signature";
+    return NextResponse.json({ error }, { status: 401 });
   }
 
   // ─── Validation email ─────────────────────────────────────────────────────

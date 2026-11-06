@@ -19,7 +19,6 @@ import { createHmac } from "crypto";
 
 vi.hoisted(() => {
   process.env.HUB_API_SECRET = "test-sync-secret";
-  process.env.ACCEPT_LEGACY_BEARER = "0";
   process.env.HUB_WEBHOOK_DISABLE = "1";
 });
 

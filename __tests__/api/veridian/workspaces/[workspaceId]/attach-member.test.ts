@@ -22,7 +22,6 @@ import { createHmac } from "crypto";
 
 vi.hoisted(() => {
   process.env.HUB_API_SECRET = "test-attach-member-secret";
-  process.env.ACCEPT_LEGACY_BEARER = "0";
   process.env.APP_URL = "https://prospection.app.test.local";
 });
 

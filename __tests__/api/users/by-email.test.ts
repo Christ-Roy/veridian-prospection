@@ -3,7 +3,7 @@
  * veridian-hub/todo/2026-05-20-hub-discovery-by-email-pattern.md).
  *
  * Couvre :
- *  - 401 sans HMAC ni Bearer legacy
+ *  - 401 sans HMAC, et sur Bearer même avec le bon secret
  *  - 401 signature invalide / timestamp drift
  *  - 400 email manquant / mal formé
  *  - 200 found=false si user inconnu
@@ -18,7 +18,6 @@ import { createHmac } from "crypto";
 
 vi.hoisted(() => {
   process.env.HUB_API_SECRET = "test-discovery-secret";
-  process.env.ACCEPT_LEGACY_BEARER = "0";
 });
 
 const mocks = vi.hoisted(() => ({
@@ -254,43 +253,16 @@ describe("GET /api/users/by-email — Hub Discovery", () => {
   });
 });
 
-// ─── Legacy Bearer observability (fenêtre 7j avant flip ACCEPT_LEGACY_BEARER=0) ──
-describe("GET /api/users/by-email — legacy Bearer observability", () => {
-  test("log warn explicite quand legacy Bearer accepté", async () => {
-    // Le module lit ACCEPT_LEGACY_BEARER à l'import. On bascule l'env puis
-    // on re-importe via resetModules.
-    vi.resetModules();
-    process.env.ACCEPT_LEGACY_BEARER = "1";
-
-    // Re-mock prisma pour le module fraîchement importé
-    vi.doMock("@/lib/prisma", () => ({
-      prisma: {
-        user: { findFirst: vi.fn().mockResolvedValue(null) },
-        workspaceMember: { findMany: vi.fn() },
-        tenant: { findMany: vi.fn() },
-      },
-    }));
-
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      const { GET: GETreloaded } = await import(
-        "@/app/api/users/by-email/route"
-      );
-      const request = makeRequest("/api/users/by-email", {
+// ─── Ancien chemin coupé ───────────────────────────────────────────────────
+describe("GET /api/users/by-email — Bearer refusé", () => {
+  test("401 même avec le bon secret", async () => {
+    const res = await GET(
+      makeRequest("/api/users/by-email", {
         method: "GET",
         headers: { authorization: `Bearer ${SECRET}` },
         searchParams: { email: "x@y.com" },
-      });
-      const res = await GETreloaded(request);
-      expect(res.status).toBe(200);
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining("legacy Bearer accepted"),
-      );
-    } finally {
-      warnSpy.mockRestore();
-      process.env.ACCEPT_LEGACY_BEARER = "0";
-      vi.doUnmock("@/lib/prisma");
-      vi.resetModules();
-    }
+      }),
+    );
+    expect(res.status).toBe(401);
   });
 });

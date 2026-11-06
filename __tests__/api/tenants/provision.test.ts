@@ -1,10 +1,10 @@
 /**
  * Tests de la route POST /api/tenants/provision (callable par le Hub).
  *
- * Couvre l'authentification triple :
- *  - Pattern A — HMAC standard `{ts}.{body}` dans les headers (cible contrat §6.1)
- *  - Legacy A — HMAC `email:ts` dans le body (fenêtre 30j ACCEPT_LEGACY_HMAC)
- *  - Legacy B — `Authorization: Bearer <secret>` (fenêtre Hub ACCEPT_LEGACY_BEARER)
+ * Couvre l'authentification :
+ *  - HMAC standard `{ts}.{body}` dans les headers (contrat §6.1), seul mode accepté
+ *  - Anciens chemins refusés même avec le bon secret : HMAC `email:ts` dans le
+ *    body, `Authorization: Bearer <secret>`
  *
  * Plus :
  *  - 400 si email manquant
@@ -18,8 +18,6 @@ import { createHmac } from "crypto";
 vi.hoisted(() => {
   process.env.HUB_API_SECRET = "test-secret-xyz";
   process.env.TENANT_API_SECRET = "test-secret-xyz";
-  process.env.ACCEPT_LEGACY_HMAC = "1";
-  process.env.ACCEPT_LEGACY_BEARER = "1";
 });
 
 const { prismaCtorMock } = vi.hoisted(() => ({
@@ -72,20 +70,13 @@ import { makeRequest, readJson } from "../_helpers";
 
 const SECRET = "test-secret-xyz";
 
-/** Legacy HMAC : signature sur `email:timestamp` placée dans le body. */
-function signedBody(
-  email: string,
-  extras: { driftMs?: number; badSig?: boolean; plan?: string } = {},
-) {
-  const ts = Date.now() + (extras.driftMs ?? 0);
-  const sig = extras.badSig
-    ? "00".repeat(32)
-    : createHmac("sha256", SECRET).update(`${email}:${ts}`).digest("hex");
+/** Ancien format `email:ts` dans le body : doit être refusé. */
+function legacySignedBody(email: string) {
+  const ts = Date.now();
   return {
     email,
     timestamp: ts,
-    signature: sig,
-    plan: extras.plan,
+    signature: createHmac("sha256", SECRET).update(`${email}:${ts}`).digest("hex"),
   };
 }
 
@@ -120,8 +111,11 @@ describe("POST /api/tenants/provision", () => {
   test("returns 400 when email missing", async () => {
     const req = makeRequest("/api/tenants/provision", {
       method: "POST",
-      headers: { "x-forwarded-for": `10.0.0.${Math.floor(Math.random() * 250)}` },
-      body: { ...signedBody("placeholder"), email: undefined },
+      headers: {
+        ...standardHeaders("{}"),
+        "x-forwarded-for": `10.0.0.${Math.floor(Math.random() * 250)}`,
+      },
+      body: "{}",
     });
     const res = await POST(req);
     expect(res.status).toBe(400);
@@ -130,8 +124,11 @@ describe("POST /api/tenants/provision", () => {
   test("returns 401 on invalid HMAC signature", async () => {
     const req = makeRequest("/api/tenants/provision", {
       method: "POST",
-      headers: { "x-forwarded-for": `10.0.1.${Math.floor(Math.random() * 250)}` },
-      body: signedBody("client@example.com", { badSig: true }),
+      headers: {
+        ...standardHeaders(JSON.stringify({ email: "client@example.com" }), { badSig: true }),
+        "x-forwarded-for": `10.0.1.${Math.floor(Math.random() * 250)}`,
+      },
+      body: JSON.stringify({ email: "client@example.com" }),
     });
     const res = await POST(req);
     expect(res.status).toBe(401);
@@ -142,9 +139,12 @@ describe("POST /api/tenants/provision", () => {
   test("returns 401 when timestamp drift > 5min", async () => {
     const req = makeRequest("/api/tenants/provision", {
       method: "POST",
-      headers: { "x-forwarded-for": `10.0.2.${Math.floor(Math.random() * 250)}` },
-      // 6 min in the past
-      body: signedBody("client@example.com", { driftMs: -6 * 60 * 1000 }),
+      headers: {
+        // 6 min in the past
+        ...standardHeaders(JSON.stringify({ email: "client@example.com" }), { driftMs: -6 * 60 * 1000 }),
+        "x-forwarded-for": `10.0.2.${Math.floor(Math.random() * 250)}`,
+      },
+      body: JSON.stringify({ email: "client@example.com" }),
     });
     const res = await POST(req);
     expect(res.status).toBe(401);
@@ -152,24 +152,39 @@ describe("POST /api/tenants/provision", () => {
     expect(body.error).toBe("Timestamp expired or invalid");
   });
 
-  test("returns 401 on bad legacy Bearer token", async () => {
+  test("returns 401 on legacy Bearer, même avec le bon secret", async () => {
     const req = makeRequest("/api/tenants/provision", {
       method: "POST",
       headers: {
-        authorization: "Bearer wrong-token",
+        authorization: `Bearer ${SECRET}`,
         "x-forwarded-for": `10.0.3.${Math.floor(Math.random() * 250)}`,
       },
       body: { email: "client@example.com" },
     });
     const res = await POST(req);
     expect(res.status).toBe(401);
+    expect(resolveOrCreateUserFromHubMock).not.toHaveBeenCalled();
+  });
+
+  test("returns 401 on legacy HMAC email:ts, même bien signé", async () => {
+    const req = makeRequest("/api/tenants/provision", {
+      method: "POST",
+      headers: { "x-forwarded-for": `10.0.5.${Math.floor(Math.random() * 250)}` },
+      body: legacySignedBody("client@example.com"),
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(401);
+    expect(resolveOrCreateUserFromHubMock).not.toHaveBeenCalled();
   });
 
   test("returns 200 + credentials on valid HMAC", async () => {
     const req = makeRequest("/api/tenants/provision", {
       method: "POST",
-      headers: { "x-forwarded-for": `10.0.4.${Math.floor(Math.random() * 250)}` },
-      body: signedBody("client@example.com", { plan: "pro" }),
+      headers: {
+        ...standardHeaders(JSON.stringify({ email: "client@example.com", plan: "pro" })),
+        "x-forwarded-for": `10.0.4.${Math.floor(Math.random() * 250)}`,
+      },
+      body: JSON.stringify({ email: "client@example.com", plan: "pro" }),
     });
     const res = await POST(req);
     expect(res.status).toBe(200);
@@ -188,19 +203,19 @@ describe("POST /api/tenants/provision", () => {
     expect(body.created).toBe(true);
   });
 
-  test("returns 200 + credentials on valid legacy Bearer token", async () => {
+  test("defaults to freemium when no plan provided", async () => {
+    const raw = JSON.stringify({ email: "client@example.com" });
     const req = makeRequest("/api/tenants/provision", {
       method: "POST",
       headers: {
-        authorization: `Bearer ${SECRET}`,
-        "x-forwarded-for": `10.0.5.${Math.floor(Math.random() * 250)}`,
+        ...standardHeaders(raw),
+        "x-forwarded-for": `10.0.6.${Math.floor(Math.random() * 250)}`,
       },
-      body: { email: "client@example.com" },
+      body: raw,
     });
     const res = await POST(req);
     expect(res.status).toBe(200);
     const body = (await readJson(res)) as { plan: string };
-    // No plan provided → defaults to freemium
     expect(body.plan).toBe("freemium");
   });
 
@@ -291,17 +306,14 @@ describe("POST /api/tenants/provision", () => {
     inst.tenant.findFirst.mockResolvedValueOnce(null); // 1er appel = ensureOwnerWorkspace
     inst.tenant.findFirst.mockResolvedValueOnce({ id: "tenant-id-42" }); // 2e appel = persistance token
 
+    const raw = JSON.stringify({ email: "test-autologin@example.com", user_id: uid });
     const req = makeRequest("/api/tenants/provision", {
       method: "POST",
-      headers: { "x-forwarded-for": `10.0.7.${Math.floor(Math.random() * 250)}` },
-      body: {
-        email: "test-autologin@example.com",
-        user_id: uid,
-        timestamp: Date.now(),
-        signature: createHmac("sha256", SECRET)
-          .update(`test-autologin@example.com:${Date.now()}`)
-          .digest("hex"),
+      headers: {
+        ...standardHeaders(raw),
+        "x-forwarded-for": `10.0.7.${Math.floor(Math.random() * 250)}`,
       },
+      body: raw,
     });
     const res = await POST(req);
     expect(res.status).toBe(200);
@@ -368,17 +380,16 @@ describe("POST /api/tenants/provision", () => {
 
   test("rate-limits to 10 requests/min/IP (11th returns 429)", async () => {
     const ip = `10.0.99.${Math.floor(Math.random() * 250)}`;
-    const send = () =>
-      POST(
+    const send = () => {
+      const raw = JSON.stringify({ email: `client-${Math.random()}@example.com` });
+      return POST(
         makeRequest("/api/tenants/provision", {
           method: "POST",
-          headers: {
-            authorization: `Bearer ${SECRET}`,
-            "x-forwarded-for": ip,
-          },
-          body: { email: `client-${Math.random()}@example.com` },
+          headers: { ...standardHeaders(raw), "x-forwarded-for": ip },
+          body: raw,
         }),
       );
+    };
 
     for (let i = 0; i < 10; i++) {
       const r = await send();

@@ -17,10 +17,26 @@
  */
 import { test, expect, type APIRequestContext } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
-import { randomBytes } from "crypto";
+import { createHmac, randomBytes } from "crypto";
 
 const PROSPECTION_URL = process.env.PROSPECTION_URL || "https://prospection.staging.veridian.site";
 const TENANT_SECRET = process.env.TENANT_API_SECRET || "staging-prospection-secret-2026";
+
+// HMAC Hub contrat §6.1 : seul mode accepté par /api/tenants/provision.
+function hubSigned(payload: Record<string, unknown>) {
+  const ts = Date.now();
+  const data = JSON.stringify(payload);
+  return {
+    headers: {
+      "Content-Type": "application/json",
+      "X-Veridian-Timestamp": String(ts),
+      "X-Veridian-Hub-Signature": createHmac("sha256", TENANT_SECRET)
+        .update(`${ts}.${data}`)
+        .digest("hex"),
+    },
+    data,
+  };
+}
 
 const TEST_EMAIL = `e2e-existing-${Date.now()}@yopmail.com`;
 
@@ -184,11 +200,7 @@ test.describe.serial("Existing account scenarios", () => {
   // ---- S7: Provision generates login_url ----
   test("S7: provision endpoint → login_url with token", async ({ request }) => {
     const provRes = await request.post(`${PROSPECTION_URL}/api/tenants/provision`, {
-      headers: {
-        Authorization: `Bearer ${TENANT_SECRET}`,
-        "Content-Type": "application/json",
-      },
-      data: { email: TEST_EMAIL, name: "test", plan: "freemium" },
+      ...hubSigned({ email: TEST_EMAIL, name: "test", plan: "freemium" }),
     });
     expect(provRes.ok()).toBeTruthy();
     const prov = await provRes.json();
@@ -214,11 +226,7 @@ test.describe.serial("Existing account scenarios", () => {
   // ---- S10: Provision endpoint stays available ----
   test("S10: provision endpoint stays available for existing tenant", async ({ request }) => {
     const provRes = await request.post(`${PROSPECTION_URL}/api/tenants/provision`, {
-      headers: {
-        Authorization: `Bearer ${TENANT_SECRET}`,
-        "Content-Type": "application/json",
-      },
-      data: { email: TEST_EMAIL, name: "test", plan: "freemium" },
+      ...hubSigned({ email: TEST_EMAIL, name: "test", plan: "freemium" }),
     });
     expect(provRes.ok()).toBeTruthy();
     console.log(`[S10] Provision still works for existing user`);

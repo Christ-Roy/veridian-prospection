@@ -10,24 +10,13 @@
  *   1) drift timestamp < 5min (anti-replay)
  *   2) recompute HMAC sur `${timestamp}.${rawBody}` avec le secret partagé
  *   3) comparaison en temps constant via `crypto.timingSafeEqual`
- *
- * Compatibilité legacy : pendant la fenêtre de migration coordonnée avec
- * l'agent Hub (cf todo/2026-05-19-hub-contract-conformity.md), on accepte
- * encore le format historique `HMAC(secret, "${email}:${timestamp}")` placé
- * dans le body si `ACCEPT_LEGACY_HMAC=1`. La fenêtre vise 30j, après quoi le
- * flag disparaît avec ses 2 helpers `_legacy*`.
- *
- * Le Hub appelle aussi Prospection en `Authorization: Bearer <secret>` (cf
- * `veridian-hub/app/api/prospection/regenerate-login/route.ts`). On garde ce
- * fallback sous `ACCEPT_LEGACY_BEARER=1` (default ON tant que la migration
- * Hub n'est pas live).
  */
 import { createHmac, timingSafeEqual } from "crypto";
 
 const MAX_TIMESTAMP_DRIFT_MS = 5 * 60 * 1000;
 
 export type HmacVerificationResult =
-  | { ok: true; mode: "standard" | "legacy_email_ts" | "legacy_bearer" }
+  | { ok: true; mode: "standard" | "legacy_bearer" }
   | {
       ok: false;
       reason:
@@ -78,43 +67,9 @@ export function verifyHubHmac(
 }
 
 /**
- * Vérifie l'ancien format `HMAC(secret, "${payload}:${timestamp}")`.
- * Conservé temporairement pour ne pas casser le Hub avant sa propre migration.
- *
- * @param payload Donnée signée historiquement (email, "e2e-cleanup", etc.).
- */
-export function verifyLegacyEmailTsHmac(
-  secret: string | undefined,
-  payload: string,
-  timestamp: number,
-  signature: string,
-): HmacVerificationResult {
-  if (!secret) return { ok: false, reason: "missing_secret" };
-  if (!signature) return { ok: false, reason: "missing_signature" };
-  if (!Number.isFinite(timestamp)) return { ok: false, reason: "invalid_timestamp" };
-  if (Math.abs(Date.now() - timestamp) > MAX_TIMESTAMP_DRIFT_MS) {
-    return { ok: false, reason: "timestamp_drift" };
-  }
-
-  const expected = createHmac("sha256", secret)
-    .update(`${payload}:${timestamp}`)
-    .digest("hex");
-
-  try {
-    const a = Buffer.from(signature, "hex");
-    const b = Buffer.from(expected, "hex");
-    if (a.length !== b.length) return { ok: false, reason: "invalid_signature" };
-    if (!timingSafeEqual(a, b)) return { ok: false, reason: "invalid_signature" };
-  } catch {
-    return { ok: false, reason: "invalid_signature" };
-  }
-
-  return { ok: true, mode: "legacy_email_ts" };
-}
-
-/**
  * Comparaison `Authorization: Bearer <secret>` en temps constant.
- * Conservé pour le Hub legacy (`regenerate-login`, `impersonate`).
+ * Sert uniquement au moteur de recherche (`lib/search/auth.ts`, secret dédié).
+ * Le Hub signe tous ses appels en HMAC §6.1 : le Bearer Hub est coupé.
  */
 export function verifyLegacyBearer(
   secret: string | undefined,

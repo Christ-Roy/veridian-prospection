@@ -8,6 +8,7 @@
  *  - redirect /login?error=token_expired si > 24h
  *  - redirect / + cookie session set + marquage `usedAt` sur token valide
  *  - redirect /login?error=server_error si AUTH_SECRET absent
+ *  - jeton de rebond Hub (sso_login_tokens) : session du user, rejeu et expiration refusés
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
 
@@ -17,7 +18,11 @@ vi.hoisted(() => {
   // déjà NODE_ENV=test par défaut.
 });
 
-const { tenantMock, userMock, encodeMock } = vi.hoisted(() => ({
+const { tenantMock, userMock, ssoMock, encodeMock } = vi.hoisted(() => ({
+  ssoMock: {
+    findUnique: vi.fn(),
+    updateMany: vi.fn(),
+  },
   tenantMock: {
     findFirst: vi.fn(),
     updateMany: vi.fn(),
@@ -32,6 +37,7 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     tenant: tenantMock,
     user: userMock,
+    ssoLoginToken: ssoMock,
   },
 }));
 
@@ -46,6 +52,7 @@ describe("GET /api/auth/token — autologin Prisma + Auth.js JWT", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     encodeMock.mockResolvedValue("fake.jwt.session");
+    ssoMock.findUnique.mockResolvedValue(null);
   });
 
   test("returns 400 when ?t= is missing", async () => {
@@ -137,6 +144,78 @@ describe("GET /api/auth/token — autologin Prisma + Auth.js JWT", () => {
     tenantMock.updateMany.mockResolvedValue({ count: 0 });
     const res = await GET(makeRequest("/api/auth/token", { searchParams: { t: "race" } }));
     expect(res.headers.get("location")).toContain("/login?error=token_used");
+  });
+
+  test("jeton de rebond valide : session du user du jeton, jamais du propriétaire de tenant", async () => {
+    ssoMock.findUnique.mockResolvedValue({
+      userId: "u-member",
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    ssoMock.updateMany.mockResolvedValue({ count: 1 });
+    userMock.findUnique.mockResolvedValue({
+      id: "u-member",
+      email: "m@v.site",
+      name: null,
+      image: null,
+      deletedAt: null,
+    });
+    const res = await GET(makeRequest("/api/auth/token", { searchParams: { t: "clair" } }));
+    expect(res.headers.get("location")).toMatch(/\/$/);
+    // Recherche par hash : le clair n'est jamais comparé en base.
+    expect(ssoMock.findUnique.mock.calls[0][0].where.tokenHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(ssoMock.findUnique.mock.calls[0][0].where.tokenHash).not.toBe("clair");
+    expect(encodeMock.mock.calls[0][0].token.uid).toBe("u-member");
+    expect(tenantMock.findFirst).not.toHaveBeenCalled();
+  });
+
+  test("jeton de rebond rejoué → token_used, aucune session", async () => {
+    ssoMock.findUnique.mockResolvedValue({
+      userId: "u-1",
+      usedAt: new Date(),
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const res = await GET(makeRequest("/api/auth/token", { searchParams: { t: "x" } }));
+    expect(res.headers.get("location")).toContain("/login?error=token_used");
+    expect(encodeMock).not.toHaveBeenCalled();
+  });
+
+  test("jeton de rebond expiré → token_expired, aucune session", async () => {
+    ssoMock.findUnique.mockResolvedValue({
+      userId: "u-1",
+      usedAt: null,
+      expiresAt: new Date(Date.now() - 1000),
+    });
+    const res = await GET(makeRequest("/api/auth/token", { searchParams: { t: "x" } }));
+    expect(res.headers.get("location")).toContain("/login?error=token_expired");
+    expect(encodeMock).not.toHaveBeenCalled();
+  });
+
+  test("jeton de rebond : double onglet, le second perd la course", async () => {
+    ssoMock.findUnique.mockResolvedValue({
+      userId: "u-1",
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    ssoMock.updateMany.mockResolvedValue({ count: 0 });
+    const res = await GET(makeRequest("/api/auth/token", { searchParams: { t: "x" } }));
+    expect(res.headers.get("location")).toContain("/login?error=token_used");
+    expect(encodeMock).not.toHaveBeenCalled();
+  });
+
+  test("user soft-deleted → pas de session", async () => {
+    ssoMock.findUnique.mockResolvedValue({
+      userId: "u-del",
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    ssoMock.updateMany.mockResolvedValue({ count: 1 });
+    userMock.findUnique.mockResolvedValue({ id: "u-del", email: "d@v.site", deletedAt: new Date() });
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await GET(makeRequest("/api/auth/token", { searchParams: { t: "x" } }));
+    expect(res.headers.get("location")).toContain("/login?error=server_error");
+    expect(encodeMock).not.toHaveBeenCalled();
+    err.mockRestore();
   });
 
   test("redirect /login?error=server_error si AUTH_SECRET manquant", async () => {

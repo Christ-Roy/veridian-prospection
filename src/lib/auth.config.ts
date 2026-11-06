@@ -6,7 +6,6 @@
 // ./auth.ts et reprend ce fichier en base.
 
 import type { NextAuthConfig } from "next-auth";
-import Google from "next-auth/providers/google";
 
 export const authConfig = {
   // En self-hosted (Dokploy + Traefik), Auth.js doit faire confiance au host
@@ -23,16 +22,8 @@ export const authConfig = {
     error: "/login",
   },
   providers: [
-    Google({
-      clientId: process.env.GOOGLE_OAUTH_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET,
-      authorization: {
-        params: {
-          scope: "openid email profile",
-          prompt: "select_account",
-        },
-      },
-    }),
+    // Pas de provider OAuth local (CONTRAT-HUB §6bis.8) : Google et Microsoft
+    // passent par le rebond Hub.
     // Le CredentialsProvider (email/password legacy) est branché uniquement
     // dans auth.ts (Node runtime) parce qu'il a besoin de Prisma + bcrypt.
   ],

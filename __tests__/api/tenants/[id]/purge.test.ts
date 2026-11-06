@@ -22,7 +22,6 @@ import { createHmac } from "crypto";
 
 vi.hoisted(() => {
   process.env.HUB_API_SECRET = "test-purge-secret";
-  process.env.ACCEPT_LEGACY_BEARER = "0";
 });
 
 const mocks = vi.hoisted(() => ({

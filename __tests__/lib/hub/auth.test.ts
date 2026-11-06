@@ -7,7 +7,6 @@ import { createHmac } from "crypto";
 
 vi.hoisted(() => {
   process.env.HUB_API_SECRET = "test-auth-secret";
-  process.env.ACCEPT_LEGACY_BEARER = "1";
 });
 
 import { requireHubHmac } from "@/lib/hub/auth";
@@ -102,36 +101,15 @@ describe("requireHubHmac", () => {
     }
   });
 
-  test("accepte legacy Bearer (ACCEPT_LEGACY_BEARER=1)", async () => {
-    const raw = JSON.stringify({ tenant_id: "t-1" });
+  test("refuse le Bearer legacy, même avec le bon secret", async () => {
     const req = makeRequest("/api/tenants/suspend", {
       method: "POST",
       headers: { authorization: `Bearer ${SECRET}` },
-      body: raw,
+      body: JSON.stringify({ tenant_id: "t-1" }),
     });
     const r = await requireHubHmac(req);
-    expect(r.ok).toBe(true);
-    if (r.ok) expect(r.mode).toBe("legacy_bearer");
-  });
-
-  test("log warn explicite quand legacy Bearer accepté (pour observabilité 7j avant flip flag)", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      const raw = JSON.stringify({ tenant_id: "t-1" });
-      const req = makeRequest("/api/tenants/suspend", {
-        method: "POST",
-        headers: { authorization: `Bearer ${SECRET}` },
-        body: raw,
-      });
-      const r = await requireHubHmac(req);
-      expect(r.ok).toBe(true);
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining("legacy Bearer accepted"),
-      );
-      expect(warnSpy.mock.calls[0][0]).toContain("/api/tenants/suspend");
-    } finally {
-      warnSpy.mockRestore();
-    }
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.response.status).toBe(401);
   });
 
   test("rejette si ni HMAC ni Bearer fournis", async () => {

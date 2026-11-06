@@ -4,9 +4,7 @@
  * Wrapper standard pour les nouveaux endpoints (attach-owner, suspend, resume,
  * health, update-plan, soft-delete, restore, purge, usage-summary).
  *
- * À la différence de `/api/tenants/provision` qui supporte 3 modes (standard +
- * 2 legacy) pour ne pas casser le Hub actuel, les nouveaux endpoints sont
- * **standard-only** : ils n'existaient pas avant donc rien à conserver.
+ * Standard-only : le Hub signe tous ses appels en HMAC §6.1, aucun mode legacy.
  *
  * Usage :
  *
@@ -16,20 +14,18 @@
  *   const rawBody = auth.rawBody;
  */
 import { NextRequest, NextResponse } from "next/server";
-import { verifyHubHmac, verifyLegacyBearer } from "./hmac";
+import { verifyHubHmac } from "./hmac";
 
 function getSecret(): string | undefined {
   return process.env.HUB_API_SECRET || process.env.TENANT_API_SECRET;
 }
-
-const ACCEPT_LEGACY_BEARER = process.env.ACCEPT_LEGACY_BEARER !== "0";
 
 export type HubHmacAuthResult<TBody = unknown> =
   | {
       ok: true;
       body: TBody;
       rawBody: string;
-      mode: "standard" | "legacy_bearer";
+      mode: "standard";
     }
   | {
       ok: false;
@@ -91,19 +87,6 @@ export async function requireHubHmac<TBody = unknown>(
       ok: false,
       response: NextResponse.json({ error }, { status }),
     };
-  }
-
-  // Legacy Bearer — fenêtre Hub
-  if (ACCEPT_LEGACY_BEARER) {
-    const v = verifyLegacyBearer(secret, request.headers.get("authorization"));
-    if (v.ok) {
-      // Log explicite pour pouvoir flipper ACCEPT_LEGACY_BEARER=0 en confiance
-      // après une fenêtre d'observation 7j à 0 occurrence.
-      console.warn(
-        `[hub-auth] legacy Bearer accepted on ${request.nextUrl.pathname} — migrate Hub to standard HMAC {ts}.{body}`,
-      );
-      return { ok: true, body, rawBody, mode: "legacy_bearer" };
-    }
   }
 
   return {

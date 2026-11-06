@@ -4,7 +4,7 @@
 // NE PAS importer ce fichier depuis le middleware edge — utiliser auth.config.ts
 // à la place.
 //
-// Note Prospection : pas de MFA (simplifié vs Hub). Google OAuth + Credentials
+// Note Prospection : pas de MFA (simplifié vs Hub). Credentials seul
 // (bcrypt compare contre Account.access_token). Le user.id est un UUID
 // Postgres (préservé depuis Supabase auth.users.id), pas un cuid.
 
@@ -46,11 +46,6 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
           include: { accounts: true },
         });
 
-        // Legacy bridge : si le user n'existe pas dans la DB Prospection, on ne
-        // tente PAS de re-fetch dans Supabase. Le flow CredentialsProvider ne
-        // gère que les users déjà migrés vers Auth.js. Les autres passent par
-        // l'ancien flow Supabase Auth (inchangé) tant que la transition n'est
-        // pas finie (Phase 8).
         if (!user) {
           return null;
         }

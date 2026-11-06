@@ -127,8 +127,6 @@ jobs:
           no-cache-filters: runner
           pull: true
           build-args: |
-            NEXT_PUBLIC_SUPABASE_URL=https://api.app.veridian.site
-            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.STAGING_SUPABASE_ANON_KEY }}
             NEXT_PUBLIC_HUB_URL=https://app.veridian.site
             NEXT_PUBLIC_SITE_URL=https://prospection.staging.veridian.site
             NEXT_PUBLIC_TRIAL_DAYS=7

@@ -14,7 +14,6 @@ import { createHmac } from "crypto";
 
 vi.hoisted(() => {
   process.env.HUB_API_SECRET = "test-suspend-secret";
-  process.env.ACCEPT_LEGACY_BEARER = "0";
 });
 
 const { tenantFindUnique, tenantUpdate } = vi.hoisted(() => ({

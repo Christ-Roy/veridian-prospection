@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { PrismaClient } from "@prisma/client";
-import {
-  verifyHubHmac,
-  verifyLegacyEmailTsHmac,
-  verifyLegacyBearer,
-} from "@/lib/hub/hmac";
+import { verifyHubHmac } from "@/lib/hub/hmac";
 import { generateApiKey, hashApiKey } from "@/lib/hub/apiKey";
 import { resolveOrCreateUserFromHub } from "@/lib/hub/identity";
 import { seedDefaultPipelineStages } from "@/lib/outreach/pipeline-stages";
@@ -131,9 +127,6 @@ function getSecret(): string | undefined {
   return process.env.HUB_API_SECRET || process.env.TENANT_API_SECRET;
 }
 
-const ACCEPT_LEGACY_HMAC = process.env.ACCEPT_LEGACY_HMAC !== "0";
-const ACCEPT_LEGACY_BEARER = process.env.ACCEPT_LEGACY_BEARER !== "0";
-
 // Simple in-memory rate limiter (10 requests per minute per IP)
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 
@@ -165,8 +158,6 @@ export async function POST(request: NextRequest) {
   let body: {
     email?: string;
     plan?: string;
-    timestamp?: number;
-    signature?: string;
     user_id?: string;
     metadata?: { hub_user_id?: string };
   };
@@ -175,70 +166,29 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: "invalid_payload" }, { status: 400 });
   }
-  const { email, plan, timestamp, signature } = body;
+  const { email, plan } = body;
   const hubUserId = body.user_id || body.metadata?.hub_user_id;
 
   if (!email) {
     return NextResponse.json({ error: "email is required" }, { status: 400 });
   }
 
-  // 1) Pattern A — HMAC standard contrat §6.1 : signature dans les headers
-  //    sur `${timestamp}.${rawBody}`. Source de vérité long terme.
+  // HMAC standard contrat §6.1 : signature dans les headers sur
+  // `${timestamp}.${rawBody}`. Seul mode accepté.
   const headerSig = request.headers.get("x-veridian-hub-signature");
   const headerTs = Number(request.headers.get("x-veridian-timestamp"));
 
-  let authOk = false;
-  let authMode: "standard" | "legacy_email_ts" | "legacy_bearer" | null = null;
-  let lastFailure = "Unauthorized";
-
-  if (headerSig) {
-    const v = verifyHubHmac(secret, headerTs, rawBody, headerSig);
-    if (v.ok) {
-      authOk = true;
-      authMode = "standard";
-    } else {
-      lastFailure = v.reason === "timestamp_drift" ? "Timestamp expired or invalid"
-        : v.reason === "invalid_signature" ? "Invalid signature"
-        : v.reason === "invalid_timestamp" ? "Timestamp expired or invalid"
-        : "Unauthorized";
-    }
+  if (!headerSig) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
-  // 2) Legacy A — HMAC `email:ts` dans le body (format Prospection historique)
-  if (!authOk && ACCEPT_LEGACY_HMAC && timestamp && signature) {
-    const v = verifyLegacyEmailTsHmac(secret, email, Number(timestamp), signature);
-    if (v.ok) {
-      authOk = true;
-      authMode = "legacy_email_ts";
-      console.warn(
-        "[provision] legacy HMAC email:ts accepted — migrate Hub to standard {ts}.{body}",
-      );
-    } else {
-      lastFailure = v.reason === "timestamp_drift" ? "Timestamp expired or invalid"
-        : v.reason === "invalid_signature" ? "Invalid signature"
-        : lastFailure;
-    }
+  const v = verifyHubHmac(secret, headerTs, rawBody, headerSig);
+  if (!v.ok) {
+    const error =
+      v.reason === "timestamp_drift" || v.reason === "invalid_timestamp"
+        ? "Timestamp expired or invalid"
+        : "Invalid signature";
+    return NextResponse.json({ error }, { status: 401 });
   }
-
-  // 3) Legacy B — `Authorization: Bearer <secret>`. C'est ce que le Hub
-  //    utilise aujourd'hui (regenerate-login, impersonate). Reste actif tant
-  //    que la migration Hub n'est pas live.
-  if (!authOk && ACCEPT_LEGACY_BEARER) {
-    const v = verifyLegacyBearer(secret, request.headers.get("authorization"));
-    if (v.ok) {
-      authOk = true;
-      authMode = "legacy_bearer";
-    }
-  }
-
-  if (!authOk) {
-    return NextResponse.json(
-      { error: lastFailure },
-      { status: 401 },
-    );
-  }
-  // authMode disponible pour observabilité (log structuré P8).
-  void authMode;
 
   // Token autologin one-shot (mécanisme distinct de l'api_key §6.2). Persisté
   // sur Tenant pour /api/auth/token?t=<token>.

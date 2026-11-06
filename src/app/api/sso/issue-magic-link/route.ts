@@ -24,18 +24,19 @@
  * Prospection (cf ticket §6bis.8 — le Hub redirige vers signup à la
  * place). On répond 400 user_not_in_app et on laisse le Hub décider.
  *
- * Cf. logique magic_link Couche 3 : src/app/api/workspaces.generateMagicLink/route.ts
- * (réutilise le même pattern token one-shot + `prospectionLoginToken` sur
- * Tenant + GET /api/auth/token?t=... pour consommer).
+ * Le jeton vit dans `sso_login_tokens` (haché, one-shot, 15 min, lié au USER)
+ * et non sur le Tenant : consommer un jeton de Tenant connecte son propriétaire,
+ * ce qui est faux pour un membre invité. GET /api/auth/token?t=... consomme.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { randomBytes } from "crypto";
+import { createHash, randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { verifyHubHmac } from "@/lib/hub/hmac";
 import { isRateLimited } from "@/lib/rate-limit";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24h cohérent /api/auth/token
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const TOKEN_TTL_MS = 15 * 60 * 1000; // 15 min, CONTRAT-HUB §6bis.8.3
 
 function getSecret(): string | undefined {
   return process.env.HUB_API_SECRET || process.env.TENANT_API_SECRET;
@@ -85,19 +86,29 @@ export async function POST(request: NextRequest) {
   }
 
   // ─── Lookup user — pas d'auto-création ────────────────────────────────────
-  // Match par hub_user_id en priorité (lien explicite Hub↔local), fallback
-  // par email pour les comptes legacy pas encore backfillés (§3.7 helper
-  // identity.ts). On NE fait PAS de resolveOrCreateUserFromHub ici (le
-  // ticket §6bis.8 interdit l'auto-création — c'est au Hub de proposer
-  // signup à la place).
+  // Match par hub_user_id en priorité (lien explicite Hub↔local). Le repli par
+  // email sert UNIQUEMENT à rattacher un compte encore sans lien : un email ne
+  // doit jamais ouvrir un compte déjà lié à une autre identité Hub. Il suppose
+  // une adresse prouvée côté Hub (bounce/complete).
+  // On NE fait PAS de resolveOrCreateUserFromHub ici (le ticket §6bis.8 interdit
+  // l'auto-création, c'est au Hub de proposer signup à la place).
+  // La colonne hub_user_id est un UUID : un autre format (cuid Hub) fait lever
+  // Prisma (P2023) et ne pourrait pas être rattaché, donc refus net.
+  if (!UUID_RE.test(hubUserId)) {
+    console.warn(`[sso/issue-magic-link] hub_user_id non UUID refusé: ${hubUserId}`);
+    return NextResponse.json(
+      { error: "user_not_in_app", hint: "hub_user_id is not a uuid" },
+      { status: 400 },
+    );
+  }
   let user = await prisma.user.findFirst({
     where: { hubUserId, deletedAt: null },
-    select: { id: true, email: true },
+    select: { id: true, hubUserId: true },
   });
   if (!user) {
     user = await prisma.user.findFirst({
       where: { email, deletedAt: null },
-      select: { id: true, email: true },
+      select: { id: true, hubUserId: true },
     });
   }
   if (!user) {
@@ -106,18 +117,33 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
+  if (user.hubUserId && user.hubUserId !== hubUserId) {
+    console.warn(
+      `[sso/issue-magic-link] hub_user_id conflict user=${user.id} local=${user.hubUserId} hub=${hubUserId}`,
+    );
+    return NextResponse.json(
+      { error: "user_not_in_app", hint: "email linked to another hub identity" },
+      { status: 400 },
+    );
+  }
 
-  // L'user existe — vérifier qu'il a au moins un tenant actif. Sinon
-  // user_not_in_app (cas pathologique : User créé mais Tenant soft-deleted
-  // ou jamais provisionné).
+  // Accès = propriétaire d'un tenant actif OU membre d'un workspace d'un tenant
+  // actif. Sinon user_not_in_app (User créé mais tenant soft-deleted, ou retiré).
+  const memberships = await prisma.workspaceMember.findMany({
+    where: { userId: user.id, deletedAt: null, workspace: { deletedAt: null } },
+    select: { workspace: { select: { tenantId: true } } },
+  });
   const tenant = await prisma.tenant.findFirst({
     where: {
-      userId: user.id,
+      OR: [
+        { userId: user.id },
+        { id: { in: memberships.map((m) => m.workspace.tenantId) } },
+      ],
       deletedAt: null,
       status: { not: "deleted" },
     },
     orderBy: { updatedAt: "desc" }, // multi-workspaces : dernier actif (§6bis.8)
-    select: { id: true, status: true },
+    select: { id: true },
   });
   if (!tenant) {
     return NextResponse.json(
@@ -126,15 +152,31 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Rattachement §3.7 au premier contact : la condition hubUserId null rend
+  // l'écriture atomique, un lien existant n'est jamais réécrit.
+  if (!user.hubUserId) {
+    const userId = user.id;
+    await prisma.user
+      .updateMany({ where: { id: userId, hubUserId: null }, data: { hubUserId } })
+      .catch((err: Error) =>
+        console.warn(
+          `[sso/issue-magic-link] backfill hub_user_id failed user=${userId}: ${err.message}`,
+        ),
+      );
+  }
+
   // ─── Génère + persiste token one-shot ─────────────────────────────────────
   const loginToken = randomBytes(32).toString("hex");
+  const expiresAt = new Date(Date.now() + TOKEN_TTL_MS);
   try {
-    await prisma.tenant.update({
-      where: { id: tenant.id },
+    await prisma.ssoLoginToken.deleteMany({
+      where: { userId: user.id, expiresAt: { lt: new Date() } },
+    });
+    await prisma.ssoLoginToken.create({
       data: {
-        prospectionLoginToken: loginToken,
-        prospectionLoginTokenCreatedAt: new Date(),
-        prospectionLoginTokenUsedAt: null,
+        tokenHash: createHash("sha256").update(loginToken).digest("hex"),
+        userId: user.id,
+        expiresAt,
       },
     });
   } catch (err) {
@@ -149,14 +191,13 @@ export async function POST(request: NextRequest) {
     process.env.NEXT_PUBLIC_SITE_URL ||
     "https://prospection.app.veridian.site";
   const magicLinkUrl = `${appUrl}/api/auth/token?t=${loginToken}`;
-  const expiresAt = new Date(Date.now() + TOKEN_TTL_MS).toISOString();
 
   console.log(
-    `[sso/issue-magic-link] issued user=${user.id} tenant=${tenant.id} expires=${expiresAt}`,
+    `[sso/issue-magic-link] issued user=${user.id} tenant=${tenant.id} expires=${expiresAt.toISOString()}`,
   );
 
   return NextResponse.json({
     magic_link_url: magicLinkUrl,
-    expires_at: expiresAt,
+    expires_at: expiresAt.toISOString(),
   });
 }

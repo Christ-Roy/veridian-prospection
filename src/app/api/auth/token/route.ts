@@ -16,12 +16,19 @@
 //   - One-shot : `prospectionLoginTokenUsedAt` posé au premier check OK
 //   - Validation via Prisma index `tenants_prospection_login_token_idx`
 //
+// Deux origines de jeton, même sortie (session Auth.js) :
+//   - `sso_login_tokens` (rebond Hub, /api/sso/issue-magic-link) : haché, 15 min,
+//     lié au user, donc valable pour un membre invité.
+//   - `tenants.prospection_login_token` (provision, generateMagicLink) : 24h,
+//     connecte le propriétaire du tenant.
+//
 // Erreurs possibles (toutes → redirect /login?error=...) :
 //   - invalid_token : token absent ou inconnu en DB
 //   - token_used    : déjà consommé une fois
 //   - token_expired : > 24h depuis création
 //   - server_error  : exception interne (loggée)
 import { NextRequest, NextResponse } from "next/server";
+import { createHash } from "crypto";
 import { encode } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 
@@ -55,6 +62,28 @@ export async function GET(request: NextRequest) {
   }
 
   console.log(`[auth/token] Validating token prefix=${token.slice(0, 8)}...`);
+
+  // Jeton de rebond Hub. Le hash permet de ne jamais stocker le jeton en clair.
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  let ssoToken;
+  try {
+    ssoToken = await prisma.ssoLoginToken.findUnique({ where: { tokenHash } });
+  } catch (err) {
+    console.error(`[auth/token] DB lookup failed: ${(err as Error).message}`);
+    return redirectLogin(baseUrl, "server_error");
+  }
+  if (ssoToken) {
+    if (ssoToken.usedAt) return redirectLogin(baseUrl, "token_used");
+    if (ssoToken.expiresAt.getTime() < Date.now()) {
+      return redirectLogin(baseUrl, "token_expired");
+    }
+    const consumed = await prisma.ssoLoginToken.updateMany({
+      where: { tokenHash, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+    if (consumed.count === 0) return redirectLogin(baseUrl, "token_used");
+    return createSessionResponse(ssoToken.userId, baseUrl, "sso");
+  }
 
   let tenant;
   try {
@@ -106,14 +135,22 @@ export async function GET(request: NextRequest) {
     return redirectLogin(baseUrl, "token_used");
   }
 
+  return createSessionResponse(tenant.userId, baseUrl, `tenant=${tenant.id}`);
+}
+
+async function createSessionResponse(
+  userId: string,
+  baseUrl: string,
+  origin: string,
+): Promise<NextResponse> {
   // Récupère le user pour signer la session. (Le schema Tenant n'a pas de
   // relation Prisma `user` — on join à la main par userId.)
   const user = await prisma.user.findUnique({
-    where: { id: tenant.userId },
-    select: { id: true, email: true, name: true, image: true },
+    where: { id: userId },
+    select: { id: true, email: true, name: true, image: true, deletedAt: true },
   });
-  if (!user) {
-    console.error(`[auth/token] No user found for tenant ${tenant.id} userId=${tenant.userId}`);
+  if (!user || user.deletedAt) {
+    console.error(`[auth/token] No active user for userId=${userId} (${origin})`);
     return redirectLogin(baseUrl, "server_error");
   }
 
@@ -143,7 +180,7 @@ export async function GET(request: NextRequest) {
   });
 
   console.log(
-    `[auth/token] Session created for user=${user.id} tenant=${tenant.id}`,
+    `[auth/token] Session created for user=${user.id} ${origin}`,
   );
 
   const response = NextResponse.redirect(new URL("/", baseUrl));

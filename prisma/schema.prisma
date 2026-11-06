@@ -768,6 +768,7 @@ model User {
   sessions Session[]
   mfaCodes MfaCode[]
   openrouterLink UserOpenRouterLink?
+  ssoLoginTokens SsoLoginToken[]
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
@@ -777,6 +778,21 @@ model User {
 
   @@index([deletedAt])
   @@map("users")
+}
+
+// Jetons d'autologin du rebond Hub (CONTRAT-HUB §6bis.8.3). One-shot, 15 min,
+// hachés sha256, liés au user pour couvrir les membres invités.
+model SsoLoginToken {
+  tokenHash String    @id @map("token_hash")
+  userId    String    @map("user_id") @db.Uuid
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz
+  usedAt    DateTime? @map("used_at") @db.Timestamptz
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sso_login_tokens")
 }
 
 model Account {

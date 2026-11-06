@@ -7,7 +7,6 @@
  *  - secret manquant
  *  - body modifié = signature invalide (collision-proof)
  *  - timingSafeEqual ne plante pas sur longueurs différentes
- *  - format legacy `payload:ts` accepté et bien isolé
  *  - Bearer legacy temps constant
  *  - extractBearerApiKey valide les caractères autorisés
  */
@@ -15,7 +14,6 @@ import { describe, expect, test } from "vitest";
 import { createHmac } from "crypto";
 import {
   verifyHubHmac,
-  verifyLegacyEmailTsHmac,
   verifyLegacyBearer,
   extractBearerApiKey,
   HUB_TIMESTAMP_DRIFT_MS,
@@ -87,36 +85,6 @@ describe("verifyHubHmac — pattern A contrat §6.1", () => {
   test("ne crash pas sur signature non-hex", () => {
     const v = verifyHubHmac(SECRET, Date.now(), "{}", "not-hex-at-all-zzz");
     expect(v.ok).toBe(false);
-  });
-});
-
-describe("verifyLegacyEmailTsHmac — fenêtre 30j de migration", () => {
-  test("accepte le format historique email:ts", () => {
-    const ts = Date.now();
-    const sig = createHmac("sha256", SECRET)
-      .update(`client@example.com:${ts}`)
-      .digest("hex");
-    const v = verifyLegacyEmailTsHmac(SECRET, "client@example.com", ts, sig);
-    expect(v).toEqual({ ok: true, mode: "legacy_email_ts" });
-  });
-
-  test("rejette si payload changé", () => {
-    const ts = Date.now();
-    const sig = createHmac("sha256", SECRET)
-      .update(`client@example.com:${ts}`)
-      .digest("hex");
-    const v = verifyLegacyEmailTsHmac(SECRET, "other@example.com", ts, sig);
-    expect(v.ok).toBe(false);
-  });
-
-  test("rejette si drift > 5min", () => {
-    const ts = Date.now() - 10 * 60 * 1000;
-    const sig = createHmac("sha256", SECRET)
-      .update(`client@example.com:${ts}`)
-      .digest("hex");
-    const v = verifyLegacyEmailTsHmac(SECRET, "client@example.com", ts, sig);
-    expect(v.ok).toBe(false);
-    if (!v.ok) expect(v.reason).toBe("timestamp_drift");
   });
 });
 

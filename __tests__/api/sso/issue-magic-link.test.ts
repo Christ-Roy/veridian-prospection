@@ -9,12 +9,15 @@
  *  - 200 magic_link_url si user trouvé via hub_user_id
  *  - 200 magic_link_url si user trouvé via email (fallback legacy)
  *  - Multi-workspaces : magic_link sur le dernier tenant actif (orderBy updatedAt desc)
+ *  - Membre invité sans tenant propre : 200, jeton lié au user
+ *  - hub_user_id non UUID (cuid Hub) : 400, pas de 500, aucune requête
+ *  - Repli email réservé aux comptes sans lien : rattachement, sinon refus sans jeton
  *  - 429 rate-limited après 10 req/min/user
  *  - 500 server_error si HUB_API_SECRET absent
  *  - Pas d'auto-création de workspace si user_not_in_app
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
-import { createHmac } from "crypto";
+import { createHash, createHmac } from "crypto";
 
 vi.hoisted(() => {
   process.env.HUB_API_SECRET = "test-sso-secret";
@@ -23,17 +26,19 @@ vi.hoisted(() => {
 
 const mocks = vi.hoisted(() => ({
   userFindFirst: vi.fn(),
+  userUpdateMany: vi.fn(),
   tenantFindFirst: vi.fn(),
-  tenantUpdate: vi.fn(),
+  memberFindMany: vi.fn(),
+  tokenCreate: vi.fn(),
+  tokenDeleteMany: vi.fn(),
 }));
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    user: { findFirst: mocks.userFindFirst },
-    tenant: {
-      findFirst: mocks.tenantFindFirst,
-      update: mocks.tenantUpdate,
-    },
+    user: { findFirst: mocks.userFindFirst, updateMany: mocks.userUpdateMany },
+    tenant: { findFirst: mocks.tenantFindFirst },
+    workspaceMember: { findMany: mocks.memberFindMany },
+    ssoLoginToken: { create: mocks.tokenCreate, deleteMany: mocks.tokenDeleteMany },
   },
 }));
 
@@ -41,6 +46,7 @@ import { POST } from "@/app/api/sso/issue-magic-link/route";
 import { makeRequest, readJson } from "../_helpers";
 
 const SECRET = "test-sso-secret";
+const HUB_UUID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
 function signedBody(payload: Record<string, unknown>, ts = Date.now()) {
   const raw = JSON.stringify(payload);
@@ -65,7 +71,13 @@ function req(payload: Record<string, unknown>, overrideHeaders: Record<string, s
 }
 
 describe("POST /api/sso/issue-magic-link — Hub bounce OAuth", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.memberFindMany.mockResolvedValue([]);
+    mocks.userUpdateMany.mockResolvedValue({ count: 1 });
+    mocks.tokenDeleteMany.mockResolvedValue({ count: 0 });
+    mocks.tokenCreate.mockResolvedValue({});
+  });
 
   // ─── Auth HMAC ────────────────────────────────────────────────────────────
   test("401 si aucune signature HMAC", async () => {
@@ -156,43 +168,42 @@ describe("POST /api/sso/issue-magic-link — Hub bounce OAuth", () => {
   test("400 user_not_in_app si aucun user trouvé (ni hub_user_id ni email)", async () => {
     mocks.userFindFirst.mockResolvedValue(null);
     const res = await POST(
-      req({ hub_user_id: "u-unknown", email: "unknown@x.com" }),
+      req({ hub_user_id: HUB_UUID, email: "unknown@x.com" }),
     );
     expect(res.status).toBe(400);
     const body = (await readJson(res)) as Record<string, unknown>;
     expect(body.error).toBe("user_not_in_app");
-    expect(mocks.tenantUpdate).not.toHaveBeenCalled();
+    expect(mocks.tokenCreate).not.toHaveBeenCalled();
   });
 
   test("400 user_not_in_app si user existe mais 0 tenant actif", async () => {
     mocks.userFindFirst.mockResolvedValueOnce({
       id: "user-1",
-      email: "alice@example.com",
+      hubUserId: HUB_UUID,
     });
     mocks.tenantFindFirst.mockResolvedValue(null);
 
     const res = await POST(
-      req({ hub_user_id: "hub-u1", email: "alice@example.com" }),
+      req({ hub_user_id: HUB_UUID, email: "alice@example.com" }),
     );
     expect(res.status).toBe(400);
     const body = (await readJson(res)) as Record<string, unknown>;
     expect(body.error).toBe("user_not_in_app");
-    expect(mocks.tenantUpdate).not.toHaveBeenCalled();
+    expect(mocks.tokenCreate).not.toHaveBeenCalled();
   });
 
   test("200 magic_link_url si user trouvé par hub_user_id", async () => {
     mocks.userFindFirst.mockResolvedValueOnce({
       id: "user-1",
-      email: "alice@example.com",
+      hubUserId: HUB_UUID,
     });
     mocks.tenantFindFirst.mockResolvedValue({
       id: "tenant-1",
       status: "active",
     });
-    mocks.tenantUpdate.mockResolvedValue({});
 
     const res = await POST(
-      req({ hub_user_id: "hub-u1", email: "alice@example.com" }),
+      req({ hub_user_id: HUB_UUID, email: "alice@example.com" }),
     );
     expect(res.status).toBe(200);
     const body = (await readJson(res)) as Record<string, unknown>;
@@ -200,13 +211,17 @@ describe("POST /api/sso/issue-magic-link — Hub bounce OAuth", () => {
     expect((body.magic_link_url as string).startsWith(
       "https://prospection.app.veridian.site/api/auth/token?t=",
     )).toBe(true);
-    // Token persisté avec used=null
-    expect(mocks.tenantUpdate).toHaveBeenCalledOnce();
-    const call = mocks.tenantUpdate.mock.calls[0][0];
-    expect(call.where).toEqual({ id: "tenant-1" });
-    expect(call.data.prospectionLoginTokenUsedAt).toBeNull();
-    expect(typeof call.data.prospectionLoginToken).toBe("string");
-    expect((call.data.prospectionLoginToken as string).length).toBe(64); // 32 bytes hex
+    // Jeton persisté haché, lié au user, 15 min : le clair ne va jamais en base.
+    const clear = (body.magic_link_url as string).split("t=")[1];
+    expect(clear.length).toBe(64); // 32 bytes hex
+    expect(mocks.tokenCreate).toHaveBeenCalledOnce();
+    const data = mocks.tokenCreate.mock.calls[0][0].data;
+    expect(data.tokenHash).toBe(createHash("sha256").update(clear).digest("hex"));
+    expect(data.tokenHash).not.toBe(clear);
+    expect(data.userId).toBe("user-1");
+    const ttl = data.expiresAt.getTime() - Date.now();
+    expect(ttl).toBeGreaterThan(14 * 60 * 1000);
+    expect(ttl).toBeLessThanOrEqual(15 * 60 * 1000);
   });
 
   test("200 magic_link_url si user trouvé par email (fallback hub_user_id absent en DB)", async () => {
@@ -215,39 +230,95 @@ describe("POST /api/sso/issue-magic-link — Hub bounce OAuth", () => {
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({
         id: "user-legacy",
-        email: "bob@example.com",
+        hubUserId: null,
       });
     mocks.tenantFindFirst.mockResolvedValue({
       id: "tenant-legacy",
       status: "active",
     });
-    mocks.tenantUpdate.mockResolvedValue({});
 
     const res = await POST(
-      req({ hub_user_id: "hub-bob-new", email: "bob@example.com" }),
+      req({ hub_user_id: HUB_UUID, email: "bob@example.com" }),
     );
     expect(res.status).toBe(200);
     const body = (await readJson(res)) as Record<string, unknown>;
     expect(typeof body.magic_link_url).toBe("string");
+    // §3.7 : backfill atomique au premier contact.
+    expect(mocks.userUpdateMany).toHaveBeenCalledWith({
+      where: { id: "user-legacy", hubUserId: null },
+      data: { hubUserId: HUB_UUID },
+    });
+  });
+
+  test("email d'un compte lié à une autre identité Hub : refus, aucun jeton, aucune réécriture", async () => {
+    mocks.userFindFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: "user-x", hubUserId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" });
+    mocks.tenantFindFirst.mockResolvedValue({ id: "t-x" });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const res = await POST(req({ hub_user_id: HUB_UUID, email: "x@example.com" }));
+    expect(res.status).toBe(400);
+    const body = (await readJson(res)) as Record<string, unknown>;
+    expect(body.error).toBe("user_not_in_app");
+    expect(mocks.tokenCreate).not.toHaveBeenCalled();
+    expect(mocks.userUpdateMany).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("hub_user_id conflict"));
+    warn.mockRestore();
+  });
+
+  test("hub_user_id non UUID (cuid Hub) : 400 propre, pas de P2023, aucun jeton", async () => {
+    // Le mock reproduit Postgres : un non-UUID sur la colonne @db.Uuid lève P2023.
+    mocks.userFindFirst.mockImplementation(async ({ where }: { where: Record<string, unknown> }) => {
+      if ("hubUserId" in where) throw new Error("P2023 invalid uuid");
+      return { id: "user-cuid", hubUserId: null };
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const res = await POST(
+      req({ hub_user_id: "cmpf9zkaw0000xxxxxxxxxxxx", email: "cuid@example.com" }),
+    );
+    expect(res.status).toBe(400);
+    expect(mocks.tokenCreate).not.toHaveBeenCalled();
+    warn.mockRestore();
+    mocks.userFindFirst.mockReset();
+  });
+
+  test("membre invité sans tenant propre : 200 et jeton au nom du membre", async () => {
+    mocks.userFindFirst.mockResolvedValueOnce({ id: "user-member", hubUserId: HUB_UUID });
+    mocks.memberFindMany.mockResolvedValue([{ workspace: { tenantId: "t-owner" } }]);
+    mocks.tenantFindFirst.mockResolvedValue({ id: "t-owner" });
+    const res = await POST(req({ hub_user_id: HUB_UUID, email: "member@example.com" }));
+    expect(res.status).toBe(200);
+    const where = mocks.tenantFindFirst.mock.calls[0][0].where;
+    expect(where.OR).toEqual([{ userId: "user-member" }, { id: { in: ["t-owner"] } }]);
+    expect(mocks.tokenCreate.mock.calls[0][0].data.userId).toBe("user-member");
+  });
+
+  test("500 server_error si la persistance du jeton échoue (pas de lien sans jeton)", async () => {
+    mocks.userFindFirst.mockResolvedValueOnce({ id: "user-err", hubUserId: HUB_UUID });
+    mocks.tenantFindFirst.mockResolvedValue({ id: "t-err" });
+    mocks.tokenCreate.mockRejectedValue(new Error("db down"));
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await POST(req({ hub_user_id: HUB_UUID, email: "err@example.com" }));
+    expect(res.status).toBe(500);
+    err.mockRestore();
   });
 
   test("multi-workspaces : magic link sur dernier tenant actif (orderBy updatedAt desc)", async () => {
     mocks.userFindFirst.mockResolvedValueOnce({
       id: "user-multi",
-      email: "carol@example.com",
+      hubUserId: HUB_UUID,
     });
     mocks.tenantFindFirst.mockResolvedValue({
       id: "tenant-last-active",
       status: "active",
     });
-    mocks.tenantUpdate.mockResolvedValue({});
 
-    await POST(req({ hub_user_id: "hub-carol", email: "carol@example.com" }));
+    await POST(req({ hub_user_id: HUB_UUID, email: "carol@example.com" }));
 
     // Vérifier que findFirst tenant a bien été appelé avec orderBy
     const tenantCall = mocks.tenantFindFirst.mock.calls[0][0];
     expect(tenantCall.orderBy).toEqual({ updatedAt: "desc" });
-    expect(tenantCall.where.userId).toBe("user-multi");
+    expect(tenantCall.where.OR[0]).toEqual({ userId: "user-multi" });
     expect(tenantCall.where.deletedAt).toBeNull();
   });
 });
@@ -255,17 +326,19 @@ describe("POST /api/sso/issue-magic-link — Hub bounce OAuth", () => {
 describe("POST /api/sso/issue-magic-link — rate limit", () => {
   test("429 après 10 req/min sur même hub_user_id", async () => {
     vi.clearAllMocks();
+    mocks.memberFindMany.mockResolvedValue([]);
+    mocks.tokenDeleteMany.mockResolvedValue({ count: 0 });
+    mocks.tokenCreate.mockResolvedValue({});
     mocks.userFindFirst.mockResolvedValue({
       id: "user-rl",
-      email: "rl@example.com",
+      hubUserId: null,
     });
     mocks.tenantFindFirst.mockResolvedValue({
       id: "tenant-rl",
       status: "active",
     });
-    mocks.tenantUpdate.mockResolvedValue({});
 
-    const hubId = `hub-rl-${Date.now()}`;
+    const hubId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
     // 10 premières passent
     for (let i = 0; i < 10; i++) {
       const r = await POST(req({ hub_user_id: hubId, email: "rl@example.com" }));
