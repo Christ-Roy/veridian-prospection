@@ -32,6 +32,9 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type WorkspaceCard = {
   workspace_id: string;
+  // id local du tenant : cible de `update-plan` côté Hub (il diffère souvent du
+  // tenant_id Hub).
+  tenant_id: string;
   workspace_name: string;
   role: string;
   plan: string;
@@ -124,6 +127,7 @@ export async function GET(request: NextRequest) {
       if (tenant.status === "suspended" || tenant.status === "deleted") return null;
       return {
         workspace_id: m.workspace.id,
+        tenant_id: m.workspace.tenantId,
         workspace_name: m.workspace.name,
         role: m.role,
         plan: tenant.plan ?? "freemium",

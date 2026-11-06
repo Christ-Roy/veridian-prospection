@@ -200,6 +200,7 @@ describe("GET /api/users/by-email — Hub Discovery", () => {
     expect(body.workspaces).toHaveLength(2);
     expect(body.workspaces[0]).toEqual({
       workspace_id: "w1",
+      tenant_id: "t1",
       workspace_name: "Acme",
       role: "owner",
       plan: "pro",
@@ -249,7 +250,8 @@ describe("GET /api/users/by-email — Hub Discovery", () => {
     const text = await res.text();
     expect(text).not.toContain("u1-secret-uuid");
     expect(text).not.toContain("tenantId");
-    expect(text).not.toContain("t1"); // tenant_id non exposé
+    // tenant_id exposé volontairement : route HMAC Hub seule, cible de update-plan.
+    expect(JSON.parse(text).workspaces[0].tenant_id).toBe("t1");
   });
 });
 
