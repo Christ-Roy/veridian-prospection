@@ -4,7 +4,7 @@
 // NE PAS importer ce fichier depuis le middleware edge — utiliser auth.config.ts
 // à la place.
 //
-// Note Prospection : pas de MFA (simplifié vs Hub). Google OAuth + Credentials
+// Note Prospection : pas de MFA (simplifié vs Hub). Credentials seul
 // (bcrypt compare contre Account.access_token). Le user.id est un UUID
 // Postgres (préservé depuis Supabase auth.users.id), pas un cuid.
 
@@ -62,8 +62,13 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
 
         const ok = await bcrypt.compare(password, credsAccount.access_token);
         if (!ok) {
+          console.warn(`[auth/password-login] refused user=${user.id}`);
           return null;
         }
+
+        // Mesure l'usage réel de la porte mot de passe local avant décision de
+        // fermeture (identité : Hub seule source de vérité).
+        console.log(`[auth/password-login] ok user=${user.id}`);
 
         return {
           id: user.id,

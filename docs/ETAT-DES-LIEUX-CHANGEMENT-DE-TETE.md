@@ -101,10 +101,10 @@ Cible de Robert : le Hub seule source de vérité. État après ce lot :
 | Porte | Usage mesuré | État |
 |---|---|---|
 | HMAC `email:ts` et Bearer Hub | 0 appel légitime dans les logs conservés (`provision` ne journalisait pas ce mode), le Hub signe tout | **fermée** |
-| Provider Google local | `client_id=undefined` en prod, donc inopérant, 0 compte | ouverte, attend Robert |
-| Mot de passe local `/login` | 20 lignes `accounts`, 18 comptes | ouverte, attend Robert |
+| Provider Google local | `client_id=undefined` en prod, donc inopérant, 0 compte | **fermée** |
+| Mot de passe local `/login` | 20 lignes `accounts`, 18 comptes, usage réel journalisé depuis le 06/11 (`[auth/password-login]`) | ouverte, attend Robert |
 | Invitation locale `/invite/[token]` (crée user + mot de passe) | 21 au total, 12 acceptées, dernière le 16/08, 0 ouverte | ouverte, attend Robert |
-| `POST /api/admin/invites` (`magic_links`) | 0 ligne | ouverte, sans usage |
+| `/api/admin/invites` (`magic_links`) | 0 ligne, aucun écran | **fermée** |
 | `attach-owner`, `attach-member`, `provision`, `sync-member` | chemins Hub, en HMAC | conformes |
 
 Aucune route ne permet de changer son email ou son nom hors Hub. Sans le mot de passe local, les membres
