@@ -2,138 +2,118 @@
 
 > ## 🔴 Règle d'or Veridian — zéro contournement (gravée Robert 2026-06-10)
 > **Interdit absolu** : cron bricolé, SQLite/store parallèle, job maison pour
-> ÉVITER l'API ou la DB réelle de l'app. On travaille AVEC le vrai système :
-> coder propre → tester staging → fixer la logique → MAJ DB staging si besoin
-> → test lourd → push prod. Un blocage (accès, credential) se débloque via le
-> lead, il ne se contourne pas. Détail : CLAUDE.md racine veridian-platform.
-
-
-> Voir le CLAUDE.md racine (`../CLAUDE.md`) pour la vision globale.
-
-## Promotion prod = §20 CI-ARCHITECTURE (graduée par risque)
-
-**Depuis 2026-05-20**, Prospection suit le modèle §20 de
-`veridian-hub/docs/CI-ARCHITECTURE.md` : promotion graduée par risque.
-L'agent **arbitre lui-même** le tier des commits non-promus et **exécute
-la promo autonome** sauf tier 💀 CRITIQUE.
-
-### 4 tiers — comportement agent
-
-| Tier | Exemples | Action agent |
-|---|---|---|
-| 🟢 BAS | doc, todo, test seul | Auto-promote CI via marker `[risk:low]` |
-| 🟡 MOYEN | route non-auth, UI dashboard | CI vert + reco écrite → promote autonome |
-| 🔴 HAUT | auth, migration DB, lib partagée, compose prod | E2E headfull staging 100% + reco + monitoring 10min + auto-rollback → **promote autonome** |
-| 💀 CRITIQUE | DROP COLUMN, rotation secret, refonte session | **Demande go/stop explicite à Robert** |
-
-### Protocole tier 🔴 HAUT (le plus fréquent pour Prospection)
-
-1. Push staging → CI staging vert
-2. `bash scripts/e2e/staging-full.sh` → 100% des journeys verts (sinon HOLD)
-3. Reco écrite dans le chat (audit, pas demande)
-4. `git checkout main && git pull --ff-only && git merge --ff-only origin/staging && git push origin main`
-5. Watch CI prod jusqu'à vert
-6. **Vérif SHA container actif** (`docker inspect`) — si stale > 5min après push, `compose.deploy` API Dokploy forcé (le webhook foire silencieusement, cf [[project_prospection_dokploy_webhook_fail]])
-7. **Si migration Prisma** : appliquer manuellement (cf [[project_prisma_migrate_pattern]]) — la CI prod ne le fait pas
-8. **Re-run E2E headfull contre PROD** (`STAGING_URL=https://prospection.app.veridian.site bash scripts/e2e/staging-full.sh`) — un test vert sur staging ne garantit pas la prod
-9. Monitoring 10 min via `bash /tmp/monitor_prod_postdeploy.sh` (auto-rollback si 3 fails consécutifs)
-
-### Veto Robert (mots-clés)
-
-| Mot-clé | Effet |
-|---|---|
-| `stop` / `attends` | Annule la promo en cours ou bloque la prochaine |
-| `rollback` | `git revert` + push main + monitoring jusqu'à recovery |
-| `freeze` | Gèle tous les push staging→main jusqu'à `unfreeze` |
-| `unfreeze` | Reprend le flow normal |
-
-### Historique
-
-- **2026-05-19** : règle "humain only" posée après 2 auto-promotions silencieuses (incident Dokploy webhook foiré). Règle utile mais trop restrictive.
-- **2026-05-20** : §20 publié dans CI-ARCHITECTURE.md, remplace la règle "humain only". Validé par première promo `ffe7947 → 4732603` (tier 🔴, 12 commits, 3 migrations, auth refactor) — exécutée autonome, aucun veto, monitoring 10/10.
-
-### Pièges à connaître (avant chaque promo)
-
-- ⚠️ CI prod **ne fait PAS** `prisma migrate deploy` — appliquer manuellement
-- ⚠️ Webhook GitHub→Dokploy peut foirer en silence — vérifier le SHA actif post-deploy
-- ⚠️ E2E headfull staging ≠ E2E headfull prod — toujours re-runner contre prod après promo
-
----
+> ÉVITER l'API ou la DB réelle de l'app. On travaille AVEC le vrai système.
+> Un blocage (accès, credential) se débloque, il ne se contourne pas.
+> Détail : CLAUDE.md racine veridian-platform.
 
 ## Ce que c'est
 
-Dashboard de prospection commerciale B2B. 996K entreprises francaises
-avec scoring technique, donnees INPI, pipeline commercial, system multi-tenant.
+Dashboard de prospection commerciale B2B : 1,8 M d'entreprises françaises, scoring
+technique, données INPI, pipeline, mail, softphone, multi-tenant.
 
 ## Stack
 
 - Next.js 15 (App Router) + npm
-- Prisma + PostgreSQL (multi-tenant, tenant_id sur toutes les tables)
-- Supabase Auth (JWT, middleware verification)
-- Playwright (e2e tests)
+- Prisma + PostgreSQL, base co-localisée dans le job Nomad
+- Auth.js v5, sessions JWT
+- Playwright (e2e), Vitest (unitaires)
+
+## Identité : le Hub est la source de vérité
+
+Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
+
+- **Entrée** : rebond Hub. `POST /api/sso/issue-magic-link` (HMAC) émet un jeton
+  `sso_login_tokens` (haché, one-shot, 15 min, lié au user), `GET /api/auth/token` le consomme.
+- **HMAC §6.1 `{ts}.{body}` est le seul mode Hub.** Bearer et `email:ts` sont coupés.
+- **`users.hub_user_id` contient `hub_app.users.supabase_user_id`**, pas le cuid `users.id`.
+- **Le repli par email ne sert qu'à rattacher un compte sans lien.** Un compte lié à une
+  autre identité Hub est refusé.
+- **Portes encore ouvertes, décision de Robert** : mot de passe local `/login` (usage journalisé
+  par `[auth/password-login]`) et invitation locale `/invite/[token]`. On ne les ferme pas sans chiffre.
+- **Pas de provider OAuth local** : Google et Microsoft passent par le Hub.
+- `GET /api/users/by-email` expose `workspaces[].tenant_id`, cible de `update-plan` côté Hub.
+
+## Déploiement et promotion
+
+On travaille sur `main`, la branche qui déploie. La branche `staging` a divergé : ne pas y merger
+sans regarder.
+
+Prod : job Nomad `deploy/prospection.nomad.hcl` (toujours ce fichier, jamais une copie).
+
+```bash
+source ~/credentials/nomad-bastion.env; export NOMAD_ADDR NOMAD_TOKEN="$NOMAD_MGMT_TOKEN"
+/usr/bin/nomad job plan -var image_tag=<sha> deploy/prospection.nomad.hcl
+/usr/bin/nomad job run -var image_tag=<sha> deploy/prospection.nomad.hcl
+```
+
+| Tier | Exemples | Action agent |
+|---|---|---|
+| 🟢 BAS | doc, todo, test seul | publier |
+| 🟡 MOYEN | route non-auth, UI | tests verts, publier |
+| 🔴 HAUT | auth, migration, lib partagée, job Nomad | parcours réel en prod, surveillance, `auto_revert` en filet |
+| 💀 CRITIQUE | DROP COLUMN, rotation de secret, refonte session | go/stop explicite de Robert |
+
+### Pièges
+
+- **Migrations Prisma à la main** : la CI ne les applique pas. Appliquer avant de déployer le code
+  qui en dépend, dans l'allocation via la tâche `prospection-saas-db`, et inscrire la ligne dans
+  `_prisma_migrations`.
+- **Un déploiement remplace toute l'allocation** du groupe `stack` : l'id d'alloc change.
+- **Après déploiement, lire l'image et la version dans le conteneur** ; `/api/status` renvoie
+  `commit: null` et ne prouve rien.
+- **Un compte de test doit avoir une adresse prouvée au Hub** pour rebondir : sinon il revient sur
+  `/dashboard`, et c'est le comportement voulu. Une invitation réellement envoyée prouve l'adresse.
+- **Jamais de test sur le compte d'un vrai client.**
+- **Conteneur Docker ad hoc** : `guard-docker-noeuds.py` le refuse s'il n'est pas déclaré.
+
+### Veto Robert
+
+| Mot-clé | Effet |
+|---|---|
+| `stop` / `attends` | Annule la promo en cours ou bloque la prochaine |
+| `rollback` | `git revert` + push main + redéploiement jusqu'à recovery |
+| `freeze` / `unfreeze` | Gèle ou reprend les mises en prod |
 
 ## Structure
 
 ```
-prospection/
-├── src/
-│   ├── app/            # Pages + API routes
-│   │   ├── api/        # 20+ routes (prospects, pipeline, admin, stats, export)
-│   │   ├── (auth)/     # Login page
-│   │   └── (dashboard)/ # Prospects, pipeline, historique, settings, admin
-│   ├── components/     # React components (dashboard, layout, ui)
-│   ├── lib/
-│   │   ├── queries/    # DB queries (Prisma)
-│   │   ├── supabase/   # Auth, tenant resolution, user context
-│   │   └── trial.ts    # Trial/freemium logic (HACKE: return false)
-│   └── hooks/          # Custom React hooks
-├── e2e/
-│   ├── core/           # 6 specs INTOUCHABLES (bloquent le deploy)
-│   ├── extended/       # 23 specs (non-bloquants, 3 browsers paralleles)
-│   ├── _deprecated/    # Anti-patterns archives
-│   └── helpers/auth.ts # Canonical user pattern (modele a suivre)
-├── prisma/schema.prisma
-├── Dockerfile
-└── playwright.config.ts
+src/app/api/     # 117 routes : leads, pipeline, mail, admin, contrat Hub, /api/search
+src/components/  # écrans (dashboard, mail, billing, softphone)
+src/lib/queries/ # requêtes métier
+src/lib/hub/     # contrat Hub
+src/lib/mail/    # mail
+e2e/core/        # BLOQUANTS, voir .claude/rules/core-tests.md
+e2e/extended/    # non bloquants
+e2e/integration/ # exigent Postgres (DATABASE_URL), échouent sans
+__tests__/       # routes et lib en Vitest
+deploy/          # jobs Nomad prod et staging
+docs/            # dont ETAT-DES-LIEUX-CHANGEMENT-DE-TETE.md
 ```
 
 ## Commandes
 
 ```bash
-cd prospection
 npm ci
-npm run build         # Build prod
-npm test              # Vitest unit tests
-npx playwright test e2e/core/ --project=chromium   # Core e2e
-npx playwright test e2e/extended/ --project=chromium  # Extended e2e
+npm run build
+npx tsc --noEmit
+npx vitest run --exclude 'e2e/integration/**'
+npx playwright test e2e/core/ --project=chromium
 ```
 
-## Tests
-
-- **Core** (`e2e/core/`) : 6 specs, 33 tests, ~56s. BLOQUANTS. Voir `.claude/rules/core-tests.md`.
-- **Extended** (`e2e/extended/`) : 23 specs, 83+ tests. NON-BLOQUANTS.
-- **Unit** (`src/__tests__/`) : 57 tests Vitest.
-- **Integration** (`e2e/integration/`) : tenant isolation tests (Prisma + Postgres).
+Build d'image et tests lourds sur un nœud libre, pas sur le bastion.
 
 ## Multi-tenant
 
-- `tenant_id` sur toutes les tables operationnelles
-- Resolution : JWT → user_id → workspace_members → tenant_id (cache 60s)
-- Admin : voit tout. Member : voit son workspace.
+- `tenant_id` sur les tables opérationnelles ; `entreprises`, `users` et `verification_tokens` n'en ont pas.
+- Résolution : session → `tenants.user_id`, sinon `workspace_members` → tenant (cache 60 s).
+- Les tenants locaux n'ont pas toujours l'id du tenant Hub.
 
-## API routes critiques
+## Règles
 
-- `/api/health` — public, health check
-- `/api/status` — public, status detaille + DB + counts
-- `/api/prospects` — protegepar auth, filtres, pagination, quota freemium
-- `/api/pipeline` — pipeline commercial
-- `/api/admin/*` — CRUD membres, KPI, invitations
+- JAMAIS de signup en e2e (login comptes existants uniquement).
+- `checkTrialExpired` = `return false` (hack temporaire, à recâbler).
 
-## Regles
+## Dette connue
 
-- JAMAIS d'appel Supabase admin API dans un hot path (cache obligatoire)
-- JAMAIS de signup en e2e (login comptes existants uniquement)
-- `checkTrialExpired` = return false (hack temporaire, a recabler)
-# retrigger
-
-
+- `audit_log` n'existe pas en prod : les audits sont ignorés en silence.
+- `prospection-ci.yml` tourne encore sur `ubuntu-latest`.

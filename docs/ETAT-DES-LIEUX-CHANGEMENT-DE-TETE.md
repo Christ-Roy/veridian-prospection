@@ -107,8 +107,8 @@ Cible de Robert : le Hub seule source de vérité. État après ce lot :
 | `/api/admin/invites` (`magic_links`) | 0 ligne, aucun écran | **fermée** |
 | `attach-owner`, `attach-member`, `provision`, `sync-member` | chemins Hub, en HMAC | conformes |
 
-Aucune route ne permet de changer son email ou son nom hors Hub. Sans le mot de passe local, les membres
-invités sans tenant propre dépendent du rebond Hub, donc du correctif de regex côté Hub.
+Aucune route ne permet de changer son email ou son nom hors Hub. Le rebond Hub est prouvé de bout en bout en
+production le 06/11 pour une adresse prouvée au Hub ; une adresse non prouvée revient sur le tableau de bord.
 
 ## Ce que la stack consomme réellement
 
