@@ -100,8 +100,8 @@ Cible de Robert : le Hub seule source de vérité. État après ce lot :
 
 | Porte | Usage mesuré | État |
 |---|---|---|
-| HMAC `email:ts` et Bearer Hub | 0 appel légitime dans les logs conservés, le Hub signe tout | **fermée** |
-| Provider Google local | `client_id=undefined`, 0 compte | **fermée** |
+| HMAC `email:ts` et Bearer Hub | 0 appel légitime dans les logs conservés (`provision` ne journalisait pas ce mode), le Hub signe tout | **fermée** |
+| Provider Google local | `client_id=undefined` en prod, donc inopérant, 0 compte | ouverte, attend Robert |
 | Mot de passe local `/login` | 20 lignes `accounts`, 18 comptes | ouverte, attend Robert |
 | Invitation locale `/invite/[token]` (crée user + mot de passe) | 21 au total, 12 acceptées, dernière le 16/08, 0 ouverte | ouverte, attend Robert |
 | `POST /api/admin/invites` (`magic_links`) | 0 ligne | ouverte, sans usage |

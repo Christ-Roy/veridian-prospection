@@ -4,7 +4,7 @@
 // NE PAS importer ce fichier depuis le middleware edge — utiliser auth.config.ts
 // à la place.
 //
-// Note Prospection : pas de MFA (simplifié vs Hub). Credentials seul
+// Note Prospection : pas de MFA (simplifié vs Hub). Google OAuth + Credentials
 // (bcrypt compare contre Account.access_token). Le user.id est un UUID
 // Postgres (préservé depuis Supabase auth.users.id), pas un cuid.
 
