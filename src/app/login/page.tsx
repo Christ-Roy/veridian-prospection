@@ -2,6 +2,7 @@
 
 import { Suspense, useState } from "react";
 import { signIn, signOut, useSession } from "next-auth/react";
+import { clearBounceCookies, markLoggedOut, safeReturnPath } from "@/lib/auth/auto-bounce";
 import { useRouter, useSearchParams } from "next/navigation";
 
 function LoginForm() {
@@ -22,11 +23,9 @@ function LoginForm() {
   // puis nous renvoie via /api/auth/bounce/complete qui appelle
   // /api/sso/issue-magic-link pour générer le token autologin one-shot.
   function bounceToHub() {
-    const next =
-      typeof window !== "undefined"
-        ? encodeURIComponent(window.location.href)
-        : "";
-    window.location.href = `${hubUrl}/login?next=${next}`;
+    const path = safeReturnPath(searchParams.get("redirect"), window.location.origin) ?? "/";
+    const target = `${window.location.origin}${path}`;
+    window.location.href = `${hubUrl}/api/auth/bounce/prepare?next=${encodeURIComponent(target)}`;
   }
 
   async function handleLogin(e: React.FormEvent) {
@@ -48,7 +47,9 @@ function LoginForm() {
         setLoading(false);
         return;
       }
-      const redirectTo = searchParams.get("redirect") || "/prospects";
+      clearBounceCookies();
+      const redirectTo =
+        safeReturnPath(searchParams.get("redirect"), window.location.origin) ?? "/prospects";
       router.push(redirectTo);
       router.refresh();
     } catch {
@@ -62,6 +63,7 @@ function LoginForm() {
     // redirect:false → on reste sur /login pour permettre login direct
     // sur un autre compte sans rechargement (un router.refresh suffit pour
     // que useSession reflète l'état déconnecté).
+    markLoggedOut();
     await signOut({ redirect: false });
     router.refresh();
     setSigningOut(false);

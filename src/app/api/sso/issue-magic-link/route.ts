@@ -11,7 +11,7 @@
  * email qu'il vient de valider via OAuth.
  *
  * Body attendu :
- *   { "hub_user_id": "<uuid>", "email": "<string>", "email_proven"?: true }
+ *   { "hub_user_id": "<uuid>", "email": "<string>", "email_proven"?: true, "next"?: "<url>" }
  *
  * Réponses :
  *   200 { magic_link_url: "https://prospection.app.veridian.site/api/auth/token?t=..." }
@@ -33,6 +33,7 @@ import { createHash, randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { verifyHubHmac } from "@/lib/hub/hmac";
 import { isRateLimited } from "@/lib/rate-limit";
+import { safeReturnPath } from "@/lib/auth/auto-bounce";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -190,7 +191,11 @@ export async function POST(request: NextRequest) {
     process.env.APP_URL ||
     process.env.NEXT_PUBLIC_SITE_URL ||
     "https://prospection.app.veridian.site";
-  const magicLinkUrl = `${appUrl}/api/auth/token?t=${loginToken}`;
+  // §6bis.8.0 : retour à la page demandée, seulement sur l'origine de l'app.
+  const returnPath = safeReturnPath(obj.next, appUrl);
+  const magicLinkUrl =
+    `${appUrl}/api/auth/token?t=${loginToken}` +
+    (returnPath ? `&next=${encodeURIComponent(returnPath)}` : "");
 
   console.log(
     `[sso/issue-magic-link] issued user=${user.id} tenant=${tenant.id} expires=${expiresAt.toISOString()}`,

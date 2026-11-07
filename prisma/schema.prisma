@@ -764,6 +764,9 @@ model User {
   // humaine côté Hub, PK locale `id` reste inchangée.
   hubUserId String? @unique @map("hub_user_id") @db.Uuid
 
+  // Sessions ouvertes avant cette date refusées (CONTRAT-HUB §3.8, revoke_sessions).
+  sessionsValidAfter DateTime? @map("sessions_valid_after") @db.Timestamptz
+
   accounts Account[]
   sessions Session[]
   mfaCodes MfaCode[]

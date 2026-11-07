@@ -31,6 +31,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { encode } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
+import { AUTO_BOUNCE_COOKIE, LOGGED_OUT_COOKIE, safeReturnPath } from "@/lib/auth/auto-bounce";
 
 const MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 heures
 const SESSION_MAX_AGE_S = 60 * 60 * 24 * 90; // 90 jours (cf auth.config.ts)
@@ -56,6 +57,7 @@ function redirectLogin(baseUrl: string, error: string) {
 export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get("t");
   const baseUrl = baseUrlFromRequest(request);
+  const returnPath = safeReturnPath(request.nextUrl.searchParams.get("next"), baseUrl);
 
   if (!token) {
     return NextResponse.json({ error: "Token required" }, { status: 400 });
@@ -82,7 +84,7 @@ export async function GET(request: NextRequest) {
       data: { usedAt: new Date() },
     });
     if (consumed.count === 0) return redirectLogin(baseUrl, "token_used");
-    return createSessionResponse(ssoToken.userId, baseUrl, "sso");
+    return createSessionResponse(ssoToken.userId, baseUrl, "sso", returnPath);
   }
 
   let tenant;
@@ -135,13 +137,14 @@ export async function GET(request: NextRequest) {
     return redirectLogin(baseUrl, "token_used");
   }
 
-  return createSessionResponse(tenant.userId, baseUrl, `tenant=${tenant.id}`);
+  return createSessionResponse(tenant.userId, baseUrl, `tenant=${tenant.id}`, returnPath);
 }
 
 async function createSessionResponse(
   userId: string,
   baseUrl: string,
   origin: string,
+  returnPath: string | null,
 ): Promise<NextResponse> {
   // Récupère le user pour signer la session. (Le schema Tenant n'a pas de
   // relation Prisma `user` — on join à la main par userId.)
@@ -170,6 +173,7 @@ async function createSessionResponse(
     token: {
       sub: user.id,
       uid: user.id,
+      authAt: Date.now(),
       email: user.email,
       name: user.name ?? undefined,
       picture: user.image ?? undefined,
@@ -183,7 +187,10 @@ async function createSessionResponse(
     `[auth/token] Session created for user=${user.id} ${origin}`,
   );
 
-  const response = NextResponse.redirect(new URL("/", baseUrl));
+  const response = NextResponse.redirect(new URL(returnPath ?? "/", baseUrl));
+  // Connexion réussie : l'anti-boucle et la déconnexion explicite sont levés.
+  response.cookies.delete(AUTO_BOUNCE_COOKIE);
+  response.cookies.delete(LOGGED_OUT_COOKIE);
   response.cookies.set({
     name: cookieName,
     value: jwt,

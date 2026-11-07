@@ -169,6 +169,39 @@ describe("GET /api/auth/token — autologin Prisma + Auth.js JWT", () => {
     expect(tenantMock.findFirst).not.toHaveBeenCalled();
   });
 
+  test("connexion réussie : retour à la page demandée, cookies anti-boucle levés, authAt posé", async () => {
+    ssoMock.findUnique.mockResolvedValue({
+      userId: "u-1",
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    ssoMock.updateMany.mockResolvedValue({ count: 1 });
+    userMock.findUnique.mockResolvedValue({ id: "u-1", email: "u@v.site", deletedAt: null });
+    const res = await GET(
+      makeRequest("/api/auth/token", { searchParams: { t: "x", next: "/pipeline?a=1" } }),
+    );
+    expect(res.headers.get("location")).toMatch(/\/pipeline\?a=1$/);
+    const setCookie = res.headers.get("set-cookie") ?? "";
+    expect(setCookie).toMatch(/veridian-auto-bounce=;/);
+    expect(setCookie).toMatch(/veridian-logged-out=;/);
+    expect(typeof encodeMock.mock.calls[0][0].token.authAt).toBe("number");
+  });
+
+  test.each(["https://evil.example/x", "//evil.example/x", "/login", "/api/me"])(
+    "next refusé à la consommation : %s → accueil",
+    async (next) => {
+      ssoMock.findUnique.mockResolvedValue({
+        userId: "u-1",
+        usedAt: null,
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+      ssoMock.updateMany.mockResolvedValue({ count: 1 });
+      userMock.findUnique.mockResolvedValue({ id: "u-1", email: "u@v.site", deletedAt: null });
+      const res = await GET(makeRequest("/api/auth/token", { searchParams: { t: "x", next } }));
+      expect(new URL(res.headers.get("location")!).pathname).toBe("/");
+    },
+  );
+
   test("jeton de rebond rejoué → token_used, aucune session", async () => {
     ssoMock.findUnique.mockResolvedValue({
       userId: "u-1",

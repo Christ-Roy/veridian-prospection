@@ -17,7 +17,7 @@
  *  - Pas d'auto-création de workspace si user_not_in_app
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
-import { createHash, createHmac } from "crypto";
+import { createHash, createHmac, randomUUID } from "crypto";
 
 vi.hoisted(() => {
   process.env.HUB_API_SECRET = "test-sso-secret";
@@ -248,6 +248,35 @@ describe("POST /api/sso/issue-magic-link — Hub bounce OAuth", () => {
       where: { id: "user-legacy", hubUserId: null },
       data: { hubUserId: HUB_UUID },
     });
+  });
+
+  test.each([
+    ["https://prospection.app.veridian.site/pipeline?x=1", "/pipeline?x=1"],
+    ["/segments", "/segments"],
+  ])("next %s renvoyé sur son chemin", async (next, path) => {
+    // Identifiant propre : le plafond de 10/min est par hub_user_id.
+    const id = randomUUID();
+    mocks.userFindFirst.mockResolvedValueOnce({ id: "user-n", hubUserId: id });
+    mocks.tenantFindFirst.mockResolvedValue({ id: "t-n" });
+    const res = await POST(req({ hub_user_id: id, email: "n@example.com", next }));
+    const url = new URL(((await readJson(res)) as { magic_link_url: string }).magic_link_url);
+    expect(url.searchParams.get("next")).toBe(path);
+  });
+
+  test.each([
+    "https://evil.example/x",
+    "https://prospection.app.veridian.site.evil.example/",
+    "//evil.example/x",
+    "https://prospection.app.veridian.site/login?redirect=%2F",
+    "javascript:alert(1)",
+  ])("next hors origine ou inutile ignoré : %s", async (next) => {
+    // Identifiant propre : le plafond de 10/min est par hub_user_id.
+    const id = randomUUID();
+    mocks.userFindFirst.mockResolvedValueOnce({ id: "user-n", hubUserId: id });
+    mocks.tenantFindFirst.mockResolvedValue({ id: "t-n" });
+    const res = await POST(req({ hub_user_id: id, email: "n@example.com", next }));
+    const url = new URL(((await readJson(res)) as { magic_link_url: string }).magic_link_url);
+    expect(url.searchParams.has("next")).toBe(false);
   });
 
   test("sans email_proven : aucun repli par email, compte sans lien non ouvert", async () => {

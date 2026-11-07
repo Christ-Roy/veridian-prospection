@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   findUnique: vi.fn(),
   update: vi.fn(),
   tokenDeleteMany: vi.fn(),
+  tenantUpdateMany: vi.fn(),
   invalidateActive: vi.fn(),
   invalidateContext: vi.fn(),
 }));
@@ -19,6 +20,7 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     user: { findUnique: mocks.findUnique, update: mocks.update },
     ssoLoginToken: { deleteMany: mocks.tokenDeleteMany },
+    tenant: { updateMany: mocks.tenantUpdateMany },
   },
 }));
 vi.mock("@/lib/auth/active-user", () => ({ invalidateActiveUser: mocks.invalidateActive }));
@@ -135,6 +137,31 @@ describe("POST /api/hub/users/sync", () => {
     const res = await post({ hub_user_id: HUB, deleted: true });
     expect(await readJson(res)).toEqual({ updated: false });
     expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  test("revoke_sessions : sessions coupées, liens en cours retirés, compte intact", async () => {
+    const res = await post({ hub_user_id: HUB, revoke_sessions: true });
+    expect(res.status).toBe(200);
+    expect(await readJson(res)).toEqual({ updated: true });
+    const data = mocks.update.mock.calls[0][0].data;
+    expect(data.sessionsValidAfter).toBeInstanceOf(Date);
+    expect(data.deletedAt).toBeUndefined();
+    expect(mocks.tokenDeleteMany).toHaveBeenCalledWith({ where: { userId: "local-1" } });
+    expect(mocks.tenantUpdateMany.mock.calls[0][0].data).toEqual({ prospectionLoginToken: null });
+    expect(mocks.invalidateActive).toHaveBeenCalledWith("local-1");
+    expect(mocks.invalidateContext).toHaveBeenCalledWith("local-1");
+  });
+
+  test("revoke_sessions non booléen : 400, rien d'écrit", async () => {
+    const res = await post({ hub_user_id: HUB, revoke_sessions: "oui" });
+    expect(res.status).toBe(400);
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  test("sans revoke_sessions : aucune coupure", async () => {
+    await post({ hub_user_id: HUB, name: "Nouveau" });
+    expect(mocks.update.mock.calls[0][0].data.sessionsValidAfter).toBeUndefined();
+    expect(mocks.tenantUpdateMany).not.toHaveBeenCalled();
   });
 
   test("un changement d'email invalide le cache de session", async () => {

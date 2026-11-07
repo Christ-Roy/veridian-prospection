@@ -9,7 +9,7 @@ import { prisma } from "@/lib/prisma";
 
 const CACHE_TTL_MS = 60_000;
 
-type ActiveUser = { email: string; name: string | null };
+type ActiveUser = { email: string; name: string | null; sessionsValidAfter: Date | null };
 
 const cache = new Map<string, { user: ActiveUser | null; expiresAt: number }>();
 
@@ -19,7 +19,7 @@ export async function getActiveUser(userId: string): Promise<ActiveUser | null> 
 
   const row = await prisma.user.findFirst({
     where: { id: userId, deletedAt: null },
-    select: { email: true, name: true },
+    select: { email: true, name: true, sessionsValidAfter: true },
   });
   cache.set(userId, { user: row, expiresAt: Date.now() + CACHE_TTL_MS });
   return row;
@@ -33,10 +33,14 @@ export function invalidateActiveUser(userId: string) {
  * Applique le compte actif à une session Auth.js. Sans `user`, `requireAuth` et
  * `getUserContext` répondent 401. Base injoignable : on laisse passer (§1.4), les
  * routes échoueront d'elles-mêmes sur la même base.
+ *
+ * `authAt` est posé à la connexion et ne bouge plus. On ne compare pas `iat` :
+ * Auth.js réécrit le jeton à chaque lecture, ce qui rajeunirait une session coupée.
+ * Un jeton sans `authAt` est antérieur à ce mécanisme, donc coupé par toute révocation.
  */
 export async function applyActiveUser<
   S extends { user?: { id?: string; email?: string | null; name?: string | null } },
->(session: S, uid: string): Promise<S> {
+>(session: S, uid: string, authAt?: number): Promise<S> {
   let user: ActiveUser | null;
   try {
     user = await getActiveUser(uid);
@@ -45,7 +49,7 @@ export async function applyActiveUser<
     if (session.user) session.user.id = uid;
     return session;
   }
-  if (!user) {
+  if (!user || (user.sessionsValidAfter && (authAt ?? 0) < user.sessionsValidAfter.getTime())) {
     delete session.user;
     return session;
   }

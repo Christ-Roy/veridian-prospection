@@ -37,6 +37,23 @@ describe("applyActiveUser", () => {
     warn.mockRestore();
   });
 
+  test("revoke : session ouverte avant la coupure refusée, après acceptée", async () => {
+    const cut = new Date(2_000_000);
+    mocks.findFirst.mockResolvedValue({ email: "a@x.fr", name: null, sessionsValidAfter: cut });
+    expect((await applyActiveUser(session(), "u1", 1_999_999)).user).toBeUndefined();
+    expect((await applyActiveUser(session(), "u1", 2_000_001)).user?.email).toBe("a@x.fr");
+  });
+
+  test("revoke : un jeton sans authAt est antérieur, donc coupé", async () => {
+    mocks.findFirst.mockResolvedValue({ email: "a@x.fr", name: null, sessionsValidAfter: new Date(1) });
+    expect((await applyActiveUser(session(), "u1")).user).toBeUndefined();
+  });
+
+  test("sans coupure : un jeton sans authAt reste valable", async () => {
+    mocks.findFirst.mockResolvedValue({ email: "a@x.fr", name: null, sessionsValidAfter: null });
+    expect((await applyActiveUser(session(), "u1")).user?.email).toBe("a@x.fr");
+  });
+
   test("cache : 1 lecture, et l'invalidation force la relecture", async () => {
     mocks.findFirst.mockResolvedValue({ email: "a@x.fr", name: null });
     await getActiveUser("u1");

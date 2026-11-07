@@ -1,5 +1,6 @@
 "use client";
 
+import { markLoggedOut } from "@/lib/auth/auto-bounce";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -34,6 +35,7 @@ export function AppNav({ initialIsAdmin = false }: { initialIsAdmin?: boolean })
   // nav (desktop + mobile) — sinon l'utilisateur n'a aucun moyen visible de
   // changer de compte (ex : démo, machine partagée, switch tenant via Hub).
   async function handleSignOut() {
+    markLoggedOut();
     await signOut({ callbackUrl: "/login", redirect: true });
   }
 

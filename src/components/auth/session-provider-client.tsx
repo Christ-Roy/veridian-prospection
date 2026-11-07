@@ -7,7 +7,13 @@
  * impossible toute UX de logout / changement de compte côté Prospection.
  */
 import { SessionProvider } from "next-auth/react";
+import { SessionGuard } from "./session-guard";
 
 export function SessionProviderClient({ children }: { children: React.ReactNode }) {
-  return <SessionProvider>{children}</SessionProvider>;
+  return (
+    <SessionProvider>
+      <SessionGuard />
+      {children}
+    </SessionProvider>
+  );
 }

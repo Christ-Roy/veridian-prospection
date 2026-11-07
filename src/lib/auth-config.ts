@@ -85,12 +85,13 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
     async jwt({ token, user }) {
       if (user) {
         token.uid = user.id;
+        token.authAt = Date.now();
       }
       return token;
     },
     async session({ session, token }) {
       if (token?.uid) {
-        return applyActiveUser(session, token.uid as string);
+        return applyActiveUser(session, token.uid as string, token.authAt as number | undefined);
       }
       return session;
     },

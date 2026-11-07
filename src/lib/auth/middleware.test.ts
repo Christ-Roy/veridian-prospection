@@ -10,7 +10,7 @@
  *     /api/status, /api/errors) → next() sans toucher à edgeAuth
  *   - Sans session :
  *       * /api/* → next() (les route handlers retourneront 401 via requireAuth)
- *       * pages → redirect /login?redirect=<path>
+ *       * pages → rebond Hub une fois (§6bis.8.0), sinon /login?redirect=<path>
  *   - Avec session → next()
  *
  * Run: npx vitest run src/lib/auth/middleware.test.ts
@@ -43,9 +43,20 @@ vi.mock("@/lib/auth.config", () => ({
 
 import { updateSession } from "./middleware";
 
-function makeReq(path: string): NextRequest {
-  return new NextRequest(new URL(`http://localhost:3000${path}`));
+function makeReq(
+  path: string,
+  init: { method?: string; headers?: Record<string, string>; cookie?: string } = {},
+): NextRequest {
+  const headers = new Headers(init.headers);
+  // Sans précision, un essai a déjà eu lieu : c'est le cas historique de /login.
+  headers.set("cookie", init.cookie ?? "veridian-auto-bounce=1");
+  return new NextRequest(new URL(`http://localhost:3000${path}`), {
+    method: init.method ?? "GET",
+    headers,
+  });
 }
+
+const NAV = { "sec-fetch-dest": "document", "sec-fetch-mode": "navigate" };
 
 beforeEach(() => {
   mockEdgeAuth.mockReset();
@@ -188,3 +199,61 @@ describe("prefix matching — éviter les fausses inclusions", () => {
   });
 });
 // touched 2026-05-23 for coverage-map covered_by signal
+
+// ──────────────────────────────────────────────────────────────────────────
+//  Rebond automatique vers le Hub (CONTRAT-HUB §6bis.8.0)
+// ──────────────────────────────────────────────────────────────────────────
+describe("rebond automatique sans session", () => {
+  beforeEach(() => mockEdgeAuth.mockResolvedValue(null));
+
+  it("navigation complète : part au Hub avec la page demandée et auto=1, cookie posé", async () => {
+    const res = await updateSession(makeReq("/pipeline?x=1", { headers: NAV, cookie: "" }));
+    const loc = new URL(res.headers.get("location")!);
+    expect(loc.pathname).toBe("/api/auth/bounce/prepare");
+    expect(loc.searchParams.get("auto")).toBe("1");
+    expect(loc.searchParams.get("next")).toMatch(/\/pipeline\?x=1$/);
+    const set = res.headers.get("set-cookie") ?? "";
+    expect(set).toMatch(/veridian-auto-bounce=1/);
+    expect(set).toMatch(/Max-Age=300/);
+  });
+
+  it("deuxième passage : le cookie arrête la boucle, page de connexion", async () => {
+    const res = await updateSession(
+      makeReq("/pipeline", { headers: NAV, cookie: "veridian-auto-bounce=1" }),
+    );
+    expect(new URL(res.headers.get("location")!).pathname).toBe("/login");
+  });
+
+  it("déconnexion explicite : page de connexion, aucun rebond", async () => {
+    const res = await updateSession(
+      makeReq("/pipeline", { headers: NAV, cookie: "veridian-logged-out=1" }),
+    );
+    expect(new URL(res.headers.get("location")!).pathname).toBe("/login");
+  });
+
+  it.each([
+    ["iframe", { method: "GET", headers: { "sec-fetch-dest": "iframe", "sec-fetch-mode": "navigate" } }],
+    ["POST", { method: "POST", headers: NAV }],
+    ["requête du routeur", { method: "GET", headers: { ...NAV, rsc: "1" } }],
+    ["préchargement", { method: "GET", headers: { ...NAV, "next-router-prefetch": "1" } }],
+    ["fetch", { method: "GET", headers: { "sec-fetch-dest": "empty", "sec-fetch-mode": "cors" } }],
+  ])("%s : jamais de rebond", async (_label, init) => {
+    const res = await updateSession(makeReq("/pipeline", { ...init, cookie: "" }));
+    const loc = res.headers.get("location")!;
+    expect(new URL(loc).pathname).toBe("/login");
+    expect(res.headers.get("set-cookie") ?? "").not.toMatch(/veridian-auto-bounce/);
+  });
+
+  it("route d'API : jamais de rebond, le handler répond 401", async () => {
+    const res = await updateSession(makeReq("/api/prospects", { headers: NAV, cookie: "" }));
+    expect(res.headers.get("location")).toBeNull();
+  });
+});
+
+describe("avec session : aucun rebond", () => {
+  it("navigation complète sans cookie : passe", async () => {
+    mockEdgeAuth.mockResolvedValue({ user: { id: "u" } });
+    const res = await updateSession(makeReq("/pipeline", { headers: NAV, cookie: "" }));
+    expect(res.headers.get("location")).toBeNull();
+  });
+});
