@@ -59,16 +59,17 @@ export async function getUserContext(): Promise<UserContext | null> {
     tenant = directTenant;
   } else {
     // Fallback : membre invité — résout le tenant via workspace_members
+    // Un membre retiré (deleted_at) n'a plus aucun accès à l'espace.
     const membership = await prisma.workspaceMember.findFirst({
-      where: { userId: user.id },
+      where: { userId: user.id, deletedAt: null, workspace: { deletedAt: null } },
       include: { workspace: true },
     });
     if (membership?.workspace?.tenantId) {
       const memberTenant = await prisma.tenant.findUnique({
         where: { id: membership.workspace.tenantId },
-        select: { id: true, userId: true },
+        select: { id: true, userId: true, deletedAt: true },
       });
-      if (memberTenant) tenant = memberTenant;
+      if (memberTenant && !memberTenant.deletedAt) tenant = memberTenant;
     }
   }
 
@@ -79,7 +80,7 @@ export async function getUserContext(): Promise<UserContext | null> {
 
   // 2) Workspaces (Prisma local, filtré au tenant)
   const memberships = await prisma.workspaceMember.findMany({
-    where: { userId: user.id },
+    where: { userId: user.id, deletedAt: null, workspace: { deletedAt: null } },
     include: { workspace: true },
   });
 

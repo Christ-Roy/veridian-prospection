@@ -151,6 +151,35 @@ describe("getUserContext — owner direct du tenant", () => {
 //  getUserContext — membre invité (fallback via workspace_members)
 // ──────────────────────────────────────────────────────────────────────────
 describe("getUserContext — membre invité (non-owner)", () => {
+  it("membre retiré : aucune résolution de tenant, donc plus d'accès à l'espace", async () => {
+    mockAuth.mockResolvedValue({
+      user: { id: "user-retire", email: "retire@veridian.site" },
+    });
+    mockTenantFindFirst.mockResolvedValueOnce(null);
+    // Reproduit la base : la ligne de membre existe encore, avec deleted_at posé.
+    mockWorkspaceMemberFindFirst.mockImplementationOnce(
+      async ({ where }: { where: { deletedAt?: unknown } }) =>
+        where.deletedAt === null
+          ? null
+          : { workspaceId: "w-host", workspace: { id: "w-host", tenantId: "t-host" } },
+    );
+    expect(await getUserContext()).toBeNull();
+  });
+
+  it("la liste des espaces exclut les adhésions retirées et les espaces supprimés", async () => {
+    mockAuth.mockResolvedValue({
+      user: { id: "user-liste", email: "liste@veridian.site" },
+    });
+    mockTenantFindFirst.mockResolvedValueOnce({ id: "t-own", userId: "user-liste" });
+    mockWorkspaceMemberFindMany.mockResolvedValueOnce([]);
+    await getUserContext();
+    expect(mockWorkspaceMemberFindMany.mock.calls[0][0].where).toEqual({
+      userId: "user-liste",
+      deletedAt: null,
+      workspace: { deletedAt: null },
+    });
+  });
+
   it("résout le tenant via membership quand pas owner direct", async () => {
     mockAuth.mockResolvedValue({
       user: { id: "user-invitee", email: "guest@veridian.site" },

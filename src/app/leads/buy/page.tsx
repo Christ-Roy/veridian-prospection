@@ -52,12 +52,12 @@ export default async function RefillIcpPage() {
   });
   if (!tenant) {
     const membership = await prisma.workspaceMember.findFirst({
-      where: { userId: session.user.id },
+      where: { userId: session.user.id, deletedAt: null, workspace: { deletedAt: null } },
       include: { workspace: true },
     });
     if (membership?.workspace?.tenantId) {
-      tenant = await prisma.tenant.findUnique({
-        where: { id: membership.workspace.tenantId },
+      tenant = await prisma.tenant.findFirst({
+        where: { id: membership.workspace.tenantId, deletedAt: null },
         select: { id: true, plan: true },
       });
     }

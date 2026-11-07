@@ -200,6 +200,14 @@ function LoginForm({ localAuth }: { localAuth: boolean }) {
       )}
 
       <div className="text-center text-xs text-muted-foreground space-y-2">
+        {!localAuth && (
+          <p>
+            La connexion passe désormais par votre compte Veridian.{" "}
+            <a href={hubUrl + "/signin/forgot_password"} className="text-indigo-600 hover:underline">
+              Mot de passe oublié ?
+            </a>
+          </p>
+        )}
         <p>
           <a href={hubUrl + "/signup"} className="text-indigo-600 hover:underline">Creer un compte</a>
           {" "}sur le Hub Veridian
