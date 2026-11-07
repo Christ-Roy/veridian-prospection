@@ -28,8 +28,8 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
 - **`users.hub_user_id` contient `hub_app.users.supabase_user_id`**, pas le cuid `users.id`.
 - **Le repli par email ne sert qu'à rattacher un compte sans lien.** Un compte lié à une
   autre identité Hub est refusé.
-- **Portes encore ouvertes, décision de Robert** : mot de passe local `/login` (usage journalisé
-  par `[auth/password-login]`) et invitation locale `/invite/[token]`. On ne les ferme pas sans chiffre.
+- **Portes locales fermées en production** : mot de passe et invitation locaux répondent non. `LOCAL_AUTH_ENABLED=1` ne les garde qu'au staging, pour les e2e. Réouvrir en prod demande un déploiement et une décision de Robert.
+- **Sans tenant, pas d'accès** : `requireAuth` répond 403 `no_workspace`, sinon les requêtes retombent sur le tenant factice `00000000-…`.
 - **Pas de provider OAuth local** : Google et Microsoft passent par le Hub.
 - `GET /api/users/by-email` expose `workspaces[].tenant_id`, cible de `update-plan` côté Hub.
 
@@ -116,4 +116,4 @@ Build d'image et tests lourds sur un nœud libre, pas sur le bastion.
 ## Dette connue
 
 - `audit_log` n'existe pas en prod : les audits sont ignorés en silence.
-- `prospection-ci.yml` tourne encore sur `ubuntu-latest`.
+- `prospection-ci.yml` tourne sur `ubuntu-latest`, permis car le dépôt est public. Les images de prod sont construites par cette CI, pas de `docker build` sur un nœud.
