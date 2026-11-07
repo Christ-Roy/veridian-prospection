@@ -34,14 +34,28 @@ if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 async function ensureOwnerWorkspace(
   userId: string,
   email: string,
-): Promise<{ apiKey: string | null; localUserId: string } | null> {
+  emailProven: boolean,
+): Promise<{ apiKey: string | null; localUserId: string } | "refused" | null> {
   try {
     // CONTRAT-HUB v1.5 §3.7 — `userId` reçu EST le hub_user_id.
     // Le helper backfille hub_user_id + préserve la rétrocompat (legacy id PK).
-    const { id: localUserId } = await resolveOrCreateUserFromHub({
+    const {
+      id: localUserId,
+      hubUserIdConflict,
+      emailUnproven,
+    } = await resolveOrCreateUserFromHub({
       hubUserId: userId,
       email,
+      emailProven,
     });
+    // Compte local lié à une autre identité, ou adresse non prouvée : l'email ne
+    // suffit pas à l'ouvrir (§3.8).
+    if (hubUserIdConflict || emailUnproven) {
+      console.warn(
+        `[provision] refus : compte existant user=${localUserId} conflict=${hubUserIdConflict} unproven=${!!emailUnproven}`,
+      );
+      return "refused";
+    }
 
     const slugBase = email.split("@")[0].toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40) || "tenant";
 
@@ -160,6 +174,7 @@ export async function POST(request: NextRequest) {
     plan?: string;
     user_id?: string;
     metadata?: { hub_user_id?: string };
+    email_proven?: boolean;
   };
   try {
     body = rawBody ? JSON.parse(rawBody) : {};
@@ -210,7 +225,10 @@ export async function POST(request: NextRequest) {
   // skip avec warning. Le Hub doit migrer vers le contrat v1.2 §5.1 pour
   // débloquer ce flow (cf todo/2026-05-19-hub-contract-conformity.md).
   if (hubUserId) {
-    const ensured = await ensureOwnerWorkspace(hubUserId, email);
+    const ensured = await ensureOwnerWorkspace(hubUserId, email, body.email_proven === true);
+    if (ensured === "refused") {
+      return NextResponse.json({ error: "email_not_linkable" }, { status: 409 });
+    }
     if (ensured?.apiKey) {
       apiKey = ensured.apiKey;
     } else {

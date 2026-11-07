@@ -351,6 +351,33 @@ describe("POST /api/tenants/provision", () => {
     expect(body.api_key).toMatch(/^[a-f0-9]{64}$/);
   });
 
+  test.each([
+    ["adresse non prouvée", { hubUserIdConflict: false, emailUnproven: true }],
+    ["compte lié à une autre identité", { hubUserIdConflict: true }],
+  ])("§3.8 — 409 sans jeton : %s", async (_label, flags) => {
+    resolveOrCreateUserFromHubMock.mockResolvedValueOnce({
+      id: "local-existant",
+      createdByHub: false,
+      ...flags,
+    });
+    const raw = JSON.stringify({ email: "victime@example.com", user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+    const res = await POST(
+      makeRequest("/api/tenants/provision", {
+        method: "POST",
+        headers: {
+          ...standardHeaders(raw),
+          "x-forwarded-for": `10.0.61.${Math.floor(Math.random() * 250)}`,
+        },
+        body: raw,
+      }),
+    );
+    expect(res.status).toBe(409);
+    const body = (await readJson(res)) as Record<string, unknown>;
+    expect(body.login_url).toBeUndefined();
+    const warnOnly = body.error;
+    expect(warnOnly).toBe("email_not_linkable");
+  });
+
   test("CONTRAT-HUB v1.5 §3.7 — résout l'user via resolveOrCreateUserFromHub quand hub_user_id fourni", async () => {
     const hubUserId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const email = "v15-identity@example.com";
@@ -375,6 +402,7 @@ describe("POST /api/tenants/provision", () => {
     expect(resolveOrCreateUserFromHubMock).toHaveBeenCalledWith({
       hubUserId,
       email,
+      emailProven: false,
     });
   });
 

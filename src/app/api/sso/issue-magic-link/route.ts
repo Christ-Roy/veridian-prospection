@@ -11,7 +11,7 @@
  * email qu'il vient de valider via OAuth.
  *
  * Body attendu :
- *   { "hub_user_id": "<uuid>", "email": "<string>" }
+ *   { "hub_user_id": "<uuid>", "email": "<string>", "email_proven"?: true }
  *
  * Réponses :
  *   200 { magic_link_url: "https://prospection.app.veridian.site/api/auth/token?t=..." }
@@ -87,9 +87,9 @@ export async function POST(request: NextRequest) {
 
   // ─── Lookup user — pas d'auto-création ────────────────────────────────────
   // Match par hub_user_id en priorité (lien explicite Hub↔local). Le repli par
-  // email sert UNIQUEMENT à rattacher un compte encore sans lien : un email ne
-  // doit jamais ouvrir un compte déjà lié à une autre identité Hub. Il suppose
-  // une adresse prouvée côté Hub (bounce/complete).
+  // email sert UNIQUEMENT à rattacher un compte encore sans lien, et seulement si
+  // le Hub atteste l'adresse (`email_proven`, §3.8) : un email ne doit jamais
+  // ouvrir un compte déjà lié à une autre identité Hub.
   // On NE fait PAS de resolveOrCreateUserFromHub ici (le ticket §6bis.8 interdit
   // l'auto-création, c'est au Hub de proposer signup à la place).
   // La colonne hub_user_id est un UUID : un autre format (cuid Hub) fait lever
@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
     where: { hubUserId, deletedAt: null },
     select: { id: true, hubUserId: true },
   });
-  if (!user) {
+  if (!user && obj.email_proven === true) {
     user = await prisma.user.findFirst({
       where: { email, deletedAt: null },
       select: { id: true, hubUserId: true },

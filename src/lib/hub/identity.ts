@@ -20,12 +20,22 @@ import { prisma } from "@/lib/prisma";
  *      local, ne touche pas (cas pathologique : 2 identités Hub pour 1 email
  *      local — laisser le supérieur trancher)
  *   5. Pas de match → création avec `hub_user_id` rempli
+ *
+ * §3.8 : relier un compte existant par email exige une adresse prouvée.
+ * `emailProven: false` (provision sans `email_proven`) ne relie rien, et l'appelant
+ * reçoit `emailUnproven: true` avec l'id local : il doit refuser, pas l'utiliser.
  */
 export async function resolveOrCreateUserFromHub(params: {
   hubUserId: string;
   email: string;
-}): Promise<{ id: string; createdByHub: boolean; hubUserIdConflict: boolean }> {
-  const { hubUserId, email } = params;
+  emailProven?: boolean;
+}): Promise<{
+  id: string;
+  createdByHub: boolean;
+  hubUserIdConflict: boolean;
+  emailUnproven?: boolean;
+}> {
+  const { hubUserId, email, emailProven = true } = params;
 
   const byHubId = await prisma.user.findUnique({
     where: { hubUserId },
@@ -54,6 +64,14 @@ export async function resolveOrCreateUserFromHub(params: {
     select: { id: true, hubUserId: true },
   });
   if (byEmail) {
+    if (!byEmail.hubUserId && !emailProven) {
+      return {
+        id: byEmail.id,
+        createdByHub: false,
+        hubUserIdConflict: false,
+        emailUnproven: true,
+      };
+    }
     if (!byEmail.hubUserId) {
       await prisma.user.update({
         where: { id: byEmail.id },

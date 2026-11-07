@@ -178,4 +178,19 @@ describe("resolveOrCreateUserFromHub", () => {
     expect(result.id).toBe(HUB_ID);
     expect(mockUpdate).not.toHaveBeenCalled();
   });
+
+  it("§3.8 : emailProven false ne relie pas un compte existant par email", async () => {
+    mockFindUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: "local-email", hubUserId: null });
+    const r = await resolveOrCreateUserFromHub({
+      hubUserId: "hub-x",
+      email: "victime@example.com",
+      emailProven: false,
+    });
+    expect(r.emailUnproven).toBe(true);
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
 });

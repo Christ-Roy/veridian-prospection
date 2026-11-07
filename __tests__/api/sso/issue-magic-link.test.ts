@@ -238,7 +238,7 @@ describe("POST /api/sso/issue-magic-link — Hub bounce OAuth", () => {
     });
 
     const res = await POST(
-      req({ hub_user_id: HUB_UUID, email: "bob@example.com" }),
+      req({ hub_user_id: HUB_UUID, email: "bob@example.com", email_proven: true }),
     );
     expect(res.status).toBe(200);
     const body = (await readJson(res)) as Record<string, unknown>;
@@ -250,13 +250,25 @@ describe("POST /api/sso/issue-magic-link — Hub bounce OAuth", () => {
     });
   });
 
+  test("sans email_proven : aucun repli par email, compte sans lien non ouvert", async () => {
+    mocks.userFindFirst.mockImplementation(async ({ where }: { where: Record<string, unknown> }) =>
+      "email" in where ? { id: "user-victime", hubUserId: null } : null,
+    );
+    mocks.tenantFindFirst.mockResolvedValue({ id: "t-v" });
+    const res = await POST(req({ hub_user_id: HUB_UUID, email: "victime@example.com" }));
+    expect(res.status).toBe(400);
+    expect(mocks.tokenCreate).not.toHaveBeenCalled();
+    expect(mocks.userUpdateMany).not.toHaveBeenCalled();
+    mocks.userFindFirst.mockReset();
+  });
+
   test("email d'un compte lié à une autre identité Hub : refus, aucun jeton, aucune réécriture", async () => {
     mocks.userFindFirst
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ id: "user-x", hubUserId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" });
     mocks.tenantFindFirst.mockResolvedValue({ id: "t-x" });
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const res = await POST(req({ hub_user_id: HUB_UUID, email: "x@example.com" }));
+    const res = await POST(req({ hub_user_id: HUB_UUID, email: "x@example.com", email_proven: true }));
     expect(res.status).toBe(400);
     const body = (await readJson(res)) as Record<string, unknown>;
     expect(body.error).toBe("user_not_in_app");

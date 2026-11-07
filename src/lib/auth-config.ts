@@ -16,6 +16,7 @@ import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
 import { authConfig } from "./auth.config";
+import { applyActiveUser } from "./auth/active-user";
 import { fetchHubDiscovery } from "./hub/discovery-client";
 
 const credentialsSchema = z.object({
@@ -46,7 +47,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
           include: { accounts: true },
         });
 
-        if (!user) {
+        if (!user || user.deletedAt) {
           return null;
         }
 
@@ -88,8 +89,8 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       return token;
     },
     async session({ session, token }) {
-      if (token?.uid && session.user) {
-        session.user.id = token.uid as string;
+      if (token?.uid) {
+        return applyActiveUser(session, token.uid as string);
       }
       return session;
     },
