@@ -12,10 +12,13 @@ const PUBLIC_PATHS = /^\/(login|signup|auth|invite)(\/|$)/;
 const LAST_TRY_KEY = "veridian-session-ended-at";
 
 export function SessionGuard() {
-  const { status } = useSession();
+  const { status, data } = useSession();
+  // Auth.js répond `{ expires }` sans `user` à une session coupée : next-auth la dit
+  // `authenticated`, il faut donc lire `user`.
+  const refused = status === "unauthenticated" || (status === "authenticated" && !data?.user);
 
   useEffect(() => {
-    if (status !== "unauthenticated") return;
+    if (!refused) return;
     const { pathname, search } = window.location;
     if (PUBLIC_PATHS.test(pathname)) return;
     try {
@@ -26,7 +29,7 @@ export function SessionGuard() {
       // stockage indisponible : on tente quand même
     }
     window.location.assign(`/auth/session-ended?next=${encodeURIComponent(pathname + search)}`);
-  }, [status]);
+  }, [refused]);
 
   return null;
 }
