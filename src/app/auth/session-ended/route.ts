@@ -20,6 +20,18 @@ export async function GET(request: NextRequest) {
   const session = await auth();
   if (session?.user?.id) return response;
 
-  for (const name of SESSION_COOKIES) response.cookies.delete(name);
+  // Pas `cookies.delete` : sans l'attribut Secure, le navigateur ignore la suppression
+  // d'un cookie `__Secure-`, et la session survit.
+  for (const name of SESSION_COOKIES) {
+    response.cookies.set({
+      name,
+      value: "",
+      path: "/",
+      maxAge: 0,
+      httpOnly: true,
+      sameSite: "lax",
+      secure: name.startsWith("__Secure-"),
+    });
+  }
   return response;
 }

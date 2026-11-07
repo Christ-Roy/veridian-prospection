@@ -16,7 +16,14 @@ describe("GET /auth/session-ended", () => {
     mocks.auth.mockResolvedValue({ expires: "x" });
     const res = await GET(makeRequest("/auth/session-ended", { searchParams: { next: "/pipeline?a=1" } }));
     expect(res.headers.get("location")).toMatch(/\/pipeline\?a=1$/);
-    expect(res.headers.get("set-cookie")).toMatch(/authjs\.session-token=;/);
+    const cookies = res.headers.getSetCookie();
+    // Un navigateur ignore un Set-Cookie `__Secure-` sans l'attribut Secure : sans lui,
+    // la session survit et la page revient en boucle.
+    const secure = cookies.find((c) => c.startsWith("__Secure-authjs.session-token="));
+    expect(secure).toMatch(/Secure/i);
+    expect(secure).toMatch(/Max-Age=0/i);
+    expect(secure).toMatch(/Path=\//i);
+    expect(cookies.some((c) => c.startsWith("authjs.session-token="))).toBe(true);
   });
 
   test("session valable : aucun cookie touché", async () => {
