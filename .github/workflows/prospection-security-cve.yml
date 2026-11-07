@@ -158,11 +158,11 @@ jobs:
   # du tout. Un contrôle qui vise la mauvaise cible ne mesure rien, même en
   # fonctionnant parfaitement.
   #
-  # La source de vérité est désormais le jobspec Nomad. La lecture est
-  # fail-closed : un digest introuvable rend 2 (MESURE NON ABOUTIE), jamais un
+  # La source de vérité est le commit servi par la prod. La lecture est
+  # fail-closed : un commit illisible rend 2 (MESURE NON ABOUTIE), jamais un
   # vert et jamais un rouge trompeur.
   trivy-deployed:
-    name: Trivy scan — image déployée en prod (digest Nomad, cron)
+    name: Trivy scan — image servie en prod (/api/version, cron)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
@@ -170,30 +170,6 @@ jobs:
       packages: read  # pour login + pull GHCR private
     steps:
       - uses: actions/checkout@v6
-
-      - name: Checkout du dépôt des jobs Nomad (source de vérité du déploiement)
-        uses: actions/checkout@v6
-        with:
-          repository: Christ-Roy/nomad-veridian
-          token: ${{ secrets.CR_PAT }}
-          path: .nomad-veridian
-          # 🔴 `master`, PAS `main`. La branche par défaut de nomad-veridian est
-          # `master` et il n'existe AUCUNE branche `main` : le fetch de
-          # `refs/heads/main*` ne ramenait rien et le job mourait sur un
-          # `exit 1` avant d'avoir résolu le moindre digest.
-          #
-          # Ce que ça a coûté, parce que c'est le vrai enseignement : ce job
-          # avait été « réparé » le 2026-09-02 (commit 91ba433e), et c'est
-          # CETTE réparation qui a introduit `ref: main`. Le commentaire en
-          # tête du job raconte qu'il avait menti quatre nuits ; il a continué
-          # à mentir toutes les nuits suivantes, pour une autre raison, sans
-          # que le rouge change d'apparence. Mesuré le 2026-09-07 : 60
-          # exécutions planifiées listées, 60 échecs, aucune verte, jusqu'au
-          # 2026-07-10. Le scan de l'image de production n'a JAMAIS fonctionné.
-          #
-          # La leçon : réparer un contrôle ne se prouve pas en relisant le
-          # YAML, seulement en le voyant passer au vert.
-          ref: master
 
       # 🔴 CR_PAT, PAS GITHUB_TOKEN — la couche d'échec SUIVANTE, que `ref: main`
       # masquait depuis le 02/09 en tuant le job avant d'arriver ici.
@@ -210,23 +186,20 @@ jobs:
           username: Christ-Roy
           password: ${{ secrets.CR_PAT }}
 
-      - name: Résoudre l'image déployée depuis le jobspec Nomad
+      # 🔴 On demande à la prod ce qu'elle sert. Le jobspec de nomad-veridian lu ici
+      # jusqu'au 07/11 épinglait un digest du 07/09 que plus rien ne déployait : ce
+      # scan analysait une image morte (next 15.5.22) et son rouge ne disait rien.
+      - name: Résoudre l'image servie depuis /api/version
         id: image
         run: |
           set -euo pipefail
-          SPEC=.nomad-veridian/jobs/saas-prod/prospection.nomad.hcl
-          if [ ! -f "$SPEC" ]; then
-            echo "::error::Jobspec $SPEC introuvable — MESURE NON ABOUTIE, l'image déployée n'est ni confirmée ni infirmée."
+          SHA=$(curl -fsS -m 20 "https://${PROD_HOST}/api/version" | jq -r '.commit_sha // empty')
+          if ! printf '%s' "$SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::Commit servi illisible sur ${PROD_HOST}/api/version — MESURE NON ABOUTIE."
             exit 2
           fi
-          # On exige un digest : un tag mouvant ne prouve pas ce qui tourne.
-          IMG=$(grep -oE 'ghcr\.io/christ-roy/prospection@sha256:[0-9a-f]{64}' "$SPEC" | head -1)
-          if [ -z "$IMG" ]; then
-            echo "::error::Aucune image épinglée par digest dans $SPEC — MESURE NON ABOUTIE."
-            echo "::error::Le jobspec contient pourtant $(grep -c 'image' "$SPEC") lignes 'image' : ce n'est pas un défaut de lecture."
-            exit 2
-          fi
-          echo "Image déployée (digest du jobspec Nomad) : $IMG"
+          IMG="ghcr.io/christ-roy/prospection:${SHA:0:7}"
+          echo "Image servie : $IMG"
           echo "ref=$IMG" >> "$GITHUB_OUTPUT"
 
       - name: Pull image (private GHCR)
