@@ -20,7 +20,7 @@ describe("GET /auth/session-ended", () => {
     // Un navigateur ignore un Set-Cookie `__Secure-` sans l'attribut Secure : sans lui,
     // la session survit et la page revient en boucle.
     const secure = cookies.find((c) => c.startsWith("__Secure-authjs.session-token="));
-    expect(secure).toMatch(/Secure/i);
+    expect(secure).toMatch(/;\s*Secure/i);
     expect(secure).toMatch(/Max-Age=0/i);
     expect(secure).toMatch(/Path=\//i);
     expect(cookies.some((c) => c.startsWith("authjs.session-token="))).toBe(true);
