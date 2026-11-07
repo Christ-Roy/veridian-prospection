@@ -15,18 +15,25 @@
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-const { mockAuth } = vi.hoisted(() => ({
+const { mockAuth, mockGetTenantId } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
+  mockGetTenantId: vi.fn(),
 }));
 
 vi.mock("@/lib/auth-config", () => ({
   auth: mockAuth,
 }));
 
+vi.mock("@/lib/auth/tenant", () => ({
+  getTenantId: mockGetTenantId,
+}));
+
 import { requireAuth } from "./api-auth";
 
 beforeEach(() => {
   mockAuth.mockReset();
+  mockGetTenantId.mockReset();
+  mockGetTenantId.mockResolvedValue("tenant-1");
 });
 
 describe("requireAuth — fail-closed (toute session incomplète = 401)", () => {
@@ -168,5 +175,23 @@ describe("requireAuth — happy path", () => {
       expect(userAsRecord.sessionToken).toBeUndefined();
       expect(userAsRecord.provider).toBeUndefined();
     }
+  });
+});
+
+describe("requireAuth — compte sans tenant", () => {
+  it("403 no_workspace : jamais le tenant factice 00000000 partagé", async () => {
+    mockAuth.mockResolvedValueOnce({ user: { id: "u-retire", email: "r@v.site" } });
+    mockGetTenantId.mockResolvedValueOnce(null);
+    const res = await requireAuth();
+    expect(res.user).toBeUndefined();
+    expect(res.error?.status).toBe(403);
+    expect(await res.error?.json()).toEqual({ error: "no_workspace" });
+    expect(mockGetTenantId).toHaveBeenCalledWith("u-retire");
+  });
+
+  it("avec tenant : passe", async () => {
+    mockAuth.mockResolvedValueOnce({ user: { id: "u-1", email: "u@v.site" } });
+    const res = await requireAuth();
+    expect(res.user?.id).toBe("u-1");
   });
 });

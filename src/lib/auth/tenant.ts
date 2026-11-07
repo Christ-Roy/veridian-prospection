@@ -18,7 +18,7 @@ export async function getTenantId(userId: string): Promise<string | null> {
 
   // 1. Direct: tenants.user_id (legacy schema kept after Supabase migration)
   const ownTenant = await prisma.tenant.findFirst({
-    where: { userId },
+    where: { userId, deletedAt: null },
     select: { id: true },
   });
   let tenantId = ownTenant?.id ?? null;
