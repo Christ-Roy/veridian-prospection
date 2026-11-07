@@ -24,6 +24,7 @@ vi.mock("@/lib/prisma", () => ({
   prisma: { workspace: { findFirst: vi.fn() } },
 }));
 
+process.env.LOCAL_AUTH_ENABLED = "1";
 import { GET, POST } from "@/app/api/admin/invitations/route";
 import { makeRequest, makeUserContext, makeForbidden, readJson } from "../_helpers";
 
@@ -76,5 +77,22 @@ describe("/api/admin/invitations", () => {
       );
       expect(res.status).toBe(403);
     });
+  });
+});
+
+describe("porte locale fermée (production)", () => {
+  test("POST 410 pour un admin, aucune invitation créée", async () => {
+    process.env.LOCAL_AUTH_ENABLED = "";
+    createInvitationMock.mockClear();
+    requireAdminMock.mockResolvedValue({ ctx: { tenantId: "t-1", userId: "u-1", isAdmin: true } });
+    try {
+      const res = await POST(
+        makeRequest("/api/admin/invitations", { method: "POST", body: { email: "a@b.fr" } }),
+      );
+      expect(res.status).toBe(410);
+      expect(createInvitationMock).not.toHaveBeenCalled();
+    } finally {
+      process.env.LOCAL_AUTH_ENABLED = "1";
+    }
   });
 });

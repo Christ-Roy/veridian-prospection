@@ -193,9 +193,10 @@ jobs:
         id: image
         run: |
           set -euo pipefail
-          SHA=$(curl -fsS -m 20 "https://${PROD_HOST}/api/version" | jq -r '.commit_sha // empty')
+          HOST=prospection.app.veridian.site
+          SHA=$(curl -fsS -m 20 "https://${HOST}/api/version" | jq -r '.commit_sha // empty')
           if ! printf '%s' "$SHA" | grep -Eq '^[0-9a-f]{40}$'; then
-            echo "::error::Commit servi illisible sur ${PROD_HOST}/api/version — MESURE NON ABOUTIE."
+            echo "::error::Commit servi illisible sur ${HOST}/api/version — MESURE NON ABOUTIE."
             exit 2
           fi
           IMG="ghcr.io/christ-roy/prospection:${SHA:0:7}"

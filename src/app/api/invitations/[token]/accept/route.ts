@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { acceptInvitation } from "@/lib/invitations";
 import { isRateLimited } from "@/lib/rate-limit";
+import { isLocalAuthEnabled, LOCAL_AUTH_CLOSED } from "@/lib/auth/local-auth";
 
 function getClientIp(request: NextRequest): string {
   const xff = request.headers.get("x-forwarded-for");
@@ -26,6 +27,10 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ token: string }> },
 ) {
+  if (!isLocalAuthEnabled()) {
+    return NextResponse.json(LOCAL_AUTH_CLOSED, { status: 410 });
+  }
+
   const ip = getClientIp(request);
   if (isRateLimited(`invite-accept:${ip}`, 10, 60_000)) {
     return NextResponse.json(

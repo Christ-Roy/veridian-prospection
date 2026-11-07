@@ -3,6 +3,10 @@
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
 
+vi.hoisted(() => {
+  process.env.LOCAL_AUTH_ENABLED = "1";
+});
+
 const { acceptInvitationMock, isRateLimitedMock } = vi.hoisted(() => ({
   acceptInvitationMock: vi.fn(),
   isRateLimitedMock: vi.fn().mockReturnValue(false),
@@ -90,5 +94,25 @@ describe("POST /api/invitations/[token]/accept", () => {
       { params: Promise.resolve({ token: "expired-tok" }) },
     );
     expect(res.status).toBe(404);
+  });
+});
+
+describe("porte locale fermée (production)", () => {
+  test("410 sans créer de compte ni de mot de passe", async () => {
+    process.env.LOCAL_AUTH_ENABLED = "";
+    acceptInvitationMock.mockClear();
+    try {
+      const res = await POST(
+        makeRequest("/api/invitations/tok/accept", {
+          method: "POST",
+          body: { password: "assez-long-pour-passer" },
+        }),
+        { params: Promise.resolve({ token: "tok" }) },
+      );
+      expect(res.status).toBe(410);
+      expect(acceptInvitationMock).not.toHaveBeenCalled();
+    } finally {
+      process.env.LOCAL_AUTH_ENABLED = "1";
+    }
   });
 });

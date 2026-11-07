@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import Link from "next/link";
 import { InviteAcceptForm } from "./invite-accept-form";
+import { isLocalAuthEnabled, LOCAL_AUTH_CLOSED } from "@/lib/auth/local-auth";
 
 type InvitePayload = {
   token: string;
@@ -60,6 +61,19 @@ export default async function InvitePage({
 }: {
   params: Promise<{ token: string }>;
 }) {
+  if (!isLocalAuthEnabled()) {
+    return (
+      <main className="min-h-screen flex items-center justify-center p-6">
+        <p className="text-sm text-muted-foreground max-w-sm text-center">
+          {LOCAL_AUTH_CLOSED.message}{" "}
+          <Link href="/login" className="underline">
+            Se connecter
+          </Link>
+        </p>
+      </main>
+    );
+  }
+
   const { token } = await params;
   const { data, error } = await fetchInvitation(token);
 

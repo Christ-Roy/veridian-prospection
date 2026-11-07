@@ -21,6 +21,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth/user-context";
+import { isLocalAuthEnabled, LOCAL_AUTH_CLOSED } from "@/lib/auth/local-auth";
 import { prisma } from "@/lib/prisma";
 import {
   createInvitation,
@@ -52,6 +53,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const auth = await requireAdmin();
   if ("error" in auth) return auth.error;
+  if (!isLocalAuthEnabled()) {
+    return NextResponse.json(LOCAL_AUTH_CLOSED, { status: 410 });
+  }
 
   const body = await request.json().catch(() => ({}));
   const email: string = (body?.email || "").trim().toLowerCase();

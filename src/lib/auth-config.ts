@@ -17,6 +17,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { authConfig } from "./auth.config";
 import { applyActiveUser } from "./auth/active-user";
+import { isLocalAuthEnabled } from "./auth/local-auth";
 import { fetchHubDiscovery } from "./hub/discovery-client";
 
 const credentialsSchema = z.object({
@@ -36,6 +37,12 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
+        // Le seul login est celui du Hub (CONTRAT-HUB §3.8). Tentative journalisée
+        // pour voir si quelqu'un essaie encore cette porte.
+        if (!isLocalAuthEnabled()) {
+          console.warn("[auth/password-login] closed");
+          return null;
+        }
         const parsed = credentialsSchema.safeParse(credentials);
         if (!parsed.success) {
           return null;

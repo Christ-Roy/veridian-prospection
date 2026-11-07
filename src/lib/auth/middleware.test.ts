@@ -257,3 +257,50 @@ describe("avec session : aucun rebond", () => {
     expect(res.headers.get("location")).toBeNull();
   });
 });
+
+describe("/login, porte locale fermée (production)", () => {
+  beforeEach(() => {
+    mockEdgeAuth.mockReset();
+    delete process.env.LOCAL_AUTH_ENABLED;
+  });
+
+  it("navigation sans session : part au Hub vers la page demandée", async () => {
+    mockEdgeAuth.mockResolvedValue(null);
+    const res = await updateSession(makeReq("/login?redirect=%2Fpipeline", { headers: NAV, cookie: "" }));
+    const loc = new URL(res.headers.get("location")!);
+    expect(loc.pathname).toBe("/api/auth/bounce/prepare");
+    expect(loc.searchParams.get("next")).toMatch(/\/pipeline$/);
+  });
+
+  it("redirect vers un autre site ignoré", async () => {
+    mockEdgeAuth.mockResolvedValue(null);
+    const res = await updateSession(
+      makeReq("/login?redirect=https%3A%2F%2Fevil.example%2Fx", { headers: NAV, cookie: "" }),
+    );
+    const next = new URL(res.headers.get("location")!).searchParams.get("next")!;
+    expect(next).not.toContain("evil.example");
+  });
+
+  it.each([
+    ["déconnexion explicite", "/login", "veridian-logged-out=1"],
+    ["essai déjà fait", "/login", "veridian-auto-bounce=1"],
+    ["erreur de lien", "/login?error=token_used", ""],
+  ])("%s : la page reste, sans rebond", async (_l, path, cookie) => {
+    mockEdgeAuth.mockResolvedValue(null);
+    const res = await updateSession(makeReq(path, { headers: NAV, cookie }));
+    expect(res.headers.get("location")).toBeNull();
+  });
+
+  it("déjà connecté : la page reste", async () => {
+    mockEdgeAuth.mockResolvedValue({ user: { id: "u" } });
+    const res = await updateSession(makeReq("/login", { headers: NAV, cookie: "" }));
+    expect(res.headers.get("location")).toBeNull();
+  });
+
+  it("staging, LOCAL_AUTH_ENABLED=1 : le formulaire reste accessible", async () => {
+    process.env.LOCAL_AUTH_ENABLED = "1";
+    const res = await updateSession(makeReq("/login", { headers: NAV, cookie: "" }));
+    expect(res.headers.get("location")).toBeNull();
+    delete process.env.LOCAL_AUTH_ENABLED;
+  });
+});

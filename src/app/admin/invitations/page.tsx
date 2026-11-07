@@ -160,7 +160,11 @@ export default function AdminInvitationsPage() {
         emailSent?: boolean;
       };
       if (!res.ok) {
-        throw new Error(body.error || `status ${res.status}`);
+        throw new Error(
+          res.status === 410
+            ? "Les invitations se font désormais depuis le Hub Veridian"
+            : body.error || `status ${res.status}`,
+        );
       }
       toast.success("Invitation créée");
       if (body.emailSent === false) {
