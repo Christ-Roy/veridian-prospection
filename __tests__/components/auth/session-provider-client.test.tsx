@@ -44,7 +44,7 @@ describe("session-provider-client.tsx — wrapper Auth.js v5", () => {
 
   test("exporte SessionProviderClient qui wrap children", () => {
     expect(source).toMatch(/export function SessionProviderClient/);
-    expect(source).toMatch(/<SessionProvider>{children}<\/SessionProvider>/);
+    expect(source).toMatch(/<SessionProvider>\s*<SessionGuard \/>\s*\{children\}\s*<\/SessionProvider>/);
   });
 
   // Anti-régression du bug prod 2026-05-23 : si le wrapper n'est pas

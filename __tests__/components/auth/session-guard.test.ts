@@ -1,69 +1,70 @@
 /**
- * @vitest-environment jsdom
- *
  * SessionGuard : une session refusée en base repart par /auth/session-ended.
  * La réponse d'Auth.js pour un compte coupé est `{ expires }` sans `user` : next-auth
  * la classe `authenticated`, c'est le cas à attraper.
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
-import { render } from "@testing-library/react";
 
 const mocks = vi.hoisted(() => ({ useSession: vi.fn() }));
 vi.mock("next-auth/react", () => ({ useSession: mocks.useSession }));
+// Pas de DOM ici : l'effet s'exécute à l'appel du composant.
+vi.mock("react", () => ({ useEffect: (effect: () => void) => effect() }));
 
 import { SessionGuard } from "@/components/auth/session-guard";
 
 const assign = vi.fn();
+const store = new Map<string, string>();
 
-function visit(path: string) {
-  Object.defineProperty(window, "location", {
-    configurable: true,
-    value: { pathname: path, search: "", assign },
-  });
+function visit(pathname: string) {
+  vi.stubGlobal("window", { location: { pathname, search: "", assign } });
 }
 
 describe("SessionGuard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    sessionStorage.clear();
+    store.clear();
+    vi.stubGlobal("sessionStorage", {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => store.set(k, v),
+    });
     visit("/pipeline");
   });
 
   test("coupure : `authenticated` sans user repart par session-ended", () => {
     mocks.useSession.mockReturnValue({ status: "authenticated", data: { expires: "x" } });
-    render(<SessionGuard />);
+    SessionGuard();
     expect(assign).toHaveBeenCalledWith("/auth/session-ended?next=%2Fpipeline");
   });
 
   test("sans session : repart aussi", () => {
     mocks.useSession.mockReturnValue({ status: "unauthenticated", data: null });
-    render(<SessionGuard />);
+    SessionGuard();
     expect(assign).toHaveBeenCalledOnce();
   });
 
   test("session valable : ne fait rien", () => {
     mocks.useSession.mockReturnValue({ status: "authenticated", data: { user: { id: "u" } } });
-    render(<SessionGuard />);
+    SessionGuard();
     expect(assign).not.toHaveBeenCalled();
   });
 
   test("chargement : ne fait rien", () => {
     mocks.useSession.mockReturnValue({ status: "loading", data: null });
-    render(<SessionGuard />);
+    SessionGuard();
     expect(assign).not.toHaveBeenCalled();
   });
 
   test("page publique : ne fait rien", () => {
     visit("/login");
     mocks.useSession.mockReturnValue({ status: "authenticated", data: { expires: "x" } });
-    render(<SessionGuard />);
+    SessionGuard();
     expect(assign).not.toHaveBeenCalled();
   });
 
   test("une seule tentative par minute, pas de boucle", () => {
     mocks.useSession.mockReturnValue({ status: "authenticated", data: { expires: "x" } });
-    render(<SessionGuard />);
-    render(<SessionGuard />);
+    SessionGuard();
+    SessionGuard();
     expect(assign).toHaveBeenCalledOnce();
   });
 });
