@@ -68,7 +68,12 @@ type UpdatePlanBody = {
   stripe_subscription_id?: string | null;
   idempotency_key?: string;
   reason?: string;
+  /** Statut d'essai du Hub (`lib/plans/trial-status.ts` côté Hub) : stocké, jamais appliqué. */
+  trial_status?: string;
+  trial_ends_at?: string | null;
 };
+
+const TRIAL_STATUSES = new Set(["none", "trial_active", "expired", "paid"]);
 
 /** Extrait le major d'une string de version (`"2.0"` → `2`, `"2"` → `2`). */
 function parseMajor(version: string): number | null {
@@ -87,6 +92,8 @@ export async function POST(request: NextRequest) {
     plan_source,
     idempotency_key,
     reason,
+    trial_status,
+    trial_ends_at,
   } = auth.body;
 
   // ── Invariant 1 — versioning (§3.4.1) ────────────────────────────────────
@@ -156,6 +163,19 @@ export async function POST(request: NextRequest) {
   }
   const planSource: PlanSourceV2 = sourceRaw;
 
+  // ── Statut d'essai (facultatif) : stocké sans aucune lecture seule ──────
+  // Rien ne lit `metadata.hub_trial` pour restreindre l'app : la lecture seule à l'expiration reste
+  // une décision de Robert (drapeau coupé). Le Hub le relit par la découverte.
+  if (trial_status !== undefined && !TRIAL_STATUSES.has(trial_status)) {
+    return NextResponse.json(
+      { error: "invalid_payload", message: "trial_status not supported", details: { allowed: [...TRIAL_STATUSES] } },
+      { status: 400 },
+    );
+  }
+  if (trial_ends_at != null && Number.isNaN(Date.parse(trial_ends_at))) {
+    return NextResponse.json({ error: "invalid_payload", message: "trial_ends_at must be ISO 8601 or null" }, { status: 400 });
+  }
+
   // ── Mapping canonique → nom local (§3.2bis) ──────────────────────────────
   // La DB et ses consommateurs (lead-quota, PLAN_LIMITS) raisonnent en noms
   // locaux : on persiste le nom LOCAL, jamais l'enum canonique du fil.
@@ -168,7 +188,7 @@ export async function POST(request: NextRequest) {
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenant_id },
-    select: { id: true, plan: true, planSource: true },
+    select: { id: true, plan: true, planSource: true, metadata: true },
   });
   if (!tenant) {
     return NextResponse.json({ error: "tenant_not_found" }, { status: 404 });
@@ -210,6 +230,16 @@ export async function POST(request: NextRequest) {
       data: {
         plan: localPlan,
         planSource,
+        ...(trial_status !== undefined
+          ? {
+              metadata: {
+                ...(tenant.metadata && typeof tenant.metadata === "object" && !Array.isArray(tenant.metadata)
+                  ? (tenant.metadata as Prisma.JsonObject)
+                  : {}),
+                hub_trial: { status: trial_status, ends_at: trial_ends_at ?? null, received_at: appliedAt.toISOString() },
+              },
+            }
+          : {}),
         planHistory: {
           create: {
             plan: localPlan,

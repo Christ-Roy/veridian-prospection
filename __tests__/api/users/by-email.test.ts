@@ -204,12 +204,26 @@ describe("GET /api/users/by-email — Hub Discovery", () => {
       workspace_name: "Acme",
       role: "owner",
       plan: "pro",
+      trial_status: null,
       status: "active",
       magic_link_capable: true,
       fallback_url: "https://prospection.app.veridian.site/login",
     });
     expect(body.workspaces[1].role).toBe("member");
     expect(body.workspaces[1].status).toBe("active");
+  });
+
+  test("rend le statut d'essai posé par le Hub (metadata.hub_trial)", async () => {
+    mocks.userFindFirst.mockResolvedValue({ id: "u1", email: "x@y.com" });
+    mocks.memberFindMany.mockResolvedValue([
+      { role: "owner", workspace: { id: "w1", name: "W", tenantId: "t1" } },
+    ]);
+    mocks.tenantFindMany.mockResolvedValue([
+      { id: "t1", plan: "pro", status: "active", metadata: { hub_trial: { status: "expired", ends_at: null } } },
+    ]);
+    const res = await GET(req({ email: "x@y.com" }, signedHeaders()));
+    const body = (await readJson(res)) as { workspaces: Array<{ trial_status: string | null }> };
+    expect(body.workspaces[0].trial_status).toBe("expired");
   });
 
   test("plan fallback freemium si tenant.plan null", async () => {

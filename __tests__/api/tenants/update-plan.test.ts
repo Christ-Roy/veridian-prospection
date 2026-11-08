@@ -532,3 +532,30 @@ describe("POST /api/tenants/update-plan — CONTRAT-BILLING v2", () => {
     });
   });
 });
+
+describe("POST /api/tenants/update-plan — statut d'essai du Hub (stocké, jamais appliqué)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  test("stocke trial_status et trial_ends_at dans metadata.hub_trial, sans perdre le reste", async () => {
+    mocks.tenantFindUnique.mockResolvedValueOnce({ id: "t-1", plan: "freemium", planSource: null, metadata: { autre: 1 } });
+    mocks.tenantUpdate.mockResolvedValueOnce({});
+    const res = await call(v2Body({ trial_status: "trial_active", trial_ends_at: "2026-11-23T00:00:00.000Z" }));
+    expect(res.status).toBe(200);
+    const data = mocks.tenantUpdate.mock.calls[0][0].data;
+    expect(data.metadata).toMatchObject({ autre: 1, hub_trial: { status: "trial_active", ends_at: "2026-11-23T00:00:00.000Z" } });
+  });
+
+  test("sans trial_status : metadata intacte", async () => {
+    mocks.tenantFindUnique.mockResolvedValueOnce({ id: "t-1", plan: "freemium", planSource: null, metadata: null });
+    mocks.tenantUpdate.mockResolvedValueOnce({});
+    await call(v2Body());
+    expect(mocks.tenantUpdate.mock.calls[0][0].data.metadata).toBeUndefined();
+  });
+
+  test.each(["lecture_seule", "TRIAL"])("trial_status hors enum (%s) : 400, rien écrit", async (trial_status) => {
+    const res = await call(v2Body({ trial_status }));
+    expect(res.status).toBe(400);
+    expect(mocks.tenantUpdate).not.toHaveBeenCalled();
+  });
+});
+

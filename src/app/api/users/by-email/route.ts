@@ -38,10 +38,18 @@ type WorkspaceCard = {
   workspace_name: string;
   role: string;
   plan: string;
+  /** Statut d'essai posé par le Hub (`metadata.hub_trial`), `null` tant qu'il n'en a envoyé aucun. Jamais omis. */
+  trial_status: string | null;
   status: "active" | "suspended" | "deleted";
   magic_link_capable: boolean;
   fallback_url: string;
 };
+
+function hubTrialStatus(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const t = (metadata as { hub_trial?: { status?: unknown } }).hub_trial;
+  return typeof t?.status === "string" ? t.status : null;
+}
 
 export async function GET(request: NextRequest) {
   // ─── Auth HMAC ────────────────────────────────────────────────────────────
@@ -113,7 +121,7 @@ export async function GET(request: NextRequest) {
   const tenantIds = Array.from(new Set(memberships.map((m) => m.workspace.tenantId)));
   const tenants = await prisma.tenant.findMany({
     where: { id: { in: tenantIds }, deletedAt: null },
-    select: { id: true, plan: true, status: true },
+    select: { id: true, plan: true, status: true, metadata: true },
   });
   const tenantByID = new Map(tenants.map((t) => [t.id, t]));
 
@@ -131,6 +139,7 @@ export async function GET(request: NextRequest) {
         workspace_name: m.workspace.name,
         role: m.role,
         plan: tenant.plan ?? "freemium",
+        trial_status: hubTrialStatus(tenant.metadata),
         status: "active",
         // Prospection supporte l'autologin via /api/auth/token (cf
         // src/app/api/tenants/provision/route.ts génération prospection_login_token).
