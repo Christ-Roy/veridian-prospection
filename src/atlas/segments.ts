@@ -206,3 +206,26 @@ export async function supprimerSegment(tenantId: string, segmentId: string) {
   await prisma.atlasSegment.update({ where: { id: s.id }, data: { deletedAt: new Date() } });
   return { id: s.id, supprime: true };
 }
+
+// ---- Dossier de travail : entreprises épinglées (par espace) ----
+
+export async function listerEpingles(tenantId: string) {
+  const l = await prisma.atlasEpingle.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" }, take: 500 });
+  return l.map((e) => ({ siren: e.siren, nom: e.nom, note: e.note, auteur: e.auteur, via: e.via, date: e.createdAt.toISOString() }));
+}
+
+export async function epingler(tenantId: string, a: { siren: string; nom: string; note?: string }, auteur: Auteur) {
+  if (!/^\d{9}$/.test(a.siren)) throw new FiltreInvalide("SIREN à 9 chiffres");
+  const e = await prisma.atlasEpingle.upsert({
+    where: { tenantId_siren: { tenantId, siren: a.siren } },
+    update: { note: a.note ?? undefined },
+    create: { tenantId, siren: a.siren, nom: a.nom.slice(0, 200), note: a.note ?? null, auteur: auteur.id, via: auteur.via },
+  });
+  return { siren: e.siren, epingle: true };
+}
+
+export async function retirerEpingle(tenantId: string, siren: string) {
+  const r = await prisma.atlasEpingle.deleteMany({ where: { tenantId, siren } });
+  if (!r.count) throw new Introuvable(`aucune épingle pour ${siren}`);
+  return { siren, epingle: false };
+}

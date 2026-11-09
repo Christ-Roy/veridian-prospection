@@ -22,9 +22,12 @@ technique, données INPI, pipeline, mail, softphone, multi-tenant.
 
 Le pipeline commercial part dans Twenty ; Prospection sert à trouver et qualifier un marché.
 Maquette : `docs/maquette/atlas-des-marches.html`. Linear : ROB-173 (ODH comme seule base).
-1. **Segments** : listes nommées (« Analyse marché », « Éleveurs canins », « Magasins de bricolage »),
-   rangées en dossiers, avec segments enfants, fusion et agrégation. Un segment = des filtres versionnés.
-2. **Scoring** : un moteur par segment ou sous-segment attribue un score de priorité ; on l'itère avec l'IA.
+Flux (Robert, 09/11) : **analyse du marché → définition de la cible → priorité (scoring froid) → envoi**.
+1. **Marché et cibles** : un marché = segment racine large (« Éleveurs de France ») qu'on analyse ; ses
+   cibles = segments enfants (une approche chacune), qui héritent des conditions. Rangés en dossiers ;
+   fusion et agrégation à venir. Un segment = des filtres versionnés, sur des champs neutres.
+2. **Moteur de priorité** : un scoring par cible pour la prospection à froid ordonne les envois ; on
+   l'itère avec l'IA.
 3. **Vues** : carte (départements, descente), diagrammes, tableau, et modules de données faits par l'IA
    à la volée, dans un cadre sécurisé (catalogue d'actions, bac à sable, rien ne sort sans clic humain).
 4. **Export** : réservé aux plans payants Veridian, tracé.

@@ -30,7 +30,7 @@ export const CHAMPS: readonly Champ[] = [
   { id: "activite", libelle: "Activité (libellé)", type: "texte", sql: "activity_label", groupe: "Activité" },
   { id: "departement", libelle: "Département", type: "liste", sql: "department", groupe: "Lieu", repartition: true },
   { id: "code_postal", libelle: "Code postal", type: "liste", sql: "postal_code", groupe: "Lieu", repartition: true },
-  { id: "commune", libelle: "Commune", type: "texte", sql: "city", groupe: "Lieu" },
+  { id: "commune", libelle: "Commune", type: "texte", sql: "city", groupe: "Lieu", repartition: true },
   { id: "commune_insee", libelle: "Commune (INSEE)", type: "liste", sql: "commune_insee", groupe: "Lieu", repartition: true },
   { id: "taille", libelle: "Taille", type: "liste", sql: "size_band", groupe: "Taille et finances", repartition: true },
   { id: "effectif", libelle: "Tranche d'effectif", type: "liste", sql: "headcount_range", groupe: "Taille et finances", repartition: true },

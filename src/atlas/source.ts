@@ -11,8 +11,28 @@ export type Apercu = { colonnes: string[]; page: number; parPage: number; tri: s
 /** Options d'aperçu ; avec `scoring`, chaque ligne a une colonne `score` (0-100) et le tri se fait dessus. */
 export type OptionsApercu = { colonnes: string[]; page: number; parPage: number; tri?: string; sens?: "asc" | "desc"; scoring?: unknown };
 
+/** Fiche complète d'une entreprise : colonnes ODH renommées en français, regroupées par thème. */
+export type Fiche = Record<string, Record<string, string | number | boolean | null | string[]>>;
+export type Point = { siren: string; nom: string; commune: string; lat: number; lon: number; email: boolean; site: boolean };
+
+/** Colonnes de la fiche : thème → (clé française → colonne ODH). Liste blanche, comme le catalogue. */
+export const FICHE: Record<string, Record<string, string>> = {
+  identite: { siren: "siren", nom: "legal_name", forme_juridique: "legal_form", categorie: "company_category", date_creation: "creation_date", capital: "share_capital", statut: "administrative_status", procedure: "procedure_status", date_procedure: "procedure_date" },
+  activite: { naf: "naf_code", secteur: "activity_sector", activite: "activity_label", services: "activity_services", idcc: "idcc_label", opco: "opco_name" },
+  lieu: { commune: "city", code_postal: "postal_code", departement: "department", commune_insee: "commune_insee", latitude: "latitude", longitude: "longitude" },
+  dirigeant: { nom: "director_name", role: "director_role", email: "director_email", email_verifie: "director_email_verified" },
+  contact: { email: "email", type_email: "email_type", verification: "email_verification", messagerie: "mail_provider_group", telephone: "phone", delivrable: "deliverable" },
+  web: { site: "primary_domain", domaines: "domains", niveau: "web_tier", obsolete: "website_obsolete", https: "has_https", responsive: "has_responsive", outil: "cms", ecommerce: "is_ecommerce", plateforme_ecommerce: "ecom_platform" },
+  finances: { chiffre_affaires: "revenue", resultat_net: "net_income", ebe: "ebe", tresorerie_nette: "net_cash", annee: "financials_year", croissance_pct: "revenue_growth_pct", tendance: "revenue_trend", effectif: "headcount_value", taille: "size_band" },
+  groupe: { maison_mere: "parent_name", filiales: "subsidiaries_count", tete_de_groupe: "group_root_name", taille_groupe: "group_size" },
+  signaux: { rge: "label_rge", qualiopi: "label_qualiopi", bio: "label_bio", ess: "label_ess", marches_publics: "public_contracts_count", montant_marches: "public_contracts_amount", permis_3_ans: "pub_permits_3y_count", aides_minimis: "pub_minimis_count" },
+  qualite: { score_odh: "priority_score_v2", grade: "lead_grade", confiance: "confidence_tier", blocages: "blocking_reasons" },
+};
+
 export interface SourceMarche {
   readonly simulee: boolean;
+  fiche(siren: string): Promise<Fiche | null>;
+  points(filtre: unknown, departement: string, limite?: number): Promise<Point[]>;
   compter(filtre: unknown): Promise<number>;
   apercu(filtre: unknown, o: OptionsApercu): Promise<Apercu>;
   repartition(filtre: unknown, champ: string, limite?: number): Promise<{ cle: string; nombre: number }[]>;
@@ -70,6 +90,24 @@ export class SourceClickHouse implements SourceMarche {
     return Number(r[0]?.n ?? 0);
   }
 
+  async fiche(siren: string) {
+    if (!/^\d{9}$/.test(siren)) throw new FiltreInvalide("SIREN à 9 chiffres");
+    const cols = Object.entries(FICHE).flatMap(([t, m]) => Object.entries(m).map(([k, c]) => `${c} AS ${t}__${k}`));
+    const r = await this.requete<Record<string, unknown>>(`SELECT ${cols.join(", ")} FROM ${TABLE} WHERE siren = {s:String} AND is_deleted = 0 LIMIT 1`, { s: { type: "String", valeur: siren } });
+    return r[0] ? regrouper(r[0]) : null;
+  }
+
+  async points(filtre: unknown, departement: string, limite = 400) {
+    if (!/^(\d{2,3}|2A|2B)$/.test(departement)) throw new FiltreInvalide("département invalide");
+    const { where, params } = compilerFiltre(filtre);
+    params.dep = { type: "String", valeur: departement };
+    const sql = `SELECT siren, legal_name AS nom, city AS commune, latitude AS lat, longitude AS lon, email != '' AS email, primary_domain != '' AS site
+      FROM ${TABLE} WHERE ${where} AND department = {dep:String} AND latitude IS NOT NULL AND longitude IS NOT NULL
+      ORDER BY priority_score_v2 DESC NULLS LAST, siren LIMIT ${Math.min(1000, Math.max(1, Math.trunc(limite)))}`;
+    const r = await this.requete<Record<string, unknown>>(sql, params);
+    return r.map((x) => ({ siren: String(x.siren), nom: String(x.nom), commune: String(x.commune), lat: Number(x.lat), lon: Number(x.lon), email: Number(x.email) === 1, site: Number(x.site) === 1 }));
+  }
+
   async apercu(filtre: unknown, o: OptionsApercu) {
     const { where, params, score } = compilerFiltre(filtre, o.scoring);
     const { sql: select, champs } = colonnesSql(o.colonnes);
@@ -91,6 +129,17 @@ export class SourceClickHouse implements SourceMarche {
     const r = await this.requete<{ cle: string; nombre: string }>(sql, params);
     return r.map((x) => ({ cle: x.cle, nombre: Number(x.nombre) }));
   }
+}
+
+/** Remet les colonnes `theme__cle` en { theme: { cle: valeur } }, vides et 0/1 normalisés. */
+function regrouper(l: Record<string, unknown>): Fiche {
+  const out: Fiche = {};
+  for (const [k, v] of Object.entries(l)) {
+    const [t, c] = k.split("__");
+    out[t] ??= {};
+    out[t][c] = v === "" || v === undefined ? null : (v as string | number | null | string[]);
+  }
+  return out;
 }
 
 /** ClickHouse rend les entiers 64 bits en texte et les booléens en 0/1 : on remet les types du catalogue. */
@@ -163,6 +212,19 @@ export class SourceSimulee implements SourceMarche {
   }
   async compter(filtre: unknown) {
     return this.filtrer(filtre).length;
+  }
+  async fiche(siren: string) {
+    if (!/^\d{9}$/.test(siren)) throw new FiltreInvalide("SIREN à 9 chiffres");
+    const l = this.lignes.find((x) => x.siren === siren);
+    if (!l) return null;
+    return { identite: { siren: l.siren, nom: l.nom, forme_juridique: l.forme_juridique, date_creation: l.date_creation }, lieu: { commune: l.commune, departement: l.departement }, contact: { email: l.email || null, telephone: l.telephone || null }, web: { site: l.site || null }, finances: { chiffre_affaires: l.chiffre_affaires }, qualite: { score_odh: l.score_odh } } as Fiche;
+  }
+  async points(filtre: unknown, departement: string, limite = 400) {
+    if (!/^(\d{2,3}|2A|2B)$/.test(departement)) throw new FiltreInvalide("département invalide");
+    return this.filtrer(filtre)
+      .filter((l) => l.departement === departement)
+      .slice(0, limite)
+      .map((l, i) => ({ siren: String(l.siren), nom: String(l.nom), commune: String(l.commune), lat: 45 + (i % 20) / 40, lon: 5 + Math.floor(i / 20) / 40, email: Boolean(l.email), site: Boolean(l.site) }));
   }
   async apercu(filtre: unknown, o: OptionsApercu) {
     compilerFiltre(filtre, o.scoring); // même validation qu'en prod

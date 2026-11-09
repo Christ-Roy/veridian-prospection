@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import type { ContexteOutil, Outil } from "@/lib/mcp/outils";
 import { ErreurOutil } from "@/lib/mcp/erreur";
+import { isRateLimited } from "@/lib/rate-limit";
 
 import { CHAMPS, OPERATEURS } from "./champs";
 import { FiltreInvalide } from "./filtres";
@@ -83,6 +84,54 @@ const OUTILS_BRUTS: Outil[] = [
     input: z.object({ filtre: FILTRE, champ: z.string(), limite: z.number().int().min(1).max(200).default(30) }),
     annotations: LECTURE,
     run: lisible(async (a) => avecSource({ champ: a.champ, valeurs: await sourceMarche().repartition(a.filtre, a.champ as string, a.limite as number) })),
+  },
+  {
+    name: "fiche_entreprise_atlas",
+    title: "Fiche d'une entreprise",
+    description: "Fiche complète par SIREN : identité, activité, lieu, dirigeant, contact, web, finances, groupe, signaux, qualité.",
+    input: z.object({ siren: z.string().regex(/^\d{9}$/, "SIREN à 9 chiffres") }),
+    annotations: LECTURE,
+    run: lisible(async (a, c) => {
+      // Anti-aspiration : 60 fiches par minute et par utilisateur, écran et IA confondus.
+      if (isRateLimited(`atlas-fiche:${c.ctx.userId}`, 60, 60_000)) throw new ErreurOutil("Trop de fiches ouvertes cette minute (60 au plus).");
+      const f = await sourceMarche().fiche(a.siren as string);
+      if (!f) throw new ErreurOutil(`Aucune entreprise prospectable avec le SIREN ${a.siren}.`);
+      return avecSource({ fiche: f });
+    }),
+  },
+  {
+    name: "points_carte",
+    title: "Entreprises sur la carte d'un département",
+    description: "Points géolocalisés (latitude, longitude) des entreprises d'un filtre dans un département, les mieux notées d'abord.",
+    input: z.object({ filtre: FILTRE, departement: z.string().regex(/^(\d{2,3}|2A|2B)$/), limite: z.number().int().min(1).max(1000).default(400) }),
+    annotations: LECTURE,
+    run: lisible(async (a) => avecSource({ points: await sourceMarche().points(a.filtre, a.departement as string, a.limite as number) })),
+  },
+  {
+    name: "lister_epingles",
+    title: "Dossier de travail",
+    description: "Entreprises épinglées dans le dossier de travail de l'espace (par l'utilisateur ou une IA).",
+    input: z.object({}),
+    annotations: LECTURE,
+    run: lisible(async (_a, c) => ({ epingles: await seg.listerEpingles(c.ctx.tenantId) })),
+  },
+  {
+    name: "epingler",
+    title: "Épingler une entreprise",
+    description: "Ajoute une entreprise au dossier de travail, avec une note facultative.",
+    input: z.object({ siren: z.string().regex(/^\d{9}$/), nom: z.string().trim().min(1).max(200), note: z.string().max(500).optional() }),
+    annotations: { ...ECRITURE, idempotentHint: true },
+    visible: peutEcrire,
+    run: lisible(async (a, c) => seg.epingler(c.ctx.tenantId, { siren: a.siren as string, nom: a.nom as string, note: a.note as string | undefined }, auteur(c))),
+  },
+  {
+    name: "retirer_epingle",
+    title: "Retirer une entreprise du dossier",
+    description: "Retire une entreprise du dossier de travail.",
+    input: z.object({ siren: z.string().regex(/^\d{9}$/) }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    visible: peutEcrire,
+    run: lisible(async (a, c) => seg.retirerEpingle(c.ctx.tenantId, a.siren as string)),
   },
   {
     name: "lister_segments_atlas",

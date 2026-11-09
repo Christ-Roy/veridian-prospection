@@ -41,6 +41,19 @@ vi.mock("@/lib/prisma", () => {
         return r;
       },
       update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => Object.assign(t().find((r) => r.id === where.id)!, data),
+      upsert: async ({ where, create, update }: { where: { tenantId_siren: { tenantId: string; siren: string } }; create: Record<string, unknown>; update: Record<string, unknown> }) => {
+        const w = where.tenantId_siren;
+        const r = t().find((x) => x.tenantId === w.tenantId && x.siren === w.siren);
+        if (r) return Object.assign(r, Object.fromEntries(Object.entries(update).filter(([, v]) => v !== undefined)));
+        const n: Row = { id: randomUUID(), createdAt: new Date(), ...create };
+        t().push(n);
+        return n;
+      },
+      deleteMany: async ({ where }: { where: Record<string, unknown> }) => {
+        const avant = t().length;
+        db.tables[nom] = t().filter((r) => !match(r, where));
+        return { count: avant - db.tables[nom].length };
+      },
     };
   };
   const prisma = {
@@ -48,6 +61,7 @@ vi.mock("@/lib/prisma", () => {
     atlasSegment: modele("atlasSegment"),
     atlasSegmentVersion: modele("atlasSegmentVersion"),
     atlasScoringVersion: modele("atlasScoringVersion"),
+    atlasEpingle: modele("atlasEpingle"),
     $transaction: async (f: (tx: unknown) => unknown) => f(prisma),
   };
   return { prisma };
@@ -140,6 +154,27 @@ describe("Atlas par le MCP", () => {
     } finally {
       process.env.ATLAS_SIMULE = "1";
     }
+  });
+
+  test("fiche d'une entreprise, points d'un département, SIREN invalide refusé", async () => {
+    const pts = await appel(A, "points_carte", { filtre: {}, departement: "69", limite: 5 });
+    expect(pts.points).toHaveLength(5);
+    expect(pts.points[0]).toMatchObject({ siren: expect.any(String), lat: expect.any(Number), lon: expect.any(Number) });
+    const f = await appel(A, "fiche_entreprise_atlas", { siren: pts.points[0].siren });
+    expect(f.fiche.identite.siren).toBe(pts.points[0].siren);
+    expect((await appel(A, "fiche_entreprise_atlas", { siren: "12" })).erreur).toMatch(/SIREN/);
+    expect((await appel(A, "fiche_entreprise_atlas", { siren: "123456789" })).erreur).toMatch(/Aucune entreprise/);
+  });
+
+  test("dossier de travail : épingler, idempotent, lister, retirer ; invisible depuis un autre espace", async () => {
+    expect((await appel(A, "epingler", { siren: "900000001", nom: "Élevage test", note: "à rappeler" })).epingle).toBe(true);
+    await appel(A, "epingler", { siren: "900000001", nom: "Élevage test" });
+    const l = await appel(A, "lister_epingles");
+    expect(l.epingles).toHaveLength(1);
+    expect(l.epingles[0]).toMatchObject({ siren: "900000001", note: "à rappeler", auteur: "ia:claude" });
+    expect((await appel(ctx("tenant-B"), "lister_epingles")).epingles).toEqual([]);
+    expect((await appel(ctx("tenant-B"), "retirer_epingle", { siren: "900000001" })).erreur).toMatch(/aucune épingle/);
+    expect((await appel(A, "retirer_epingle", { siren: "900000001" })).epingle).toBe(false);
   });
 
   test("un lecteur explore mais ne crée rien", async () => {

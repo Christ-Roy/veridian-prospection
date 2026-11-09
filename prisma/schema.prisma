@@ -1295,3 +1295,18 @@ model AtlasScoringVersion {
   @@unique([segmentId, numero])
   @@map("atlas_scoring_versions")
 }
+
+/// Dossier de travail Atlas : entreprises épinglées par un humain ou une IA, par espace.
+model AtlasEpingle {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  siren     String
+  nom       String
+  note      String?
+  auteur    String
+  via       String   @default("interface")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([tenantId, siren])
+  @@map("atlas_epingles")
+}

@@ -26,6 +26,15 @@ Vision : `CLAUDE.md`, section « Vision produit ». Maquette : `docs/maquette/at
   recalculé à chaque release) ; le détail d'une case vient de `odh.search_company` (1 ligne par SIREN). Quand la
   phase démarre : envoyer à la session ODH la liste exacte des axes et mesures, elle étend prospection_ro au cube.
 
+## Flux produit (Robert, 09/11)
+
+Analyse du marché → définition de la cible → moteur de priorité (scoring froid) → envoi.
+- Marché = segment racine (pas de parent) : vues d'analyse (carte, répartitions, chiffres).
+- Cible = segment enfant d'un marché : hérite des conditions, ajoute les siennes ; plusieurs approches par marché.
+- Moteur de priorité = scoring de la cible ; le classement donne l'ordre d'envoi.
+- Envoi = la cible classée vers une liste Notifuse (phase suivante), dans l'ordre de priorité.
+L'interface suit ce flux ; les mots affichés sont « Marché », « Cible », « Priorité », « Envoi ».
+
 ## Modèle (pg-saas)
 
 - `atlas_dossiers` : arbre (parent_id), nom, tenant.
