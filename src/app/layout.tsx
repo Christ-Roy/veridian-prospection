@@ -1,17 +1,10 @@
-import type { Metadata } from "next";
-import { Suspense } from "react";
-import { Geist } from "next/font/google";
-import { Toaster } from "@/components/ui/sonner";
-import { SipShell } from "@/components/softphone/sip-shell";
-import { AppNav } from "@/components/layout/app-nav";
-import { getUserContext } from "@/lib/auth/user-context";
-import { TrialProvider } from "@/lib/trial-context";
-import { ClientErrorBoundary } from "@/components/client-error-boundary";
-import { KeyboardShortcutsHelp } from "@/components/keyboard-shortcuts-help";
-import { CommandPalette } from "@/components/command-palette";
-import { PwaManager } from "@/components/pwa-manager";
-import { SessionProviderClient } from "@/components/auth/session-provider-client";
+import type { Metadata, Viewport } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "next-themes";
+
+import { Toaster } from "@/components/ui/sonner";
+import { ClientErrorBoundary } from "@/components/client-error-boundary";
+import { SessionProviderClient } from "@/components/auth/session-provider-client";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -19,52 +12,49 @@ const geistSans = Geist({
   subsets: ["latin"],
 });
 
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
+
 export const metadata: Metadata = {
-  title: "Prospection .fr",
-  description: "Dashboard de prospection commerciale",
+  title: { default: "Atlas", template: "%s · Atlas" },
+  description: "Analyser un marché, définir ses cibles, les classer par priorité.",
   manifest: "/manifest.json",
-  themeColor: "#2563eb",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Prospection",
+    title: "Atlas",
   },
 };
 
-export default async function RootLayout({
+export const viewport: Viewport = {
+  themeColor: "#ffffff",
+  viewportFit: "cover",
+};
+
+/**
+ * Cadre technique seulement : session, thème clair, remontée des erreurs client, notifications.
+ * Atlas porte sa propre navigation (rail) ; l'ancienne barre de l'app n'est plus montée.
+ */
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // Fetch user context côté serveur pour passer isAdmin direct au nav.
-  // Évite la race condition où le lien Admin n'apparaît qu'après le fetch
-  // /api/me côté client.
-  const ctx = await getUserContext().catch(() => null);
-  const initialIsAdmin = ctx?.isAdmin ?? false;
-
   return (
     <html lang="fr">
       <head>
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
-      <body className={`${geistSans.variable} font-sans antialiased bg-gray-50 dark:bg-gray-950`}>
+      <body className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased bg-white`}>
         <SessionProviderClient>
-        <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
-        <ClientErrorBoundary />
-        <KeyboardShortcutsHelp />
-        <CommandPalette />
-        <TrialProvider>
-          <SipShell>
-            <Suspense><AppNav initialIsAdmin={initialIsAdmin} /></Suspense>
-            <main className="flex-1">
-              {children}
-            </main>
-          </SipShell>
-        </TrialProvider>
-        <PwaManager />
-        <Toaster richColors position="bottom-left" />
-        </ThemeProvider>
+          <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
+            <ClientErrorBoundary />
+            {children}
+            <Toaster richColors position="bottom-left" />
+          </ThemeProvider>
         </SessionProviderClient>
       </body>
     </html>

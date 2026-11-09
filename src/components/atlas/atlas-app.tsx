@@ -1,419 +1,759 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Filter, History, Loader2, Menu, Save, SlidersHorizontal, Undo2 } from "lucide-react";
+import "./atlas.css";
 
-import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { DEPARTMENT_NAMES } from "@/components/dashboard/france-map-data";
 
 import { appeler, ErreurAtlas, estAnnulation, texteErreur } from "./api";
-import { DialogueDossier, DialogueSegment } from "./dialogues";
-import { ContenuRail } from "./rail";
-import { SelecteurColonnes } from "./selecteur-colonnes";
-import { VoletFiltres, VoletHistorique, VoletScoring } from "./volets";
-import { VueCarte, VueRepartition, VueTableau } from "./vues";
-import { CHAMP_DEPARTEMENT, cheminDossier, combiner, conditionsHeritees, definirDepartements, departementsDuFiltre, filtresEgaux, formaterNombre, indexerChamps, phraseFiltre, sansConditionsDans } from "./logique";
-import type { ApercuMarche, Arbre, ChampInfo, Filtre, RepartitionMarche, SegmentDetail, Vue } from "./types";
+import { Carte } from "./carte";
+import { departementsFiltre, titreZone } from "./carte-logique";
+import { DialogueCreation, type Creation } from "./dialogues";
+import {
+  avecCondition,
+  avecDepartement,
+  estAuteurIA,
+  estMarche,
+  etapeCourante,
+  etapesEntonnoir,
+  initialeAuteur,
+  joursEnvoi,
+  kpisDisponibles,
+  marcheDe,
+  nomAuteur,
+  phraseActivite,
+  sectionsRail,
+  segmentsChanges,
+  ciblesDe,
+} from "./flux";
+import { Chargement, Icone, type NomIcone } from "./icones";
+import { cheminDossier, combiner, conditionsHeritees, formaterNombre, indexerChamps, phraseFiltre } from "./logique";
+import { PopoverFiltres } from "./popover-filtres";
+import { Rail, type IAVue } from "./rail";
+import type { ApercuMarche, Arbre, ChampInfo, Epingle, Filtre, Historique, SegmentArbre, SegmentDetail, Vue } from "./types";
+import { VoletDossier, VoletFiche, VoletHistorique } from "./volets";
+import { VueBarres, VueEntonnoir, VuePriorite, VueTableau } from "./vues";
 
-const PAR_PAGE = 20;
-const COLONNES_LIBRES = ["nom", "commune", "departement", "naf", "taille", "site"];
+const COLONNES_LIBRES = ["nom", "commune", "departement", "naf", "taille", "chiffre_affaires", "site", "email"];
 const FILTRE_VIDE: Filtre = { conditions: [] };
+const SONDE_MS = 15_000;
+
+type Volet = { type: "fiche"; siren: string; nom: string } | { type: "dossier" } | { type: "historique" } | null;
+type Apercu = { version: number; filtre: Filtre } | null;
+
+const VUES: { id: Vue; libelle: string; icone: NomIcone }[] = [
+  { id: "carte", libelle: "Carte", icone: "carte" },
+  { id: "barres", libelle: "Répartition", icone: "barres" },
+  { id: "entonnoir", libelle: "Entonnoir", icone: "entonnoir" },
+  { id: "tableau", libelle: "Entreprises", icone: "tableau" },
+  { id: "priorite", libelle: "Priorité", icone: "priorite" },
+];
+
+const heure = () => new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+
+/** Relance une animation CSS (la classe `flash` de la maquette) sur un élément. */
+function flasher(el: Element | null) {
+  if (!el) return;
+  el.classList.remove("flash");
+  void (el as HTMLElement).offsetWidth;
+  el.classList.add("flash");
+}
 
 export function AtlasApp() {
+  // ---- socle : catalogue, arbre, droits
   const [champs, setChamps] = useState<ChampInfo[] | null>(null);
   const [arbre, setArbre] = useState<Arbre | null>(null);
+  const [peutEcrire, setPeutEcrire] = useState(false);
   const [erreurInit, setErreurInit] = useState<{ message: string; status: number } | null>(null);
-  const [ecriture, setEcriture] = useState(false);
-  const [initCompteur, setInitCompteur] = useState(0);
+  const [essaiInit, setEssaiInit] = useState(0);
 
+  // ---- ce qui est regardé
   const [selection, setSelection] = useState<string | null>(null);
   const [detail, setDetail] = useState<SegmentDetail | null>(null);
   const [rechargeDetail, setRechargeDetail] = useState(0);
   const [travail, setTravail] = useState<Filtre>(FILTRE_VIDE);
-  const [colonnes, setColonnes] = useState<string[]>(COLONNES_LIBRES);
-  const [vue, setVue] = useState<Vue>("tableau");
-  const [page, setPage] = useState(1);
-  const [champRep, setChampRep] = useState("naf_division");
-  const [scoringVersion, setScoringVersion] = useState<number | null>(null);
+  const [colonnesLibres, setColonnesLibres] = useState<string[]>(COLONNES_LIBRES);
+  const [apercu, setApercu] = useState<Apercu>(null);
+  const [vue, setVue] = useState<Vue>("carte");
+  const [descente, setDescente] = useState<string | null>(null);
+  const [versionComparee, setVersionComparee] = useState<number | null>(null);
+  const [rafraichir, setRafraichir] = useState(0);
 
-  const [apercu, setApercu] = useState<ApercuMarche | null>(null);
-  const [rep, setRep] = useState<RepartitionMarche | null>(null);
-  const [chargement, setChargement] = useState(false);
-  const [chargementRep, setChargementRep] = useState(false);
-  const [erreur, setErreur] = useState<string | null>(null);
+  // ---- chiffres clés
+  const [kpis, setKpis] = useState<Record<string, number> | null>(null);
+  const [kpisBusy, setKpisBusy] = useState(false);
   const [simulee, setSimulee] = useState(false);
-  const [enregistrement, setEnregistrement] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
 
-  const [filtresOuvert, setFiltresOuvert] = useState(false);
-  const [scoringOuvert, setScoringOuvert] = useState(false);
-  const [histoOuvert, setHistoOuvert] = useState(false);
-  const [dossierOuvert, setDossierOuvert] = useState(false);
-  const [segmentOuvert, setSegmentOuvert] = useState(false);
-  const [menuOuvert, setMenuOuvert] = useState(false);
-  const [versionsCompteur, setVersionsCompteur] = useState(0);
+  // ---- surfaces
+  const [pop, setPop] = useState(false);
+  const [volet, setVolet] = useState<Volet>(null);
+  const [creation, setCreation] = useState<Creation | null>(null);
+  const [railOuvert, setRailOuvert] = useState(false);
+  const [toast, setToast] = useState<{ texte: string; ko?: boolean } | null>(null);
+
+  // ---- dossier de travail
+  const [epingles, setEpingles] = useState<Epingle[] | null>(null);
+  const [erreurEpingles, setErreurEpingles] = useState<string | null>(null);
+
+  // ---- présence de l'IA
+  const [activite, setActivite] = useState<{ ia: string; texte: string } | null>(null);
+  const [ias, setIas] = useState<IAVue[]>([]);
+  const [clignote, setClignote] = useState<string | null>(null);
+  const reference = useRef<SegmentArbre[] | null>(null);
+  const referenceEpingles = useRef<Set<string> | null>(null);
+  const selectionRef = useRef<string | null>(null);
+  const zoneRef = useRef<HTMLDivElement>(null);
+  const kpisRef = useRef<HTMLDivElement>(null);
+  const dossierRef = useRef<HTMLButtonElement>(null);
+  const premiereSelection = useRef(false);
 
   const index = useMemo(() => indexerChamps(champs ?? []), [champs]);
-  const champsRepartition = useMemo(() => (champs ?? []).filter((c) => c.repartition), [champs]);
 
-  // ---- chargement initial : catalogue, arbre, droit d'écriture
+  const notifier = useCallback((texte: string, ko = false) => setToast({ texte, ko }), []);
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3200);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  // ---------------------------------------------------------------- chargement initial
   useEffect(() => {
     const ctl = new AbortController();
-    Promise.all([
-      appeler<{ champs: ChampInfo[] }>("lister_champs", {}, ctl.signal),
-      appeler<Arbre>("lister_segments_atlas", {}, ctl.signal),
-    ])
+    Promise.all([appeler<{ champs: ChampInfo[] }>("lister_champs", {}, ctl.signal), appeler<Arbre>("lister_segments_atlas", {}, ctl.signal)])
       .then(([c, a]) => {
         setChamps(c.champs);
         setArbre(a);
-        setEcriture(a.peut_ecrire === true);
+        reference.current = a.segments;
+        setPeutEcrire(a.peut_ecrire === true);
         setErreurInit(null);
+        if (!premiereSelection.current) {
+          premiereSelection.current = true;
+          const premier = sectionsRail(a)[0]?.marches[0];
+          if (premier) setSelection(premier.id);
+        }
       })
       .catch((e) => !estAnnulation(e) && setErreurInit({ message: texteErreur(e), status: e instanceof ErreurAtlas ? e.status : 0 }));
     return () => ctl.abort();
-  }, [initCompteur]);
+  }, [essaiInit]);
+
+  const chargerEpingles = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const r = await appeler<{ epingles: Epingle[] }>("lister_epingles", {}, signal);
+      setEpingles(r.epingles);
+      setErreurEpingles(null);
+      return r.epingles;
+    } catch (e) {
+      if (!estAnnulation(e)) setErreurEpingles(texteErreur(e));
+      return null;
+    }
+  }, []);
+  useEffect(() => {
+    const ctl = new AbortController();
+    void chargerEpingles(ctl.signal).then((l) => {
+      if (l) referenceEpingles.current = new Set(l.map((e) => e.siren));
+    });
+    return () => ctl.abort();
+  }, [chargerEpingles]);
 
   const rechargerArbre = useCallback(async () => {
     try {
-      setArbre(await appeler<Arbre>("lister_segments_atlas"));
+      const a = await appeler<Arbre>("lister_segments_atlas");
+      reference.current = a.segments;
+      setArbre(a);
+      setPeutEcrire(a.peut_ecrire === true);
     } catch (e) {
-      setErreur(texteErreur(e));
+      notifier(texteErreur(e), true);
     }
-  }, []);
+  }, [notifier]);
 
-  // ---- segment sélectionné
+  // ---------------------------------------------------------------- segment regardé
   useEffect(() => {
-    if (!selection) return;
+    selectionRef.current = selection;
+  }, [selection]);
+
+  useEffect(() => {
+    if (!selection) {
+      setDetail(null);
+      return;
+    }
     const ctl = new AbortController();
     appeler<SegmentDetail>("lire_segment", { segment_id: selection }, ctl.signal)
       .then((d) => {
         setDetail(d);
         setTravail(d.filtre);
-        setColonnes(d.colonnes.length ? d.colonnes : COLONNES_LIBRES);
         if (d.donnees_simulees) setSimulee(true);
       })
       .catch((e) => !estAnnulation(e) && setErreur(texteErreur(e)));
     return () => ctl.abort();
   }, [selection, rechargeDetail]);
 
-  const choisir = (id: string | null) => {
-    setSelection(id);
-    setDetail(null);
-    setApercu(null);
-    setErreur(null);
-    setPage(1);
-    setScoringVersion(null);
-    setTravail(FILTRE_VIDE);
-    setColonnes(COLONNES_LIBRES);
-    setMenuOuvert(false);
-  };
+  const choisir = useCallback(
+    (id: string | null) => {
+      if (id === selection) return setRailOuvert(false);
+      setSelection(id);
+      setDetail(null);
+      setTravail(FILTRE_VIDE);
+      setApercu(null);
+      setDescente(null);
+      setVersionComparee(null);
+      setErreur(null);
+      setPop(false);
+      setRailOuvert(false);
+      setVolet((v) => (v?.type === "historique" ? null : v));
+      setVue((v) => (v === "priorite" ? "carte" : v));
+    },
+    [selection],
+  );
+
+  const segment = arbre && selection ? (arbre.segments.find((s) => s.id === selection) ?? null) : null;
+  const marche = arbre && selection ? marcheDe(arbre, selection) : null;
+  const estCible = !!(segment && arbre && !estMarche(segment, arbre));
+  const attente = !!selection && !detail;
+  const ecritureSegment = !!selection && peutEcrire;
 
   const heritees = useMemo(() => (detail ? conditionsHeritees(detail.filtre_effectif, detail.filtre) : []), [detail]);
-  const filtreComplet = useMemo(() => combiner(travail, heritees), [travail, heritees]);
-  const cleFiltre = JSON.stringify(filtreComplet);
-  const modifie = !!detail && !filtresEgaux(travail, detail.filtre);
-  const classer = !!detail && !modifie;
-  const attente = !!selection && !detail;
+  const propres = apercu ? apercu.filtre : travail;
+  const filtreVue = useMemo(() => combiner(propres, heritees), [propres, heritees]);
+  const cleVue = JSON.stringify(filtreVue);
+  const filtreChiffres = useMemo(() => avecDepartement(filtreVue, descente), [filtreVue, descente]);
+  const cleChiffres = JSON.stringify(filtreChiffres);
+  const colonnes = detail?.colonnes.length ? detail.colonnes : colonnesLibres;
+  const listeKpis = useMemo(() => kpisDisponibles(index), [index]);
 
-  const changerFiltre = (f: Filtre) => {
+  // ---------------------------------------------------------------- chiffres clés
+  useEffect(() => {
+    if (attente || !champs) return;
+    const ctl = new AbortController();
+    const f = JSON.parse(cleChiffres) as Filtre;
+    setKpisBusy(true);
+    Promise.all(
+      listeKpis.map((k) =>
+        appeler<ApercuMarche>("explorer_marche", { filtre: k.condition ? avecCondition(f, k.condition) : f, colonnes: ["nom"], page: 1, par_page: 1 }, ctl.signal).then((r) => {
+          if (r.donnees_simulees) setSimulee(true);
+          return [k.id, r.total] as const;
+        }),
+      ),
+    )
+      .then((r) => {
+        setKpis(Object.fromEntries(r));
+        setErreur(null);
+      })
+      .catch((e) => !estAnnulation(e) && setErreur(texteErreur(e)))
+      .finally(() => !ctl.signal.aborted && setKpisBusy(false));
+    return () => ctl.abort();
+  }, [attente, champs, cleChiffres, listeKpis, rafraichir]);
+
+  // ---------------------------------------------------------------- écriture
+  const ecritureRefusee = useCallback(() => {
+    setPeutEcrire(false);
+    notifier("Écriture refusée : votre rôle sur cet espace est en lecture seule.", true);
+  }, [notifier]);
+
+  const changerFiltre = async (f: Filtre) => {
+    setApercu(null);
+    const avant = travail;
     setTravail(f);
-    setPage(1);
-  };
-
-  // ---- tableau (et total)
-  const versionDetail = detail?.version;
-  const versionScoring = detail?.scoring?.version;
-  useEffect(() => {
-    if (attente) return;
-    const ctl = new AbortController();
-    const filtre = JSON.parse(cleFiltre) as Filtre;
-    setChargement(true);
-    setErreur(null);
-    const req = classer
-      ? appeler<ApercuMarche>("classer_segment", { segment_id: selection, page, par_page: PAR_PAGE, ...(scoringVersion ? { scoring_version: scoringVersion } : {}) }, ctl.signal)
-      : appeler<ApercuMarche>("explorer_marche", { filtre, colonnes, page, par_page: PAR_PAGE }, ctl.signal);
-    req
-      .then((r) => {
-        setApercu(r);
-        if (r.donnees_simulees) setSimulee(true);
-      })
-      .catch((e) => !estAnnulation(e) && setErreur(texteErreur(e)))
-      .finally(() => !ctl.signal.aborted && setChargement(false));
-    return () => ctl.abort();
-  }, [attente, classer, selection, cleFiltre, colonnes, page, scoringVersion, versionDetail, versionScoring]);
-
-  // ---- carte et répartition
-  const champVue = vue === "carte" ? CHAMP_DEPARTEMENT : champRep;
-  useEffect(() => {
-    if (attente || vue === "tableau") return;
-    const ctl = new AbortController();
-    const brut = JSON.parse(cleFiltre) as Filtre;
-    const filtre = vue === "carte" ? sansConditionsDans(brut, CHAMP_DEPARTEMENT) : brut;
-    setChargementRep(true);
-    appeler<RepartitionMarche>("repartir_marche", { filtre, champ: champVue, limite: vue === "carte" ? 120 : 30 }, ctl.signal)
-      .then((r) => {
-        setRep(r);
-        if (r.donnees_simulees) setSimulee(true);
-      })
-      .catch((e) => !estAnnulation(e) && setErreur(texteErreur(e)))
-      .finally(() => !ctl.signal.aborted && setChargementRep(false));
-    return () => ctl.abort();
-  }, [attente, vue, champVue, cleFiltre]);
-
-  // ---- actions d'écriture
-  const ecritureRefusee = () => setEcriture(false);
-
-  const changerColonnes = async (c: string[]) => {
-    if (c.length === 0) return;
-    if (selection && ecriture) {
-      try {
-        await appeler("modifier_segment", { segment_id: selection, colonnes: c });
-        setColonnes(c);
-        setDetail((d) => (d ? { ...d, colonnes: c } : d));
-      } catch (e) {
-        setErreur(texteErreur(e));
-        if (e instanceof ErreurAtlas && e.status === 404) ecritureRefusee();
-      }
-    } else setColonnes(c);
-  };
-
-  const enregistrerVersion = async () => {
-    if (!selection) return;
-    setEnregistrement(true);
+    if (!selection || !peutEcrire) return;
     try {
-      await appeler("modifier_segment", { segment_id: selection, filtre: travail });
+      const r = await appeler<{ version: number }>("modifier_segment", { segment_id: selection, filtre: f });
+      notifier(`v${r.version} enregistrée`);
       setRechargeDetail((n) => n + 1);
-      setVersionsCompteur((n) => n + 1);
+      setRafraichir((n) => n + 1);
       await rechargerArbre();
     } catch (e) {
-      setErreur(texteErreur(e));
+      setTravail(avant);
+      notifier(texteErreur(e), true);
       if (e instanceof ErreurAtlas && e.status === 404) ecritureRefusee();
-    } finally {
-      setEnregistrement(false);
     }
   };
 
-  const apresCreation = async (id: string | null) => {
-    await rechargerArbre();
-    if (id) choisir(id);
+  const changerColonnes = async (c: string[]) => {
+    if (!selection || !detail) return setColonnesLibres(c);
+    setDetail({ ...detail, colonnes: c });
+    if (!peutEcrire) return;
+    try {
+      await appeler("modifier_segment", { segment_id: selection, colonnes: c });
+    } catch (e) {
+      notifier(texteErreur(e), true);
+      if (e instanceof ErreurAtlas && e.status === 404) ecritureRefusee();
+    }
   };
 
-  // ---- rendu
+  const epingler = useCallback(
+    async (siren: string, nom: string) => {
+      try {
+        await appeler("epingler", { siren, nom });
+        const l = await chargerEpingles();
+        if (l) referenceEpingles.current = new Set(l.map((e) => e.siren));
+        flasher(dossierRef.current);
+        notifier("Ajoutée au dossier de travail");
+      } catch (e) {
+        notifier(texteErreur(e), true);
+        if (e instanceof ErreurAtlas && e.status === 404) ecritureRefusee();
+      }
+    },
+    [chargerEpingles, ecritureRefusee, notifier],
+  );
+  const retirer = useCallback(
+    async (siren: string) => {
+      try {
+        await appeler("retirer_epingle", { siren });
+        const l = await chargerEpingles();
+        if (l) referenceEpingles.current = new Set(l.map((e) => e.siren));
+      } catch (e) {
+        notifier(texteErreur(e), true);
+        if (e instanceof ErreurAtlas && e.status === 404) ecritureRefusee();
+      }
+    },
+    [chargerEpingles, ecritureRefusee, notifier],
+  );
+
+  // ---------------------------------------------------------------- présence de l'IA (sonde 15 s)
+  const signalerIA = useCallback((ia: string, texte: string) => {
+    setActivite({ ia, texte });
+    setIas((l) => [{ nom: ia, heure: heure() }, ...l.filter((x) => x.nom !== ia)]);
+  }, []);
+  useEffect(() => {
+    if (!activite) return;
+    const t = setTimeout(() => setActivite(null), 6000);
+    return () => clearTimeout(t);
+  }, [activite]);
+
+  useEffect(() => {
+    if (!champs) return;
+    let vivant = true;
+    const sonder = async () => {
+      if (document.hidden) return;
+      try {
+        const a = await appeler<Arbre>("lister_segments_atlas");
+        if (!vivant) return;
+        const changes = segmentsChanges(reference.current, a.segments);
+        reference.current = a.segments;
+        if (changes.length) {
+          setArbre(a);
+          setPeutEcrire(a.peut_ecrire === true);
+        }
+        for (const c of changes.slice(0, 3)) {
+          const h = await appeler<Historique>("historique_segment", { segment_id: c.id });
+          const derniere = c.scoring ? h.scoring[0] : h.filtre[0];
+          if (!vivant || !derniere || !estAuteurIA(derniere.auteur)) continue;
+          signalerIA(nomAuteur(derniere.auteur), phraseActivite(nomAuteur(derniere.auteur), c));
+          setClignote(c.id);
+          if (c.id === selectionRef.current) {
+            setRechargeDetail((n) => n + 1);
+            setRafraichir((n) => n + 1);
+            flasher(zoneRef.current);
+            flasher(kpisRef.current);
+          }
+        }
+        const l = await appeler<{ epingles: Epingle[] }>("lister_epingles");
+        if (!vivant) return;
+        const connus = referenceEpingles.current;
+        const nouvelles = connus ? l.epingles.filter((e) => !connus.has(e.siren)) : [];
+        referenceEpingles.current = new Set(l.epingles.map((e) => e.siren));
+        setEpingles(l.epingles);
+        const parIA = nouvelles.filter((e) => estAuteurIA(e.auteur));
+        if (parIA.length) {
+          const ia = nomAuteur(parIA[0].auteur);
+          signalerIA(ia, parIA.length > 1 ? `${ia} a ajouté ${parIA.length} entreprises au dossier` : `${ia} a ajouté « ${parIA[0].nom} » au dossier`);
+          flasher(dossierRef.current);
+        }
+      } catch {
+        // Sonde silencieuse : la prochaine passe réessaie ; les écrans affichent leurs propres erreurs.
+      }
+    };
+    const t = setInterval(() => void sonder(), SONDE_MS);
+    return () => {
+      vivant = false;
+      clearInterval(t);
+    };
+  }, [champs, signalerIA]);
+
+  useEffect(() => {
+    if (!clignote) return;
+    const t = setTimeout(() => setClignote(null), 1500);
+    return () => clearTimeout(t);
+  }, [clignote]);
+
+  // ---------------------------------------------------------------- menu mobile : clic dehors
+  useEffect(() => {
+    if (!railOuvert) return;
+    const dehors = (e: MouseEvent) => {
+      const t = e.target as Element;
+      if (!t.closest("#atlas-rail") && !t.closest("[data-atlas-menu]")) setRailOuvert(false);
+    };
+    document.addEventListener("mousedown", dehors);
+    return () => document.removeEventListener("mousedown", dehors);
+  }, [railOuvert]);
+
+  const fermerPop = useCallback(() => setPop(false), []);
+  const fermerVolet = useCallback(() => {
+    setVolet(null);
+  }, []);
+  const fermerCreation = useCallback(() => setCreation(null), []);
+  const ouvrirFiche = useCallback((siren: string, nom: string) => setVolet({ type: "fiche", siren, nom }), []);
+
+  // ---------------------------------------------------------------- rendu
   if (erreurInit) {
     return (
-      <div className="mx-auto flex max-w-md flex-col items-center gap-3 p-10 text-center" role="alert">
-        <AlertTriangle className="size-8 text-destructive" />
-        <p className="text-sm">{erreurInit.message}</p>
-        {erreurInit.status === 401 ? (
-          <Button asChild>
-            <a href="/login">Se reconnecter</a>
-          </Button>
-        ) : (
-          <Button variant="outline" onClick={() => setInitCompteur((n) => n + 1)}>
-            Réessayer
-          </Button>
-        )}
+      <div className="atlas">
+        <div className="boot" role="alert">
+          <div>
+            <Icone nom="alerte" />
+            <p>{erreurInit.message}</p>
+            {erreurInit.status === 401 ? (
+              <a className="btn pri" href="/login">
+                Se reconnecter
+              </a>
+            ) : (
+              <button type="button" className="btn" onClick={() => setEssaiInit((n) => n + 1)}>
+                Réessayer
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+  if (!champs || !arbre) {
+    return (
+      <div className="atlas">
+        <div className="boot">
+          <div>
+            <div className="logo">
+              <i />
+              <span>Atlas</span>
+            </div>
+            <Chargement texte="Ouverture d'Atlas…" />
+          </div>
+        </div>
       </div>
     );
   }
 
-  const propsRail = {
-    arbre,
-    chargement: !arbre,
-    erreur: null,
-    selection,
-    onSelection: choisir,
-    peutEcrire: ecriture,
-    onNouveauDossier: () => setDossierOuvert(true),
-    onNouveauSegment: () => setSegmentOuvert(true),
-  };
+  const chemin = segment ? cheminDossier(arbre, segment.dossier_id) : [];
+  const zone = titreZone(departementsFiltre(filtreVue), DEPARTMENT_NAMES);
+  const nbFiltres = propres.conditions.length + (propres.inclure_bloques ? 1 : 0);
+  const etape = etapeCourante(arbre, selection, vue === "priorite");
+  const vuesPermises = VUES.filter((v) => v.id !== "priorite" || estCible);
+  const nbCibles = marche ? ciblesDe(arbre, marche.id).length : 0;
+  const versionAffichee = apercu?.version ?? detail?.version ?? segment?.version ?? null;
+  const epingle = (siren: string) => !!epingles?.some((e) => e.siren === siren);
+  const presenceLive = !!activite;
+  const derniere = ias[0];
 
-  const segmentArbre = arbre?.segments.find((s) => s.id === selection);
-  const chemin = arbre && segmentArbre ? cheminDossier(arbre, segmentArbre.dossier_id) : [];
-  const nbConditions = travail.conditions.length + (travail.inclure_bloques ? 1 : 0);
-  const total = apercu?.total;
+  const etapes: { id: string; libelle: string; etat: "on" | "done" | ""; action?: () => void; aide?: string }[] = [
+    {
+      id: "marche",
+      libelle: marche ? `Marché · ${marche.nom}` : "Marché",
+      etat: etape === "marche" ? "on" : "done",
+      action: marche && selection !== marche.id ? () => choisir(marche.id) : undefined,
+    },
+    {
+      id: "cible",
+      libelle: estCible && segment ? `Cible · ${segment.nom}` : nbCibles ? `Cibles (${nbCibles})` : "Cible",
+      etat: etape === "cible" ? "on" : etape === "priorite" ? "done" : "",
+      action:
+        etape === "priorite"
+          ? () => setVue("carte")
+          : marche && !estCible
+            ? nbCibles
+              ? () => choisir(ciblesDe(arbre, marche.id)[0].segment.id)
+              : peutEcrire
+                ? () => setCreation({ type: "cible", marche, colonnes })
+                : undefined
+            : undefined,
+      aide: marche && !estCible && !nbCibles ? "Créer une première cible" : undefined,
+    },
+    { id: "priorite", libelle: detail?.scoring ? `Priorité v${detail.scoring.version}` : "Priorité", etat: etape === "priorite" ? "on" : "", action: estCible ? () => setVue("priorite") : undefined },
+    { id: "envoi", libelle: "Envoi · bientôt", etat: "" },
+  ];
 
   return (
-    <div className="flex min-h-[calc(100dvh-4rem)] bg-white">
-      {/* Rail : replié en icônes, s'ouvre au survol ; sous 720 px, un menu */}
-      <div className="relative hidden w-14 shrink-0 min-[720px]:block">
-        <nav aria-label="Dossiers et segments" className="group absolute inset-y-0 left-0 z-20 w-14 overflow-hidden border-r bg-neutral-50 transition-[width,box-shadow] duration-200 focus-within:w-64 focus-within:shadow-xl hover:w-64 hover:shadow-xl">
-          <div className="w-64 h-full">
-            <ContenuRail {...propsRail} replie />
-          </div>
-        </nav>
-      </div>
-      <Sheet open={menuOuvert} onOpenChange={setMenuOuvert}>
-        <SheetContent side="left" className="w-72 p-0">
-          <SheetTitle className="sr-only">Dossiers et segments</SheetTitle>
-          <SheetDescription className="sr-only">Choisir un segment ou explorer le marché</SheetDescription>
-          <ContenuRail {...propsRail} replie={false} />
-        </SheetContent>
-      </Sheet>
+    <div className="atlas">
+      <Rail
+        arbre={arbre}
+        erreur={null}
+        selection={selection}
+        ouvert={railOuvert}
+        peutEcrire={peutEcrire}
+        ias={ias}
+        clignote={clignote}
+        onSelection={choisir}
+        onCreer={(type, m) => {
+          setRailOuvert(false);
+          if (type === "dossier") setCreation({ type: "dossier" });
+          else if (type === "cible" && m) setCreation({ type: "cible", marche: m, colonnes });
+          else setCreation({ type: "marche", filtre: selection ? null : travail, colonnes });
+        }}
+      />
 
-      <section className="flex min-w-0 flex-1 flex-col gap-4 px-4 py-5 min-[720px]:px-7" aria-label="Atlas">
-        {simulee && (
-          <p role="status" className="rounded-md bg-amber-50 px-3 py-1.5 text-xs text-amber-800">
-            Données simulées : ces chiffres sont inventés, la vraie base n&apos;est pas branchée.
-          </p>
-        )}
-
-        <header className="flex flex-col gap-3">
-          <div className="flex items-start gap-3">
-            <Button variant="outline" size="icon-sm" className="min-[720px]:hidden" aria-label="Ouvrir les dossiers et segments" onClick={() => setMenuOuvert(true)}>
-              <Menu />
-            </Button>
-            <div className="min-w-0 flex-1">
-              {chemin.length > 0 && <p className="truncate text-xs text-muted-foreground">{chemin.join(" › ")}</p>}
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="truncate text-2xl font-semibold tracking-tight">{selection ? (detail?.nom ?? segmentArbre?.nom ?? "Segment") : "Explorer le marché"}</h1>
-                {detail && (
-                  <button
-                    type="button"
-                    onClick={() => setHistoOuvert(true)}
-                    className="inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 font-mono text-xs hover:bg-muted focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
-                    aria-label={`Version ${detail.version}, ouvrir l'historique`}
-                  >
-                    <History className="size-3" />v{detail.version}
-                  </button>
+      <div className="main">
+        <header className="top">
+          <button type="button" className="x menu" aria-label="Menu des marchés" aria-expanded={railOuvert} aria-controls="atlas-rail" data-atlas-menu onClick={() => setRailOuvert((o) => !o)}>
+            <Icone nom="menu" />
+          </button>
+          <div className="vname">
+            {segment ? (
+              <>
+                <span className="k">{estCible ? "Cible" : "Marché"}</span>
+                {estCible && marche ? (
+                  <>
+                    <span className="hide-s">{marche.nom}</span>
+                    <span className="hide-s">/</span>
+                  </>
+                ) : (
+                  chemin.length > 0 && (
+                    <>
+                      <span className="hide-s">{chemin.join(" › ")}</span>
+                      <span className="hide-s">/</span>
+                    </>
+                  )
                 )}
-              </div>
-              <p className="mt-1 text-sm text-muted-foreground">
-                <span className="text-xl font-semibold tabular-nums text-foreground">{total === undefined ? "…" : formaterNombre(total)}</span> entreprises
-                {classer && detail?.scoring ? ` · scoring v${scoringVersion ?? detail.scoring.version}` : ""}
-              </p>
-            </div>
+                <b>{segment.nom}</b>
+              </>
+            ) : (
+              <>
+                <span>Atlas</span>
+                <span>/</span>
+                <b>Tout le marché</b>
+              </>
+            )}
           </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setFiltresOuvert(true)}>
-              <Filter /> Filtres
-              {nbConditions > 0 && <span className="rounded-full bg-muted px-1.5 text-[11px]">{nbConditions}</span>}
-            </Button>
-            <p className="min-w-0 flex-1 text-sm text-muted-foreground" title={phraseFiltre(filtreComplet, index)}>
-              {phraseFiltre(travail, index)}
-              {heritees.length > 0 && <span> · hérité du segment parent : {phraseFiltre({ conditions: heritees }, index)}</span>}
-            </p>
+          {segment && versionAffichee !== null && (
+            <button type="button" className={apercu ? "pill preview" : "pill"} title="Historique des versions" aria-label={`Version ${versionAffichee}${apercu ? ", aperçu" : ""} : ouvrir l'historique`} onClick={() => setVolet({ type: "historique" })}>
+              {apercu ? `v${apercu.version} · aperçu` : `v${versionAffichee}`}
+            </button>
+          )}
+          <span className="sp" />
+          <div className={presenceLive ? "presence live" : derniere ? "presence" : "presence idle"} role="status" aria-live="polite">
+            <span className="av" aria-hidden>
+              {initialeAuteur(activite?.ia ?? derniere?.nom ?? "IA")}
+            </span>
+            <span>{activite ? activite.texte : derniere ? `${derniere.nom} · actif à ${derniere.heure}` : "Aucune IA active"}</span>
           </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Tabs value={vue} onValueChange={(v) => setVue(v as Vue)}>
-              <TabsList>
-                <TabsTrigger value="tableau">Tableau</TabsTrigger>
-                <TabsTrigger value="carte">Carte</TabsTrigger>
-                <TabsTrigger value="repartition">Répartition</TabsTrigger>
-              </TabsList>
-            </Tabs>
-            <div className="ml-auto flex flex-wrap items-center gap-2">
-              {vue === "tableau" && champs && <SelecteurColonnes champs={champs} colonnes={colonnes} onChange={changerColonnes} />}
-              {selection && ecriture && detail && (
-                <Button variant="outline" size="sm" onClick={() => setScoringOuvert(true)}>
-                  <SlidersHorizontal /> Scoring
-                </Button>
-              )}
-              {modifie && (
-                <>
-                  <Button variant="ghost" size="sm" onClick={() => detail && changerFiltre(detail.filtre)}>
-                    <Undo2 /> Annuler
-                  </Button>
-                  {ecriture && (
-                    <Button size="sm" onClick={enregistrerVersion} disabled={enregistrement}>
-                      {enregistrement ? <Loader2 className="animate-spin" /> : <Save />} Enregistrer une version
-                    </Button>
-                  )}
-                </>
-              )}
-              {!selection && ecriture && nbConditions > 0 && (
-                <Button size="sm" onClick={() => setSegmentOuvert(true)}>
-                  <Save /> Enregistrer comme segment
-                </Button>
-              )}
-            </div>
-          </div>
+          {segment && !estCible && peutEcrire && marche && (
+            <button type="button" className="btn ghost hide-s" onClick={() => setCreation({ type: "cible", marche, colonnes })}>
+              <Icone nom="cible" />
+              Nouvelle cible
+            </button>
+          )}
+          {!segment && peutEcrire && nbFiltres > 0 && (
+            <button type="button" className="btn ghost hide-s" onClick={() => setCreation({ type: "marche", filtre: travail, colonnes })}>
+              <Icone nom="plus" />
+              Enregistrer comme marché
+            </button>
+          )}
+          <button type="button" className="btn pri" aria-disabled="true" title="Bientôt : la cible classée part vers une liste Notifuse, dans l'ordre de priorité" onClick={(e) => e.preventDefault()}>
+            <Icone nom="envoi" />
+            <span className="hide-s">Envoyer vers Notifuse</span>
+            <span className="sr-only"> (bientôt)</span>
+          </button>
         </header>
 
-        {erreur && (
-          <p role="alert" className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-            <AlertTriangle className="size-4 shrink-0" /> {erreur}
-          </p>
-        )}
+        <main className="page">
+          {simulee && <p className="banner">Données simulées : ces chiffres sont inventés, la base ODH n&apos;est pas branchée sur cet environnement.</p>}
+          {selection && !peutEcrire && <p className="banner">Lecture seule : vos changements de filtres ne s&apos;enregistrent pas sur cet espace.</p>}
 
-        <div className="min-h-80">
-          {(attente || (!apercu && chargement)) && !erreur && (
-            <p className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" /> Chargement…
+          <ol className="flux" aria-label="Étapes : marché, cible, priorité, envoi">
+            {etapes.map((e, i) => (
+              <li key={e.id}>
+                {i > 0 && (
+                  <span className="chev" aria-hidden>
+                    <Icone nom="chev" />
+                  </span>
+                )}
+                {e.action ? (
+                  <button type="button" className={e.etat} onClick={e.action} aria-current={e.etat === "on" ? "step" : undefined} title={e.aide}>
+                    <span className="b">{i + 1}</span>
+                    {e.libelle}
+                  </button>
+                ) : (
+                  <span className={`st ${e.etat}`} aria-current={e.etat === "on" ? "step" : undefined} title={e.id === "envoi" ? "Bientôt" : undefined}>
+                    <span className="b">{i + 1}</span>
+                    {e.libelle}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ol>
+
+          <div className="head">
+            <div style={{ position: "relative", minWidth: 0 }} ref={zoneRef}>
+              <h1 className="geo">
+                {descente ? (
+                  <>
+                    <button type="button" onClick={() => setDescente(null)} aria-label={`Remonter à ${zone}`}>
+                      <Icone nom="retour" />
+                      {zone}
+                    </button>
+                    <span className="sep">/</span>
+                    <span>{DEPARTMENT_NAMES[descente] ?? descente}</span>
+                  </>
+                ) : (
+                  <span>{zone}</span>
+                )}
+              </h1>
+              <div className="summary">
+                <button type="button" className="fbtn" aria-expanded={pop} aria-haspopup="dialog" data-atlas-filtres onClick={() => setPop((o) => !o)} disabled={!!apercu}>
+                  <Icone nom="filtre" />
+                  Filtres <i>{nbFiltres}</i>
+                </button>
+                <span>{attente ? "…" : phraseFiltre(propres, index)}</span>
+                {heritees.length > 0 && <span className="inh">· hérité de « {marche?.nom ?? "parent"} » : {phraseFiltre({ conditions: heritees }, index)}</span>}
+                {apercu && (
+                  <button type="button" className="lnk" onClick={() => setApercu(null)}>
+                    revenir à la version courante
+                  </button>
+                )}
+                {pop && (
+                  <PopoverFiltres
+                    champs={champs}
+                    index={index}
+                    propres={travail.conditions}
+                    heritees={heritees}
+                    inclureBloques={!!travail.inclure_bloques}
+                    lectureSeule={false}
+                    onChange={(f) => void changerFiltre(f)}
+                    onFermer={fermerPop}
+                  />
+                )}
+              </div>
+            </div>
+            <div className="switch" role="tablist" aria-label="Affichage">
+              {vuesPermises.map((v) => (
+                <button key={v.id} type="button" role="tab" aria-selected={vue === v.id} className={vue === v.id ? "on" : undefined} title={v.libelle} aria-label={v.libelle} onClick={() => setVue(v.id)}>
+                  <Icone nom={v.icone} />
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className={kpisBusy ? "kpis busy" : "kpis"} ref={kpisRef} aria-busy={kpisBusy} aria-live="polite">
+            {listeKpis.map((k) => (
+              <div className="kpi" key={k.id}>
+                <b className="num">{kpis && kpis[k.id] !== undefined ? formaterNombre(kpis[k.id]) : "–"}</b>
+                <span>{k.libelle}</span>
+              </div>
+            ))}
+            {kpis && kpis.email !== undefined && (
+              <div className="kpi">
+                <b className="num">{formaterNombre(joursEnvoi(kpis.email))} j</b>
+                <span>d&apos;envoi à 400 par jour</span>
+              </div>
+            )}
+          </div>
+
+          {erreur && (
+            <p className="err" role="alert">
+              <Icone nom="alerte" />
+              <span>{erreur}</span>
+              <button type="button" onClick={() => (selection ? setRechargeDetail((n) => n + 1) : setRafraichir((n) => n + 1))}>
+                Réessayer
+              </button>
             </p>
           )}
-          {vue === "tableau" && apercu && !attente && (
-            <VueTableau apercu={apercu} index={index} page={page} parPage={PAR_PAGE} paginable onPage={setPage} chargement={chargement} />
-          )}
-          {vue === "carte" && !attente && (
-            <div aria-busy={chargementRep}>
-              <VueCarte valeurs={rep?.champ === CHAMP_DEPARTEMENT ? rep.valeurs : []} selection={departementsDuFiltre(travail)} onSelect={(codes) => changerFiltre(definirDepartements(travail, codes))} />
-            </div>
-          )}
-          {vue === "repartition" && !attente && champsRepartition.length > 0 && (
-            <VueRepartition champs={champsRepartition} champ={champRep} onChamp={setChampRep} valeurs={rep?.champ === champRep ? rep.valeurs : []} chargement={chargementRep} />
-          )}
-        </div>
-      </section>
 
-      {champs && (
-        <>
-          <VoletFiltres champs={champs} index={index} ouvert={filtresOuvert} onFermer={() => setFiltresOuvert(false)} filtre={travail} onAppliquer={changerFiltre} />
-          {detail && (
-            <>
-              <VoletScoring
+          <div className="stage" key={`${vue}-${selection ?? "tout"}`}>
+            {attente ? (
+              <Chargement />
+            ) : vue === "carte" ? (
+              <Carte filtre={filtreVue} index={index} descente={descente} onDescente={setDescente} onFiche={ouvrirFiche} />
+            ) : vue === "barres" ? (
+              <VueBarres filtre={filtreChiffres} champs={champs} index={index} />
+            ) : vue === "entonnoir" ? (
+              <VueEntonnoir etapes={etapesEntonnoir(propres.conditions, descente ? [...heritees, { champ: "departement", op: "dans", valeur: [descente] }] : heritees, !!propres.inclure_bloques, index)} />
+            ) : vue === "tableau" ? (
+              <VueTableau filtre={filtreChiffres} colonnes={colonnes} champs={champs} index={index} onColonnes={(c) => void changerColonnes(c)} onFiche={ouvrirFiche} />
+            ) : vue === "priorite" && detail && estCible ? (
+              <VuePriorite
+                segmentId={detail.id}
+                scoring={detail.scoring}
                 champs={champs}
                 index={index}
-                ouvert={scoringOuvert}
-                onFermer={() => setScoringOuvert(false)}
-                segmentId={detail.id}
-                criteres={detail.scoring?.criteres ?? []}
-                onEnregistre={() => {
+                peutEcrire={ecritureSegment}
+                versionComparee={versionComparee}
+                rafraichir={rafraichir}
+                onEnregistre={(v) => {
+                  notifier(`Priorité v${v} enregistrée`);
+                  setVersionComparee(null);
                   setRechargeDetail((n) => n + 1);
-                  setVersionsCompteur((n) => n + 1);
                   void rechargerArbre();
                 }}
-                onEcriture404={ecritureRefusee}
+                onEcritureRefusee={ecritureRefusee}
+                onFiche={ouvrirFiche}
               />
-              <VoletHistorique
-                index={index}
-                ouvert={histoOuvert}
-                onFermer={() => setHistoOuvert(false)}
-                segmentId={detail.id}
-                versionCourante={detail.version}
-                peutEcrire={ecriture}
-                version_scoring={scoringVersion}
-                onVersionScoring={(v) => {
-                  setScoringVersion(v);
-                  setPage(1);
-                }}
-                onRestaure={() => {
-                  setRechargeDetail((n) => n + 1);
-                  setVersionsCompteur((n) => n + 1);
-                  void rechargerArbre();
-                }}
-                rafraichir={versionsCompteur}
-              />
-            </>
-          )}
-        </>
+            ) : (
+              <Chargement />
+            )}
+          </div>
+        </main>
+      </div>
+
+      <button type="button" className="dossier" ref={dossierRef} onClick={() => setVolet({ type: "dossier" })} aria-label={`Dossier de travail, ${epingles?.length ?? 0} entreprises`}>
+        <Icone nom="dossier" />
+        Dossier de travail <b>{epingles?.length ?? 0}</b>
+      </button>
+
+      {volet?.type === "fiche" && (
+        <VoletFiche siren={volet.siren} nom={volet.nom} epingle={epingle(volet.siren)} peutEcrire={peutEcrire} onEpingler={epingler} onRetirer={retirer} onFermer={fermerVolet} />
       )}
-      {arbre && (
-        <>
-          <DialogueDossier ouvert={dossierOuvert} onFermer={() => setDossierOuvert(false)} arbre={arbre} onCree={apresCreation} onEcriture404={ecritureRefusee} />
-          <DialogueSegment
-            ouvert={segmentOuvert}
-            onFermer={() => setSegmentOuvert(false)}
-            arbre={arbre}
-            onCree={apresCreation}
-            onEcriture404={ecritureRefusee}
-            filtreCourant={selection ? FILTRE_VIDE : travail}
-            colonnes={colonnes}
-            dossierInitial={segmentArbre?.dossier_id ?? null}
-          />
-        </>
+      {volet?.type === "dossier" && <VoletDossier epingles={epingles} erreur={erreurEpingles} peutEcrire={peutEcrire} onOuvrir={ouvrirFiche} onRetirer={retirer} onFermer={fermerVolet} />}
+      {volet?.type === "historique" && detail && (
+        <VoletHistorique
+          segmentId={detail.id}
+          nom={detail.nom}
+          index={index}
+          apercu={apercu}
+          peutEcrire={peutEcrire}
+          versionComparee={versionComparee}
+          rafraichir={rafraichir}
+          onApercu={setApercu}
+          onComparer={(v) => {
+            setVersionComparee(v);
+            if (estCible) setVue("priorite");
+          }}
+          onRestaurer={(ancienne, nouvelle) => {
+            setApercu(null);
+            notifier(`v${ancienne} restaurée en v${nouvelle}`);
+            setRechargeDetail((n) => n + 1);
+            setRafraichir((n) => n + 1);
+            void rechargerArbre();
+          }}
+          onEcritureRefusee={ecritureRefusee}
+          onFermer={fermerVolet}
+        />
+      )}
+      {creation && (
+        <DialogueCreation
+          creation={creation}
+          arbre={arbre}
+          onFermer={fermerCreation}
+          onEcritureRefusee={ecritureRefusee}
+          onCree={(type, id) => {
+            setCreation(null);
+            void rechargerArbre().then(() => {
+              if (type !== "dossier") choisir(id);
+            });
+            notifier(type === "dossier" ? "Dossier créé" : type === "marche" ? "Marché créé" : "Cible créée");
+          }}
+        />
+      )}
+
+      {activite && (
+        <div className="act" role="status">
+          <span className="av" aria-hidden>
+            {initialeAuteur(activite.ia)}
+          </span>
+          <span>{activite.texte}</span>
+        </div>
+      )}
+      {toast && (
+        <div className={toast.ko ? "toast ko" : "toast"} role={toast.ko ? "alert" : "status"}>
+          {toast.texte}
+        </div>
       )}
     </div>
   );

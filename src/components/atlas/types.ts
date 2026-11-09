@@ -67,4 +67,17 @@ export type VersionFiltre = { version: number; auteur: string; via: string; note
 export type VersionScoring = { version: number; auteur: string; via: string; note: string | null; date: string; criteres: Critere[] };
 export type Historique = { filtre: VersionFiltre[]; scoring: VersionScoring[] };
 
-export type Vue = "tableau" | "carte" | "repartition";
+
+
+export type Vue = "carte" | "barres" | "entonnoir" | "tableau" | "priorite";
+
+/** Point d'une entreprise sur la carte d'un département (outil points_carte). */
+export type PointCarte = { siren: string; nom: string; commune: string; lat: number; lon: number; email: boolean; site: boolean };
+
+export type ValeurFiche = string | number | boolean | null | string[];
+/** Fiche par thème (outil fiche_entreprise_atlas) : thème → clé → valeur. */
+export type Fiche = Record<string, Record<string, ValeurFiche>>;
+
+export type Epingle = { siren: string; nom: string; note: string | null; auteur: string; via: string; date: string };
+
+export type Boite = { x: number; y: number; width: number; height: number };

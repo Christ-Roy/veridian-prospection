@@ -1,250 +1,362 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { History, Loader2, RotateCcw } from "lucide-react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
-import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { appeler, ErreurAtlas, estAnnulation, texteErreur } from "./api";
+import { enteteFiche, themesFiche } from "./fiche-logique";
+import { diffFiltres, estAuteurIA, formaterHorodatage, nomAuteur } from "./flux";
+import { Chargement, Icone } from "./icones";
+import { formaterNombre, libelleColonne } from "./logique";
+import type { ChampInfo, Epingle, Fiche, Filtre, Historique } from "./types";
 
-import { appeler, ErreurAtlas, texteErreur } from "./api";
-import { EditeurConditions } from "./editeur-conditions";
-import { lignesDepuis, validerConditions, validerCriteres, type LigneEditeur } from "./lignes";
-import { phraseFiltre } from "./logique";
-import type { ChampInfo, Critere, Filtre, Historique } from "./types";
+// ---------------------------------------------------------------- cadre commun
 
-type Base = { champs: ChampInfo[]; index: ReadonlyMap<string, ChampInfo>; ouvert: boolean; onFermer: () => void };
-
-function Erreurs({ erreurs }: { erreurs: string[] }) {
-  if (!erreurs.length) return null;
-  return (
-    <ul role="alert" className="list-disc space-y-0.5 pl-5 text-sm text-destructive">
-      {erreurs.map((e) => (
-        <li key={e}>{e}</li>
-      ))}
-    </ul>
-  );
-}
-
-export function VoletFiltres({ champs, index, ouvert, onFermer, filtre, onAppliquer }: Base & { filtre: Filtre; onAppliquer: (f: Filtre) => void }) {
-  const [lignes, setLignes] = useState<LigneEditeur[]>([]);
-  const [bloques, setBloques] = useState(false);
-  const [erreurs, setErreurs] = useState<string[]>([]);
+/** Volet à droite avec voile : Échap ferme, le focus reste dans le volet et revient d'où il vient. */
+export function Volet({ titre, sous, large, onFermer, children }: { titre: ReactNode; sous?: ReactNode; large?: boolean; onFermer: () => void; children: ReactNode }) {
+  const ref = useRef<HTMLElement>(null);
+  const fermer = useRef<HTMLButtonElement>(null);
+  const id = useId();
+  const rappel = useRef(onFermer);
   useEffect(() => {
-    if (ouvert) {
-      setLignes(lignesDepuis(filtre.conditions));
-      setBloques(!!filtre.inclure_bloques);
-      setErreurs([]);
-    }
-  }, [ouvert, filtre]);
-
-  const appliquer = () => {
-    const r = validerConditions(lignes, index);
-    if (!r.ok) return setErreurs(r.erreurs);
-    onAppliquer({ conditions: r.valeur, inclure_bloques: bloques });
-    onFermer();
-  };
-
+    rappel.current = onFermer;
+  });
+  useEffect(() => {
+    const avant = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    fermer.current?.focus();
+    const clavier = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        rappel.current();
+        return;
+      }
+      if (e.key !== "Tab" || !ref.current) return;
+      const f = [...ref.current.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])')];
+      if (!f.length) return;
+      const premier = f[0];
+      const dernier = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === premier) {
+        e.preventDefault();
+        dernier.focus();
+      } else if (!e.shiftKey && document.activeElement === dernier) {
+        e.preventDefault();
+        premier.focus();
+      }
+    };
+    document.addEventListener("keydown", clavier);
+    return () => {
+      document.removeEventListener("keydown", clavier);
+      avant?.focus();
+    };
+  }, []);
   return (
-    <Sheet open={ouvert} onOpenChange={(o) => !o && onFermer()}>
-      <SheetContent className="w-full overflow-y-auto sm:max-w-lg">
-        <SheetHeader>
-          <SheetTitle>Filtres</SheetTitle>
-          <SheetDescription>Toutes les conditions doivent être vraies. La donnée est affichée telle qu&apos;elle est.</SheetDescription>
-        </SheetHeader>
-        <div className="flex flex-col gap-4 px-4">
-          <EditeurConditions champs={champs} index={index} lignes={lignes} onChange={setLignes} />
-          <div className="flex items-center gap-2">
-            <Checkbox id="atlas-bloques" checked={bloques} onCheckedChange={(v) => setBloques(v === true)} />
-            <Label htmlFor="atlas-bloques" className="text-sm font-normal">
-              Inclure les entreprises bloquées par ODH (cessées, sans contact…)
-            </Label>
+    <>
+      <div className="scrim" onClick={onFermer} aria-hidden />
+      <aside ref={ref} className={large ? "sheet wide" : "sheet"} role="dialog" aria-modal="true" aria-labelledby={id}>
+        <div className="shead">
+          <div>
+            <h2 id={id}>{titre}</h2>
+            {sous && <p>{sous}</p>}
           </div>
-          <Erreurs erreurs={erreurs} />
+          <button ref={fermer} type="button" className="x" aria-label="Fermer" onClick={onFermer}>
+            <Icone nom="x" />
+          </button>
         </div>
-        <SheetFooter className="flex-row justify-between">
-          <Button variant="ghost" onClick={() => { setLignes([]); setBloques(false); }}>
-            Tout effacer
-          </Button>
-          <Button onClick={appliquer}>Appliquer</Button>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+        <div className="sbody">{children}</div>
+      </aside>
+    </>
   );
 }
 
-export function VoletScoring({
-  champs,
-  index,
-  ouvert,
+// ---------------------------------------------------------------- fiche entreprise
+
+export function VoletFiche({
+  siren,
+  nom,
+  epingle,
+  peutEcrire,
+  onEpingler,
+  onRetirer,
   onFermer,
-  segmentId,
-  criteres,
-  onEnregistre,
-  onEcriture404,
-}: Base & { segmentId: string; criteres: Critere[]; onEnregistre: () => void; onEcriture404: () => void }) {
-  const [lignes, setLignes] = useState<LigneEditeur[]>([]);
-  const [erreurs, setErreurs] = useState<string[]>([]);
+}: {
+  siren: string;
+  nom: string;
+  epingle: boolean;
+  peutEcrire: boolean;
+  onEpingler: (siren: string, nom: string) => Promise<void>;
+  onRetirer: (siren: string) => Promise<void>;
+  onFermer: () => void;
+}) {
+  const [fiche, setFiche] = useState<Fiche | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
   const [envoi, setEnvoi] = useState(false);
   useEffect(() => {
-    if (ouvert) {
-      setLignes(lignesDepuis(criteres));
-      setErreurs([]);
-    }
-  }, [ouvert, criteres]);
+    const ctl = new AbortController();
+    setFiche(null);
+    setErreur(null);
+    appeler<{ fiche: Fiche }>("fiche_entreprise_atlas", { siren }, ctl.signal)
+      .then((r) => setFiche(r.fiche))
+      .catch((e) => !estAnnulation(e) && setErreur(texteErreur(e)));
+    return () => ctl.abort();
+  }, [siren]);
 
-  const total = lignes.reduce((a, l) => a + (Number(l.poids.replace(",", ".")) || 0), 0);
-
-  const enregistrer = async () => {
-    const r = validerCriteres(lignes, index);
-    if (!r.ok) return setErreurs(r.erreurs);
+  const tete = fiche ? enteteFiche(fiche, nom) : { titre: nom, sous: "" };
+  const basculer = async () => {
     setEnvoi(true);
     try {
-      await appeler("definir_scoring", { segment_id: segmentId, scoring: { criteres: r.valeur } });
-      onEnregistre();
-      onFermer();
-    } catch (e) {
-      setErreurs([texteErreur(e)]);
-      if (e instanceof ErreurAtlas && e.status === 404) onEcriture404();
+      if (epingle) await onRetirer(siren);
+      else await onEpingler(siren, tete.titre);
     } finally {
       setEnvoi(false);
     }
   };
 
   return (
-    <Sheet open={ouvert} onOpenChange={(o) => !o && onFermer()}>
-      <SheetContent className="w-full overflow-y-auto sm:max-w-lg">
-        <SheetHeader>
-          <SheetTitle>Scoring du segment</SheetTitle>
-          <SheetDescription>Le score vaut la somme des poids des critères vrais, ramenée sur 100. Chaque enregistrement crée une version.</SheetDescription>
-        </SheetHeader>
-        <div className="flex flex-col gap-4 px-4">
-          <EditeurConditions champs={champs} index={index} lignes={lignes} onChange={setLignes} avecPoids />
-          {lignes.length > 0 && <p className="text-xs text-muted-foreground">Somme des poids : {Math.round(total * 10) / 10}</p>}
-          <Erreurs erreurs={erreurs} />
+    <Volet titre={tete.titre} sous={tete.sous || `SIREN ${siren}`} onFermer={onFermer}>
+      {peutEcrire && (
+        <div className="sact">
+          <button type="button" className={epingle ? "btn" : "btn pri"} onClick={basculer} disabled={envoi} aria-pressed={epingle}>
+            <Icone nom="dossier" />
+            {envoi ? "…" : epingle ? "Dans le dossier · retirer" : "Ajouter au dossier"}
+          </button>
         </div>
-        <SheetFooter>
-          <Button onClick={enregistrer} disabled={envoi}>
-            {envoi && <Loader2 className="animate-spin" />}
-            Enregistrer le scoring
-          </Button>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+      )}
+      {erreur && (
+        <p className="err" role="alert">
+          <Icone nom="alerte" />
+          {erreur}
+        </p>
+      )}
+      {!fiche && !erreur && <Chargement texte="Lecture de la fiche…" />}
+      {fiche &&
+        themesFiche(fiche).map((t) => (
+          <div className="block" key={t.id}>
+            <h3>{t.titre}</h3>
+            <dl>
+              {t.lignes.map((l) => (
+                <div key={l.cle} style={{ display: "contents" }}>
+                  <dt>{l.libelle}</dt>
+                  <dd className={l.mono ? "mono" : undefined}>
+                    {l.lien ? (
+                      <a href={l.lien} target={l.cle === "site" ? "_blank" : undefined} rel={l.cle === "site" ? "noopener noreferrer" : undefined}>
+                        {l.texte}
+                      </a>
+                    ) : (
+                      l.texte
+                    )}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ))}
+      {fiche && <p className="hint">Données ODH, affichées telles qu&apos;elles sont ; les champs vides sont masqués.</p>}
+    </Volet>
   );
 }
 
-const dateFr = (iso: string) => new Date(iso).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" });
-const auteurLisible = (via: string) => (via === "mcp" ? "IA (MCP)" : "Interface");
+// ---------------------------------------------------------------- dossier de travail
+
+export function VoletDossier({
+  epingles,
+  erreur,
+  peutEcrire,
+  onOuvrir,
+  onRetirer,
+  onFermer,
+}: {
+  epingles: Epingle[] | null;
+  erreur: string | null;
+  peutEcrire: boolean;
+  onOuvrir: (siren: string, nom: string) => void;
+  onRetirer: (siren: string) => Promise<void>;
+  onFermer: () => void;
+}) {
+  const n = epingles?.length ?? 0;
+  return (
+    <Volet titre="Dossier de travail" sous={`${formaterNombre(n)} entreprise${n > 1 ? "s" : ""} · partagé avec vos IA`} onFermer={onFermer}>
+      <div className="callout">Claude et ChatGPT lisent ce dossier par le connecteur Prospection. Ils peuvent y épingler des fiches et interroger les mêmes données que vous.</div>
+      {erreur && (
+        <p className="err" role="alert">
+          <Icone nom="alerte" />
+          {erreur}
+        </p>
+      )}
+      {!epingles && !erreur && <Chargement />}
+      {epingles && epingles.length === 0 && <p className="empty">Dossier vide. Ouvrez une fiche et « Ajouter au dossier ».</p>}
+      {epingles && epingles.length > 0 && (
+        <div>
+          {epingles.map((e) => (
+            <div className="dwrap" key={e.siren}>
+              <button type="button" className="ditem" onClick={() => onOuvrir(e.siren, e.nom)}>
+                <span className="ic" style={estAuteurIA(e.auteur) ? { background: "oklch(.96 .03 45)", color: "oklch(.45 .1 45)" } : undefined}>
+                  <Icone nom="ent" />
+                </span>
+                <span>
+                  <b>{e.nom}</b>
+                  <small>
+                    Ajoutée par {estAuteurIA(e.auteur) ? nomAuteur(e.auteur) : "l'interface"} · {formaterHorodatage(e.date)}
+                  </small>
+                  {e.note && <small style={{ color: "var(--fg2)" }}>{e.note}</small>}
+                </span>
+              </button>
+              {peutEcrire && (
+                <button type="button" className="x" aria-label={`Retirer ${e.nom} du dossier`} onClick={() => void onRetirer(e.siren)}>
+                  <Icone nom="x" />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </Volet>
+  );
+}
+
+// ---------------------------------------------------------------- historique
 
 export function VoletHistorique({
-  index,
-  ouvert,
-  onFermer,
   segmentId,
-  versionCourante,
+  nom,
+  index,
+  apercu,
   peutEcrire,
-  version_scoring,
-  onVersionScoring,
-  onRestaure,
+  versionComparee,
   rafraichir,
-}: Omit<Base, "champs"> & {
+  onApercu,
+  onRestaurer,
+  onComparer,
+  onEcritureRefusee,
+  onFermer,
+}: {
   segmentId: string;
-  versionCourante: number;
+  nom: string;
+  index: ReadonlyMap<string, ChampInfo>;
+  apercu: { version: number; filtre: Filtre } | null;
   peutEcrire: boolean;
-  version_scoring: number | null;
-  onVersionScoring: (v: number | null) => void;
-  onRestaure: () => void;
+  versionComparee: number | null;
   rafraichir: number;
+  onApercu: (a: { version: number; filtre: Filtre } | null) => void;
+  onRestaurer: (version: number, nouvelle: number) => void;
+  onComparer: (v: number | null) => void;
+  onEcritureRefusee: () => void;
+  onFermer: () => void;
 }) {
   const [h, setH] = useState<Historique | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
-  const [occupe, setOccupe] = useState<number | null>(null);
-
+  const [envoi, setEnvoi] = useState(false);
   useEffect(() => {
-    if (!ouvert) return;
     const ctl = new AbortController();
-    setH(null);
     setErreur(null);
     appeler<Historique>("historique_segment", { segment_id: segmentId }, ctl.signal)
       .then(setH)
-      .catch((e) => !ctl.signal.aborted && setErreur(texteErreur(e)));
+      .catch((e) => !estAnnulation(e) && setErreur(texteErreur(e)));
     return () => ctl.abort();
-  }, [ouvert, segmentId, rafraichir]);
+  }, [segmentId, rafraichir]);
 
-  const restaurer = async (v: number) => {
-    setOccupe(v);
+  const tete = h?.filtre[0]?.version ?? null;
+  const montree = apercu?.version ?? tete;
+
+  const restaurer = async () => {
+    if (!apercu) return;
+    setEnvoi(true);
     try {
-      await appeler("restaurer_version_segment", { segment_id: segmentId, version: v });
-      onRestaure();
+      const r = await appeler<{ version: number }>("restaurer_version_segment", { segment_id: segmentId, version: apercu.version });
+      onRestaurer(apercu.version, r.version);
     } catch (e) {
       setErreur(texteErreur(e));
+      if (e instanceof ErreurAtlas && e.status === 404) onEcritureRefusee();
     } finally {
-      setOccupe(null);
+      setEnvoi(false);
     }
   };
 
   return (
-    <Sheet open={ouvert} onOpenChange={(o) => !o && onFermer()}>
-      <SheetContent className="w-full overflow-y-auto sm:max-w-md">
-        <SheetHeader>
-          <SheetTitle className="flex items-center gap-2">
-            <History className="size-4" /> Historique
-          </SheetTitle>
-          <SheetDescription>Rien n&apos;est jamais effacé : restaurer crée une nouvelle version identique.</SheetDescription>
-        </SheetHeader>
-        <div className="flex flex-col gap-5 px-4 pb-6">
-          {erreur && <p role="alert" className="text-sm text-destructive">{erreur}</p>}
-          {!h && !erreur && <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Chargement…</p>}
-          {h && (
-            <>
-              <section aria-label="Versions du filtre" className="flex flex-col gap-2">
-                <h3 className="text-xs font-medium text-muted-foreground">Filtre</h3>
-                {h.filtre.map((v) => (
-                  <div key={v.version} className="rounded-lg border p-3 text-sm">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono text-xs">
-                        v{v.version}
-                        {v.version === versionCourante && <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[11px]">courante</span>}
-                      </span>
-                      {peutEcrire && v.version !== versionCourante && (
-                        <Button size="xs" variant="outline" disabled={occupe !== null} onClick={() => restaurer(v.version)}>
-                          {occupe === v.version ? <Loader2 className="animate-spin" /> : <RotateCcw />} Restaurer
-                        </Button>
-                      )}
-                    </div>
-                    <p className="mt-1">{phraseFiltre(v.filtre, index)}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {auteurLisible(v.via)} · {dateFr(v.date)}
-                      {v.note ? ` · ${v.note}` : ""}
-                    </p>
-                  </div>
-                ))}
-              </section>
-              <section aria-label="Versions du scoring" className="flex flex-col gap-2">
-                <h3 className="text-xs font-medium text-muted-foreground">Scoring</h3>
-                {h.scoring.length === 0 && <p className="text-sm text-muted-foreground">Aucun scoring défini.</p>}
-                {h.scoring.map((v) => (
-                  <div key={v.version} className="rounded-lg border p-3 text-sm">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono text-xs">v{v.version}</span>
-                      <Button size="xs" variant={version_scoring === v.version ? "default" : "outline"} onClick={() => onVersionScoring(version_scoring === v.version ? null : v.version)}>
-                        {version_scoring === v.version ? "Comparée" : "Voir le classement"}
-                      </Button>
-                    </div>
-                    <p className="mt-1">{v.criteres.map((c) => `${index.get(c.champ)?.libelle ?? c.champ} (${c.poids})`).join(", ")}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {auteurLisible(v.via)} · {dateFr(v.date)}
-                      {v.note ? ` · ${v.note}` : ""}
-                    </p>
-                  </div>
-                ))}
-              </section>
-            </>
-          )}
+    <Volet titre="Historique" sous={nom} onFermer={onFermer}>
+      {apercu && (
+        <div className="callout" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span>Aperçu de la v{apercu.version}</span>
+          <span style={{ display: "flex", gap: 6 }}>
+            <button type="button" className="btn" onClick={() => onApercu(null)}>
+              Revenir
+            </button>
+            {peutEcrire && (
+              <button type="button" className="btn pri" onClick={restaurer} disabled={envoi}>
+                {envoi ? "…" : "Restaurer"}
+              </button>
+            )}
+          </span>
         </div>
-      </SheetContent>
-    </Sheet>
+      )}
+      {erreur && (
+        <p className="err" role="alert">
+          <Icone nom="alerte" />
+          {erreur}
+        </p>
+      )}
+      {!h && !erreur && <Chargement />}
+      {h && (
+        <div>
+          <div className="block">
+            <h3>Filtres</h3>
+          </div>
+          {h.filtre.map((v, i) => {
+            const precedente = h.filtre[i + 1];
+            const ia = estAuteurIA(v.auteur);
+            return (
+              <button
+                key={v.version}
+                type="button"
+                className={montree === v.version ? "v cur" : "v"}
+                aria-current={montree === v.version ? "true" : undefined}
+                onClick={() => onApercu(v.version === tete ? null : { version: v.version, filtre: v.filtre })}
+              >
+                <span className="b" />
+                <span>
+                  <b>v{v.version}</b> <span className={ia ? "tag claude" : "tag"}>{nomAuteur(v.auteur)}</span>
+                  <small>
+                    {v.via === "mcp" ? "Connecteur" : "Interface"} · {formaterHorodatage(v.date)}
+                  </small>
+                  <ul>
+                    {diffFiltres(precedente?.filtre ?? null, v.filtre, index).map((l) => (
+                      <li key={l}>{l}</li>
+                    ))}
+                    {v.note && <li style={{ fontFamily: "var(--f-sans)", color: "var(--muted)" }}>{v.note}</li>}
+                  </ul>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {h && h.scoring.length > 0 && (
+        <div>
+          <div className="block">
+            <h3>Priorité</h3>
+          </div>
+          {h.scoring.map((v, i) => {
+            const compare = versionComparee === v.version || (versionComparee === null && i === 0);
+            return (
+              <button key={v.version} type="button" className={compare ? "v cur" : "v"} aria-pressed={compare} onClick={() => onComparer(i === 0 ? null : v.version)}>
+                <span className="b" />
+                <span>
+                  <b>v{v.version}</b> <span className={estAuteurIA(v.auteur) ? "tag claude" : "tag"}>{nomAuteur(v.auteur)}</span>
+                  <small>
+                    {v.via === "mcp" ? "Connecteur" : "Interface"} · {formaterHorodatage(v.date)}
+                    {i > 0 ? " · cliquer pour classer selon cette version" : " · en vigueur"}
+                  </small>
+                  <ul>
+                    {v.criteres.map((c, j) => (
+                      <li key={j}>
+                        {libelleColonne(c.champ, index)} · {c.poids}
+                      </li>
+                    ))}
+                  </ul>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </Volet>
   );
 }

@@ -1,180 +1,129 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
-
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useEffect, useRef, useState } from "react";
 
 import { appeler, ErreurAtlas, texteErreur } from "./api";
-import type { Arbre, Filtre } from "./types";
+import { cheminDossier } from "./logique";
+import type { Arbre, Filtre, SegmentArbre } from "./types";
 
-const AUCUN = "__aucun";
+export type Creation = { type: "dossier" } | { type: "marche"; filtre: Filtre | null; colonnes: string[] } | { type: "cible"; marche: SegmentArbre; colonnes: string[] };
 
-function Choix({ id, label, valeur, onChange, options }: { id: string; label: string; valeur: string; onChange: (v: string) => void; options: { id: string; nom: string }[] }) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <Label htmlFor={id}>{label} (facultatif)</Label>
-      <Select value={valeur} onValueChange={onChange}>
-        <SelectTrigger id={id} className="w-full">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={AUCUN}>Aucun</SelectItem>
-          {options.map((o) => (
-            <SelectItem key={o.id} value={o.id}>
-              {o.nom}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-}
+const TEXTES = {
+  dossier: { titre: "Nouveau dossier", aide: "Pour ranger des marchés (ex. « Agriculture »)." },
+  marche: { titre: "Nouveau marché", aide: "Un marché est un segment large que l'on analyse (ex. « Éleveurs de France »). Ses cibles en héritent." },
+  cible: { titre: "Nouvelle cible", aide: "Une cible restreint le marché pour une approche ; elle hérite de ses conditions et reçoit sa priorité." },
+};
 
-type Commun = { ouvert: boolean; onFermer: () => void; arbre: Arbre; onCree: (id: string | null) => void; onEcriture404: () => void };
-
-function useEnvoi(onEcriture404: () => void) {
+/** Dialogue de la maquette (`.dlg`) : créer un dossier, un marché ou une cible. Renvoie l'id créé. */
+export function DialogueCreation({
+  creation,
+  arbre,
+  onFermer,
+  onCree,
+  onEcritureRefusee,
+}: {
+  creation: Creation;
+  arbre: Arbre;
+  onFermer: () => void;
+  onCree: (type: Creation["type"], id: string) => void;
+  onEcritureRefusee: () => void;
+}) {
+  const [nom, setNom] = useState("");
+  const [dossier, setDossier] = useState("");
+  const [garder, setGarder] = useState(true);
   const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
-  const lancer = async (f: () => Promise<void>) => {
+  const ref = useRef<HTMLInputElement>(null);
+  const t = TEXTES[creation.type];
+
+  useEffect(() => {
+    ref.current?.focus();
+    const echap = (e: KeyboardEvent) => e.key === "Escape" && onFermer();
+    document.addEventListener("keydown", echap);
+    return () => document.removeEventListener("keydown", echap);
+  }, [onFermer]);
+
+  const envoyer = async () => {
     setEnvoi(true);
     setErreur(null);
     try {
-      await f();
+      let id: string;
+      if (creation.type === "dossier") {
+        id = (await appeler<{ id: string }>("creer_dossier", { nom: nom.trim(), ...(dossier ? { parent_id: dossier } : {}) })).id;
+      } else if (creation.type === "marche") {
+        const filtre = garder && creation.filtre ? creation.filtre : { conditions: [] };
+        id = (await appeler<{ id: string }>("creer_segment", { nom: nom.trim(), filtre, colonnes: creation.colonnes, ...(dossier ? { dossier_id: dossier } : {}) })).id;
+      } else {
+        id = (
+          await appeler<{ id: string }>("creer_segment", {
+            nom: nom.trim(),
+            filtre: { conditions: [] },
+            colonnes: creation.colonnes,
+            parent_id: creation.marche.id,
+            ...(creation.marche.dossier_id ? { dossier_id: creation.marche.dossier_id } : {}),
+          })
+        ).id;
+      }
+      onCree(creation.type, id);
     } catch (e) {
       setErreur(texteErreur(e));
-      if (e instanceof ErreurAtlas && e.status === 404) onEcriture404();
+      if (e instanceof ErreurAtlas && e.status === 404) onEcritureRefusee();
     } finally {
       setEnvoi(false);
     }
   };
-  return { envoi, erreur, lancer, setErreur };
-}
 
-export function DialogueDossier({ ouvert, onFermer, arbre, onCree, onEcriture404 }: Commun) {
-  const [nom, setNom] = useState("");
-  const [parent, setParent] = useState(AUCUN);
-  const { envoi, erreur, lancer, setErreur } = useEnvoi(onEcriture404);
-  useEffect(() => {
-    if (ouvert) {
-      setNom("");
-      setParent(AUCUN);
-      setErreur(null);
-    }
-  }, [ouvert, setErreur]);
-
+  const nbFiltres = creation.type === "marche" ? (creation.filtre?.conditions.length ?? 0) : 0;
   return (
-    <Dialog open={ouvert} onOpenChange={(o) => !o && onFermer()}>
-      <DialogContent>
-        <form
-          className="flex flex-col gap-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void lancer(async () => {
-              await appeler("creer_dossier", { nom: nom.trim(), ...(parent !== AUCUN ? { parent_id: parent } : {}) });
-              onCree(null);
-              onFermer();
-            });
-          }}
-        >
-          <DialogHeader>
-            <DialogTitle>Nouveau dossier</DialogTitle>
-            <DialogDescription>Pour ranger des segments (ex. « Analyse marché »).</DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="atlas-dossier-nom">Nom</Label>
-            <Input id="atlas-dossier-nom" value={nom} maxLength={120} onChange={(e) => setNom(e.target.value)} autoFocus required />
-          </div>
-          <Choix id="atlas-dossier-parent" label="Dossier parent" valeur={parent} onChange={setParent} options={arbre.dossiers} />
-          {erreur && <p role="alert" className="text-sm text-destructive">{erreur}</p>}
-          <DialogFooter>
-            <Button type="submit" disabled={envoi || !nom.trim()}>
-              {envoi && <Loader2 className="animate-spin" />} Créer
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-export function DialogueSegment({
-  ouvert,
-  onFermer,
-  arbre,
-  onCree,
-  onEcriture404,
-  filtreCourant,
-  colonnes,
-  dossierInitial,
-}: Commun & { filtreCourant: Filtre; colonnes: string[]; dossierInitial: string | null }) {
-  const [nom, setNom] = useState("");
-  const [dossier, setDossier] = useState(AUCUN);
-  const [parent, setParent] = useState(AUCUN);
-  const [garder, setGarder] = useState(true);
-  const { envoi, erreur, lancer, setErreur } = useEnvoi(onEcriture404);
-  const aFiltre = filtreCourant.conditions.length > 0;
-  useEffect(() => {
-    if (ouvert) {
-      setNom("");
-      setDossier(dossierInitial ?? AUCUN);
-      setParent(AUCUN);
-      setGarder(true);
-      setErreur(null);
-    }
-  }, [ouvert, dossierInitial, setErreur]);
-
-  return (
-    <Dialog open={ouvert} onOpenChange={(o) => !o && onFermer()}>
-      <DialogContent>
-        <form
-          className="flex flex-col gap-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void lancer(async () => {
-              const r = await appeler<{ id: string }>("creer_segment", {
-                nom: nom.trim(),
-                filtre: garder && aFiltre ? filtreCourant : { conditions: [] },
-                colonnes,
-                ...(dossier !== AUCUN ? { dossier_id: dossier } : {}),
-                ...(parent !== AUCUN ? { parent_id: parent } : {}),
-              });
-              onCree(r.id);
-              onFermer();
-            });
-          }}
-        >
-          <DialogHeader>
-            <DialogTitle>Nouveau segment</DialogTitle>
-            <DialogDescription>Un segment est un filtre versionné. Un segment enfant ajoute ses conditions à celles de son parent.</DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="atlas-segment-nom">Nom</Label>
-            <Input id="atlas-segment-nom" value={nom} maxLength={120} onChange={(e) => setNom(e.target.value)} autoFocus required />
-          </div>
-          <Choix id="atlas-segment-dossier" label="Dossier" valeur={dossier} onChange={setDossier} options={arbre.dossiers} />
-          <Choix id="atlas-segment-parent" label="Segment parent" valeur={parent} onChange={setParent} options={arbre.segments} />
-          {aFiltre && (
-            <div className="flex items-center gap-2">
-              <Checkbox id="atlas-segment-garder" checked={garder} onCheckedChange={(v) => setGarder(v === true)} />
-              <Label htmlFor="atlas-segment-garder" className="font-normal">
-                Partir des filtres en cours ({filtreCourant.conditions.length})
-              </Label>
-            </div>
-          )}
-          {erreur && <p role="alert" className="text-sm text-destructive">{erreur}</p>}
-          <DialogFooter>
-            <Button type="submit" disabled={envoi || !nom.trim()}>
-              {envoi && <Loader2 className="animate-spin" />} Créer
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <div className="dlg" onMouseDown={(e) => e.target === e.currentTarget && onFermer()}>
+      <form
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="atlas-dlg-titre"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (nom.trim()) void envoyer();
+        }}
+      >
+        <h2 id="atlas-dlg-titre">{t.titre}</h2>
+        <p>{creation.type === "cible" ? `Cible du marché « ${creation.marche.nom} ». ${t.aide}` : t.aide}</p>
+        <label>
+          Nom
+          <input ref={ref} type="text" value={nom} maxLength={120} required onChange={(e) => setNom(e.target.value)} />
+        </label>
+        {creation.type !== "cible" && arbre.dossiers.length > 0 && (
+          <label>
+            {creation.type === "dossier" ? "Dans le dossier (facultatif)" : "Dossier (facultatif)"}
+            <select value={dossier} onChange={(e) => setDossier(e.target.value)}>
+              <option value="">Aucun</option>
+              {arbre.dossiers.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {cheminDossier(arbre, d.id).join(" › ")}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {creation.type === "marche" && nbFiltres > 0 && (
+          <label className="ck">
+            <input type="checkbox" checked={garder} onChange={(e) => setGarder(e.target.checked)} />
+            Partir des filtres en cours ({nbFiltres})
+          </label>
+        )}
+        {erreur && (
+          <p role="alert" style={{ color: "var(--danger)" }}>
+            {erreur}
+          </p>
+        )}
+        <div className="row">
+          <button type="button" className="btn" onClick={onFermer}>
+            Annuler
+          </button>
+          <button type="submit" className="btn pri" disabled={envoi || !nom.trim()}>
+            {envoi ? "Création…" : "Créer"}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }

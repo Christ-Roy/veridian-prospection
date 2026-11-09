@@ -1,166 +1,467 @@
 "use client";
 
-import { useMemo } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useEffect, useRef, useState, type KeyboardEvent as ClavierReact } from "react";
 
-import { FranceMap } from "@/components/dashboard/france-map";
-import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { appeler, ErreurAtlas, estAnnulation, texteErreur } from "./api";
+import { EditeurConditions } from "./editeur-conditions";
+import { avecCondition, type EtapeEntonnoir } from "./flux";
+import { Chargement, Icone } from "./icones";
+import { lignesDepuis, validerCriteres, type LigneEditeur } from "./lignes";
+import { colonnesAffichees, formaterCellule, formaterNombre, grouperChamps, largeurBarre, libelleColonne } from "./logique";
+import type { ApercuMarche, ChampInfo, Critere, Filtre, LigneMarche, RepartitionMarche } from "./types";
 
-import { colonnesAffichees, formaterCellule, formaterNombre, largeurBarre, libelleColonne } from "./logique";
-import type { ApercuMarche, ChampInfo } from "./types";
+const PAR_PAGE = 20;
 
-export function VueTableau({
+function Erreur({ texte, onReessayer }: { texte: string; onReessayer?: () => void }) {
+  return (
+    <p className="err" role="alert">
+      <Icone nom="alerte" />
+      <span>{texte}</span>
+      {onReessayer && (
+        <button type="button" onClick={onReessayer}>
+          Réessayer
+        </button>
+      )}
+    </p>
+  );
+}
+
+// ---------------------------------------------------------------- répartition
+
+export function VueBarres({ filtre, champs, index }: { filtre: Filtre; champs: ChampInfo[]; index: ReadonlyMap<string, ChampInfo> }) {
+  const axes = champs.filter((c) => c.repartition);
+  const [champ, setChamp] = useState(() => (axes.some((c) => c.id === "taille") ? "taille" : (axes[0]?.id ?? "")));
+  const [donnees, setDonnees] = useState<{ cle: string; total: number; site: number | null }[] | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const [essai, setEssai] = useState(0);
+  const cle = JSON.stringify(filtre);
+  const avecSite = index.has("site");
+
+  useEffect(() => {
+    if (!champ) return;
+    const ctl = new AbortController();
+    const f = JSON.parse(cle) as Filtre;
+    setErreur(null);
+    Promise.all([
+      appeler<RepartitionMarche>("repartir_marche", { filtre: f, champ, limite: 30 }, ctl.signal),
+      avecSite ? appeler<RepartitionMarche>("repartir_marche", { filtre: avecCondition(f, { champ: "site", op: "renseigne", valeur: true }), champ, limite: 200 }, ctl.signal) : Promise.resolve(null),
+    ])
+      .then(([t, s]) => {
+        const parCle = new Map((s?.valeurs ?? []).map((x) => [x.cle, x.nombre]));
+        setDonnees(t.valeurs.map((x) => ({ cle: x.cle, total: x.nombre, site: s ? Math.min(x.nombre, parCle.get(x.cle) ?? 0) : null })));
+      })
+      .catch((e) => !estAnnulation(e) && setErreur(texteErreur(e)));
+    return () => ctl.abort();
+  }, [cle, champ, avecSite, essai]);
+
+  const max = Math.max(0, ...(donnees ?? []).map((d) => d.total));
+  return (
+    <div>
+      <div className="tools">
+        <label htmlFor="atlas-axe">Répartir par</label>
+        <select id="atlas-axe" className="sel" value={champ} onChange={(e) => setChamp(e.target.value)}>
+          {grouperChamps(axes).map((g) => (
+            <optgroup key={g.groupe} label={g.groupe}>
+              {g.champs.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.libelle}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+      </div>
+      {erreur && <Erreur texte={erreur} onReessayer={() => setEssai((n) => n + 1)} />}
+      {!donnees && !erreur && <Chargement />}
+      {donnees && donnees.length === 0 && <p className="empty">Aucune valeur renseignée pour ces filtres.</p>}
+      {donnees && donnees.length > 0 && (
+        <div className="hbars">
+          {donnees.map((d) => (
+            <div key={d.cle} className="hb">
+              <span title={d.cle}>{d.cle}</span>
+              <span className="t" aria-hidden>
+                {d.site === null ? (
+                  <i style={{ width: `${largeurBarre(d.total, max)}%`, background: "var(--blue)" }} />
+                ) : (
+                  <>
+                    <i style={{ width: `${largeurBarre(d.site, max)}%`, background: "var(--primary)" }} />
+                    <i style={{ width: `${largeurBarre(d.total - d.site, max)}%`, background: "var(--blue)" }} />
+                  </>
+                )}
+              </span>
+              <span className="v num">{formaterNombre(d.total)}</span>
+            </div>
+          ))}
+          {avecSite && (
+            <p className="hint">
+              <span style={{ color: "var(--fg)" }}>■</span> avec site web &nbsp; <span style={{ color: "var(--blue)" }}>■</span> sans site web.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- entonnoir
+
+export function VueEntonnoir({ etapes }: { etapes: EtapeEntonnoir[] }) {
+  const [comptes, setComptes] = useState<number[] | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const cle = JSON.stringify(etapes.map((e) => e.filtre));
+
+  useEffect(() => {
+    const ctl = new AbortController();
+    const filtres = JSON.parse(cle) as Filtre[];
+    setComptes(null);
+    setErreur(null);
+    Promise.all(filtres.map((filtre) => appeler<ApercuMarche>("explorer_marche", { filtre, colonnes: ["nom"], page: 1, par_page: 1 }, ctl.signal)))
+      .then((r) => setComptes(r.map((x) => x.total)))
+      .catch((e) => !estAnnulation(e) && setErreur(texteErreur(e)));
+    return () => ctl.abort();
+  }, [cle]);
+
+  if (erreur) return <Erreur texte={erreur} />;
+  if (!comptes) return <Chargement />;
+  const max = comptes[0] || 1;
+  return (
+    <div className="hbars">
+      {etapes.map((e, i) => (
+        <div key={`${i}-${e.libelle}`} className="hb">
+          <span title={e.libelle}>{e.libelle}</span>
+          <span className="t" aria-hidden>
+            <i style={{ width: `${largeurBarre(comptes[i] ?? 0, max)}%`, background: i === etapes.length - 1 ? "var(--blue)" : "oklch(.82 0 0)" }} />
+          </span>
+          <span className="v num">{formaterNombre(comptes[i] ?? 0)}</span>
+        </div>
+      ))}
+      <p className="hint">{etapes.length > 1 ? "Ce que coûte chaque filtre, dans l'ordre." : "Ajoutez des filtres pour voir ce que coûte chacun."}</p>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- tableau
+
+const MAX_COLONNES = 25;
+
+export function SelecteurColonnes({ champs, colonnes, onChange }: { champs: ChampInfo[]; colonnes: string[]; onChange: (c: string[]) => void }) {
+  const [ouvert, setOuvert] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!ouvert) return;
+    const fermer = (e: Event) => {
+      if (e instanceof KeyboardEvent ? e.key === "Escape" : !ref.current?.contains(e.target as Node)) setOuvert(false);
+    };
+    document.addEventListener("mousedown", fermer);
+    document.addEventListener("keydown", fermer);
+    return () => {
+      document.removeEventListener("mousedown", fermer);
+      document.removeEventListener("keydown", fermer);
+    };
+  }, [ouvert]);
+  const bascule = (id: string) => {
+    if (colonnes.includes(id)) {
+      if (colonnes.length > 1) onChange(colonnes.filter((c) => c !== id));
+    } else if (colonnes.length < MAX_COLONNES) onChange([...colonnes, id]);
+  };
+  return (
+    <div ref={ref} style={{ position: "relative", marginLeft: "auto" }}>
+      <button type="button" className="btn sm" aria-expanded={ouvert} aria-haspopup="dialog" onClick={() => setOuvert((o) => !o)}>
+        <Icone nom="colonnes" />
+        Colonnes <span className="num" style={{ color: "var(--muted)" }}>{colonnes.length}</span>
+      </button>
+      {ouvert && (
+        <div className="colpop" role="dialog" aria-label="Colonnes affichées">
+          <p className="hint">
+            {colonnes.length} sur {MAX_COLONNES} colonnes au plus.
+          </p>
+          {grouperChamps(champs).map((g) => (
+            <fieldset key={g.groupe}>
+              <legend>{g.groupe}</legend>
+              {g.champs.map((c) => (
+                <label key={c.id} className="ck">
+                  <input type="checkbox" checked={colonnes.includes(c.id)} disabled={!colonnes.includes(c.id) && colonnes.length >= MAX_COLONNES} onChange={() => bascule(c.id)} />
+                  {c.libelle}
+                </label>
+              ))}
+            </fieldset>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Tableau({
   apercu,
   index,
-  page,
-  parPage,
-  paginable,
-  onPage,
-  chargement,
+  rang,
+  onFiche,
+  busy,
+  montrerSiren = false,
 }: {
   apercu: ApercuMarche;
   index: ReadonlyMap<string, ChampInfo>;
-  page: number;
-  parPage: number;
-  paginable: boolean;
-  onPage: (p: number) => void;
-  chargement: boolean;
+  rang?: number;
+  montrerSiren?: boolean;
+  onFiche: (siren: string, nom: string) => void;
+  busy: boolean;
 }) {
-  const cols = colonnesAffichees(apercu.colonnes, apercu.lignes);
-  const pages = Math.max(1, Math.ceil(apercu.total / parPage));
-  const debut = apercu.lignes.length ? (page - 1) * parPage + 1 : 0;
+  const cols = colonnesAffichees(apercu.colonnes, apercu.lignes).filter((c) => c !== "siren" || montrerSiren);
+  const ouvrir = (l: LigneMarche) => {
+    const siren = typeof l.siren === "string" ? l.siren : typeof l.siren === "number" ? String(l.siren).padStart(9, "0") : null;
+    if (siren) onFiche(siren, typeof l.nom === "string" ? l.nom : siren);
+  };
+  const clavier = (e: ClavierReact<HTMLTableRowElement>, l: LigneMarche) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      ouvrir(l);
+    }
+  };
   return (
-    <div className={chargement ? "opacity-60 transition-opacity" : "transition-opacity"} aria-busy={chargement}>
-      <div className="overflow-x-auto rounded-lg border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              {cols.map((c) => (
-                <TableHead key={c} className={c === "score" ? "text-right" : undefined}>
-                  {libelleColonne(c, index)}
-                </TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {apercu.lignes.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={cols.length} className="h-24 text-center text-muted-foreground">
-                  Aucune entreprise ne répond à ces filtres.
-                </TableCell>
-              </TableRow>
-            )}
-            {apercu.lignes.map((l, i) => (
-              <TableRow key={`${String(l.siren ?? i)}-${i}`}>
-                {cols.map((c) => (
-                  <TableCell key={c} className={c === "score" || typeof l[c] === "number" ? "text-right tabular-nums" : "max-w-64 truncate"}>
-                    {formaterCellule(l[c], index.get(c))}
-                  </TableCell>
-                ))}
-              </TableRow>
+    <div className={busy ? "tbl busy" : "tbl"} aria-busy={busy}>
+      <table>
+        <thead>
+          <tr>
+            {rang !== undefined && <th className="r">#</th>}
+            {cols.map((c) => (
+              <th key={c} className={c === "score" ? "r" : undefined} scope="col">
+                {libelleColonne(c, index)}
+              </th>
             ))}
-          </TableBody>
-        </Table>
+          </tr>
+        </thead>
+        <tbody>
+          {apercu.lignes.map((l, i) => (
+            <tr key={`${String(l.siren ?? "")}-${i}`} tabIndex={0} onClick={() => ouvrir(l)} onKeyDown={(e) => clavier(e, l)} aria-label={`Ouvrir la fiche de ${String(l.nom ?? l.siren ?? "l'entreprise")}`}>
+              {rang !== undefined && <td className="r num" style={{ color: "var(--muted)" }}>{rang + i}</td>}
+              {cols.map((c) => {
+                const v = l[c];
+                if (c === "score" && typeof v === "number") {
+                  return (
+                    <td key={c} className="r">
+                      <span className="score num">
+                        <i aria-hidden>
+                          <b style={{ width: `${Math.max(0, Math.min(100, v))}%` }} />
+                        </i>
+                        {v}
+                      </span>
+                    </td>
+                  );
+                }
+                return (
+                  <td key={c} className={typeof v === "number" ? "r num" : undefined} title={typeof v === "string" ? v : undefined}>
+                    {formaterCellule(v, index.get(c))}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function Pager({ page, total, parPage, busy, onPage }: { page: number; total: number; parPage: number; busy: boolean; onPage: (p: number) => void }) {
+  const pages = Math.max(1, Math.ceil(total / parPage));
+  const debut = total ? (page - 1) * parPage + 1 : 0;
+  const fin = Math.min(total, page * parPage);
+  return (
+    <div className="pager hint">
+      <span className="num">
+        {formaterNombre(debut)} à {formaterNombre(fin)} sur {formaterNombre(total)}. Cliquez une ligne pour la fiche complète.
+      </span>
+      <div>
+        <button type="button" className="x" aria-label="Page précédente" disabled={page <= 1 || busy} onClick={() => onPage(page - 1)}>
+          <Icone nom="retour" />
+        </button>
+        <span className="num">
+          {formaterNombre(page)} / {formaterNombre(Math.min(pages, 500))}
+        </span>
+        <button type="button" className="x" aria-label="Page suivante" disabled={page >= Math.min(pages, 500) || busy} onClick={() => onPage(page + 1)}>
+          <Icone nom="chev" />
+        </button>
       </div>
-      <div className="mt-3 flex items-center justify-between gap-2 text-sm text-muted-foreground">
-        {paginable ? (
+    </div>
+  );
+}
+
+export function VueTableau({
+  filtre,
+  colonnes,
+  champs,
+  index,
+  onColonnes,
+  onFiche,
+}: {
+  filtre: Filtre;
+  colonnes: string[];
+  champs: ChampInfo[];
+  index: ReadonlyMap<string, ChampInfo>;
+  onColonnes: (c: string[]) => void;
+  onFiche: (siren: string, nom: string) => void;
+}) {
+  const [page, setPage] = useState(1);
+  const [apercu, setApercu] = useState<ApercuMarche | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const [essai, setEssai] = useState(0);
+  const cle = JSON.stringify(filtre);
+  const cleCols = colonnes.join(",");
+
+  useEffect(() => setPage(1), [cle]);
+  useEffect(() => {
+    const ctl = new AbortController();
+    setBusy(true);
+    setErreur(null);
+    appeler<ApercuMarche>("explorer_marche", { filtre: JSON.parse(cle) as Filtre, colonnes: cleCols.split(","), page, par_page: PAR_PAGE }, ctl.signal)
+      .then(setApercu)
+      .catch((e) => !estAnnulation(e) && setErreur(texteErreur(e)))
+      .finally(() => !ctl.signal.aborted && setBusy(false));
+    return () => ctl.abort();
+  }, [cle, cleCols, page, essai]);
+
+  return (
+    <div>
+      <div className="tools">
+        <span>Entreprises du segment, par ordre du catalogue.</span>
+        <SelecteurColonnes champs={champs} colonnes={colonnes} onChange={onColonnes} />
+      </div>
+      {erreur && <Erreur texte={erreur} onReessayer={() => setEssai((n) => n + 1)} />}
+      {!apercu && !erreur && <Chargement />}
+      {apercu && apercu.lignes.length === 0 && <p className="empty">Aucune entreprise ne répond à ces filtres.</p>}
+      {apercu && apercu.lignes.length > 0 && (
+        <>
+          <Tableau apercu={apercu} index={index} onFiche={onFiche} busy={busy} montrerSiren={colonnes.includes("siren")} />
+          <Pager page={page} total={apercu.total} parPage={PAR_PAGE} busy={busy} onPage={setPage} />
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- priorité (cible)
+
+export function VuePriorite({
+  segmentId,
+  scoring,
+  champs,
+  index,
+  peutEcrire,
+  versionComparee,
+  onEnregistre,
+  onEcritureRefusee,
+  onFiche,
+  rafraichir,
+}: {
+  segmentId: string;
+  scoring: { version: number; criteres: Critere[] } | null;
+  champs: ChampInfo[];
+  index: ReadonlyMap<string, ChampInfo>;
+  peutEcrire: boolean;
+  versionComparee: number | null;
+  onEnregistre: (version: number) => void;
+  onEcritureRefusee: () => void;
+  onFiche: (siren: string, nom: string) => void;
+  rafraichir: number;
+}) {
+  const [lignes, setLignes] = useState<LigneEditeur[]>(() => lignesDepuis(scoring?.criteres ?? []));
+  const [erreurs, setErreurs] = useState<string[]>([]);
+  const [envoi, setEnvoi] = useState(false);
+  const [page, setPage] = useState(1);
+  const [apercu, setApercu] = useState<ApercuMarche | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const cleScoring = JSON.stringify(scoring);
+
+  useEffect(() => {
+    const s = JSON.parse(cleScoring) as typeof scoring;
+    setLignes(lignesDepuis(s?.criteres ?? []));
+    setErreurs([]);
+  }, [cleScoring]);
+  useEffect(() => setPage(1), [segmentId, versionComparee, cleScoring]);
+
+  const aScoring = scoring !== null;
+  useEffect(() => {
+    if (!aScoring) return;
+    const ctl = new AbortController();
+    setBusy(true);
+    setErreur(null);
+    appeler<ApercuMarche>("classer_segment", { segment_id: segmentId, page, par_page: PAR_PAGE, ...(versionComparee ? { scoring_version: versionComparee } : {}) }, ctl.signal)
+      .then(setApercu)
+      .catch((e) => !estAnnulation(e) && setErreur(texteErreur(e)))
+      .finally(() => !ctl.signal.aborted && setBusy(false));
+    return () => ctl.abort();
+  }, [aScoring, segmentId, page, versionComparee, cleScoring, rafraichir]);
+
+  const enregistrer = async () => {
+    const r = validerCriteres(lignes, index);
+    if (!r.ok) return setErreurs(r.erreurs);
+    setEnvoi(true);
+    setErreurs([]);
+    try {
+      const res = await appeler<{ scoring: number }>("definir_scoring", { segment_id: segmentId, scoring: { criteres: r.valeur } });
+      onEnregistre(res.scoring);
+    } catch (e) {
+      setErreurs([texteErreur(e)]);
+      if (e instanceof ErreurAtlas && e.status === 404) onEcritureRefusee();
+    } finally {
+      setEnvoi(false);
+    }
+  };
+
+  const poidsTotal = lignes.reduce((a, l) => a + (Number(l.poids.replace(",", ".")) || 0), 0);
+
+  return (
+    <div className="prio">
+      <section className="ed" aria-labelledby="atlas-prio-titre">
+        <h3 id="atlas-prio-titre">Moteur de priorité{scoring ? ` · v${scoring.version}` : ""}</h3>
+        <p className="callout">Chaque critère vrai rapporte son poids ; le score est ramené sur 100. Le classement donne l&apos;ordre d&apos;envoi.</p>
+        {peutEcrire ? (
           <>
-            <span className="tabular-nums">
-              {formaterNombre(debut)} à {formaterNombre(debut + apercu.lignes.length - (apercu.lignes.length ? 1 : 0))} sur {formaterNombre(apercu.total)}
-            </span>
-            <div className="flex items-center gap-1">
-              <Button variant="outline" size="icon-sm" aria-label="Page précédente" disabled={page <= 1 || chargement} onClick={() => onPage(page - 1)}>
-                <ChevronLeft />
-              </Button>
-              <span className="px-2 tabular-nums">
-                {page} / {formaterNombre(pages)}
-              </span>
-              <Button variant="outline" size="icon-sm" aria-label="Page suivante" disabled={page >= pages || chargement} onClick={() => onPage(page + 1)}>
-                <ChevronRight />
-              </Button>
+            <EditeurConditions champs={champs} index={index} lignes={lignes} onChange={setLignes} avecPoids />
+            {lignes.length > 0 && <p className="hint num">Poids total : {formaterNombre(Math.round(poidsTotal * 10) / 10)}</p>}
+            {erreurs.length > 0 && (
+              <ul className="msg" role="alert" style={{ paddingLeft: 18, margin: 0 }}>
+                {erreurs.map((e) => (
+                  <li key={e}>{e}</li>
+                ))}
+              </ul>
+            )}
+            <div>
+              <button type="button" className="btn pri" onClick={enregistrer} disabled={envoi || lignes.length === 0}>
+                {envoi ? "Enregistrement…" : scoring ? "Enregistrer une nouvelle version" : "Créer la priorité"}
+              </button>
             </div>
           </>
         ) : (
-          <span>Aperçu des {apercu.lignes.length} premières lignes sur {formaterNombre(apercu.total)}. Enregistrez un segment pour parcourir toutes les pages.</span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-export function VueCarte({ valeurs, selection, onSelect }: { valeurs: { cle: string; nombre: number }[]; selection: string[]; onSelect: (codes: string[]) => void }) {
-  const counts = useMemo(() => Object.fromEntries(valeurs.map((v) => [v.cle, v.nombre])), [valeurs]);
-  const top = valeurs.slice(0, 8);
-  return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_240px]">
-      <FranceMap selected={selection} onSelect={onSelect} counts={counts} />
-      <aside className="flex flex-col gap-2 text-sm" aria-label="Départements les plus fournis">
-        <h3 className="text-xs font-medium text-muted-foreground">Les plus fournis</h3>
-        {top.length === 0 && <p className="text-muted-foreground">Aucune donnée.</p>}
-        {top.map((v) => (
-          <button
-            key={v.cle}
-            type="button"
-            onClick={() => onSelect(selection.includes(v.cle) ? selection.filter((c) => c !== v.cle) : [...selection, v.cle])}
-            className="flex justify-between gap-2 border-b py-1 text-left last:border-0 hover:underline focus-visible:outline-2"
-          >
-            <span>{v.cle}</span>
-            <span className="tabular-nums text-muted-foreground">{formaterNombre(v.nombre)}</span>
-          </button>
-        ))}
-        <p className="text-xs text-muted-foreground">Cliquez un département pour l&apos;ajouter aux filtres.</p>
-      </aside>
-    </div>
-  );
-}
-
-export function VueRepartition({
-  champs,
-  champ,
-  onChamp,
-  valeurs,
-  chargement,
-}: {
-  champs: ChampInfo[];
-  champ: string;
-  onChamp: (id: string) => void;
-  valeurs: { cle: string; nombre: number }[];
-  chargement: boolean;
-}) {
-  const max = Math.max(0, ...valeurs.map((v) => v.nombre));
-  return (
-    <div className="flex flex-col gap-4" aria-busy={chargement}>
-      <div className="flex items-center gap-2 text-sm">
-        <span className="text-muted-foreground">Répartition par</span>
-        <Select value={champ} onValueChange={onChamp}>
-          <SelectTrigger size="sm" aria-label="Champ de répartition">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {champs.map((c) => (
-              <SelectItem key={c.id} value={c.id}>
-                {c.libelle}
-              </SelectItem>
+          <ul className="hint" style={{ margin: 0, paddingLeft: 18 }}>
+            {(scoring?.criteres ?? []).map((c, i) => (
+              <li key={i}>
+                {libelleColonne(c.champ, index)} · poids {formaterNombre(c.poids)}
+              </li>
             ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <ul className={`flex max-w-3xl flex-col gap-2 ${chargement ? "opacity-60" : ""}`}>
-        {valeurs.length === 0 && !chargement && <li className="text-sm text-muted-foreground">Aucune valeur.</li>}
-        {valeurs.map((v) => (
-          <li key={v.cle} className="grid grid-cols-[minmax(0,10rem)_minmax(0,1fr)_5rem] items-center gap-3 text-sm sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_5rem]">
-            <span className="truncate" title={v.cle}>
-              {v.cle}
-            </span>
-            <span className="h-5 overflow-hidden rounded bg-muted" role="img" aria-label={`${v.cle} : ${formaterNombre(v.nombre)}`}>
-              <span className="block h-full bg-primary/80" style={{ width: `${largeurBarre(v.nombre, max)}%` }} />
-            </span>
-            <span className="text-right tabular-nums text-muted-foreground">{formaterNombre(v.nombre)}</span>
-          </li>
-        ))}
-      </ul>
+            {!scoring && <li>Aucune priorité définie. Lecture seule sur cet espace.</li>}
+          </ul>
+        )}
+      </section>
+
+      <section aria-labelledby="atlas-classement-titre" style={{ minWidth: 0 }}>
+        <h3 id="atlas-classement-titre" className="hint" style={{ margin: "0 0 10px", fontWeight: 500 }}>
+          Classement{versionComparee ? ` selon la v${versionComparee} (comparaison)` : ""}
+        </h3>
+        {!scoring && <p className="empty">Définissez des critères pour classer la cible.</p>}
+        {scoring && erreur && <Erreur texte={erreur} />}
+        {scoring && !apercu && !erreur && <Chargement />}
+        {scoring && apercu && apercu.lignes.length === 0 && <p className="empty">Aucune entreprise dans cette cible.</p>}
+        {scoring && apercu && apercu.lignes.length > 0 && (
+          <>
+            <Tableau apercu={apercu} index={index} rang={(page - 1) * PAR_PAGE + 1} onFiche={onFiche} busy={busy} />
+            <Pager page={page} total={apercu.total} parPage={PAR_PAGE} busy={busy} onPage={setPage} />
+          </>
+        )}
+      </section>
     </div>
   );
 }
