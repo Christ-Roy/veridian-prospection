@@ -9,7 +9,6 @@
 |---|---|---|---|
 | `core/` | Squelette absolu (health, login, prospects list, auth gate) | **Bloquant** deploy prod | ≤ 6 specs, ≤ 60s total |
 | `extended/` | Tests fonctionnels (1 feature = 1 spec) | Non-bloquant, 3 browsers parallèle | ~23 specs |
-| `staging-full/` | Journeys lourds headfull (UI polish, screenshots) | Pilotés par skill `ui-polish-team` | Variable |
 | `integration/` | Tests Prisma directs (tenant isolation, multi-row) — pas de browser | Non-bloquant | Quelques fichiers |
 | `migrations/` | Tests versionnés (état d'une migration DB) | Bloquant migration | 1 par migration touchée |
 | `_deprecated/` | Archive — ne plus modifier, ne plus exécuter | Ignoré | À supprimer (sprint dette) |
@@ -22,7 +21,6 @@ raison documentée :
 
 | Spec racine | Raison de la conserver |
 |---|---|
-| `dashboard-crawler.spec.ts` | Smoke crawler dédié, référencé explicitement par `.github/workflows/prospection-deploy-staging.yml` pour le check rapide post-deploy. Ne pas déplacer sans MAJ workflow. |
 
 Pour tout autre cas, `git mv e2e/X.spec.ts e2e/extended/X.spec.ts` et
 adapter les imports relatifs (`./helpers/...` → `../helpers/...`).
