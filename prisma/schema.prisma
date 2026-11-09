@@ -630,26 +630,8 @@ model MagicLink {
   @@map("magic_links")
 }
 
-// Invitation to join a tenant/workspace (persistent, revocable, role-bearing).
-// See scripts/2026-04-05_add-invitations-table.sql for the SQL migration.
-model Invitation {
-  id          Int       @id @default(autoincrement())
-  email       String
-  invitedBy   String    @map("invited_by") @db.Uuid
-  tenantId    String    @map("tenant_id") @db.Uuid
-  workspaceId String?   @map("workspace_id") @db.Uuid
-  role        String    @default("member") // "admin" | "member"
-  token       String    @unique
-  expiresAt   DateTime  @default(dbgenerated("(now() + interval '7 days')")) @map("expires_at") @db.Timestamptz
-  acceptedAt  DateTime? @map("accepted_at") @db.Timestamptz
-  revokedAt   DateTime? @map("revoked_at") @db.Timestamptz
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
-
-  @@index([tenantId])
-  @@index([token])
-  @@index([email])
-  @@map("invitations")
-}
+// Invitations locales retirées le 09/11 (une invitation crée un utilisateur : c'est le Hub).
+// Table invitations dumpée au froid puis supprimée (migration 0036).
 
 // ============================================================================
 // PUSH SUBSCRIPTIONS — Web Push API (PWA notifications)
@@ -901,8 +883,6 @@ model Tenant {
 
   // Intégrations Notifuse
   notifuseWorkspaceSlug    String?   @map("notifuse_workspace_slug")
-  // notifuse_api_key : secret en clair, plus lu depuis le retrait des invitations locales (09/11),
-  // vidé (dump au froid), colonne supprimée par la migration suivante.
   notifuseUserEmail        String?   @map("notifuse_user_email")
   notifuseInvitationSentAt DateTime? @map("notifuse_invitation_sent_at") @db.Timestamptz
 

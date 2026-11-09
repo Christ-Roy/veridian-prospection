@@ -12,3 +12,8 @@ test("le schéma Prisma ne déclare plus de clé d'API d'une autre app", () => {
     expect(schema).not.toMatch(new RegExp(`@map\\("${col}`));
   }
 });
+
+test("pas d'invitation locale : la table invitations ne revient pas (une invitation crée un utilisateur, c'est le Hub)", () => {
+  const schema = readFileSync(path.resolve(__dirname, "../../prisma/schema.prisma"), "utf8");
+  expect(schema).not.toMatch(/@@map\("invitations"\)/);
+});

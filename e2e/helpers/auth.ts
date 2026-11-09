@@ -321,31 +321,6 @@ export async function ensureCanonicalUser(): Promise<void> {
       position: 0,
     },
   });
-
-  // 8) Invitation pending — couvre le drawer pipeline + historique côté
-  //    admin-members et toute spec qui inspecte la liste des invitations en
-  //    cours. Token déterministe pour idempotence + identification en DB.
-  const invitationToken = "e2e-invitation-token-canonical-do-not-rotate";
-  await prisma.invitation.upsert({
-    where: { token: invitationToken },
-    update: {
-      email: "e2e-pending-invite@yopmail.com",
-      invitedBy: user.id,
-      tenantId: tenant.id,
-      workspaceId: workspace.id,
-      role: "member",
-      acceptedAt: null,
-      revokedAt: null,
-    },
-    create: {
-      email: "e2e-pending-invite@yopmail.com",
-      invitedBy: user.id,
-      tenantId: tenant.id,
-      workspaceId: workspace.id,
-      role: "member",
-      token: invitationToken,
-    },
-  });
 }
 
 /**
