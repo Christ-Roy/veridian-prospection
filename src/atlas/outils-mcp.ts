@@ -58,16 +58,22 @@ const OUTILS_BRUTS: Outil[] = [
   {
     name: "explorer_marche",
     title: "Explorer le marché",
-    description: "Compte et donne un aperçu des entreprises françaises répondant à un filtre, sans rien enregistrer.",
-    input: z.object({ filtre: FILTRE, colonnes: z.array(z.string()).max(25).optional(), par_page: z.number().int().min(1).max(50).default(10) }),
+    description: "Compte et donne un aperçu des entreprises françaises répondant à un filtre, sans rien enregistrer ; paginé.",
+    input: z.object({
+      filtre: FILTRE,
+      colonnes: z.array(z.string()).max(25).optional(),
+      page: z.number().int().min(1).max(500).default(1),
+      par_page: z.number().int().min(1).max(50).default(10),
+    }),
     annotations: LECTURE,
     run: lisible(async (a) => {
       const s = sourceMarche();
       const [total, apercu] = await Promise.all([
         s.compter(a.filtre),
-        s.apercu(a.filtre, { colonnes: (a.colonnes as string[]) ?? ["nom", "commune", "departement", "naf"], page: 1, parPage: a.par_page as number }),
+        s.apercu(a.filtre, { colonnes: (a.colonnes as string[]) ?? ["nom", "commune", "departement", "naf"], page: a.page as number, parPage: a.par_page as number }),
       ]);
-      return avecSource({ total, ...apercu });
+      const suivante = (a.page as number) * (a.par_page as number) < total ? (a.page as number) + 1 : null;
+      return avecSource({ total, page_suivante: suivante, ...apercu });
     }),
   },
   {
@@ -81,10 +87,10 @@ const OUTILS_BRUTS: Outil[] = [
   {
     name: "lister_segments_atlas",
     title: "Lister les dossiers et segments",
-    description: "Arbre des dossiers et segments de l'espace, avec le numéro de version courant.",
+    description: "Arbre des dossiers et segments de l'espace, avec le numéro de version courant et le droit d'écriture.",
     input: z.object({}),
     annotations: LECTURE,
-    run: lisible(async (_a, c) => seg.listerArbre(c.ctx.tenantId)),
+    run: lisible(async (_a, c) => ({ ...(await seg.listerArbre(c.ctx.tenantId)), peut_ecrire: peutEcrire(c) })),
   },
   {
     name: "lire_segment",
