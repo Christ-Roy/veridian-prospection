@@ -18,6 +18,18 @@ technique, données INPI, pipeline, mail, softphone, multi-tenant.
 - Auth.js v5, sessions JWT
 - Playwright (e2e), Vitest (unitaires)
 
+## Vision produit (Robert, 09/11) : Prospection devient un navigateur du marché sur ODH
+
+Le pipeline commercial part dans Twenty ; Prospection sert à trouver et qualifier un marché.
+Maquette : `docs/maquette/atlas-des-marches.html`. Linear : ROB-173 (ODH comme seule base).
+1. **Segments** : listes nommées (« Analyse marché », « Éleveurs canins », « Magasins de bricolage »),
+   rangées en dossiers, avec segments enfants, fusion et agrégation. Un segment = des filtres versionnés.
+2. **Scoring** : un moteur par segment ou sous-segment attribue un score de priorité ; on l'itère avec l'IA.
+3. **Vues** : carte (départements, descente), diagrammes, tableau, et modules de données faits par l'IA
+   à la volée, dans un cadre sécurisé (catalogue d'actions, bac à sable, rien ne sort sans clic humain).
+4. **Export** : réservé aux plans payants Veridian, tracé.
+Pilotage par IA via le MCP (Claude, ChatGPT en OAuth par le Hub), jamais d'IA payée par l'app.
+
 ## Identité : le Hub est la source de vérité
 
 Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
