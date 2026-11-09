@@ -9,6 +9,8 @@ export type ChampInfo = {
   groupe: string;
   operateurs: string[];
   repartition: boolean;
+  /** Axe du marché total (cube d'ODH). */
+  marche?: boolean;
 };
 
 export type ValeurCondition = string | number | boolean | (string | number)[];

@@ -56,7 +56,10 @@ const OUTILS_BRUTS: Outil[] = [
     input: z.object({}),
     annotations: LECTURE,
     run: async () => ({
-      champs: CHAMPS.map((c) => ({ id: c.id, libelle: c.libelle, type: c.type, groupe: c.groupe, operateurs: OPERATEURS[c.type], repartition: !!c.repartition })),
+      champs: CHAMPS.map((c) => ({ id: c.id, libelle: c.libelle, type: c.type, groupe: c.groupe, operateurs: OPERATEURS[c.type], repartition: !!c.repartition, marche: !!c.marche })),
+      // Un marché (segment racine) se définit sur les champs `marche` et se compte sur toutes les entreprises
+      // (analyser_marche) ; ses cibles ajoutent les autres champs, sur les fiches prospectables.
+      regle: "Marché = champs « marche » (toutes les entreprises, outil analyser_marche). Cible = segment enfant, avec les autres champs (fiches prospectables).",
       exemple: { conditions: [{ champ: "departement", op: "dans", valeur: ["69"] }, { champ: "date_creation", op: "apres", valeur: "2024-01-01" }] },
     }),
   },

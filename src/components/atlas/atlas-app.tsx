@@ -29,14 +29,16 @@ import {
   segmentsChanges,
   ciblesDe,
   fusionnerIAs,
+  KPIS_MARCHE,
   type ConnexionIA,
 } from "./flux";
 import { Chargement, Icone, type NomIcone } from "./icones";
-import { cheminDossier, combiner, conditionsHeritees, formaterNombre, indexerChamps, phraseFiltre } from "./logique";
+import { cheminDossier, combiner, conditionsHeritees, formaterNombre, indexerChamps, phraseCondition, phraseFiltre } from "./logique";
+import { part } from "./marche";
 import { PopoverFiltres } from "./popover-filtres";
 import { VueMarche } from "./vue-marche";
 import { HUB_IA, Rail, type IAVue } from "./rail";
-import type { ApercuMarche, Arbre, ChampInfo, Epingle, Filtre, Historique, SegmentArbre, SegmentDetail, Vue } from "./types";
+import type { AnalyseMarche, ApercuMarche, Arbre, ChampInfo, Condition, Epingle, Filtre, Historique, SegmentArbre, SegmentDetail, Vue } from "./types";
 import { VoletDossier, VoletFiche, VoletHistorique } from "./volets";
 import { VueBarres, VueEntonnoir, VuePriorite, VueTableau } from "./vues";
 
@@ -250,7 +252,12 @@ export function AtlasApp() {
   const filtreChiffres = useMemo(() => avecDepartement(filtreVue, descente), [filtreVue, descente]);
   const cleChiffres = JSON.stringify(filtreChiffres);
   const colonnes = detail?.colonnes.length ? detail.colonnes : colonnesLibres;
-  const listeKpis = useMemo(() => kpisDisponibles(index), [index]);
+  // Étape marché (rien de choisi, ou un marché) : toutes les entreprises, d'après le cube. Étape cible : les
+  // fiches prospectables, avec tous les filtres.
+  const baseMarche = etapeCourante(arbre, selection, false) === "marche";
+  const listeKpis = useMemo(() => (baseMarche ? KPIS_MARCHE : kpisDisponibles(index)), [baseMarche, index]);
+  const champsVisibles = useMemo(() => (baseMarche ? (champs ?? []).filter((c) => c.marche) : (champs ?? [])), [baseMarche, champs]);
+  const [ignoreesMarche, setIgnoreesMarche] = useState<Condition[]>([]);
 
   // ---------------------------------------------------------------- chiffres clés
   useEffect(() => {
@@ -258,6 +265,22 @@ export function AtlasApp() {
     const ctl = new AbortController();
     const f = JSON.parse(cleChiffres) as Filtre;
     setKpisBusy(true);
+    if (baseMarche) {
+      appeler<AnalyseMarche>("analyser_marche", { filtre: f }, ctl.signal)
+        .then((r) => {
+          setKpis({ ...r.total });
+          setIgnoreesMarche(r.conditions_ignorees);
+          setErreur(null);
+        })
+        .catch((e) => !estAnnulation(e) && setErreur(texteErreur(e)))
+        .finally(() => !ctl.signal.aborted && setKpisBusy(false));
+      return () => ctl.abort();
+    }
+    setIgnoreesMarche([]);
+    // Cible : sa part du marché entier (le cube compte le marché parent sur toutes les entreprises).
+    const marcheTotal = heritees.length
+      ? appeler<AnalyseMarche>("analyser_marche", { filtre: { conditions: heritees } }, ctl.signal).then((r) => r.total.entreprises).catch(() => null)
+      : Promise.resolve(null);
     Promise.all(
       listeKpis.map((k) =>
         appeler<ApercuMarche>("explorer_marche", { filtre: k.condition ? avecCondition(f, k.condition) : f, colonnes: ["nom"], page: 1, par_page: 1 }, ctl.signal).then((r) => {
@@ -266,14 +289,15 @@ export function AtlasApp() {
         }),
       ),
     )
-      .then((r) => {
-        setKpis(Object.fromEntries(r));
+      .then(async (r) => {
+        const m = await marcheTotal;
+        setKpis({ ...Object.fromEntries(r), ...(m ? { marche: m } : {}) });
         setErreur(null);
       })
       .catch((e) => !estAnnulation(e) && setErreur(texteErreur(e)))
       .finally(() => !ctl.signal.aborted && setKpisBusy(false));
     return () => ctl.abort();
-  }, [attente, champs, cleChiffres, listeKpis, rafraichir]);
+  }, [attente, champs, cleChiffres, listeKpis, rafraichir, baseMarche, heritees]);
 
   // ---------------------------------------------------------------- écriture
   const ecritureRefusee = useCallback(() => {
@@ -675,7 +699,7 @@ export function AtlasApp() {
                 )}
                 {pop && (
                   <PopoverFiltres
-                    champs={champs}
+                    champs={champsVisibles}
                     index={index}
                     propres={travail.conditions}
                     heritees={heritees}
@@ -700,16 +724,31 @@ export function AtlasApp() {
             {listeKpis.map((k) => (
               <div className="kpi" key={k.id}>
                 <b className="num">{kpis && kpis[k.id] !== undefined ? formaterNombre(kpis[k.id]) : "–"}</b>
-                <span>{k.libelle}</span>
+                <span>
+                  {k.libelle}
+                  {k.part && kpis && kpis[k.id] !== undefined ? ` · ${part(kpis[k.id], kpis.entreprises ?? 0)}` : ""}
+                </span>
               </div>
             ))}
-            {kpis && (kpis.envoyable ?? kpis.email) !== undefined && (
+            {!baseMarche && kpis && kpis.marche !== undefined && kpis.total !== undefined && (
               <div className="kpi">
-                <b className="num">{formaterNombre(joursEnvoi(kpis.envoyable ?? kpis.email))} j</b>
+                <b className="num">{part(kpis.total, kpis.marche)}</b>
+                <span>des {formaterNombre(kpis.marche)} entreprises du marché</span>
+              </div>
+            )}
+            {kpis && (kpis.envoyable ?? kpis.email_envoyable ?? kpis.email) !== undefined && (
+              <div className="kpi">
+                <b className="num">{formaterNombre(joursEnvoi(kpis.envoyable ?? kpis.email_envoyable ?? kpis.email))} j</b>
                 <span>d&apos;envoi à 400 par jour</span>
               </div>
             )}
           </div>
+          {baseMarche && ignoreesMarche.length > 0 && (
+            <p className="hint" hidden={vue === "marche"}>
+              Le marché se compte sur toutes les entreprises, par activité, lieu, forme, effectif et création. Non pris en compte ici, à poser sur une
+              cible : {ignoreesMarche.map((c) => phraseCondition(c, index)).join(" ; ")}.
+            </p>
+          )}
 
           {erreur && (
             <p className="err" role="alert">
@@ -725,7 +764,7 @@ export function AtlasApp() {
             {attente ? (
               <Chargement />
             ) : vue === "carte" ? (
-              <Carte filtre={filtreVue} index={index} descente={descente} onDescente={setDescente} onFiche={ouvrirFiche} />
+              <Carte base={baseMarche ? "marche" : "prospection"} filtre={filtreVue} index={index} descente={descente} onDescente={setDescente} onFiche={ouvrirFiche} />
             ) : vue === "marche" ? (
               <VueMarche filtre={filtreChiffres} index={index} />
             ) : vue === "barres" ? (

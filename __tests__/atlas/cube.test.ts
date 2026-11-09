@@ -5,7 +5,9 @@
  */
 import { describe, expect, test } from "vitest";
 
-import { compilerCube, entreeDepuisFiltre, libelleCube } from "@/atlas/cube";
+import { CHAMPS } from "@/atlas/champs";
+import { COLONNES_MESURES, compilerCube, entreeDepuisFiltre, libelleCube } from "@/atlas/cube";
+import { KPIS_MARCHE } from "@/components/atlas/flux";
 import { FiltreInvalide } from "@/atlas/filtres";
 import { NAF_LIBELLES, normaliserNaf } from "@/atlas/naf";
 import { SourceClickHouse, SourceSimulee } from "@/atlas/source";
@@ -72,6 +74,28 @@ describe("segment Atlas → cube", () => {
     const { entree, ignorees } = entreeDepuisFiltre({ conditions: [{ champ: "naf", op: "hors", valeur: ["0149Z"] }] });
     expect(entree.naf).toBeUndefined();
     expect(ignorees).toHaveLength(1);
+  });
+});
+
+describe("cohérence marché ↔ cube", () => {
+  test("chaque champ « marché » du catalogue se traduit sur le cube (jamais ignoré en silence)", () => {
+    const exemple: Record<string, { op: string; valeur: unknown }> = {
+      naf: { op: "dans", valeur: ["0149Z"] },
+      naf_division: { op: "dans", valeur: ["01"] },
+      departement: { op: "dans", valeur: ["69"] },
+      forme_juridique: { op: "dans", valeur: ["5499"] },
+      effectif: { op: "dans", valeur: ["01"] },
+      date_creation: { op: "apres", valeur: "2020-01-01" },
+    };
+    const marche = CHAMPS.filter((c) => c.marche).map((c) => c.id);
+    expect(marche.sort()).toEqual(Object.keys(exemple).sort());
+    for (const id of marche) {
+      const { ignorees } = entreeDepuisFiltre({ conditions: [{ champ: id, ...exemple[id] }] });
+      expect(ignorees, id).toEqual([]);
+    }
+  });
+  test("les chiffres clés du marché sont des mesures rendues par le cube", () => {
+    for (const k of KPIS_MARCHE) expect(COLONNES_MESURES).toContain(k.id);
   });
 });
 

@@ -167,7 +167,18 @@ export const avecDepartement = (f: Filtre, code: string | null): Filtre => (code
 /** Jours d'envoi à un rythme donné (400 par jour par défaut, comme la maquette), sur les emails envoyables. */
 export const joursEnvoi = (n: number, parJour = 400) => (n > 0 ? Math.ceil(n / parJour) : 0);
 
-export type Kpi = { id: string; libelle: string; condition: Condition | null };
+export type Kpi = { id: string; libelle: string; condition: Condition | null; /** affiche aussi la part du total */ part?: boolean };
+
+/**
+ * Chiffres clés de l'étape marché, lus sur le cube (toutes les entreprises) : le marché, puis ce qu'on
+ * peut en contacter. Les ids correspondent aux mesures d'analyser_marche.
+ */
+export const KPIS_MARCHE: Kpi[] = [
+  { id: "entreprises", libelle: "entreprises sur le marché", condition: null },
+  { id: "prospectables", libelle: "contactables", condition: null, part: true },
+  { id: "email_envoyable", libelle: "email envoyable", condition: null, part: true },
+  { id: "telephone_envoyable", libelle: "téléphone utilisable", condition: null, part: true },
+];
 
 /** Chiffres clés : toujours le total, puis ceux dont le champ existe au catalogue. */
 export function kpisDisponibles(champs: ReadonlyMap<string, ChampInfo>): Kpi[] {

@@ -9,19 +9,28 @@ import { bornes, cadrageDescente, chaleur, interpolerCadre, projeterPoints, rang
 import { avecCondition, avecDepartement } from "./flux";
 import { Chargement } from "./icones";
 import { formaterNombre } from "./logique";
-import type { Boite, ChampInfo, Filtre, PointCarte, RepartitionMarche } from "./types";
+import type { AnalyseMarche, Boite, ChampInfo, Filtre, PointCarte, RepartitionMarche } from "./types";
 
 const CODES = Object.keys(DEPARTMENT_PATHS);
 const OFF = "#f1f5f9";
 const OFF_LINE = "#d5dde7";
 
 type Props = {
+  /** « marche » : toutes les entreprises (cube d'ODH) ; « prospection » : les fiches prospectables. */
+  base?: "marche" | "prospection";
   filtre: Filtre;
   index: ReadonlyMap<string, ChampInfo>;
   descente: string | null;
   onDescente: (code: string | null) => void;
   onFiche: (siren: string, nom: string) => void;
 };
+
+/** Mesures de la base marché : sur toutes les entreprises, la part qu'on peut contacter. */
+const MESURES_MARCHE: { id: Mesure; libelle: string; champ: string }[] = [
+  { id: "nombre", libelle: "Entreprises", champ: "" },
+  { id: "contactable", libelle: "Part contactable", champ: "" },
+  { id: "email_envoyable", libelle: "Email envoyable", champ: "" },
+];
 
 const MESURES: { id: Mesure; libelle: string; champ: string }[] = [
   { id: "nombre", libelle: "Nombre", champ: "" },
@@ -35,7 +44,7 @@ function partieDe(m: Mesure, f: Filtre): Filtre | null {
   return null;
 }
 
-export function Carte({ filtre, index, descente, onDescente, onFiche }: Props) {
+export function Carte({ base: source = "prospection", filtre, index, descente, onDescente, onFiche }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const cadre = useRef<number[]>([...VUE_FRANCE]);
   const anim = useRef(0);
@@ -49,15 +58,31 @@ export function Carte({ filtre, index, descente, onDescente, onFiche }: Props) {
   const [erreur, setErreur] = useState<string | null>(null);
   const [bulle, setBulle] = useState<{ x: number; y: number; texte: string } | null>(null);
   const cle = JSON.stringify(filtre);
-  const mesures = MESURES.filter((m) => !m.champ || index.has(m.champ));
+  const mesures = source === "marche" ? MESURES_MARCHE : MESURES.filter((m) => !m.champ || index.has(m.champ));
+  // Changer de base (marché ↔ cible) remet une mesure qui existe dans la nouvelle base.
+  useEffect(() => {
+    if (!mesures.some((m) => m.id === mesure)) setMesure("nombre");
+  }, [mesures, mesure]);
 
   // Répartition par département (et sous-population de la mesure).
   useEffect(() => {
     const ctl = new AbortController();
     const f = JSON.parse(cle) as Filtre;
-    const p = partieDe(mesure, f);
     setChargement(true);
     setErreur(null);
+    if (source === "marche") {
+      // Une requête au cube donne, par département, le total et les parts contactables.
+      appeler<AnalyseMarche>("analyser_marche", { filtre: f, axe: "departement", limite: 200 }, ctl.signal)
+        .then((r) => {
+          const lignes = r.lignes.filter((l) => l.cle && l.cle !== "99");
+          setBase(lignes.map((l) => ({ cle: l.cle, nombre: l.entreprises })));
+          setPartie(mesure === "nombre" ? null : lignes.map((l) => ({ cle: l.cle, nombre: mesure === "contactable" ? l.prospectables : l.email_envoyable })));
+        })
+        .catch((e) => !estAnnulation(e) && setErreur(texteErreur(e)))
+        .finally(() => !ctl.signal.aborted && setChargement(false));
+      return () => ctl.abort();
+    }
+    const p = partieDe(mesure, f);
     Promise.all([
       appeler<RepartitionMarche>("repartir_marche", { filtre: f, champ: "departement", limite: 120 }, ctl.signal),
       p ? appeler<RepartitionMarche>("repartir_marche", { filtre: p, champ: "departement", limite: 120 }, ctl.signal) : Promise.resolve(null),
@@ -69,7 +94,7 @@ export function Carte({ filtre, index, descente, onDescente, onFiche }: Props) {
       .catch((e) => !estAnnulation(e) && setErreur(texteErreur(e)))
       .finally(() => !ctl.signal.aborted && setChargement(false));
     return () => ctl.abort();
-  }, [cle, mesure]);
+  }, [cle, mesure, source]);
 
   // Descente : points des entreprises et communes du département.
   useEffect(() => {
@@ -124,7 +149,8 @@ export function Carte({ filtre, index, descente, onDescente, onFiche }: Props) {
   const b = bornes(valeurs.values());
   const enPct = mesure !== "nombre";
   const fv = (v: number) => (enPct ? `${v.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} %` : formaterNombre(Math.round(v)));
-  const unite = mesure === "nombre" ? "entreprises" : mesure === "sans_site" ? "sans site web" : "avec email";
+  const unite =
+    mesure === "nombre" ? "entreprises" : mesure === "sans_site" ? "sans site web" : mesure === "contactable" ? "contactables" : mesure === "email_envoyable" ? "email envoyable" : "avec email";
   const nom = (c: string) => DEPARTMENT_NAMES[c] ?? c;
   const projetes = useMemo(() => (points && boite ? projeterPoints(points, boite) : []), [points, boite]);
   const rayon = boite ? Math.max(boite.width, boite.height) / 95 : 1;
@@ -261,6 +287,7 @@ export function Carte({ filtre, index, descente, onDescente, onFiche }: Props) {
             </div>
             <p className="hint">
               {points && points.length < totalDescente ? `${formaterNombre(points.length)} points affichés sur ${formaterNombre(totalDescente)}. ` : ""}
+              {source === "marche" ? "Points : les fiches prospectables du département. " : ""}
               <span style={{ color: "var(--blue)" }}>●</span> avec email. Cliquez un point pour ouvrir la fiche.
             </p>
           </>

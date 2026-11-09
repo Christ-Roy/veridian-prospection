@@ -126,7 +126,7 @@ export function projeterPoints(points: readonly PointCarte[], b: Boite): PointPr
   return valides.map((p) => ({ ...p, x: ox + (p.lon * COS_LAT - minX) * echelle, y: oy + (maxY - p.lat) * echelle }));
 }
 
-export type Mesure = "nombre" | "sans_site" | "avec_email";
+export type Mesure = "nombre" | "sans_site" | "avec_email" | "contactable" | "email_envoyable";
 
 /** Valeurs de la carte par département : nombre, ou part (%) d'une sous-population. */
 export function valeursCarte(

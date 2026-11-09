@@ -16,24 +16,26 @@ export type Champ = {
   groupe: "Identité" | "Activité" | "Lieu" | "Taille et finances" | "Web" | "Contact" | "Signaux" | "Qualité";
   /** Peut servir d'axe de répartition (carte, diagrammes). */
   repartition?: boolean;
+  /** Axe du cube d'ODH : définit un marché sur TOUTES les entreprises de France (voir cube.ts). */
+  marche?: boolean;
 };
 
 export const CHAMPS: readonly Champ[] = [
   { id: "siren", libelle: "SIREN", type: "texte", sql: "siren", groupe: "Identité" },
   { id: "nom", libelle: "Nom", type: "texte", sql: "legal_name", groupe: "Identité" },
-  { id: "forme_juridique", libelle: "Forme juridique", type: "liste", sql: "legal_form", groupe: "Identité", repartition: true },
-  { id: "date_creation", libelle: "Date de création", type: "date", sql: "creation_date", groupe: "Identité" },
+  { id: "forme_juridique", libelle: "Forme juridique", type: "liste", sql: "legal_form", groupe: "Identité", repartition: true, marche: true },
+  { id: "date_creation", libelle: "Date de création", type: "date", sql: "creation_date", groupe: "Identité", marche: true },
   { id: "dirigeant", libelle: "Dirigeant", type: "texte", sql: "director_name", groupe: "Identité" },
-  { id: "naf", libelle: "Code NAF", type: "liste", sql: "naf_code", groupe: "Activité", repartition: true },
-  { id: "naf_division", libelle: "Division NAF", type: "liste", sql: "naf_division", groupe: "Activité", repartition: true },
+  { id: "naf", libelle: "Code NAF", type: "liste", sql: "naf_code", groupe: "Activité", repartition: true, marche: true },
+  { id: "naf_division", libelle: "Division NAF", type: "liste", sql: "naf_division", groupe: "Activité", repartition: true, marche: true },
   { id: "secteur", libelle: "Secteur", type: "liste", sql: "activity_sector", groupe: "Activité", repartition: true },
   { id: "activite", libelle: "Activité (libellé)", type: "texte", sql: "activity_label", groupe: "Activité" },
-  { id: "departement", libelle: "Département", type: "liste", sql: "department", groupe: "Lieu", repartition: true },
+  { id: "departement", libelle: "Département", type: "liste", sql: "department", groupe: "Lieu", repartition: true, marche: true },
   { id: "code_postal", libelle: "Code postal", type: "liste", sql: "postal_code", groupe: "Lieu", repartition: true },
   { id: "commune", libelle: "Commune", type: "texte", sql: "city", groupe: "Lieu", repartition: true },
   { id: "commune_insee", libelle: "Commune (INSEE)", type: "liste", sql: "commune_insee", groupe: "Lieu", repartition: true },
   { id: "taille", libelle: "Taille", type: "liste", sql: "size_band", groupe: "Taille et finances", repartition: true },
-  { id: "effectif", libelle: "Tranche d'effectif", type: "liste", sql: "headcount_range", groupe: "Taille et finances", repartition: true },
+  { id: "effectif", libelle: "Tranche d'effectif", type: "liste", sql: "headcount_range", groupe: "Taille et finances", repartition: true, marche: true },
   { id: "chiffre_affaires", libelle: "Chiffre d'affaires (€)", type: "nombre", sql: "revenue", groupe: "Taille et finances" },
   { id: "resultat_net", libelle: "Résultat net (€)", type: "nombre", sql: "net_income", groupe: "Taille et finances" },
   { id: "tendance_ca", libelle: "Tendance du CA", type: "liste", sql: "revenue_trend", groupe: "Taille et finances", repartition: true },
