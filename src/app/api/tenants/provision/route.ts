@@ -27,6 +27,27 @@ import { seedDefaultPipelineStages } from "@/lib/outreach/pipeline-stages";
  * de provisioning principal (le Hub considère succès dès qu'on a renvoyé
  * api_key + login_url).
  */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Relie le tenant local à son tenant Hub. Posé une fois : une valeur différente reçue ensuite est
+ * refusée et journalisée, jamais écrasée (le claim tenant_id du MCP en dépend). Ne bloque jamais
+ * le provisionnement.
+ */
+async function lierTenantHub(tenant: { id: string; hubTenantId?: string | null }, hubTenantId: string | null) {
+  if (!hubTenantId || tenant.hubTenantId === hubTenantId) return;
+  if (tenant.hubTenantId) {
+    console.warn(`[provision] hub_tenant_id divergent pour tenant=${tenant.id} : gardé ${tenant.hubTenantId}, reçu ${hubTenantId}`);
+    return;
+  }
+  try {
+    await prisma.tenant.update({ where: { id: tenant.id }, data: { hubTenantId } });
+  } catch (err) {
+    // Unicité : ce tenant Hub est déjà relié à un autre tenant local.
+    console.error(`[provision] hub_tenant_id ${hubTenantId} non relié à tenant=${tenant.id} : ${(err as Error).message}`);
+  }
+}
+
 async function ensureOwnerWorkspace(
   userId: string,
   email: string,
@@ -169,7 +190,8 @@ export async function POST(request: NextRequest) {
     email?: string;
     plan?: string;
     user_id?: string;
-    metadata?: { hub_user_id?: string };
+    metadata?: { hub_user_id?: string; hub_tenant_id?: string };
+    hub_tenant_id?: string;
     email_proven?: boolean;
   };
   try {
@@ -179,6 +201,10 @@ export async function POST(request: NextRequest) {
   }
   const { email, plan } = body;
   const hubUserId = body.user_id || body.metadata?.hub_user_id;
+  // Tenant côté Hub (racine ou metadata) : relie le tenant local au claim tenant_id du MCP.
+  const hubTenantIdRaw = body.hub_tenant_id ?? body.metadata?.hub_tenant_id;
+  const hubTenantId =
+    typeof hubTenantIdRaw === "string" && UUID_RE.test(hubTenantIdRaw) ? hubTenantIdRaw.toLowerCase() : null;
 
   if (!email) {
     return NextResponse.json({ error: "email is required" }, { status: 400 });
@@ -245,7 +271,7 @@ export async function POST(request: NextRequest) {
     try {
       const tenant = await prisma.tenant.findFirst({
         where: { userId: lookupUserId, deletedAt: null },
-        select: { id: true },
+        select: { id: true, hubTenantId: true },
       });
       if (tenant) {
         await prisma.tenant.update({
@@ -256,6 +282,7 @@ export async function POST(request: NextRequest) {
             prospectionLoginTokenUsedAt: null,
           },
         });
+        await lierTenantHub(tenant, hubTenantId);
       } else {
         console.warn(
           `[provision] No tenant found for hub_user_id=${hubUserId} → token not persisted, autologin will fail`,

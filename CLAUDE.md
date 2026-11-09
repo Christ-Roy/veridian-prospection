@@ -40,7 +40,8 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
   `aud` = `MCP_PUBLIC_URL`, défaut `https://prospection.app.veridian.site/api/mcp`). Utilisateur retrouvé par
   `hub_user_id`, jamais créé ; inconnu = 401 avec `hub_user_unknown` (le Hub crée le compte et réessaie),
   sans espace = 403. Claim `tenant_id` : retenu seulement si l'utilisateur est propriétaire ou membre de ce
-  tenant local, sinon espace par défaut. Prospection ne stocke pas l'id du tenant Hub (ids locaux distincts).
+  tenant local, sinon espace par défaut. Ids locaux distincts de ceux du Hub : `tenants.hub_tenant_id`, reçu au
+  provisionnement (`hub_tenant_id`, racine ou `metadata`), posé une fois et jamais écrasé, fait le lien.
 - Outils (`src/lib/mcp/outils.ts`) : mêmes fonctions que les écrans, espace déduit de l'utilisateur,
   plafond du plan appliqué, fiche par `serveLeadDetail` (quota, 30/min, masquage partagés avec l'écran).
   Un `viewer` ne voit pas `changer_statut`. Ajouter un outil = une entrée dans `OUTILS`, le Hub le relit seul.

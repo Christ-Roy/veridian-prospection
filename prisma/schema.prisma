@@ -878,6 +878,10 @@ model Tenant {
   slug   String       @unique
   status TenantStatus @default(pending)
 
+  // Identifiant du tenant côté Hub, reçu au provisionnement (hub_tenant_id). Sert à retenir le
+  // claim tenant_id du jeton MCP (CONTRAT-MCP §2). Les ids locaux restent distincts de ceux du Hub.
+  hubTenantId String? @unique @map("hub_tenant_id") @db.Uuid
+
   // Intégrations Twenty CRM
   twentyWorkspaceId         String?   @map("twenty_workspace_id") @db.Uuid
   twentySubdomain           String?   @map("twenty_subdomain")

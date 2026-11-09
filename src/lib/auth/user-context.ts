@@ -55,7 +55,7 @@ export async function buildUserContext(
   preferredTenantId: string | null = null,
 ): Promise<UserContext | null> {
   const cached = contextCache.get(user.id);
-  if (cached && cached.expiresAt > Date.now() && (!preferredTenantId || cached.ctx.tenantId === preferredTenantId)) {
+  if (cached && cached.expiresAt > Date.now() && !preferredTenantId) {
     return { ...cached.ctx, activeWorkspaceId: activeCookie };
   }
 
@@ -132,20 +132,27 @@ export async function buildUserContext(
     activeWorkspaceId,
   };
 
-  if (!preferredTenantId || tenant.id === preferredTenantId) {
+  // Le cache par utilisateur ne garde que l'espace par défaut : un espace demandé est relu à chaque fois.
+  if (!preferredTenantId) {
     contextCache.set(user.id, { ctx, expiresAt: Date.now() + CACHE_TTL_MS });
   }
   return ctx;
 }
 
-/** Le tenant `tenantId`, s'il est actif et que l'utilisateur en est propriétaire ou membre non retiré. */
+/**
+ * Le tenant désigné par `tenantId` (id du tenant Hub relié au provisionnement, ou id local), s'il est
+ * actif et que l'utilisateur en est propriétaire ou membre non retiré.
+ */
 async function tenantOfUser(userId: string, tenantId: string): Promise<{ id: string; userId: string } | null> {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) return null;
-  const t = await prisma.tenant.findFirst({ where: { id: tenantId, deletedAt: null }, select: { id: true, userId: true } });
+  const t = await prisma.tenant.findFirst({
+    where: { OR: [{ hubTenantId: tenantId }, { id: tenantId }], deletedAt: null },
+    select: { id: true, userId: true },
+  });
   if (!t) return null;
   if (t.userId === userId) return t;
   const m = await prisma.workspaceMember.findFirst({
-    where: { userId, deletedAt: null, workspace: { tenantId, deletedAt: null } },
+    where: { userId, deletedAt: null, workspace: { tenantId: t.id, deletedAt: null } },
     select: { userId: true },
   });
   return m ? t : null;

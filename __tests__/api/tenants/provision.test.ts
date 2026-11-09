@@ -450,3 +450,56 @@ describe("provision — seed pipeline stages sur workspace.create", () => {
     expect(source).toMatch(/seedDefaultPipelineStages\(\s*prisma\s*,\s*workspace\.id\s*\)/);
   });
 });
+
+describe("POST /api/tenants/provision : hub_tenant_id (CONTRAT-MCP §2)", () => {
+  const H = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+  const uid = "22222222-2222-4222-8222-222222222222";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resolveOrCreateUserFromHubMock.mockImplementation(async ({ hubUserId }: { hubUserId: string }) => ({
+      id: hubUserId,
+      createdByHub: true,
+      hubUserIdConflict: false,
+    }));
+  });
+
+  async function provisionner(corps: Record<string, unknown>, tenantExistant: { id: string; hubTenantId: string | null }) {
+    const { prisma } = (await import("@/lib/prisma")) as unknown as {
+      prisma: { tenant: { findFirst: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> } };
+    };
+    prisma.tenant.findFirst.mockResolvedValueOnce(null); // ensureOwnerWorkspace
+    prisma.tenant.findFirst.mockResolvedValueOnce(tenantExistant); // persistance du jeton
+    const raw = JSON.stringify({ email: "hub-tenant@example.com", user_id: uid, ...corps });
+    const res = await POST(
+      makeRequest("/api/tenants/provision", {
+        method: "POST",
+        headers: { ...standardHeaders(raw), "x-forwarded-for": `10.0.9.${Math.floor(Math.random() * 250)}` },
+        body: raw,
+      }),
+    );
+    expect(res.status).toBe(200);
+    return prisma.tenant.update.mock.calls.filter((c) => (c[0] as { data: Record<string, unknown> }).data.hubTenantId !== undefined);
+  }
+
+  test("à la racine du corps : relié au tenant local", async () => {
+    const liens = await provisionner({ hub_tenant_id: H }, { id: "t-42", hubTenantId: null });
+    expect(liens).toEqual([[{ where: { id: "t-42" }, data: { hubTenantId: H } }]]);
+  });
+
+  test("dans metadata : relié aussi", async () => {
+    const liens = await provisionner({ metadata: { hub_tenant_id: H.toUpperCase() } }, { id: "t-42", hubTenantId: null });
+    expect(liens).toEqual([[{ where: { id: "t-42" }, data: { hubTenantId: H } }]]);
+  });
+
+  test("un lien existant différent n'est jamais écrasé", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const liens = await provisionner({ hub_tenant_id: H }, { id: "t-42", hubTenantId: "99999999-9999-4999-8999-999999999999" });
+    expect(liens).toEqual([]);
+  });
+
+  test("une valeur qui n'est pas un identifiant est ignorée", async () => {
+    const liens = await provisionner({ hub_tenant_id: "mon-espace" }, { id: "t-42", hubTenantId: null });
+    expect(liens).toEqual([]);
+  });
+});

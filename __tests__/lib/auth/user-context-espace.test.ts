@@ -23,6 +23,10 @@ vi.mock("next/headers", () => ({ cookies: vi.fn() }));
 import { buildUserContext } from "@/lib/auth/user-context";
 
 const T_PROPRE = "11111111-1111-4111-8111-111111111111";
+const T_HUB = "33333333-3333-4333-8333-333333333333";
+type Where = { id?: string; userId?: string; OR?: { id?: string; hubTenantId?: string }[] };
+/** Identifiant demandé dans un `where` (forme OR hubTenantId / id). */
+const cible = (w: Where) => w.OR?.[0]?.hubTenantId ?? w.id;
 const T_AUTRE = "22222222-2222-4222-8222-222222222222";
 let n = 0;
 const user = () => ({ id: `u-${++n}`, email: "a@b.fr" }); // ids uniques : le cache est par utilisateur
@@ -35,8 +39,8 @@ beforeEach(() => {
 describe("buildUserContext, espace demandé", () => {
   test("espace d'un autre : refusé, retour à l'espace par défaut de l'utilisateur", async () => {
     const u = user();
-    tenantFindFirst.mockImplementation(async ({ where }: { where: { id?: string; userId?: string } }) =>
-      where.id === T_AUTRE ? { id: T_AUTRE, userId: "quelqu-un-d-autre" } : where.userId === u.id ? { id: T_PROPRE, userId: u.id } : null,
+    tenantFindFirst.mockImplementation(async ({ where }: { where: Where }) =>
+      cible(where) === T_AUTRE ? { id: T_AUTRE, userId: "quelqu-un-d-autre" } : where.userId === u.id ? { id: T_PROPRE, userId: u.id } : null,
     );
     memberFindFirst.mockResolvedValue(null); // pas membre de T_AUTRE
     const ctx = await buildUserContext(u, null, T_AUTRE);
@@ -45,13 +49,25 @@ describe("buildUserContext, espace demandé", () => {
 
   test("espace dont il est membre : retenu", async () => {
     const u = user();
-    tenantFindFirst.mockImplementation(async ({ where }: { where: { id?: string; userId?: string } }) =>
-      where.id === T_AUTRE ? { id: T_AUTRE, userId: "proprietaire" } : where.userId === u.id ? { id: T_PROPRE, userId: u.id } : null,
+    tenantFindFirst.mockImplementation(async ({ where }: { where: Where }) =>
+      cible(where) === T_AUTRE ? { id: T_AUTRE, userId: "proprietaire" } : where.userId === u.id ? { id: T_PROPRE, userId: u.id } : null,
     );
     memberFindFirst.mockResolvedValue({ userId: "u-x" });
     const ctx = await buildUserContext(u, null, T_AUTRE);
     expect(ctx?.tenantId).toBe(T_AUTRE);
     expect(ctx?.isAdmin).toBe(false);
+  });
+
+  test("id du tenant Hub relié au provisionnement : retrouve le tenant local", async () => {
+    const u = user();
+    tenantFindFirst.mockImplementation(async ({ where }: { where: Where }) =>
+      where.OR?.some((o) => o.hubTenantId === T_HUB) ? { id: T_PROPRE, userId: u.id } : where.userId === u.id ? { id: T_PROPRE, userId: u.id } : null,
+    );
+    const ctx = await buildUserContext(u, null, T_HUB);
+    expect(ctx?.tenantId).toBe(T_PROPRE);
+    expect(tenantFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { OR: [{ hubTenantId: T_HUB }, { id: T_HUB }], deletedAt: null } }),
+    );
   });
 
   test("identifiant qui n'est pas un UUID : ignoré sans requête", async () => {
