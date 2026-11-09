@@ -96,6 +96,9 @@ jobs:
       - name: eslint src/
         run: npx eslint src/ --quiet
 
+      - name: contrat image_tag (aucun défaut figé dans le jobspec staging)
+        run: python3 scripts/ci/check-image-tag-sans-defaut.py deploy/prospection-staging.nomad.hcl
+
       - name: vitest unit
         run: npx vitest run src/
 

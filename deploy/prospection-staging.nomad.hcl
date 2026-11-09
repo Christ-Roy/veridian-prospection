@@ -18,7 +18,6 @@
 variable "image_tag" {
   type        = string
   description = "Tag de l'image ghcr.io/christ-roy/prospection à déployer (injecté par la CI)."
-  default     = "staging-341b011"
 }
 
 job "prospection-staging" {
