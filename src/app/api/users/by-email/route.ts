@@ -35,6 +35,8 @@ type WorkspaceCard = {
   // id local du tenant : cible de `update-plan` côté Hub (il diffère souvent du
   // tenant_id Hub).
   tenant_id: string;
+  /** Tenant Hub relié au provisionnement (`tenants.hub_tenant_id`), `null` tant qu'il ne l'est pas. Jamais omis. */
+  hub_tenant_id: string | null;
   workspace_name: string;
   role: string;
   plan: string;
@@ -121,7 +123,7 @@ export async function GET(request: NextRequest) {
   const tenantIds = Array.from(new Set(memberships.map((m) => m.workspace.tenantId)));
   const tenants = await prisma.tenant.findMany({
     where: { id: { in: tenantIds }, deletedAt: null },
-    select: { id: true, plan: true, status: true, metadata: true },
+    select: { id: true, plan: true, status: true, metadata: true, hubTenantId: true },
   });
   const tenantByID = new Map(tenants.map((t) => [t.id, t]));
 
@@ -136,6 +138,7 @@ export async function GET(request: NextRequest) {
       return {
         workspace_id: m.workspace.id,
         tenant_id: m.workspace.tenantId,
+        hub_tenant_id: tenant.hubTenantId ?? null,
         workspace_name: m.workspace.name,
         role: m.role,
         plan: tenant.plan ?? "freemium",

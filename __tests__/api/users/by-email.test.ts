@@ -201,6 +201,7 @@ describe("GET /api/users/by-email — Hub Discovery", () => {
     expect(body.workspaces[0]).toEqual({
       workspace_id: "w1",
       tenant_id: "t1",
+      hub_tenant_id: null,
       workspace_name: "Acme",
       role: "owner",
       plan: "pro",
@@ -224,6 +225,19 @@ describe("GET /api/users/by-email — Hub Discovery", () => {
     const res = await GET(req({ email: "x@y.com" }, signedHeaders()));
     const body = (await readJson(res)) as { workspaces: Array<{ trial_status: string | null }> };
     expect(body.workspaces[0].trial_status).toBe("expired");
+  });
+
+  test("rend hub_tenant_id du tenant relié, pour hub reconcile", async () => {
+    mocks.userFindFirst.mockResolvedValue({ id: "u1", email: "x@y.com" });
+    mocks.memberFindMany.mockResolvedValue([
+      { role: "owner", workspace: { id: "w1", name: "W", tenantId: "t1" } },
+    ]);
+    mocks.tenantFindMany.mockResolvedValue([
+      { id: "t1", plan: "pro", status: "active", hubTenantId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee" },
+    ]);
+    const res = await GET(req({ email: "x@y.com" }, signedHeaders()));
+    const body = (await readJson(res)) as { workspaces: Array<{ hub_tenant_id: string | null }> };
+    expect(body.workspaces[0].hub_tenant_id).toBe("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
   });
 
   test("plan fallback freemium si tenant.plan null", async () => {
