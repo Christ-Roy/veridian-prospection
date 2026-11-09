@@ -10,7 +10,8 @@ import { webcrypto } from "node:crypto";
 
 export class JetonRefuse extends Error {}
 
-export type IdentiteHub = { hubUserId: string; email: string; scope: string; clientId: string | null; jti: string | null };
+/** `tenantId` : espace Hub signé par la porte après vérification d'appartenance ; l'app revérifie. */
+export type IdentiteHub = { hubUserId: string; email: string; scope: string; clientId: string | null; jti: string | null; tenantId: string | null };
 
 type Jwk = JsonWebKey & { kid?: string; use?: string; alg?: string };
 type Fetch = typeof fetch;
@@ -133,5 +134,6 @@ export async function verifierJetonHub(
     scope: typeof c.scope === "string" ? c.scope : "",
     clientId: typeof c.client_id === "string" ? c.client_id : null,
     jti: typeof c.jti === "string" ? c.jti : null,
+    tenantId: typeof c.tenant_id === "string" && UUID.test(c.tenant_id) ? c.tenant_id.toLowerCase() : null,
   };
 }

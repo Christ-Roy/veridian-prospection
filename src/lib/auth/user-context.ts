@@ -51,16 +51,20 @@ export async function getUserContext(): Promise<UserContext | null> {
 export async function buildUserContext(
   user: { id: string; email: string },
   activeCookie: string | null,
+  /** Espace demandé (MCP : `tenant_id` signé par le Hub). Retenu seulement si l'utilisateur en est propriétaire ou membre. */
+  preferredTenantId: string | null = null,
 ): Promise<UserContext | null> {
   const cached = contextCache.get(user.id);
-  if (cached && cached.expiresAt > Date.now()) {
+  if (cached && cached.expiresAt > Date.now() && (!preferredTenantId || cached.ctx.tenantId === preferredTenantId)) {
     return { ...cached.ctx, activeWorkspaceId: activeCookie };
   }
 
-  // 1) Tenant (local Prisma) — direct ownership puis fallback membership
-  let tenant: { id: string; userId: string } | null = null;
+  // 1) Tenant (local Prisma) — espace demandé s'il est le sien, puis direct ownership, puis membership
+  let tenant: { id: string; userId: string } | null = preferredTenantId
+    ? await tenantOfUser(user.id, preferredTenantId)
+    : null;
 
-  const directTenant = await prisma.tenant.findFirst({
+  const directTenant = tenant ?? await prisma.tenant.findFirst({
     where: { userId: user.id, deletedAt: null },
     select: { id: true, userId: true },
   });
@@ -128,8 +132,23 @@ export async function buildUserContext(
     activeWorkspaceId,
   };
 
-  contextCache.set(user.id, { ctx, expiresAt: Date.now() + CACHE_TTL_MS });
+  if (!preferredTenantId || tenant.id === preferredTenantId) {
+    contextCache.set(user.id, { ctx, expiresAt: Date.now() + CACHE_TTL_MS });
+  }
   return ctx;
+}
+
+/** Le tenant `tenantId`, s'il est actif et que l'utilisateur en est propriétaire ou membre non retiré. */
+async function tenantOfUser(userId: string, tenantId: string): Promise<{ id: string; userId: string } | null> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) return null;
+  const t = await prisma.tenant.findFirst({ where: { id: tenantId, deletedAt: null }, select: { id: true, userId: true } });
+  if (!t) return null;
+  if (t.userId === userId) return t;
+  const m = await prisma.workspaceMember.findFirst({
+    where: { userId, deletedAt: null, workspace: { tenantId, deletedAt: null } },
+    select: { userId: true },
+  });
+  return m ? t : null;
 }
 
 export async function requireUser(): Promise<{ ctx: UserContext } | AuthFailure> {

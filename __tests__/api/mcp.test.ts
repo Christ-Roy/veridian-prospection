@@ -51,6 +51,8 @@ describe("POST /api/mcp", () => {
     findFirst.mockResolvedValue(null);
     const r = await POST(req(INIT, "x.y.z"));
     expect(r.status).toBe(401);
+    // Le Hub reconnaît ce code pour créer le compte et réessayer.
+    expect(await r.text()).toContain("hub_user_unknown");
     expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { hubUserId: "3f1c2b9e-8a7d-4c6b-9e5f-1a2b3c4d5e6f", deletedAt: null } }));
   });
 
@@ -62,11 +64,13 @@ describe("POST /api/mcp", () => {
   });
 
   test("compte connu : réponse JSON-RPC ; notification seule : 202", async () => {
-    verifier.mockResolvedValue({ hubUserId: "3f1c2b9e-8a7d-4c6b-9e5f-1a2b3c4d5e6f", email: "a@b.fr", clientId: "claude" });
+    verifier.mockResolvedValue({ hubUserId: "3f1c2b9e-8a7d-4c6b-9e5f-1a2b3c4d5e6f", email: "a@b.fr", clientId: "claude", tenantId: "t-signe" });
     findFirst.mockResolvedValue({ id: "u-1", email: "a@b.fr" });
     buildCtx.mockResolvedValue({ userId: "u-1", tenantId: "t-1", workspaces: [], isAdmin: false });
     const r = await POST(req(INIT, "x.y.z"));
     expect(r.status).toBe(200);
+    // L'espace signé est transmis pour vérification d'appartenance, jamais pris tel quel.
+    expect(buildCtx).toHaveBeenCalledWith({ id: "u-1", email: "a@b.fr" }, null, "t-signe");
     expect(await r.json()).toEqual({ jsonrpc: "2.0", id: 1, result: { ok: true } });
     expect((await POST(req({ jsonrpc: "2.0", method: "notifications/initialized" }, "x.y.z"))).status).toBe(202);
   });

@@ -39,9 +39,11 @@ export async function POST(request: NextRequest) {
     where: { hubUserId: identite.hubUserId, deletedAt: null },
     select: { id: true, email: true },
   });
-  if (!user) return refus(401, "compte inconnu de Prospection : ouvrez Prospection une fois depuis le Hub pour l'activer");
+  // `hub_user_unknown` : le Hub crée alors le compte par son chemin habituel et réessaie (CONTRAT-MCP §2).
+  if (!user) return refus(401, "hub_user_unknown : compte inconnu de Prospection, ouvrez Prospection une fois depuis le Hub");
 
-  const ctx = await buildUserContext(user, null);
+  // L'espace signé n'est retenu que si l'utilisateur en est propriétaire ou membre ici ; sinon son espace par défaut.
+  const ctx = await buildUserContext(user, null, identite.tenantId);
   if (!ctx) return refus(403, "aucun espace Prospection pour ce compte");
 
   if (isRateLimited(`mcp:${user.id}`, DEBIT_MAX, 60_000)) return refus(429, "trop de requêtes MCP : réessayez dans une minute");

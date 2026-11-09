@@ -38,7 +38,9 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
 - `POST /api/mcp`, Streamable HTTP sans état (JSON, pas de session). Seule la porte du Hub l'appelle.
 - Jeton : JWT ES256 du Hub vérifié par `src/lib/mcp/jeton-hub.ts` (WebCrypto, JWKS du Hub en cache 1 h,
   `aud` = `MCP_PUBLIC_URL`, défaut `https://prospection.app.veridian.site/api/mcp`). Utilisateur retrouvé par
-  `hub_user_id`, jamais créé ; inconnu = 401, sans espace = 403.
+  `hub_user_id`, jamais créé ; inconnu = 401 avec `hub_user_unknown` (le Hub crée le compte et réessaie),
+  sans espace = 403. Claim `tenant_id` : retenu seulement si l'utilisateur est propriétaire ou membre de ce
+  tenant local, sinon espace par défaut. Prospection ne stocke pas l'id du tenant Hub (ids locaux distincts).
 - Outils (`src/lib/mcp/outils.ts`) : mêmes fonctions que les écrans, espace déduit de l'utilisateur,
   plafond du plan appliqué, fiche par `serveLeadDetail` (quota, 30/min, masquage partagés avec l'écran).
   Un `viewer` ne voit pas `changer_statut`. Ajouter un outil = une entrée dans `OUTILS`, le Hub le relit seul.
