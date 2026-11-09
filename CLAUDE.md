@@ -39,8 +39,9 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
 - Jeton : JWT ES256 du Hub vérifié par `src/lib/mcp/jeton-hub.ts` (WebCrypto, JWKS du Hub en cache 1 h,
   `aud` = `MCP_PUBLIC_URL`, défaut `https://prospection.app.veridian.site/api/mcp`). Utilisateur retrouvé par
   `hub_user_id`, jamais créé ; inconnu = 401 avec `hub_user_unknown` (le Hub crée le compte et réessaie),
-  sans espace = 403. Claim `tenant_id` : retenu seulement si l'utilisateur est propriétaire ou membre de ce
-  tenant local, sinon espace par défaut. Ids locaux distincts de ceux du Hub : `tenants.hub_tenant_id`, reçu au
+  sans espace = 403. Claim `tenant_id` (seulement si l'IA choisit un espace) : absent = espace par défaut ;
+  relié et membre = cet espace ; relié à rien = 403 `tenant_not_linked` ; non membre = 403 `tenant_forbidden`.
+  Jamais de repli silencieux. Ids locaux distincts de ceux du Hub : `tenants.hub_tenant_id`, reçu au
   provisionnement (`hub_tenant_id`, racine ou `metadata`), posé une fois et jamais écrasé, fait le lien.
   Tenants existants : `POST /api/tenants/link-hub` (HMAC, `{hub_user_id, hub_tenant_id}`) ne pose que ce lien.
   Ne pas rejouer `provision` sur un vrai client : il remet le propriétaire `admin` et recrée `default`.

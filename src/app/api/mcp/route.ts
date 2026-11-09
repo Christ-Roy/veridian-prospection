@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
-import { buildUserContext, resolveInsertWorkspaceId } from "@/lib/auth/user-context";
+import { buildUserContext, espaceHub, resolveInsertWorkspaceId } from "@/lib/auth/user-context";
 import { isRateLimited } from "@/lib/rate-limit";
 import { JetonRefuse, verifierJetonHub } from "@/lib/mcp/jeton-hub";
 import { traiter, type Message, type Reponse } from "@/lib/mcp/protocole";
@@ -42,9 +42,20 @@ export async function POST(request: NextRequest) {
   // `hub_user_unknown` : le Hub crée alors le compte par son chemin habituel et réessaie (CONTRAT-MCP §2).
   if (!user) return refus(401, "hub_user_unknown : compte inconnu de Prospection, ouvrez Prospection une fois depuis le Hub");
 
-  // L'espace signé n'est retenu que si l'utilisateur en est propriétaire ou membre ici ; sinon son espace par défaut.
-  const ctx = await buildUserContext(user, null, identite.tenantId);
+  // Espace : sans claim, celui par défaut ; avec claim, ce tenant Hub relié et dont il est membre,
+  // jamais de repli silencieux (CONTRAT-MCP §2).
+  let espaceDemande: string | null = null;
+  if (identite.tenantId) {
+    const e = await espaceHub(user.id, identite.tenantId);
+    if (e === "tenant_not_linked") return refus(403, "tenant_not_linked : cet espace Hub n'est relié à aucun espace Prospection");
+    if (e === "tenant_forbidden") return refus(403, "tenant_forbidden : ce compte n'est pas membre de cet espace Prospection");
+    espaceDemande = e.id;
+  }
+  const ctx = await buildUserContext(user, null, espaceDemande);
   if (!ctx) return refus(403, "aucun espace Prospection pour ce compte");
+  if (espaceDemande && ctx.tenantId !== espaceDemande) {
+    return refus(403, "tenant_forbidden : ce compte n'est pas membre de cet espace Prospection");
+  }
 
   if (isRateLimited(`mcp:${user.id}`, DEBIT_MAX, 60_000)) return refus(429, "trop de requêtes MCP : réessayez dans une minute");
 

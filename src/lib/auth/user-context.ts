@@ -158,6 +158,28 @@ async function tenantOfUser(userId: string, tenantId: string): Promise<{ id: str
   return m ? t : null;
 }
 
+/**
+ * Espace désigné par le `tenant_id` signé du Hub (CONTRAT-MCP §2), sans repli silencieux :
+ * relié à aucun tenant local = `tenant_not_linked` ; relié mais l'utilisateur n'en est ni
+ * propriétaire ni membre = `tenant_forbidden` ; sinon l'id local du tenant.
+ */
+export async function espaceHub(
+  userId: string,
+  hubTenantId: string,
+): Promise<{ id: string } | "tenant_not_linked" | "tenant_forbidden"> {
+  const t = await prisma.tenant.findFirst({
+    where: { hubTenantId, deletedAt: null },
+    select: { id: true, userId: true },
+  });
+  if (!t) return "tenant_not_linked";
+  if (t.userId === userId) return { id: t.id };
+  const m = await prisma.workspaceMember.findFirst({
+    where: { userId, deletedAt: null, workspace: { tenantId: t.id, deletedAt: null } },
+    select: { userId: true },
+  });
+  return m ? { id: t.id } : "tenant_forbidden";
+}
+
 export async function requireUser(): Promise<{ ctx: UserContext } | AuthFailure> {
   const ctx = await getUserContext();
   if (!ctx) {

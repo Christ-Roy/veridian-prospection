@@ -20,7 +20,7 @@ vi.mock("@/lib/prisma", () => ({
 vi.mock("@/lib/auth-config", () => ({ auth: vi.fn() }));
 vi.mock("next/headers", () => ({ cookies: vi.fn() }));
 
-import { buildUserContext } from "@/lib/auth/user-context";
+import { buildUserContext, espaceHub } from "@/lib/auth/user-context";
 
 const T_PROPRE = "11111111-1111-4111-8111-111111111111";
 const T_HUB = "33333333-3333-4333-8333-333333333333";
@@ -76,5 +76,25 @@ describe("buildUserContext, espace demandé", () => {
     const ctx = await buildUserContext(u, null, "mon-espace");
     expect(ctx?.tenantId).toBe(T_PROPRE);
     expect(tenantFindFirst).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("espaceHub, tenant_id signé sans repli", () => {
+  test("relié à aucun tenant local : tenant_not_linked", async () => {
+    tenantFindFirst.mockResolvedValue(null);
+    expect(await espaceHub("u-x", T_HUB)).toBe("tenant_not_linked");
+    expect(tenantFindFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { hubTenantId: T_HUB, deletedAt: null } }));
+  });
+
+  test("relié, propriétaire : l'id local", async () => {
+    tenantFindFirst.mockResolvedValue({ id: T_PROPRE, userId: "u-x" });
+    expect(await espaceHub("u-x", T_HUB)).toEqual({ id: T_PROPRE });
+  });
+
+  test("relié, membre : l'id local ; ni l'un ni l'autre : tenant_forbidden", async () => {
+    tenantFindFirst.mockResolvedValue({ id: T_AUTRE, userId: "proprietaire" });
+    memberFindFirst.mockResolvedValueOnce({ userId: "u-x" }).mockResolvedValueOnce(null);
+    expect(await espaceHub("u-x", T_HUB)).toEqual({ id: T_AUTRE });
+    expect(await espaceHub("u-x", T_HUB)).toBe("tenant_forbidden");
   });
 });
