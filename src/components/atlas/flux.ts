@@ -139,7 +139,7 @@ export const avecCondition = (f: Filtre, c: Condition): Filtre => ({ ...f, condi
 
 export const avecDepartement = (f: Filtre, code: string | null): Filtre => (code ? avecCondition(f, { champ: "departement", op: "dans", valeur: [code] }) : f);
 
-/** Jours d'envoi à un rythme donné (400 par jour par défaut, comme la maquette). */
+/** Jours d'envoi à un rythme donné (400 par jour par défaut, comme la maquette), sur les emails envoyables. */
 export const joursEnvoi = (n: number, parJour = 400) => (n > 0 ? Math.ceil(n / parJour) : 0);
 
 export type Kpi = { id: string; libelle: string; condition: Condition | null };
@@ -148,7 +148,7 @@ export type Kpi = { id: string; libelle: string; condition: Condition | null };
 export function kpisDisponibles(champs: ReadonlyMap<string, ChampInfo>): Kpi[] {
   const kpis: Kpi[] = [{ id: "total", libelle: "entreprises", condition: null }];
   if (champs.has("email")) kpis.push({ id: "email", libelle: "avec email", condition: { champ: "email", op: "renseigne", valeur: true } });
-  if (champs.get("email_verification")?.operateurs.includes("dans")) kpis.push({ id: "verifie", libelle: "emails vérifiés", condition: { champ: "email_verification", op: "dans", valeur: ["existe"] } });
+  if (champs.has("email_envoyable")) kpis.push({ id: "envoyable", libelle: "emails envoyables", condition: { champ: "email_envoyable", op: "est", valeur: true } });
   if (champs.has("dirigeant")) kpis.push({ id: "dirigeant", libelle: "dirigeants identifiés", condition: { champ: "dirigeant", op: "renseigne", valeur: true } });
   return kpis;
 }

@@ -638,9 +638,9 @@ export function AtlasApp() {
                 <span>{k.libelle}</span>
               </div>
             ))}
-            {kpis && kpis.email !== undefined && (
+            {kpis && (kpis.envoyable ?? kpis.email) !== undefined && (
               <div className="kpi">
-                <b className="num">{formaterNombre(joursEnvoi(kpis.email))} j</b>
+                <b className="num">{formaterNombre(joursEnvoi(kpis.envoyable ?? kpis.email))} j</b>
                 <span>d&apos;envoi à 400 par jour</span>
               </div>
             )}

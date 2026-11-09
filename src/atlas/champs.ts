@@ -44,6 +44,10 @@ export const CHAMPS: readonly Champ[] = [
   { id: "https", libelle: "HTTPS", type: "oui_non", sql: "has_https", groupe: "Web" },
   { id: "email", libelle: "Email", type: "texte", sql: "email", groupe: "Contact" },
   { id: "email_verification", libelle: "Vérification de l'email", type: "liste", sql: "email_verification", groupe: "Contact", repartition: true },
+  { id: "email_preuve", libelle: "Preuve de l'email", type: "liste", sql: "email_verification_basis", groupe: "Contact", repartition: true },
+  // Règle d'ODH (09/11) en attendant leur colonne `email_envoyable` : ni boîte inexistante, ni email retiré du site.
+  // `deliverable` d'ODH veut dire « joignable par un canal », pas « email envoyable ».
+  { id: "email_envoyable", libelle: "Email envoyable", type: "oui_non", sql: "(email != '' AND email_verification != 'n_existe_pas' AND email_verification_basis != 'web_disparu')", groupe: "Contact" },
   { id: "messagerie", libelle: "Messagerie", type: "liste", sql: "mail_provider_group", groupe: "Contact", repartition: true },
   { id: "telephone", libelle: "Téléphone", type: "texte", sql: "phone", groupe: "Contact" },
   { id: "rge", libelle: "Label RGE", type: "oui_non", sql: "label_rge", groupe: "Signaux" },

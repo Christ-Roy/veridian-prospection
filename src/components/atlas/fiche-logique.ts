@@ -43,6 +43,7 @@ const LIBELLES: Record<string, string> = {
   email_verifie: "Email vérifié",
   type_email: "Type d'email",
   verification: "Vérification",
+  preuve: "Preuve de la vérification",
   messagerie: "Messagerie",
   telephone: "Téléphone",
   delivrable: "Délivrable",

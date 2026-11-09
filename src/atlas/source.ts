@@ -21,7 +21,7 @@ export const FICHE: Record<string, Record<string, string>> = {
   activite: { naf: "naf_code", secteur: "activity_sector", activite: "activity_label", services: "activity_services", idcc: "idcc_label", opco: "opco_name" },
   lieu: { commune: "city", code_postal: "postal_code", departement: "department", commune_insee: "commune_insee", latitude: "latitude", longitude: "longitude" },
   dirigeant: { nom: "director_name", role: "director_role", email: "director_email", email_verifie: "director_email_verified" },
-  contact: { email: "email", type_email: "email_type", verification: "email_verification", messagerie: "mail_provider_group", telephone: "phone", delivrable: "deliverable" },
+  contact: { email: "email", type_email: "email_type", verification: "email_verification", preuve: "email_verification_basis", messagerie: "mail_provider_group", telephone: "phone", delivrable: "deliverable" },
   web: { site: "primary_domain", domaines: "domains", niveau: "web_tier", obsolete: "website_obsolete", https: "has_https", responsive: "has_responsive", outil: "cms", ecommerce: "is_ecommerce", plateforme_ecommerce: "ecom_platform" },
   finances: { chiffre_affaires: "revenue", resultat_net: "net_income", ebe: "ebe", tresorerie_nette: "net_cash", annee: "financials_year", croissance_pct: "revenue_growth_pct", tendance: "revenue_trend", effectif: "headcount_value", taille: "size_band" },
   groupe: { maison_mere: "parent_name", filiales: "subsidiaries_count", tete_de_groupe: "group_root_name", taille_groupe: "group_size" },
@@ -257,12 +257,13 @@ export class SourceSimulee implements SourceMarche {
         chiffre_affaires: r() < 0.7 ? Math.round(50_000 + r() * 5_000_000) : null, resultat_net: null,
         tendance_ca: pick(["stable", "growth", "decline", ""]), site, niveau_web: site ? pick(["moderne", "correct", "vieillissant", "obsolete"]) : "",
         cms: site ? pick(["wordpress", "wix", ""]) : "", ecommerce: r() < 0.1, https: site !== "" && r() < 0.8,
-        email: r() < 0.6 ? `contact@entreprise-${i}.demo` : "", email_verification: pick(["existe", "inconnu", ""]),
+        email: r() < 0.6 ? `contact@entreprise-${i}.demo` : "", email_verification: pick(["existe", "inconnu", "n_existe_pas", ""]), email_preuve: pick(["mx_present", "web_disparu", "aucune_sonde"]),
         messagerie: pick(["gmail", "ovh", "microsoft", ""]), telephone: r() < 0.7 ? "0400000000" : "",
         rge: r() < 0.08, qualiopi: r() < 0.03, marches_publics: r() < 0.05 ? 1 + Math.floor(r() * 5) : 0,
         permis_3_ans: r() < 0.1 ? 1 : 0, score_odh: Math.round(r() * 100), grade: pick(["or", "a_requalifier"]),
       };
     });
+    for (const l of this.lignes) l.email_envoyable = l.email !== "" && l.email_verification !== "n_existe_pas" && l.email_preuve !== "web_disparu";
   }
   private filtrer(filtre: unknown): Ligne[] {
     compilerFiltre(filtre); // même validation, mêmes erreurs qu'en prod

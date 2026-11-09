@@ -41,6 +41,7 @@ const IDX = indexerChamps([
   champ("email", "texte", ["egal", "contient", "renseigne"], "Email"),
   champ("dirigeant", "texte", ["egal", "contient", "renseigne"], "Dirigeant"),
   champ("email_verification", "liste", ["dans", "hors", "renseigne"], "Vérification de l'email"),
+  champ("email_envoyable", "oui_non", ["est"], "Email envoyable"),
 ]);
 
 describe("zone géographique", () => {
@@ -266,7 +267,7 @@ describe("versions et présence de l'IA", () => {
 
 describe("chiffres et entonnoir", () => {
   test("chiffres clés selon le catalogue", () => {
-    expect(kpisDisponibles(IDX).map((k) => k.id)).toEqual(["total", "email", "verifie", "dirigeant"]);
+    expect(kpisDisponibles(IDX).map((k) => k.id)).toEqual(["total", "email", "envoyable", "dirigeant"]);
     expect(kpisDisponibles(indexerChamps([])).map((k) => k.id)).toEqual(["total"]);
   });
   test("jours d'envoi et descente", () => {

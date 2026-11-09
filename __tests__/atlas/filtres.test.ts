@@ -56,8 +56,9 @@ describe("compilerFiltre", () => {
   });
 
   test("le catalogue ne contient que des expressions SQL simples et des opérateurs connus", () => {
+    // Une colonne, ou une conjonction de comparaisons à des constantes (champ dérivé) : jamais de fonction ni de sous-requête.
     for (const c of CHAMPS) {
-      expect(c.sql).toMatch(/^[a-z_0-9]+$/);
+      expect(c.sql).toMatch(/^([a-z_0-9]+|\([a-z_0-9]+ !?= '[a-z_]*'( AND [a-z_0-9]+ !?= '[a-z_]*')*\))$/);
       expect(c.id).toMatch(/^[a-z_0-9]+$/);
       expect(OPERATEURS[c.type].length).toBeGreaterThan(0);
     }
@@ -84,6 +85,17 @@ describe("source simulée : même sémantique que le SQL", () => {
     expect(scores).toEqual([...scores].sort((x, y) => y - x));
     const rep = await s.repartition(filtre, "departement");
     expect(rep).toEqual([{ cle: "69", nombre: n }]);
+  });
+
+  test("email envoyable : connu, boîte non inexistante, toujours publié (règle ODH du 09/11)", async () => {
+    const envoyable = (l: (typeof s.lignes)[number]) => l.email !== "" && l.email_verification !== "n_existe_pas" && l.email_preuve !== "web_disparu";
+    const n = await s.compter({ conditions: [{ champ: "email_envoyable", op: "est", valeur: true }] });
+    expect(n).toBe(s.lignes.filter(envoyable).length);
+    expect(n).toBeLessThan(s.lignes.filter((l) => l.email !== "").length);
+    const { where } = compilerFiltre({ conditions: [{ champ: "email_envoyable", op: "est", valeur: true }] });
+    expect(where).toContain("email_verification != 'n_existe_pas'");
+    expect(where).toContain("email_verification_basis != 'web_disparu'");
+    expect(where).toContain("email != ''");
   });
 
   test("tri et répartition refusés hors catalogue", async () => {
