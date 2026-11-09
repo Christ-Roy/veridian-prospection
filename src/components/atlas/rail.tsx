@@ -8,7 +8,7 @@ import type { Arbre, SegmentArbre } from "./types";
 
 const HUB = process.env.NEXT_PUBLIC_HUB_URL || "https://app.veridian.site";
 /** Page du Hub où l'on branche Claude, ChatGPT, Cursor… (une seule connexion pour toutes les apps). */
-export const HUB_IA = `${HUB}/dashboard/settings/security`;
+export const HUB_IA = `${HUB}/dashboard/ia`;
 
 export type { IAVue } from "./flux";
 

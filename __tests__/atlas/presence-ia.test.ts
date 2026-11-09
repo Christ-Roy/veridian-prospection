@@ -4,10 +4,11 @@
  */
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-const { upsert, findMany } = vi.hoisted(() => ({ upsert: vi.fn(async (_args: unknown) => ({})), findMany: vi.fn() }));
-vi.mock("@/lib/prisma", () => ({ prisma: { atlasPresenceIa: { upsert, findMany } } }));
+const { upsert, findMany, hub } = vi.hoisted(() => ({ upsert: vi.fn(async (_args: unknown) => ({})), findMany: vi.fn(), hub: vi.fn() }));
+vi.mock("@/lib/prisma", () => ({ prisma: { atlasPresenceIa: { upsert, findMany }, user: { findUnique: vi.fn(async () => ({ hubUserId: "h-1" })) } } }));
+vi.mock("@/lib/hub/connexions-ia-client", () => ({ connexionsIaHub: hub }));
 
-import { listerPresences, nomClient, noterPresence, oublierEcritures } from "@/atlas/presence-ia";
+import { fusionnerConnexions, listerPresences, nomClient, noterPresence, oublierEcritures } from "@/atlas/presence-ia";
 
 beforeEach(() => {
   upsert.mockClear();
@@ -43,7 +44,21 @@ describe("affichage", () => {
     expect(nomClient(null)).toBe("Assistant IA");
     const d = new Date("2026-11-09T21:31:00Z");
     findMany.mockResolvedValue([{ clientNom: null, premierAppel: d, dernierAppel: d }]);
+    hub.mockResolvedValue(null); // Hub injoignable : la liste locale reste
     expect(await listerPresences("u-1")).toEqual([{ nom: "Assistant IA", depuis: d.toISOString(), dernier_appel: d.toISOString() }]);
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: "u-1" } }));
+    expect(hub).toHaveBeenCalledWith("h-1");
+  });
+
+  test("une IA reliée au Hub apparaît avant son premier appel ; un même nom ne fait qu'une ligne", () => {
+    const locales = [{ nom: "Claude", depuis: "2026-11-09T21:40:00.000Z", dernier_appel: "2026-11-09T21:45:00.000Z" }];
+    const hub = [
+      { nom: "Claude", depuis: "2026-11-09T21:21:00.000Z", derniere_utilisation: "2026-11-09T21:30:00.000Z" },
+      { nom: "ChatGPT", depuis: "2026-11-08T10:00:00.000Z", derniere_utilisation: null },
+    ];
+    expect(fusionnerConnexions(locales, hub)).toEqual([
+      { nom: "Claude", depuis: "2026-11-09T21:21:00.000Z", dernier_appel: "2026-11-09T21:45:00.000Z" },
+      { nom: "ChatGPT", depuis: "2026-11-08T10:00:00.000Z", dernier_appel: "2026-11-08T10:00:00.000Z" },
+    ]);
   });
 });
