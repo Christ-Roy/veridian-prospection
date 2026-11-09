@@ -42,6 +42,9 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
   sans espace = 403. Claim `tenant_id` : retenu seulement si l'utilisateur est propriétaire ou membre de ce
   tenant local, sinon espace par défaut. Ids locaux distincts de ceux du Hub : `tenants.hub_tenant_id`, reçu au
   provisionnement (`hub_tenant_id`, racine ou `metadata`), posé une fois et jamais écrasé, fait le lien.
+  Tenants existants : `POST /api/tenants/link-hub` (HMAC, `{hub_user_id, hub_tenant_id}`) ne pose que ce lien.
+  Ne pas rejouer `provision` sur un vrai client : il remet le propriétaire `admin` et recrée `default`.
+  `by-email` rend `workspaces[].hub_tenant_id` pour `hub reconcile`.
 - Outils (`src/lib/mcp/outils.ts`) : mêmes fonctions que les écrans, espace déduit de l'utilisateur,
   plafond du plan appliqué, fiche par `serveLeadDetail` (quota, 30/min, masquage partagés avec l'écran).
   Un `viewer` ne voit pas `changer_statut`. Ajouter un outil = une entrée dans `OUTILS`, le Hub le relit seul.
