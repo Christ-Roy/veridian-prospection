@@ -180,6 +180,9 @@ APP_URL=https://prospection.app.veridian.site
 NEXT_PUBLIC_SITE_URL=https://prospection.app.veridian.site
 NEXT_PUBLIC_HUB_URL=https://app.veridian.site
 HUB_API_URL=https://app.veridian.site
+# Atlas : ClickHouse ODH en lecture seule (compte prospection_ro, profil borné côté serveur).
+CLICKHOUSE_URL=http://100.96.29.49:28123/
+CLICKHOUSE_USER=prospection_ro
 
 {{ with nomadVar "nomad/jobs/prospection" }}
 AUTH_SECRET={{ .AUTH_SECRET }}
@@ -188,6 +191,7 @@ SEARCH_API_SECRET={{ .SEARCH_API_SECRET }}
 CRON_SECRET={{ .CRON_SECRET }}
 HUB_WEBHOOK_TOKEN={{ .HUB_WEBHOOK_TOKEN }}
 OPENROUTER_VERIDIAN_KEY={{ .OPENROUTER_VERIDIAN_KEY }}
+CLICKHOUSE_PASSWORD={{ .CLICKHOUSE_PASSWORD }}
 {{ end }}
 {{ with nomadVar "nomad/jobs/prospection" }}DATABASE_URL=postgresql://prospection:{{ .PG_SAAS_PASSWORD }}@172.26.64.1:15432/prospection?connection_limit=8&pool_timeout=10{{ end }}
 EOH

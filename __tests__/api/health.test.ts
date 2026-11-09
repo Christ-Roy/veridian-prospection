@@ -40,7 +40,8 @@ describe("GET /api/health", () => {
     expect(body.leadCount).toBe(42);
     expect(typeof body.version).toBe("string");
     expect(typeof body.timestamp).toBe("string");
-    expect(body.dependencies).toEqual({});
+    // Sans CLICKHOUSE_PASSWORD (tests), Atlas tourne sur la source simulée : ClickHouse « skipped ».
+    expect(body.dependencies).toEqual({ clickhouse: "skipped" });
   });
 
   test("returns 503 + status=down when DB ping fails", async () => {

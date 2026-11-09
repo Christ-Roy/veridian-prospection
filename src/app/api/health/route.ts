@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { sourceMarche } from "@/atlas/source";
 import pkg from "../../../../package.json";
 
 /**
@@ -28,6 +29,21 @@ async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
     p,
     new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
   ]);
+}
+
+// Le contrôle Nomad passe toutes les 15 s : ODH n'est interrogé qu'une fois par minute au plus.
+let cacheAtlas: { a: number; etat: "ok" | "ko" | "skipped"; entreprises?: number } | null = null;
+async function etatAtlas() {
+  if (cacheAtlas && Date.now() - cacheAtlas.a < 60_000) return cacheAtlas;
+  const source = sourceMarche();
+  if (source.simulee) return (cacheAtlas = { a: Date.now(), etat: "skipped" });
+  try {
+    const n = await withTimeout(source.compter({}), TIMEOUT_MS);
+    cacheAtlas = n === null ? { a: Date.now(), etat: "ko" } : { a: Date.now(), etat: "ok", entreprises: n };
+  } catch {
+    cacheAtlas = { a: Date.now(), etat: "ko" };
+  }
+  return cacheAtlas;
 }
 
 export async function GET() {
@@ -59,6 +75,10 @@ export async function GET() {
     db = "ko";
   }
 
+  // --- ClickHouse ODH (Atlas) : non bloquant, une panne d'ODH dégrade sans redémarrer l'app ---
+  const atlas = await etatAtlas();
+  dependencies.clickhouse = atlas.etat;
+
   // --- Status global ---
   let status: "ok" | "degraded" | "down" = "ok";
   if (db === "ko") {
@@ -74,6 +94,7 @@ export async function GET() {
     dependencies,
     timestamp: new Date().toISOString(),
     ...(leadCount !== undefined ? { leadCount } : {}),
+    ...(atlas.entreprises !== undefined ? { atlasEntreprises: atlas.entreprises } : {}),
   };
 
   return NextResponse.json(body, { status: status === "down" ? 503 : 200 });

@@ -91,3 +91,25 @@ describe("source simulée : même sémantique que le SQL", () => {
     await expect(s.repartition({}, "siren")).rejects.toThrow(/répartition impossible/);
   });
 });
+
+describe("source ClickHouse : la requête envoyée", () => {
+  test("paramètres en param_*, aucun réglage dans l'URL, identifiants en en-têtes, erreur remontée", async () => {
+    const { SourceClickHouse } = await import("@/atlas/source");
+    const appels: { url: URL; init: RequestInit }[] = [];
+    const fetchImpl = (async (url: URL, init: RequestInit) => {
+      appels.push({ url, init });
+      return new Response(JSON.stringify({ data: [{ n: "155" }] }));
+    }) as unknown as typeof fetch;
+    const s = new SourceClickHouse({ url: "http://ch.test:28123/", user: "prospection_ro", password: "secret" }, fetchImpl);
+    expect(await s.compter({ conditions: [{ champ: "nom", op: "contient", valeur: "l'atelier" }] })).toBe(155);
+    const { url, init } = appels[0];
+    expect(url.searchParams.get("param_p0")).toBe("l'atelier");
+    expect([...url.searchParams.keys()].filter((k) => !k.startsWith("param_"))).toEqual([]);
+    expect(url.toString()).not.toContain("secret");
+    expect((init.headers as Record<string, string>)["X-ClickHouse-Key"]).toBe("secret");
+    expect(String(init.body)).toMatch(/^SELECT count\(\) AS n FROM odh\.company_prospection_current WHERE .* FORMAT JSON$/);
+
+    const refus = new SourceClickHouse({ url: "http://ch.test/", user: "u", password: "p" }, (async () => new Response("Code: 164. Cannot modify setting in readonly mode", { status: 500 })) as unknown as typeof fetch);
+    await expect(refus.compter({})).rejects.toThrow(/ClickHouse 500/);
+  });
+});

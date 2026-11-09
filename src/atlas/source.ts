@@ -50,10 +50,8 @@ export class SourceClickHouse implements SourceMarche {
 
   private async requete<T>(sql: string, params: Record<string, SqlParam>): Promise<T[]> {
     const u = new URL(this.cfg.url);
-    // Bornes côté serveur, en plus du profil du compte : lecture seule, 10 s, résultat borné.
-    u.searchParams.set("readonly", "1");
-    u.searchParams.set("max_execution_time", "10");
-    u.searchParams.set("max_result_rows", "10000");
+    // Aucun réglage dans l'URL : le profil prospection_ro impose lecture seule, 10 s, 15 M lignes lues
+    // et 200 000 lignes de résultat, et refuse toute modification de réglage par requête.
     for (const [nom, p] of Object.entries(params)) u.searchParams.set(`param_${nom}`, valeurParam(p));
     const res = await this.fetchImpl(u, {
       method: "POST",
