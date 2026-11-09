@@ -80,6 +80,10 @@ retiré, clé `ubuntu` en mode deny). Ne pas pousser sur `staging` avant d'avoir
   puis `migrate prod` joue `prisma migrate deploy` sur pg-saas, avant le déploiement. Une migration
   destructive (DROP, renommage) reste 💀 : en deux temps, compatible avec le code encore servi.
 - **L'ancienne base `prospection-db` est purgée (09/11)** : job, données, dépôts pgBackRest et R2 supprimés, dump froid vérifié sur le stockage Contabo. Aucun nom `prospection-db` ni `prospection-saas-db` ne doit revenir dans la CI ni dans les skills.
+- **Bascule pg-saas (base muette)** : `src/lib/db-bornes.ts` borne l'ouverture des connexions (posé au
+  démarrage par `src/instrumentation.ts`). Une requête en cours sur une connexion muette attend sans fin
+  dans Prisma 6, `socket_timeout` compris (mesuré) : le filet est `/api/health` (503 en 2 s) + `check_restart`.
+  Ne pas allonger ce délai ni retirer `check_restart` (`__tests__/lib/db-bornes.test.ts` le refuse).
 - **Un déploiement remplace toute l'allocation** du groupe `stack` : l'id d'alloc change.
 - **Après déploiement, lire l'image et la version dans le conteneur** ; `/api/status` renvoie
   `commit: null` et ne prouve rien.

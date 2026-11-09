@@ -1,4 +1,8 @@
 import { PrismaClient } from "@prisma/client";
+import { appliquerBornesDb } from "@/lib/db-bornes";
+
+// Aussi hors du serveur Next (scripts, tests) : jamais de requête sans borne de temps.
+appliquerBornesDb();
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
