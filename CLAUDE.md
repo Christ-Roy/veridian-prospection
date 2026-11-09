@@ -14,7 +14,7 @@ technique, données INPI, pipeline, mail, softphone, multi-tenant.
 ## Stack
 
 - Next.js 15 (App Router) + npm
-- Prisma + PostgreSQL, base co-localisée dans le job Nomad
+- Prisma + PostgreSQL, base `prospection` sur la grappe Patroni `pg-saas` depuis le 09/11 (rôle `prospection`)
 - Auth.js v5, sessions JWT
 - Playwright (e2e), Vitest (unitaires)
 
@@ -63,9 +63,10 @@ retiré, clé `ubuntu` en mode deny). Ne pas pousser sur `staging` avant d'avoir
 
 ### Pièges
 
-- **Migrations Prisma à la main** : la CI ne les applique pas. Appliquer avant de déployer le code
-  qui en dépend, dans l'allocation via la tâche `prospection-saas-db`, et inscrire la ligne dans
-  `_prisma_migrations`.
+- **Migrations Prisma par la CI** : `deploy-prod` envoie `prisma/` au verbe (`put-migrations prod`)
+  puis `migrate prod` joue `prisma migrate deploy` sur pg-saas, avant le déploiement. Une migration
+  destructive (DROP, renommage) reste 💀 : en deux temps, compatible avec le code encore servi.
+- **L'ancienne base `prospection-db` du job ne sert plus** depuis la bascule (09/11) : ne rien y écrire.
 - **Un déploiement remplace toute l'allocation** du groupe `stack` : l'id d'alloc change.
 - **Après déploiement, lire l'image et la version dans le conteneur** ; `/api/status` renvoie
   `commit: null` et ne prouve rien.

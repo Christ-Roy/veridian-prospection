@@ -250,6 +250,18 @@ jobs:
             "${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}" \
             "plan prod $IMAGE_TAG"
 
+      # Migrations Prisma avant le code qui en dépend. La base vit sur la grappe
+      # pg-saas depuis le 09/11 : le verbe `migrate` y joue `prisma migrate deploy`
+      # (idempotent), le secret reste au bastion.
+      - name: migrations prod (pg-saas, avant le déploiement)
+        run: |
+          tar czf - prisma | ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes \
+            "${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}" \
+            "put-migrations prod"
+          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes \
+            "${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}" \
+            "migrate prod"
+
       - name: deploy prod (canari, suivi jusqu'à terminal)
         run: |
           ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes \
