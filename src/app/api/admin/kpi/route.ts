@@ -12,11 +12,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth/user-context";
-import { PrismaClient } from "@prisma/client";
-
-const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
-const prisma = globalForPrisma.prisma ?? new PrismaClient();
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+import { prisma } from "@/lib/prisma";
 
 type OutreachAgg = { workspace_id: string | null; status: string; count: bigint };
 type CallAgg = { workspace_id: string | null; n: bigint; total_seconds: bigint | null };

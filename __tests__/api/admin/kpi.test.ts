@@ -33,7 +33,7 @@ vi.mock("@/lib/auth/user-context", () => ({
   invalidateAllUserContexts: vi.fn(),
 }));
 
-vi.mock("@prisma/client", () => {
+vi.mock("@/lib/prisma", () => {
   class PrismaClient {
     workspace = prismaMock.workspace;
     outreach = prismaMock.outreach;
@@ -43,7 +43,7 @@ vi.mock("@prisma/client", () => {
     $queryRaw = prismaMock.$queryRaw;
     $queryRawUnsafe = prismaMock.$queryRawUnsafe;
   }
-  return { PrismaClient };
+  return { prisma: new PrismaClient() };
 });
 
 import { GET } from "@/app/api/admin/kpi/route";

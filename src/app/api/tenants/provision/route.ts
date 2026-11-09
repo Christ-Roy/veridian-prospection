@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
 import { verifyHubHmac } from "@/lib/hub/hmac";
 import { generateApiKey, hashApiKey } from "@/lib/hub/apiKey";
 import { resolveOrCreateUserFromHub } from "@/lib/hub/identity";
 import { seedDefaultPipelineStages } from "@/lib/outreach/pipeline-stages";
-
-const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
-const prisma = globalForPrisma.prisma ?? new PrismaClient();
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
 /**
  * Crée (idempotent) le User + Tenant local + workspace "default" + membership

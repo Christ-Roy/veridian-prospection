@@ -14,8 +14,10 @@
  * y compris ceux des routes qui instancient le leur. Une valeur explicite dans l'URL l'emporte.
  */
 export const BORNES_DB = {
+  // pg-saas : max_connections=100 pour cinq apps ; un seul client Prisma (src/lib/prisma.ts), 8 connexions.
+  connection_limit: "8",
   connect_timeout: "10", // s : ouverture d'une connexion (TCP + poignée de main)
-  pool_timeout: "15", // s : attente d'une connexion libre dans le pool
+  pool_timeout: "10", // s : attente d'une connexion libre dans le pool
   max_connection_lifetime: "1800", // s : une connexion est renouvelée, même active
   max_idle_connection_lifetime: "300", // s : une connexion inutilisée est fermée
 } as const;

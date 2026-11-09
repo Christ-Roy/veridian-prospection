@@ -16,11 +16,11 @@ vi.mock("@/lib/auth/user-context", () => ({ requireUser: requireUserMock }));
 vi.mock("@/lib/google-calendar", () => ({
   buildGoogleCalendarUrl: buildGoogleCalendarUrlMock,
 }));
-vi.mock("@prisma/client", () => {
+vi.mock("@/lib/prisma", () => {
   class PrismaClient {
     appointment = prismaMock.appointment;
   }
-  return { PrismaClient };
+  return { prisma: new PrismaClient() };
 });
 
 import { GET, POST } from "@/app/api/appointments/route";

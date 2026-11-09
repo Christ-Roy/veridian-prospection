@@ -24,7 +24,7 @@ const { prismaCtorMock } = vi.hoisted(() => ({
   prismaCtorMock: vi.fn(),
 }));
 
-vi.mock("@prisma/client", () => {
+vi.mock("@/lib/prisma", () => {
   class PrismaClient {
     user = { upsert: vi.fn() };
     tenant = {
@@ -47,7 +47,7 @@ vi.mock("@prisma/client", () => {
       prismaCtorMock();
     }
   }
-  return { PrismaClient };
+  return { prisma: new PrismaClient() };
 });
 
 // CONTRAT-HUB v1.5 §3.7 — le helper d'identité est testé séparément
@@ -290,19 +290,10 @@ describe("POST /api/tenants/provision", () => {
     const uid = "11111111-1111-4111-8111-111111111111";
     // Pour ce test, on fait croire qu'un tenant existe déjà (pour que le
     // second findFirst dans le bloc de persistance le retrouve).
-    // Récupère la classe mockée de @prisma/client (cf vi.mock du haut du
-    // fichier). Le cast `unknown` est requis parce que le mock ne déclare
-    // qu'un sous-ensemble de la vraie API Prisma.
-    const mod = await import("@prisma/client");
-    const PC = (mod as unknown as {
-      PrismaClient: new () => {
-        tenant: {
-          findFirst: ReturnType<typeof vi.fn>;
-          update: ReturnType<typeof vi.fn>;
-        };
-      };
-    }).PrismaClient;
-    const inst = new PC();
+    // Client partagé mocké (cf vi.mock("@/lib/prisma") du haut du fichier) : celui qu'utilise la route.
+    const inst = ((await import("@/lib/prisma")) as unknown as {
+      prisma: { tenant: { findFirst: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> } };
+    }).prisma;
     inst.tenant.findFirst.mockResolvedValueOnce(null); // 1er appel = ensureOwnerWorkspace
     inst.tenant.findFirst.mockResolvedValueOnce({ id: "tenant-id-42" }); // 2e appel = persistance token
 

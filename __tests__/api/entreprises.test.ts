@@ -14,13 +14,13 @@ const { requireUserMock, prismaMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth/user-context", () => ({ requireUser: requireUserMock }));
-vi.mock("@prisma/client", () => {
+vi.mock("@/lib/prisma", () => {
   class PrismaClient {
     entreprise = prismaMock.entreprise;
     $queryRaw = prismaMock.$queryRaw;
     $queryRawUnsafe = prismaMock.$queryRawUnsafe;
   }
-  return { PrismaClient };
+  return { prisma: new PrismaClient() };
 });
 
 import { GET } from "@/app/api/entreprises/route";

@@ -22,11 +22,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/user-context";
-import { PrismaClient, Prisma } from "@prisma/client";
-
-const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
-const prisma = globalForPrisma.prisma ?? new PrismaClient();
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+import { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
 
 type SortField = "prospect_score" | "denomination" | "chiffre_affaires" | "date_creation";
 const ALLOWED_SORTS: Record<SortField, keyof Prisma.EntrepriseOrderByWithRelationInput> = {

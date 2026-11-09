@@ -15,7 +15,7 @@ const { requireAdminMock, prismaMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth/user-context", () => ({ requireAdmin: requireAdminMock }));
-vi.mock("@prisma/client", () => {
+vi.mock("@/lib/prisma", () => {
   class PrismaClient {
     workspaceMember = prismaMock.workspaceMember;
     outreach = prismaMock.outreach;
@@ -23,7 +23,7 @@ vi.mock("@prisma/client", () => {
     claudeActivity = prismaMock.claudeActivity;
     followups = prismaMock.followups;
   }
-  return { PrismaClient };
+  return { prisma: new PrismaClient() };
 });
 
 import { GET } from "@/app/api/admin/members/[userId]/history/route";

@@ -16,11 +16,11 @@ const { requireUserMock, prismaMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth/user-context", () => ({ requireUser: requireUserMock }));
-vi.mock("@prisma/client", () => {
+vi.mock("@/lib/prisma", () => {
   class PrismaClient {
     appointment = prismaMock.appointment;
   }
-  return { PrismaClient };
+  return { prisma: new PrismaClient() };
 });
 
 import { PATCH, DELETE } from "@/app/api/appointments/[id]/route";

@@ -6,7 +6,7 @@
  * connexion déjà ouverte attend sans fin dans Prisma (aucun paramètre d'URL n'y peut rien), donc le
  * filet est /api/health (503 en 2 s) + `check_restart` du job, qui redémarre l'allocation.
  */
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -137,6 +137,30 @@ describe("bornes de connexion PostgreSQL", () => {
     expect((await res.json()).db).toBe("ko");
     expect(Date.now() - t0).toBeLessThan(3000);
   }, 15_000);
+
+  test("un seul client Prisma dans l'app : aucun autre `new PrismaClient` sous src/", () => {
+    const racine = path.resolve(__dirname, "../../src");
+    const fautifs: string[] = [];
+    const parcourir = (d: string) => {
+      for (const e of readdirSync(d, { withFileTypes: true })) {
+        const f = path.join(d, e.name);
+        if (e.isDirectory()) parcourir(f);
+        else if (/\.tsx?$/.test(e.name) && !/\.test\.tsx?$/.test(e.name) && /new PrismaClient\s*\(/.test(readFileSync(f, "utf8"))) {
+          fautifs.push(path.relative(racine, f));
+        }
+      }
+    };
+    parcourir(racine);
+    expect(fautifs).toEqual(["lib/prisma.ts"]);
+  });
+
+  test("le pool du job reste à 8 connexions au plus (pg-saas : 100 pour cinq apps)", () => {
+    const hcl = readFileSync(path.resolve(__dirname, "../../deploy/prospection.nomad.hcl"), "utf8");
+    const limite = /DATABASE_URL=[^\n]*connection_limit=(\d+)/.exec(hcl)?.[1];
+    expect(Number(limite)).toBeGreaterThan(0);
+    expect(Number(limite)).toBeLessThanOrEqual(8);
+    expect(new URL(avecBornes("postgresql://a@b/c")).searchParams.get("connection_limit")).toBe("8");
+  });
 
   test("le job redémarre l'allocation quand /api/health échoue (check_restart)", () => {
     const hcl = readFileSync(path.resolve(__dirname, "../../deploy/prospection.nomad.hcl"), "utf8");

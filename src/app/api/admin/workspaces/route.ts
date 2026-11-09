@@ -7,12 +7,8 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin, invalidateAllUserContexts } from "@/lib/auth/user-context";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
 import { seedDefaultPipelineStages } from "@/lib/outreach/pipeline-stages";
-
-const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
-const prisma = globalForPrisma.prisma ?? new PrismaClient();
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
 function slugify(s: string) {
   return s

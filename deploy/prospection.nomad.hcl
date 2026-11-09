@@ -189,7 +189,7 @@ CRON_SECRET={{ .CRON_SECRET }}
 HUB_WEBHOOK_TOKEN={{ .HUB_WEBHOOK_TOKEN }}
 OPENROUTER_VERIDIAN_KEY={{ .OPENROUTER_VERIDIAN_KEY }}
 {{ end }}
-{{ with nomadVar "nomad/jobs/prospection" }}DATABASE_URL=postgresql://prospection:{{ .PG_SAAS_PASSWORD }}@172.26.64.1:15432/prospection?connection_limit=10{{ end }}
+{{ with nomadVar "nomad/jobs/prospection" }}DATABASE_URL=postgresql://prospection:{{ .PG_SAAS_PASSWORD }}@172.26.64.1:15432/prospection?connection_limit=8&pool_timeout=10{{ end }}
 EOH
       }
       resources {

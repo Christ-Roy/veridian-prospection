@@ -7,12 +7,8 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin, invalidateUserContext } from "@/lib/auth/user-context";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
 import { emitHubWebhookAsync } from "@/lib/hub/webhooks";
-
-const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
-const prisma = globalForPrisma.prisma ?? new PrismaClient();
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
 export async function GET() {
   const auth = await requireAdmin();

@@ -14,11 +14,11 @@ vi.mock("@/lib/auth/user-context", () => ({
   requireAdmin: requireAdminMock,
   invalidateAllUserContexts: vi.fn(),
 }));
-vi.mock("@prisma/client", () => {
+vi.mock("@/lib/prisma", () => {
   class PrismaClient {
     workspace = prismaMock.workspace;
   }
-  return { PrismaClient };
+  return { prisma: new PrismaClient() };
 });
 
 import { PATCH, DELETE } from "@/app/api/admin/workspaces/[id]/route";

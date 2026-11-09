@@ -24,13 +24,13 @@ vi.mock("@/lib/auth/user-context", () => ({
   requireAdmin: requireAdminMock,
   invalidateUserContext: vi.fn(),
 }));
-vi.mock("@prisma/client", () => {
+vi.mock("@/lib/prisma", () => {
   class PrismaClient {
     workspaceMember = prismaMock.workspaceMember;
     workspace = prismaMock.workspace;
     user = prismaMock.user;
   }
-  return { PrismaClient };
+  return { prisma: new PrismaClient() };
 });
 vi.mock("@/lib/hub/webhooks", () => ({
   emitHubWebhookAsync: emitHubWebhookAsyncMock,

@@ -84,6 +84,10 @@ retiré, clé `ubuntu` en mode deny). Ne pas pousser sur `staging` avant d'avoir
   démarrage par `src/instrumentation.ts`). Une requête en cours sur une connexion muette attend sans fin
   dans Prisma 6, `socket_timeout` compris (mesuré) : le filet est `/api/health` (503 en 2 s) + `check_restart`.
   Ne pas allonger ce délai ni retirer `check_restart` (`__tests__/lib/db-bornes.test.ts` le refuse).
+- **Un seul client Prisma** (`src/lib/prisma.ts`), pool de 8 (pg-saas : 100 connexions pour cinq apps).
+  Jamais de `new PrismaClient` ailleurs : un test le refuse.
+- **Rôle `prospection` : `statement_timeout` et `idle_in_transaction_session_timeout` à 60 s** (09/11).
+  Une migration longue (index sur `entreprises`) commence par `SET statement_timeout = 0;`.
 - **Un déploiement remplace toute l'allocation** du groupe `stack` : l'id d'alloc change.
 - **Après déploiement, lire l'image et la version dans le conteneur** ; `/api/status` renvoie
   `commit: null` et ne prouve rien.

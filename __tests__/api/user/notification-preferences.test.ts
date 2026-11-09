@@ -12,11 +12,11 @@ const { requireUserMock, prismaMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth/user-context", () => ({ requireUser: requireUserMock }));
-vi.mock("@prisma/client", () => {
+vi.mock("@/lib/prisma", () => {
   class PrismaClient {
     notificationPreferences = prismaMock.notificationPreferences;
   }
-  return { PrismaClient };
+  return { prisma: new PrismaClient() };
 });
 
 import { GET, PUT } from "@/app/api/user/notification-preferences/route";
