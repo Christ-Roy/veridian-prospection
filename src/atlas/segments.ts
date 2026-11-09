@@ -12,6 +12,8 @@ import { COLONNES_DEFAUT, CHAMP } from "./champs";
 import { FiltreInvalide, FiltreSchema, ScoringSchema, compilerFiltre, type Filtre, type Scoring } from "./filtres";
 
 export class Introuvable extends Error {}
+/** Action refusée pour une raison que l'utilisateur ou l'IA peut corriger (message lisible). */
+export class Refus extends Error {}
 
 export type Auteur = { id: string; via: "interface" | "mcp" };
 const PROFONDEUR_MAX = 8;
@@ -201,10 +203,25 @@ export async function scoringCourant(tenantId: string, segmentId: string, versio
   return v ? ScoringSchema.parse(v.criteres) : null;
 }
 
-export async function supprimerSegment(tenantId: string, segmentId: string) {
+/**
+ * Supprime un segment (marquage `deleted_at`, ses versions restent en base). Un marché qui a des cibles
+ * n'est supprimé avec elles que sur demande explicite : jamais de cibles orphelines en silence.
+ */
+export async function supprimerSegment(tenantId: string, segmentId: string, avecCibles = false) {
   const s = await segmentDuTenant(tenantId, segmentId);
-  await prisma.atlasSegment.update({ where: { id: s.id }, data: { deletedAt: new Date() } });
-  return { id: s.id, supprime: true };
+  const descendants: string[] = [];
+  let niveau = [s.id];
+  for (let i = 0; i < PROFONDEUR_MAX && niveau.length; i++) {
+    const enfants = await prisma.atlasSegment.findMany({ where: { tenantId, parentId: { in: niveau }, deletedAt: null }, select: { id: true } });
+    niveau = enfants.map((e) => e.id);
+    descendants.push(...niveau);
+  }
+  if (descendants.length && !avecCibles) {
+    throw new Refus(`« ${s.nom} » a ${descendants.length} cible${descendants.length > 1 ? "s" : ""} : confirmez la suppression avec ses cibles (avec_cibles).`);
+  }
+  const quand = new Date();
+  for (const id of [...descendants, s.id]) await prisma.atlasSegment.update({ where: { id }, data: { deletedAt: quand } });
+  return { id: s.id, supprime: true, cibles_supprimees: descendants.length };
 }
 
 // ---- Dossier de travail : entreprises épinglées (par espace) ----

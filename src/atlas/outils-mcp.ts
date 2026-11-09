@@ -30,7 +30,7 @@ function lisible<T>(f: (a: Record<string, unknown>, c: ContexteOutil) => Promise
     try {
       return await f(a, c);
     } catch (e) {
-      if (e instanceof FiltreInvalide || e instanceof seg.Introuvable) throw new ErreurOutil(e.message);
+      if (e instanceof FiltreInvalide || e instanceof seg.Introuvable || e instanceof seg.Refus) throw new ErreurOutil(e.message);
       throw e;
     }
   };
@@ -293,6 +293,16 @@ const OUTILS_BRUTS: Outil[] = [
     annotations: ECRITURE,
     visible: peutEcrire,
     run: lisible(async (a, c) => seg.restaurerVersion(c.ctx.tenantId, a.segment_id as string, a.version as number, auteur(c))),
+  },
+  {
+    name: "supprimer_segment",
+    title: "Supprimer un segment",
+    description:
+      "Supprime un marché ou une cible de l'espace (récupérable en base). Un marché qui a des cibles n'est supprimé avec elles que si avec_cibles = true : demandez d'abord à l'utilisateur.",
+    input: z.object({ segment_id: UUID, avec_cibles: z.boolean().default(false) }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    visible: peutEcrire,
+    run: lisible(async (a, c) => seg.supprimerSegment(c.ctx.tenantId, a.segment_id as string, a.avec_cibles as boolean)),
   },
 ];
 

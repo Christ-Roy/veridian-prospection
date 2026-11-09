@@ -625,6 +625,32 @@ export function AtlasApp() {
             </button>
           )}
           {segment && <MenuExport segmentId={segment.id} notifier={notifier} />}
+          {segment && peutEcrire && (
+            <button
+              type="button"
+              className="btn ghost hide-s"
+              title={`Supprimer « ${segment.nom} »`}
+              onClick={() => {
+                const cibles = arbre ? arbre.segments.filter((s) => s.parent_id === segment.id).length : 0;
+                const texte = cibles
+                  ? `Supprimer « ${segment.nom} » et ses ${cibles} cible${cibles > 1 ? "s" : ""} ?`
+                  : `Supprimer « ${segment.nom} » ?`;
+                if (!window.confirm(texte)) return;
+                appeler<{ cibles_supprimees: number }>("supprimer_segment", { segment_id: segment.id, avec_cibles: cibles > 0 })
+                  .then(async () => {
+                    choisir(null);
+                    await rechargerArbre();
+                    notifier("Supprimé");
+                  })
+                  .catch((e) => {
+                    notifier(texteErreur(e), true);
+                    if (e instanceof ErreurAtlas && e.status === 404) ecritureRefusee();
+                  });
+              }}
+            >
+              Supprimer
+            </button>
+          )}
           {segment && !estCible && peutEcrire && marche && (
             <button type="button" className="btn ghost hide-s" onClick={() => setCreation({ type: "cible", marche, colonnes })}>
               <Icone nom="cible" />

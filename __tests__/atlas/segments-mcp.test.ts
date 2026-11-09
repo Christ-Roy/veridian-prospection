@@ -18,6 +18,7 @@ vi.mock("@/lib/prisma", () => {
         const w = v as { segmentId: string; numero: number };
         return r.segmentId === w.segmentId && r.numero === w.numero;
       }
+      if (v && typeof v === "object" && "in" in v) return (v as { in: unknown[] }).in.includes(r[k]);
       return v === null ? r[k] === null || r[k] === undefined : r[k] === v;
     });
   const trier = (l: Row[], orderBy?: Record<string, "asc" | "desc">) => {
@@ -119,6 +120,19 @@ describe("Atlas par le MCP", () => {
     const h = await appel(A, "historique_segment", { segment_id: parent.id });
     expect(h.filtre.map((v: { version: number }) => v.version)).toEqual([3, 2, 1]);
     expect(h.filtre[0].auteur).toBe("ia:claude");
+  });
+
+  test("supprimer : un marché avec des cibles demande confirmation, puis part avec elles ; un autre espace n'y touche pas", async () => {
+    const m = await appel(A, "creer_segment", { nom: "Marché à supprimer", filtre: DEP69 });
+    const c1 = await appel(A, "creer_segment", { nom: "Cible 1", filtre: { conditions: [] }, parent_id: m.id });
+    await appel(A, "creer_segment", { nom: "Sous-cible", filtre: { conditions: [] }, parent_id: c1.id });
+    expect((await appel(ctx("tenant-B"), "supprimer_segment", { segment_id: m.id })).erreur).toMatch(/introuvable/i);
+    expect((await appel(A, "supprimer_segment", { segment_id: m.id })).erreur).toMatch(/2 cibles/);
+    const r = await appel(A, "supprimer_segment", { segment_id: m.id, avec_cibles: true });
+    expect(r).toMatchObject({ supprime: true, cibles_supprimees: 2 });
+    const noms = (await appel(A, "lister_segments_atlas")).segments.map((s: { nom: string }) => s.nom);
+    expect(noms).not.toContain("Marché à supprimer");
+    expect(noms).not.toContain("Sous-cible");
   });
 
   test("scoring : classement par score décroissant, ancienne version comparable", async () => {
