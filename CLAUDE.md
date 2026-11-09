@@ -1,4 +1,4 @@
-# Prospection — Dashboard B2B SaaS
+# Prospection (Atlas) : navigateur du marché sur ODH
 
 > ## 🔴 Règle d'or Veridian — zéro contournement (gravée Robert 2026-06-10)
 > **Interdit absolu** : cron bricolé, SQLite/store parallèle, job maison pour
@@ -8,8 +8,10 @@
 
 ## Ce que c'est
 
-Dashboard de prospection commerciale B2B : 1,8 M d'entreprises françaises, scoring
-technique, données INPI, pipeline, mail, softphone, multi-tenant.
+Atlas, servi sur « / » : explorer le marché français (ClickHouse ODH, vue
+`odh.company_prospection_current`, 1,3 M d'entreprises non bloquées), le découper en segments versionnés,
+les prioriser, les envoyer vers Notifuse. L'ancienne app (base `entreprises`, pipeline, mail, softphone) est
+retirée le 09/11 ; archive : tag `archive/prospection-v1-20261109`. Le pipeline commercial vit dans Twenty.
 
 ## Stack
 
@@ -61,9 +63,15 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
   Tenants existants : `POST /api/tenants/link-hub` (HMAC, `{hub_user_id, hub_tenant_id}`) ne pose que ce lien.
   Ne pas rejouer `provision` sur un vrai client : il remet le propriétaire `admin` et recrée `default`.
   `by-email` rend `workspaces[].hub_tenant_id` pour `hub reconcile`.
-- Outils (`src/lib/mcp/outils.ts`) : mêmes fonctions que les écrans, espace déduit de l'utilisateur,
-  plafond du plan appliqué, fiche par `serveLeadDetail` (quota, 30/min, masquage partagés avec l'écran).
-  Un `viewer` ne voit pas `changer_statut`. Ajouter un outil = une entrée dans `OUTILS`, le Hub le relit seul.
+- Outils : `src/atlas/outils-mcp.ts` (17), les mêmes que l'écran appelle par `/api/atlas/[outil]` avec la session.
+  Espace déduit de l'utilisateur, un `viewer` ne voit pas les outils d'écriture, fiche limitée à 60/min.
+  Ajouter un outil = une entrée dans `OUTILS_ATLAS`, le Hub le relit seul.
+- ClickHouse (`src/atlas/source.ts`) : compte `prospection_ro`, 12 requêtes simultanées pour toute l'app, aucun
+  réglage par requête (profil readonly). File de 3 par conteneur et rejeu du code 202 : ne pas les retirer.
+  Champs = liste blanche `src/atlas/champs.ts`, filtres compilés en paramètres typés (`src/atlas/filtres.ts`).
+- Cube de marché ODH-0245 (`odh.market_cube_current`, à brancher) : sélection par LISTE de codes NAF avec
+  `naf_rev2 = 1`, jamais par intervalle de chaînes ; prévoir « département inconnu » (diffusion partielle) ;
+  afficher `nb_*_livrable` comme « envoyables », `nb_avec_*` comme « connus ».
 - Registre : `hub mcp-app add prospection https://prospection.app.veridian.site/api/mcp --acces tous` (inscrit le 09/11).
 - Journaux : `obs search '\[mcp\] outil=' --since 6h` (Loki) ; `nomad alloc logs` ne rend rien pour ce job.
 
@@ -132,11 +140,10 @@ retiré, clé `ubuntu` en mode deny). Ne pas pousser sur `staging` avant d'avoir
 ## Structure
 
 ```
-src/app/api/     # 117 routes : leads, pipeline, mail, admin, contrat Hub, /api/search
-src/components/  # écrans (dashboard, mail, billing, softphone)
-src/lib/queries/ # requêtes métier
-src/lib/hub/     # contrat Hub
-src/lib/mail/    # mail
+src/atlas/            # champs, filtres, source ClickHouse, segments (Prisma), outils MCP
+src/components/atlas/ # interface (rail, vues, carte, fiche, volets), fidèle à docs/maquette
+src/app/api/          # atlas/[outil], mcp, health, contrat Hub (sso, tenants, users)
+src/lib/hub/          # contrat Hub
 e2e/core/        # BLOQUANTS, voir .claude/rules/core-tests.md
 e2e/extended/    # non bloquants
 e2e/integration/ # exigent Postgres (DATABASE_URL), échouent sans
@@ -159,7 +166,7 @@ Build d'image et tests lourds sur un nœud libre, pas sur le bastion.
 
 ## Multi-tenant
 
-- `tenant_id` sur les tables opérationnelles ; `entreprises`, `users` et `verification_tokens` n'en ont pas.
+- Tables Atlas (`atlas_*`) bornées au tenant. Les tables de l'ancienne app (`entreprises`…) restent en base, plus lues.
 - Résolution : session → `tenants.user_id`, sinon `workspace_members` → tenant (cache 60 s).
 - Les tenants locaux n'ont pas toujours l'id du tenant Hub.
 
