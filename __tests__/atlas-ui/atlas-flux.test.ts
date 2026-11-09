@@ -35,6 +35,7 @@ import {
 import { indexerChamps } from "@/components/atlas/logique";
 import { COLONNES_MARCHE, etiquetteLigne, part } from "@/components/atlas/marche";
 import { PREMIERE_DEMANDE, boutonsIA, montrerAccueil } from "@/components/atlas/ia";
+import { REGLES_SUGGEREES, lignesDepuis, suggestionsRestantes } from "@/components/atlas/lignes";
 import type { Arbre, ChampInfo, PointCarte, SegmentArbre } from "@/components/atlas/types";
 
 const NOMS = { "69": "Rhône", "38": "Isère", "01": "Ain", "75": "Paris", "13": "Bouches-du-Rhône" };
@@ -266,6 +267,24 @@ describe("versions et présence de l'IA", () => {
     expect(phraseActivite("Claude", ch[1])).toBe("Claude a revu la priorité de « B » (v2)");
     expect(phraseActivite("Claude", ch[2])).toBe("Claude a créé « C »");
     expect(segmentsChanges(apres, apres)).toEqual([]);
+  });
+});
+
+describe("priorité : règles simples", () => {
+  test("les suggestions portent sur des champs du catalogue et disparaissent une fois utilisées", () => {
+    const idx = indexerChamps([champ("email_envoyable", "oui_non", ["est"]), champ("telephone", "texte", ["egal", "contient", "renseigne"])]);
+    expect(suggestionsRestantes([], idx).map((r) => r.id)).toEqual(["email_envoyable", "telephone"]);
+    const lignes = lignesDepuis([{ champ: "email_envoyable", op: "est", valeur: true, poids: 3 }]);
+    expect(suggestionsRestantes(lignes, idx).map((r) => r.id)).toEqual(["telephone"]);
+  });
+  test("chaque règle suggérée est une condition valide de son champ, avec des points positifs", async () => {
+    const { CHAMP, OPERATEURS } = await import("@/atlas/champs");
+    for (const r of REGLES_SUGGEREES) {
+      const c = CHAMP.get(r.condition.champ);
+      expect(c, r.id).toBeDefined();
+      expect(OPERATEURS[c!.type]).toContain(r.condition.op);
+      expect(r.points).toBeGreaterThan(0);
+    }
   });
 });
 

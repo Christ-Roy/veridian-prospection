@@ -6,7 +6,7 @@ import { appeler, ErreurAtlas, estAnnulation, texteErreur } from "./api";
 import { EditeurConditions } from "./editeur-conditions";
 import { avecCondition, type EtapeEntonnoir } from "./flux";
 import { Chargement, Icone } from "./icones";
-import { lignesDepuis, validerCriteres, type LigneEditeur } from "./lignes";
+import { DEMANDE_PRIORITE, lignesDepuis, suggestionsRestantes, validerCriteres, type LigneEditeur } from "./lignes";
 import { colonnesAffichees, formaterCellule, formaterNombre, grouperChamps, largeurBarre, libelleColonne } from "./logique";
 import type { ApercuMarche, ChampInfo, Critere, Filtre, LigneMarche, RepartitionMarche } from "./types";
 
@@ -412,16 +412,48 @@ export function VuePriorite({
   };
 
   const poidsTotal = lignes.reduce((a, l) => a + (Number(l.poids.replace(",", ".")) || 0), 0);
+  const suggestions = suggestionsRestantes(lignes, index);
+  const [copie, setCopie] = useState(false);
 
   return (
     <div className="prio">
       <section className="ed" aria-labelledby="atlas-prio-titre">
-        <h3 id="atlas-prio-titre">Moteur de priorité{scoring ? ` · v${scoring.version}` : ""}</h3>
-        <p className="callout">Chaque critère vrai rapporte son poids ; le score est ramené sur 100. Le classement donne l&apos;ordre d&apos;envoi.</p>
+        <h3 id="atlas-prio-titre">Priorité{scoring ? ` · v${scoring.version}` : ""}</h3>
+        <p className="callout">
+          Une règle = une condition et des points. Les entreprises qui cumulent le plus de points sont contactées en premier (score ramené sur 100).
+        </p>
+        {peutEcrire && (
+          <div className="ia-reco">
+            <b>Hautement recommandé : laissez votre IA écrire les règles.</b>
+            <span>Elle connaît les champs et les essaie sur la cible ; vous validez.</span>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                void navigator.clipboard?.writeText(DEMANDE_PRIORITE).then(() => {
+                  setCopie(true);
+                  setTimeout(() => setCopie(false), 1500);
+                });
+              }}
+            >
+              {copie ? "Demande copiée" : "Copier la demande pour l'IA"}
+            </button>
+          </div>
+        )}
         {peutEcrire ? (
           <>
             <EditeurConditions champs={champs} index={index} lignes={lignes} onChange={setLignes} avecPoids />
-            {lignes.length > 0 && <p className="hint num">Poids total : {formaterNombre(Math.round(poidsTotal * 10) / 10)}</p>}
+            {suggestions.length > 0 && (
+              <div className="sugg" aria-label="Règles suggérées">
+                <span className="hint">Ajouter en un clic :</span>
+                {suggestions.map((r) => (
+                  <button key={r.id} type="button" className="chip" onClick={() => setLignes((l) => [...l, ...lignesDepuis([{ ...r.condition, poids: r.points }])])}>
+                    + {r.libelle} · {r.points} pt{r.points > 1 ? "s" : ""}
+                  </button>
+                ))}
+              </div>
+            )}
+            {lignes.length > 0 && <p className="hint num">Total : {formaterNombre(Math.round(poidsTotal * 10) / 10)} points</p>}
             {erreurs.length > 0 && (
               <ul className="msg" role="alert" style={{ paddingLeft: 18, margin: 0 }}>
                 {erreurs.map((e) => (
@@ -439,7 +471,7 @@ export function VuePriorite({
           <ul className="hint" style={{ margin: 0, paddingLeft: 18 }}>
             {(scoring?.criteres ?? []).map((c, i) => (
               <li key={i}>
-                {libelleColonne(c.champ, index)} · poids {formaterNombre(c.poids)}
+                {libelleColonne(c.champ, index)} · +{formaterNombre(c.poids)} points
               </li>
             ))}
             {!scoring && <li>Aucune priorité définie. Lecture seule sur cet espace.</li>}
@@ -451,7 +483,7 @@ export function VuePriorite({
         <h3 id="atlas-classement-titre" className="hint" style={{ margin: "0 0 10px", fontWeight: 500 }}>
           Classement{versionComparee ? ` selon la v${versionComparee} (comparaison)` : ""}
         </h3>
-        {!scoring && <p className="empty">Définissez des critères pour classer la cible.</p>}
+        {!scoring && <p className="empty">Ajoutez des règles pour classer la cible.</p>}
         {scoring && erreur && <Erreur texte={erreur} />}
         {scoring && !apercu && !erreur && <Chargement />}
         {scoring && apercu && apercu.lignes.length === 0 && <p className="empty">Aucune entreprise dans cette cible.</p>}

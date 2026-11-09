@@ -878,6 +878,9 @@
     - src/components/atlas/icones.tsx
     - src/components/atlas/brancher-ia.tsx
     - src/components/atlas/rail.tsx
+    - src/components/atlas/carte.tsx
+    - src/components/atlas/vues.tsx
+    - src/components/atlas/editeur-conditions.tsx
   covered_by:
     - __tests__/atlas-ui/atlas-flux.test.ts
     - __tests__/atlas-ui/logique.test.ts

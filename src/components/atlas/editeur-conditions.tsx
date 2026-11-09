@@ -26,7 +26,7 @@ export function EditeurConditions({ champs, index, lignes, onChange, avecPoids }
 
   return (
     <div className="flex flex-col gap-3">
-      {lignes.length === 0 && <p className="text-sm text-muted-foreground">{avecPoids ? "Aucun critère." : "Aucune condition : toutes les entreprises."}</p>}
+      {lignes.length === 0 && <p className="text-sm text-muted-foreground">{avecPoids ? "Aucune règle." : "Aucune condition : toutes les entreprises."}</p>}
       {lignes.map((l) => {
         const champ = index.get(l.champ);
         if (!champ) return null;
@@ -78,13 +78,13 @@ export function EditeurConditions({ champs, index, lignes, onChange, avecPoids }
               <ChampValeur champ={champ} op={l.op} saisie={l.saisie} onChange={(saisie) => maj(l.cle, { saisie })} />
               {avecPoids && (
                 <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                  Poids
+                  + points
                   <Input
                     inputMode="decimal"
                     className="h-8 w-20"
                     value={l.poids}
                     onChange={(e) => maj(l.cle, { poids: e.target.value })}
-                    aria-label={`Poids du critère ${champ.libelle}`}
+                    aria-label={`Points de la règle ${champ.libelle}`}
                   />
                 </label>
               )}
@@ -99,10 +99,10 @@ export function EditeurConditions({ champs, index, lignes, onChange, avecPoids }
           if (c) onChange([...lignes, nouvelleLigne(c)]);
         }}
       >
-        <SelectTrigger size="sm" className="w-full" aria-label="Ajouter une condition">
+        <SelectTrigger size="sm" className="w-full" aria-label={avecPoids ? "Ajouter une règle" : "Ajouter une condition"}>
           <span className="flex items-center gap-1.5 text-muted-foreground">
             <Plus className="size-4" />
-            {avecPoids ? "Ajouter un critère" : "Ajouter une condition"}
+            {avecPoids ? "Ajouter une règle" : "Ajouter une condition"}
           </span>
         </SelectTrigger>
         <SelectContent>
