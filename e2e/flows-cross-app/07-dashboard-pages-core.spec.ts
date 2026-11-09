@@ -9,7 +9,7 @@
  *
  * Couvre chacune des 7 pages dashboard :
  *   /prospects, /pipeline, /historique, /settings,
- *   /admin/members, /admin/invitations, /admin/workspaces
+ *   /admin/members, /admin/workspaces
  *
  * Asserts par page :
  *   - HTTP < 400
@@ -34,7 +34,6 @@ const DASHBOARD_PAGES = [
   { path: "/historique", name: "Historique" },
   { path: "/settings", name: "Settings" },
   { path: "/admin/members", name: "Admin Members" },
-  { path: "/admin/invitations", name: "Admin Invitations" },
   { path: "/admin/workspaces", name: "Admin Workspaces" },
 ];
 

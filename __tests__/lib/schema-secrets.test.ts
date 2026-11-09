@@ -6,9 +6,9 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
 
-test("le schéma Prisma ne déclare plus de secret Twenty", () => {
+test("le schéma Prisma ne déclare plus de clé d'API d'une autre app", () => {
   const schema = readFileSync(path.resolve(__dirname, "../../prisma/schema.prisma"), "utf8");
-  for (const col of ["twenty_api_key", "twenty_user_password", "twenty_login_token"]) {
+  for (const col of ["twenty_api_key", "twenty_user_password", "twenty_login_token", "notifuse_api_key"]) {
     expect(schema).not.toMatch(new RegExp(`@map\\("${col}`));
   }
 });

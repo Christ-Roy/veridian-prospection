@@ -56,10 +56,6 @@ async function main() {
   const ws = await api("/api/admin/workspaces", token);
   assert("/api/admin/workspaces returns 200", ws.status === 200);
 
-  // /api/admin/invitations
-  const inv = await api("/api/admin/invitations", token);
-  assert("/api/admin/invitations returns 200", inv.status === 200);
-
   // /api/stats/overview
   const stats = await api("/api/stats/overview", token);
   assert("/api/stats/overview returns 200", stats.status === 200);

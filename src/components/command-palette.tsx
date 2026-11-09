@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/command";
 import {
   FolderOpen, Kanban, History, Settings, Shield, BarChart3,
-  Search, Users, Mail, BookOpen, Moon, Sun,
+  Search, Users, BookOpen, Moon, Sun,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 
@@ -22,7 +22,6 @@ const PAGES = [
   { label: "Guide", href: "/guide", icon: BookOpen, keywords: "help documentation aide" },
   { label: "Admin - Membres", href: "/admin/members", icon: Users, keywords: "team workspace" },
   { label: "Admin - KPI", href: "/admin/kpi", icon: BarChart3, keywords: "stats dashboard" },
-  { label: "Admin - Invitations", href: "/admin/invitations", icon: Mail, keywords: "invite" },
   { label: "Admin - Workspaces", href: "/admin/workspaces", icon: Shield, keywords: "tenant" },
 ];
 

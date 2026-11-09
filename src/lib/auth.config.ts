@@ -43,8 +43,6 @@ export const authConfig = {
         "/api/health",
         "/api/status",
         "/api/errors",
-        "/invite/",
-        "/api/invitations/",
         "/api/tenants/provision",
         "/api/auth/token",
       ];

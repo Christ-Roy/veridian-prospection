@@ -18,20 +18,10 @@ export function AuditLog() {
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/admin/invitations").then(r => r.ok ? r.json() : { invitations: [] }),
       fetch("/api/admin/members").then(r => r.ok ? r.json() : { members: [] }),
       fetch("/api/changelog").then(r => r.ok ? r.json() : { commits: [] }),
-    ]).then(([invData, membData, changelog]) => {
+    ]).then(([membData, changelog]) => {
       const events: AuditEvent[] = [];
-
-      // Invitations
-      for (const inv of (invData.invitations || []).slice(0, 10)) {
-        events.push({
-          type: "invitation",
-          description: `Invitation envoyee a ${inv.email} (${inv.role})`,
-          timestamp: inv.created_at || inv.createdAt,
-        });
-      }
 
       // Members
       for (const m of (membData.members || []).slice(0, 10)) {

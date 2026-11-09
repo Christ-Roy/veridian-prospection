@@ -176,7 +176,6 @@ export async function POST(
         slug: `${tenant.slug}-purged-${now.getTime()}`,
         // Intégrations tierces nulled
         twentyUserEmail: null,
-        notifuseApiKey: null,
         notifuseUserEmail: null,
         notifuseWorkspaceSlug: null,
         // Plan info reset

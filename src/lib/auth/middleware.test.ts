@@ -5,8 +5,8 @@
  * fail-OPEN sur les pages protégées (= fuite massive) ou redirect cassé.
  *
  * Contrat protégé :
- *   - Routes publiques (/login, /signup, /auth/*, /api/auth/*, /invite/*,
- *     /api/invitations/*, /api/tenants/provision, /api/auth/token, /api/health,
+ *   - Routes publiques (/login, /signup, /auth/*, /api/auth/*,
+ *     /api/tenants/provision, /api/auth/token, /api/health,
  *     /api/status, /api/errors) → next() sans toucher à edgeAuth
  *   - Sans session :
  *       * /api/* → next() (les route handlers retourneront 401 via requireAuth)
@@ -73,8 +73,6 @@ describe("routes publiques — bypass total de edgeAuth", () => {
     "/auth/callback/google",
     "/api/auth/signin",
     "/api/auth/callback/google",
-    "/invite/abc123",
-    "/api/invitations/accept",
     "/api/tenants/provision",
     "/api/auth/token",
     "/api/health",

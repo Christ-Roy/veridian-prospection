@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Building2, Users, Mail, Phone } from "lucide-react";
+import { Building2, Users, Phone } from "lucide-react";
 import {
   Card,
   CardHeader,
@@ -11,7 +11,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 
 type KpiCard = {
-  key: "workspaces" | "members" | "invitations" | "outreach";
+  key: "workspaces" | "members" | "outreach";
   label: string;
   hint: string;
   icon: React.ComponentType<{ className?: string }>;
@@ -23,7 +23,6 @@ export default function AdminIndexPage() {
   const [cards, setCards] = useState<KpiCard[]>([
     { key: "workspaces", label: "Workspaces", hint: "Équipes du tenant", icon: Building2, value: null },
     { key: "members", label: "Membres", hint: "Utilisateurs actifs", icon: Users, value: null },
-    { key: "invitations", label: "Invitations pending", hint: "En attente d'acceptation", icon: Mail, value: null },
     { key: "outreach", label: "Outreach total", hint: "Toutes équipes confondues", icon: Phone, value: null },
   ]);
   const [loading, setLoading] = useState(true);
@@ -42,10 +41,9 @@ export default function AdminIndexPage() {
         }
       };
 
-      const [wsData, membersData, invitesData, kpiData] = await Promise.all([
+      const [wsData, membersData, kpiData] = await Promise.all([
         fetchJson("/api/admin/workspaces"),
         fetchJson("/api/admin/members"),
-        fetchJson("/api/admin/invitations?status=pending"),
         fetchJson("/api/admin/kpi"),
       ]);
 
@@ -57,14 +55,6 @@ export default function AdminIndexPage() {
       if (membersData && typeof membersData === "object") {
         const body = membersData as { members?: unknown[] };
         memberCount = Array.isArray(body.members) ? body.members.length : 0;
-      }
-
-      let invitesCount: number | null = null;
-      if (Array.isArray(invitesData)) {
-        invitesCount = invitesData.length;
-      } else if (invitesData && typeof invitesData === "object") {
-        const body = invitesData as { invitations?: unknown[] };
-        if (Array.isArray(body.invitations)) invitesCount = body.invitations.length;
       }
 
       let outreachTotal: number | null = null;
@@ -87,8 +77,6 @@ export default function AdminIndexPage() {
               return { ...c, value: workspaceCount, failed: workspaceCount === null };
             case "members":
               return { ...c, value: memberCount, failed: memberCount === null };
-            case "invitations":
-              return { ...c, value: invitesCount, failed: invitesCount === null };
             case "outreach":
               return { ...c, value: outreachTotal, failed: outreachTotal === null };
           }

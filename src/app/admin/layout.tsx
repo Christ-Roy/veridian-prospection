@@ -36,10 +36,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               <Users className="h-4 w-4" />
               Membres
             </Link>
-            <Link href="/admin/invitations" className="hover:text-indigo-600 inline-flex items-center gap-1">
+            {/* Inviter crée un utilisateur : c'est le Hub (09/11). */}
+            <a href={`${process.env.NEXT_PUBLIC_HUB_URL || "https://app.veridian.site"}/dashboard/workspace/members`} className="hover:text-indigo-600 inline-flex items-center gap-1">
               <Mail className="h-4 w-4" />
-              Invitations
-            </Link>
+              Inviter (Hub)
+            </a>
             <Link href="/admin/kpi" className="hover:text-indigo-600 inline-flex items-center gap-1">
               <BarChart3 className="h-4 w-4" />
               KPI

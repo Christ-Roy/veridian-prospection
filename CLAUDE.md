@@ -96,7 +96,8 @@ retiré, clé `ubuntu` en mode deny). Ne pas pousser sur `staging` avant d'avoir
   Une migration longue (index sur `entreprises`) commence par `SET statement_timeout = 0;`.
 - **Suppression de colonne en deux temps** : d'abord le code sans la colonne (Prisma lit tout le modèle),
   puis la migration de DROP au déploiement suivant ; la CI migre avant de déployer (fait le 09/11, 0035).
-- **`tenants.notifuse_api_key` est encore lue** par `src/lib/invitations.ts` (staging seulement ; prod en 410).
+- **Pas d'invitation locale** (retirée le 09/11) : inviter crée un utilisateur, c'est le Hub (`/dashboard/workspace/members`).
+  La table `invitations` reste (21 lignes, plus lue) ; `notifuse_api_key` est vidée puis supprimée.
 - **Un déploiement remplace toute l'allocation** du groupe `stack` : l'id d'alloc change.
 - **Après déploiement, lire l'image et la version dans le conteneur** ; `/api/status` renvoie
   `commit: null` et ne prouve rien.

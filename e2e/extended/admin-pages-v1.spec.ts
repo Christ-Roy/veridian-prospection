@@ -6,7 +6,7 @@
  *  - /admin/workspaces
  *  - /admin/members
  *  - /admin/kpi
- *  - /admin/invitations
+ *  - (invitations : au Hub depuis le 09/11)
  *
  * Stratégie:
  *  - Login via loginAsE2EUser (persistant, partagé par tous les specs)
@@ -31,7 +31,6 @@ const ADMIN_PAGES = [
   { path: "/admin/workspaces", label: "workspaces" },
   { path: "/admin/members", label: "members" },
   { path: "/admin/kpi", label: "kpi" },
-  { path: "/admin/invitations", label: "invitations" },
 ] as const;
 
 function attachErrorListeners(page: Page, sink: string[]) {

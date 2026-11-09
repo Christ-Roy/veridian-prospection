@@ -901,7 +901,8 @@ model Tenant {
 
   // Intégrations Notifuse
   notifuseWorkspaceSlug    String?   @map("notifuse_workspace_slug")
-  notifuseApiKey           String?   @map("notifuse_api_key")
+  // notifuse_api_key : secret en clair, plus lu depuis le retrait des invitations locales (09/11),
+  // vidé (dump au froid), colonne supprimée par la migration suivante.
   notifuseUserEmail        String?   @map("notifuse_user_email")
   notifuseInvitationSentAt DateTime? @map("notifuse_invitation_sent_at") @db.Timestamptz
 

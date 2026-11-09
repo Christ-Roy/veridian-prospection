@@ -17,24 +17,9 @@ export function NotificationBell() {
   useEffect(() => {
     async function fetchNotifications() {
       try {
-        const [invRes, pipeRes] = await Promise.all([
-          fetch("/api/admin/invitations").then(r => r.ok ? r.json() : null),
-          fetch("/api/pipeline").then(r => r.ok ? r.json() : null),
-        ]);
+        const pipeRes = await fetch("/api/pipeline").then(r => r.ok ? r.json() : null);
 
         const notifs: Notification[] = [];
-
-        // Pending invitations
-        const pending = (invRes?.invitations || []).filter(
-          (i: { accepted_at?: string; revoked_at?: string }) => !i.accepted_at && !i.revoked_at
-        );
-        if (pending.length > 0) {
-          notifs.push({
-            type: "invitation",
-            message: `${pending.length} invitation${pending.length > 1 ? "s" : ""} en attente`,
-            time: pending[0]?.created_at || "",
-          });
-        }
 
         // Pipeline activity (leads in "rappeler" status)
         const rappeler = pipeRes?.pipeline?.rappeler || [];

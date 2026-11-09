@@ -35,7 +35,6 @@ const DASHBOARD_PAGES = [
   { path: "/historique", name: "Historique" },
   { path: "/settings", name: "Settings" },
   { path: "/admin/members", name: "Admin Members" },
-  { path: "/admin/invitations", name: "Admin Invitations" },
   { path: "/admin/workspaces", name: "Admin Workspaces" },
 ];
 

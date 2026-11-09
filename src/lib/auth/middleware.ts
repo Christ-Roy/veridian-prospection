@@ -67,8 +67,6 @@ export async function updateSession(request: NextRequest) {
     path.startsWith("/signup") ||
     path.startsWith("/auth/") ||
     path.startsWith("/api/auth/") ||
-    path.startsWith("/invite/") ||
-    path.startsWith("/api/invitations/") ||
     path.startsWith("/api/tenants/provision") ||
     path.startsWith("/api/auth/token") ||
     path.startsWith("/api/health") ||
