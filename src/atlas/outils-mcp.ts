@@ -17,7 +17,7 @@ const LECTURE = { readOnlyHint: true, destructiveHint: false, idempotentHint: tr
 const ECRITURE = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
 const UUID = z.string().uuid();
 const peutEcrire = (c: ContexteOutil) => c.ctx.isAdmin || c.ctx.workspaces.some((w) => w.role !== "viewer");
-const auteur = (c: ContexteOutil): seg.Auteur => ({ id: c.client ? `ia:${c.client}` : c.ctx.userId, via: "mcp" });
+const auteur = (c: ContexteOutil): seg.Auteur => (c.client ? { id: `ia:${c.client}`, via: "mcp" } : { id: c.ctx.userId, via: "interface" });
 
 /** Les erreurs métier (filtre invalide, introuvable) remontent telles quelles à l'IA, pour qu'elle corrige. */
 function lisible<T>(f: (a: Record<string, unknown>, c: ContexteOutil) => Promise<T>) {

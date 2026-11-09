@@ -21,6 +21,10 @@ Vision : `CLAUDE.md`, section « Vision produit ». Maquette : `docs/maquette/at
 - Conséquence : deux sources à proposer, « prospectables » (enrichie) et « marché complet » (30 M, moins de
   colonnes) pour l'analyse de marché. Les entreprises bloquées (contact absent, ambigu…) restent visibles sur
   demande (`inclure_bloques`).
+- Marché complet (accord ODH 09/11) : pas de lecture des 30 M lignes par l'app. ODH publiera un cube agrégé
+  `odh.market_cube_current` (comptes par NAF × département × tranche d'effectif × année de création × actif/fermé,
+  recalculé à chaque release) ; le détail d'une case vient de `odh.search_company` (1 ligne par SIREN). Quand la
+  phase démarre : envoyer à la session ODH la liste exacte des axes et mesures, elle étend prospection_ro au cube.
 
 ## Modèle (pg-saas)
 
@@ -53,12 +57,24 @@ Plus tard : apprentissage sur les conversions remontées de Twenty.
 `combiner_segments`, `definir_scoring`, `classer_segment` (top N scoré), `historique_segment`, `restaurer_version`.
 Export : jamais par le MCP sans clic humain.
 
+## Cas d'usage zéro : éleveurs de France pour ASD (Henri), 09/11
+
+Rapport fait à la main le 09/11 (réf. ASD-ELEV-2026-11-09) : 346 420 éleveurs actifs (NAF 01.41Z à 01.50Z),
+6 710 avec email, 772 contactés, 7 035 prêts, 33 réponses, par type d'élevage et par département.
+Atlas doit le reproduire puis le dépasser, et Henri l'utiliser lui-même :
+- dossier « Éleveurs », un segment enfant par type d'élevage, vue carte par département ;
+- mesures marché et joignabilité depuis le cube ODH (axes envoyés à ODH le 09/11) ; validation croisée sur les
+  chiffres du rapport ;
+- « contactés / prêts / réponses » : couche par tenant depuis les campagnes Notifuse de l'espace ;
+- export Excel réservé au plan payant, tracé, déclenché par un clic ; l'agent peut préparer le fichier.
+
 ## Phases
 
 1. Socle : compilateur de filtres + tests, modèle pg-saas, outils MCP de lecture et de segment. **En cours.**
 2. Écrans Atlas : rail des dossiers, carte réelle (`france-map-data.ts`), répartition, tableau, fiche, historique.
 3. Scoring et comparaison de versions ; combinaisons de segments.
-4. Export payant ; modules de données par l'IA (catalogue de visualisations).
+4. Export Excel payant (préparé par l'agent, téléchargé par clic) ; cube de marché ODH ; couche Notifuse par tenant ;
+   modules de données par l'IA (catalogue de visualisations).
 5. Bascule : Atlas devient la page d'accueil, l'ancien code est retiré.
 
 ## Dépendance externe
