@@ -885,11 +885,9 @@ model Tenant {
   // Intégrations Twenty CRM
   twentyWorkspaceId         String?   @map("twenty_workspace_id") @db.Uuid
   twentySubdomain           String?   @map("twenty_subdomain")
-  twentyApiKey              String?   @map("twenty_api_key")
   twentyUserEmail           String?   @map("twenty_user_email")
-  twentyUserPassword        String?   @map("twenty_user_password")
-  twentyLoginToken          String?   @map("twenty_login_token")
-  twentyLoginTokenCreatedAt DateTime? @map("twenty_login_token_created_at") @db.Timestamptz
+  // twenty_api_key, twenty_user_password, twenty_login_token(_created_at) : secrets en clair que
+  // rien ne lisait, vidés le 09/11 (dump au froid), colonnes supprimées par la migration suivante.
 
   // Autologin SSO Veridian (couche 1 — token one-shot Hub→Prospection).
   // Le token est généré par POST /api/tenants/provision (HMAC Hub), stocké

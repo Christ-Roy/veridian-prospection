@@ -336,7 +336,7 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
     expect(updateCall.data.purgedAt).toBeInstanceOf(Date);
     expect(updateCall.data.name).toBe("[purged]");
     expect(updateCall.data.slug).toMatch(/^client-acme-purged-\d+$/);
-    expect(updateCall.data.twentyApiKey).toBeNull();
+    expect(updateCall.data.twentyUserEmail).toBeNull();
     expect(updateCall.data.notifuseApiKey).toBeNull();
     expect(updateCall.data.plan).toBeNull();
     expect(updateCall.data.planSource).toBeNull();

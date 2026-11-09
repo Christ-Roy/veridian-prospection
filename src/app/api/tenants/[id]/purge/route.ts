@@ -175,10 +175,7 @@ export async function POST(
         // collision si un nouveau tenant arrive avec le même slug.
         slug: `${tenant.slug}-purged-${now.getTime()}`,
         // Intégrations tierces nulled
-        twentyApiKey: null,
         twentyUserEmail: null,
-        twentyUserPassword: null,
-        twentyLoginToken: null,
         notifuseApiKey: null,
         notifuseUserEmail: null,
         notifuseWorkspaceSlug: null,
