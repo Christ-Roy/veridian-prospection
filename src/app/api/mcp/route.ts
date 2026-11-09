@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "JSON illisible" } }, { status: 400 });
   }
 
-  const contexte = { ctx, workspaceId: await resolveInsertWorkspaceId(ctx) };
+  const contexte = { ctx, workspaceId: await resolveInsertWorkspaceId(ctx), client: identite.clientId ?? null };
   const journal = (e: { outil: string; issue: string; ms: number }) =>
     console.info(`[mcp] outil=${e.outil} issue=${e.issue} ms=${e.ms} user=${user.id} client=${identite.clientId ?? "?"}`);
 

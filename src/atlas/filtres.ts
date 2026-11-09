@@ -34,11 +34,26 @@ export class FiltreInvalide extends Error {}
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Traduit un filtre en clause WHERE paramétrée. Lève FiltreInvalide avec un message lisible. */
-export function compilerFiltre(brut: unknown): Compile {
-  const r = FiltreSchema.safeParse(brut ?? {});
+/** Critère de scoring : une condition du catalogue et son poids. */
+export const ScoringSchema = z
+  .object({
+    criteres: z.array(ConditionSchema.extend({ poids: z.number().min(0.1).max(100) }).strict()).min(1).max(30),
+  })
+  .strict();
+export type Scoring = z.infer<typeof ScoringSchema>;
+
+function lire<T>(schema: z.ZodType<T>, brut: unknown): T {
+  const r = schema.safeParse(brut ?? {});
   if (!r.success) throw new FiltreInvalide(r.error.issues.map((i) => `${i.path.join(".")} : ${i.message}`).join(" ; "));
-  const f = r.data;
+  return r.data;
+}
+
+/**
+ * Traduit un filtre (et un scoring éventuel) en SQL paramétré. Le score vaut la somme des poids des
+ * critères vrais, ramenée sur 100. Lève FiltreInvalide avec un message lisible.
+ */
+export function compilerFiltre(brut: unknown, scoringBrut?: unknown): Compile & { score?: string } {
+  const f = lire(FiltreSchema, brut);
   const clauses: string[] = ["is_deleted = 0"];
   if (!f.inclure_bloques) clauses.push("empty(blocking_reasons)");
   const params: Record<string, SqlParam> = {};
@@ -50,7 +65,13 @@ export function compilerFiltre(brut: unknown): Compile {
   };
 
   f.conditions.forEach((c, i) => clauses.push(compilerCondition(c, i, p)));
-  return { where: clauses.join(" AND "), params };
+  if (scoringBrut === undefined) return { where: clauses.join(" AND "), params };
+
+  const s = lire(ScoringSchema, scoringBrut);
+  const total = s.criteres.reduce((a, c) => a + c.poids, 0);
+  const termes = s.criteres.map((c, i) => `if(ifNull(${compilerCondition(c, i, p)}, 0), ${p("Float64", c.poids)}, 0)`);
+  const score = `round((${termes.join(" + ")}) * 100 / ${p("Float64", total)})`;
+  return { where: clauses.join(" AND "), params, score };
 }
 
 function compilerCondition(c: Condition, i: number, p: (type: string, v: unknown) => string): string {

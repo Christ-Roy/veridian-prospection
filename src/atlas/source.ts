@@ -4,15 +4,17 @@
  * compte) : source simulée déterministe, signalée par `simulee: true` dans chaque réponse.
  */
 import { CHAMP, CHAMPS, type Champ } from "./champs";
-import { FiltreInvalide, FiltreSchema, colonnesSql, compilerFiltre, type Condition, type SqlParam } from "./filtres";
+import { FiltreInvalide, FiltreSchema, ScoringSchema, colonnesSql, compilerFiltre, type Condition, type SqlParam } from "./filtres";
 
 export type Ligne = Record<string, string | number | boolean | null>;
 export type Apercu = { colonnes: string[]; page: number; parPage: number; tri: string; lignes: Ligne[] };
+/** Options d'aperçu ; avec `scoring`, chaque ligne a une colonne `score` (0-100) et le tri se fait dessus. */
+export type OptionsApercu = { colonnes: string[]; page: number; parPage: number; tri?: string; sens?: "asc" | "desc"; scoring?: unknown };
 
 export interface SourceMarche {
   readonly simulee: boolean;
   compter(filtre: unknown): Promise<number>;
-  apercu(filtre: unknown, o: { colonnes: string[]; page: number; parPage: number; tri?: string; sens?: "asc" | "desc" }): Promise<Apercu>;
+  apercu(filtre: unknown, o: OptionsApercu): Promise<Apercu>;
   repartition(filtre: unknown, champ: string, limite?: number): Promise<{ cle: string; nombre: number }[]>;
 }
 
@@ -70,17 +72,18 @@ export class SourceClickHouse implements SourceMarche {
     return Number(r[0]?.n ?? 0);
   }
 
-  async apercu(filtre: unknown, o: { colonnes: string[]; page: number; parPage: number; tri?: string; sens?: "asc" | "desc" }) {
-    const { where, params } = compilerFiltre(filtre);
+  async apercu(filtre: unknown, o: OptionsApercu) {
+    const { where, params, score } = compilerFiltre(filtre, o.scoring);
     const { sql: select, champs } = colonnesSql(o.colonnes);
-    const tri = champTri(o.tri);
     const parPage = Math.min(100, Math.max(1, Math.trunc(o.parPage)));
     const page = Math.max(1, Math.trunc(o.page));
     const sens = o.sens === "asc" ? "ASC" : "DESC";
-    const sql = `SELECT ${select} FROM ${TABLE} WHERE ${where} ORDER BY ${tri.sql} ${sens} NULLS LAST, siren LIMIT ${parPage} OFFSET ${(page - 1) * parPage}`;
+    const tri = score ? null : champTri(o.tri);
+    const ordre = score ? `score ${sens}` : `${tri!.sql} ${sens} NULLS LAST`;
+    const sql = `SELECT ${select}${score ? `, ${score} AS score` : ""} FROM ${TABLE} WHERE ${where} ORDER BY ${ordre}, siren LIMIT ${parPage} OFFSET ${(page - 1) * parPage}`;
     const brut = await this.requete<Ligne>(sql, params);
-    const lignes = brut.map((l) => normaliser(l, champs));
-    return { colonnes: champs.map((c) => c.id), page, parPage, tri: tri.id, lignes };
+    const lignes = brut.map((l) => ({ ...normaliser(l, champs), ...(score ? { score: Number(l.score) } : {}) }));
+    return { colonnes: [...champs.map((c) => c.id), ...(score ? ["score"] : [])], page, parPage, tri: score ? "score" : tri!.id, lignes };
   }
 
   async repartition(filtre: unknown, champ: string, limite = 120) {
@@ -163,20 +166,28 @@ export class SourceSimulee implements SourceMarche {
   async compter(filtre: unknown) {
     return this.filtrer(filtre).length;
   }
-  async apercu(filtre: unknown, o: { colonnes: string[]; page: number; parPage: number; tri?: string; sens?: "asc" | "desc" }) {
+  async apercu(filtre: unknown, o: OptionsApercu) {
+    compilerFiltre(filtre, o.scoring); // même validation qu'en prod
     const { champs } = colonnesSql(o.colonnes);
-    const tri = champTri(o.tri);
+    const scoring = o.scoring === undefined ? null : ScoringSchema.parse(o.scoring);
+    const tri = scoring ? null : champTri(o.tri);
     const parPage = Math.min(100, Math.max(1, Math.trunc(o.parPage)));
     const page = Math.max(1, Math.trunc(o.page));
     const s = o.sens === "asc" ? 1 : -1;
-    const triees = this.filtrer(filtre).sort((a, b) => {
-      const x = a[tri.id], y = b[tri.id];
+    const total = scoring ? scoring.criteres.reduce((a, c) => a + c.poids, 0) : 1;
+    const avecScore = this.filtrer(filtre).map((l) =>
+      scoring ? { ...l, score: Math.round((scoring.criteres.reduce((a, c) => a + (vraie(c, l) ? c.poids : 0), 0) * 100) / total) } : l,
+    );
+    const cle = scoring ? "score" : tri!.id;
+    const triees = avecScore.sort((a, b) => {
+      const x = a[cle], y = b[cle];
       if (x === null) return 1;
       if (y === null) return -1;
       return (x > y ? 1 : x < y ? -1 : 0) * s;
     });
-    const lignes = triees.slice((page - 1) * parPage, page * parPage).map((l) => Object.fromEntries(champs.map((c) => [c.id, l[c.id] === "" ? null : l[c.id]])));
-    return { colonnes: champs.map((c) => c.id), page, parPage, tri: tri.id, lignes };
+    const ids = [...champs.map((c) => c.id), ...(scoring ? ["score"] : [])];
+    const lignes = triees.slice((page - 1) * parPage, page * parPage).map((l) => Object.fromEntries(ids.map((id) => [id, l[id] === "" ? null : l[id]])));
+    return { colonnes: ids, page, parPage, tri: cle, lignes };
   }
   async repartition(filtre: unknown, champ: string, limite = 120) {
     const c = champRepartition(champ);

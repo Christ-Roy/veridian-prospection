@@ -12,6 +12,16 @@ Vision : `CLAUDE.md`, section « Vision produit ». Maquette : `docs/maquette/at
 | Requêtes | Un segment est un filtre JSON validé (zod), traduit en SQL ClickHouse paramétré par un compilateur à liste blanche de champs. Jamais de SQL fourni par l'IA ou l'utilisateur | injection impossible, coût borné |
 | Code | `src/atlas/` (domaine), `src/app/atlas/` (écrans), outils MCP ajoutés au catalogue existant | séparé de l'ancien code, qui partira à la bascule |
 
+## Mesures sur ODH (09/11, compte odh_ro, SQL du compilateur)
+
+- `company_prospection_current` = 2 161 852 entreprises « prospectables » (contacts, web, scores), pas tout le
+  marché : 30 M de SIREN existent. Requêtes du compilateur : 0,1 à 0,25 s sur la vue entière.
+- `priority_score_v2` renseigné pour 205 743 entreprises seulement ; `email_verification = 'existe'` rare.
+- Exemple : NAF 4322A dans le Rhône = 568, dont 497 non bloquées, 164 sans site (155 non bloquées).
+- Conséquence : deux sources à proposer, « prospectables » (enrichie) et « marché complet » (30 M, moins de
+  colonnes) pour l'analyse de marché. Les entreprises bloquées (contact absent, ambigu…) restent visibles sur
+  demande (`inclure_bloques`).
+
 ## Modèle (pg-saas)
 
 - `atlas_dossiers` : arbre (parent_id), nom, tenant.

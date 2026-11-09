@@ -1223,3 +1223,75 @@ model TenantMailTemplate {
   @@index([tenantId, deletedAt])
   @@map("tenant_mail_templates")
 }
+
+// ============================================================================
+// Atlas (refonte 09/11, docs/PLAN-ATLAS.md) : dossiers, segments et scorings versionnés.
+// Les données marché sont lues dans ClickHouse ODH ; ici, seulement ce que l'utilisateur crée.
+// ============================================================================
+
+model AtlasDossier {
+  id        String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String          @map("tenant_id") @db.Uuid
+  parentId  String?         @map("parent_id") @db.Uuid
+  nom       String
+  segments  AtlasSegment[]
+  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt DateTime?       @map("deleted_at") @db.Timestamptz
+
+  @@index([tenantId, deletedAt])
+  @@map("atlas_dossiers")
+}
+
+model AtlasSegment {
+  id        String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String                @map("tenant_id") @db.Uuid
+  dossierId String?               @map("dossier_id") @db.Uuid
+  dossier   AtlasDossier?         @relation(fields: [dossierId], references: [id])
+  /// Segment parent : ses conditions s'ajoutent à celles de l'enfant.
+  parentId  String?               @map("parent_id") @db.Uuid
+  nom       String
+  /// Colonnes affichées (ids du catalogue src/atlas/champs.ts).
+  colonnes  Json                  @default("[]")
+  versions  AtlasSegmentVersion[]
+  scorings  AtlasScoringVersion[]
+  createdAt DateTime              @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt DateTime?             @map("deleted_at") @db.Timestamptz
+
+  @@index([tenantId, deletedAt])
+  @@map("atlas_segments")
+}
+
+model AtlasSegmentVersion {
+  id        String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  segmentId String       @map("segment_id") @db.Uuid
+  segment   AtlasSegment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  numero    Int
+  /// Filtre validé (src/atlas/filtres.ts).
+  filtre    Json
+  /// Utilisateur local, ou client IA via le MCP.
+  auteur    String
+  via       String       @default("interface")
+  note      String?
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([segmentId, numero])
+  @@map("atlas_segment_versions")
+}
+
+model AtlasScoringVersion {
+  id        String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  segmentId String       @map("segment_id") @db.Uuid
+  segment   AtlasSegment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  numero    Int
+  /// Critères pondérés : conditions du catalogue avec un poids (src/atlas/scoring.ts).
+  criteres  Json
+  auteur    String
+  via       String       @default("interface")
+  note      String?
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([segmentId, numero])
+  @@map("atlas_scoring_versions")
+}

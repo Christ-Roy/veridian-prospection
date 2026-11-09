@@ -14,8 +14,12 @@ import type { UserContext } from "@/lib/auth/user-context";
 import { serveLeadDetail } from "@/lib/leads/serve-detail";
 import { isKnownStatus } from "@/lib/outreach/status";
 import type { Lead } from "@/lib/types";
+import { OUTILS_ATLAS } from "@/atlas/outils-mcp";
 
-export type ContexteOutil = { ctx: UserContext; workspaceId: string | null };
+import { ErreurOutil } from "./erreur";
+
+/** `client` : le client IA d'origine (jeton du Hub), pour signer les versions créées par une IA. */
+export type ContexteOutil = { ctx: UserContext; workspaceId: string | null; client?: string | null };
 
 type Annotations = { readOnlyHint: boolean; destructiveHint: boolean; idempotentHint?: boolean; openWorldHint: boolean };
 
@@ -30,7 +34,7 @@ export type Outil = {
   run: (args: Record<string, unknown>, c: ContexteOutil) => Promise<unknown>;
 };
 
-export class ErreurOutil extends Error {}
+export { ErreurOutil };
 
 const LECTURE: Annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
@@ -192,5 +196,5 @@ export const OUTILS: Outil[] = [
 ];
 
 export function outilsVisibles(c: ContexteOutil): Outil[] {
-  return OUTILS.filter((o) => !o.visible || o.visible(c));
+  return [...OUTILS, ...OUTILS_ATLAS].filter((o) => !o.visible || o.visible(c));
 }
