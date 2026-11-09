@@ -43,3 +43,10 @@ export const estAnnulation = (e: unknown) => e instanceof DOMException && e.name
 export const texteErreur = (e: unknown) => (e instanceof Error ? e.message : "Erreur inconnue");
 
 export type CorpsFiltre = { filtre: Filtre };
+
+/** Message lisible d'un refus d'export (402 : plan gratuit, 429 : trop d'exports). */
+export function messageExport(status: number, corps: { message?: string; error?: string } | null): string {
+  if (status === 402) return "L'export est réservé aux plans payants Veridian.";
+  if (status === 429) return corps?.error ?? "Trop d'exports cette heure.";
+  return corps?.message ?? corps?.error ?? `Export impossible (${status}).`;
+}

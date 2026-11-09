@@ -340,3 +340,10 @@
 .atlas .sugg { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .atlas .sugg .chip { font-size: 12px; border: 1px dashed var(--border); border-radius: 999px; padding: 3px 10px; background: var(--bg); color: var(--fg2); cursor: pointer; }
 .atlas .sugg .chip:hover { border-style: solid; color: var(--fg); }
+.atlas .mexport { position: relative; }
+.atlas .mexport .menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 240px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 12px 32px rgb(0 0 0 / 0.1); padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+.atlas .mexport .menu button, .atlas .mexport .menu .later { text-align: left; font-size: 13px; padding: 8px 10px; border-radius: 6px; background: transparent; border: 0; color: var(--fg); cursor: pointer; font-family: inherit; }
+.atlas .mexport .menu button:hover:not(:disabled) { background: var(--soft); }
+.atlas .mexport .menu .later { color: var(--muted); cursor: default; }
+.atlas .mexport .menu .hint { padding: 4px 10px 2px; }
+.atlas .mexport .menu .lnk { padding: 2px 10px 6px; font-size: 12.5px; }

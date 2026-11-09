@@ -10,6 +10,7 @@ import { appeler, ErreurAtlas, estAnnulation, texteErreur } from "./api";
 import { Carte } from "./carte";
 import { departementsFiltre, titreZone } from "./carte-logique";
 import { Accueil, DialogueIA } from "./brancher-ia";
+import { MenuExport } from "./menu-export";
 import { DialogueCreation, type Creation } from "./dialogues";
 import { montrerAccueil, type LiensIA } from "./ia";
 import {
@@ -623,6 +624,7 @@ export function AtlasApp() {
               <span>Brancher une IA</span>
             </button>
           )}
+          {segment && <MenuExport segmentId={segment.id} notifier={notifier} />}
           {segment && !estCible && peutEcrire && marche && (
             <button type="button" className="btn ghost hide-s" onClick={() => setCreation({ type: "cible", marche, colonnes })}>
               <Icone nom="cible" />

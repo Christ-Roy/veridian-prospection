@@ -36,6 +36,7 @@ import { indexerChamps } from "@/components/atlas/logique";
 import { COLONNES_MARCHE, etiquetteLigne, part } from "@/components/atlas/marche";
 import { PREMIERE_DEMANDE, boutonsIA, montrerAccueil } from "@/components/atlas/ia";
 import { REGLES_SUGGEREES, lignesDepuis, suggestionsRestantes } from "@/components/atlas/lignes";
+import { messageExport } from "@/components/atlas/api";
 import type { Arbre, ChampInfo, PointCarte, SegmentArbre } from "@/components/atlas/types";
 
 const NOMS = { "69": "Rhône", "38": "Isère", "01": "Ain", "75": "Paris", "13": "Bouches-du-Rhône" };
@@ -267,6 +268,14 @@ describe("versions et présence de l'IA", () => {
     expect(phraseActivite("Claude", ch[1])).toBe("Claude a revu la priorité de « B » (v2)");
     expect(phraseActivite("Claude", ch[2])).toBe("Claude a créé « C »");
     expect(segmentsChanges(apres, apres)).toEqual([]);
+  });
+});
+
+describe("export", () => {
+  test("un refus se lit en clair : plan payant, quota, autre erreur", () => {
+    expect(messageExport(402, { error: "export_reserve_plan_payant" })).toMatch(/plans payants/);
+    expect(messageExport(429, { error: "Trop d'exports cette heure (20 au plus)." })).toMatch(/20 au plus/);
+    expect(messageExport(500, null)).toBe("Export impossible (500).");
   });
 });
 

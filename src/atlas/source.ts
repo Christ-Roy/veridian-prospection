@@ -10,7 +10,7 @@ import { FiltreInvalide, FiltreSchema, ScoringSchema, colonnesSql, compilerFiltr
 export type Ligne = Record<string, string | number | boolean | null>;
 export type Apercu = { colonnes: string[]; page: number; parPage: number; tri: string; lignes: Ligne[] };
 /** Options d'aperçu ; avec `scoring`, chaque ligne a une colonne `score` (0-100) et le tri se fait dessus. */
-export type OptionsApercu = { colonnes: string[]; page: number; parPage: number; tri?: string; sens?: "asc" | "desc"; scoring?: unknown };
+export type OptionsApercu = { colonnes: string[]; page: number; parPage: number; tri?: string; sens?: "asc" | "desc"; scoring?: unknown; /** lignes par page au plus (100 pour l'écran, l'export en demande plus) */ plafond?: number };
 
 /** Fiche complète d'une entreprise : colonnes ODH renommées en français, regroupées par thème. */
 export type Fiche = Record<string, Record<string, string | number | boolean | null | string[]>>;
@@ -172,7 +172,7 @@ export class SourceClickHouse implements SourceMarche {
   async apercu(filtre: unknown, o: OptionsApercu) {
     const { where, params, score } = compilerFiltre(filtre, o.scoring);
     const { sql: select, champs } = colonnesSql(o.colonnes);
-    const parPage = Math.min(100, Math.max(1, Math.trunc(o.parPage)));
+    const parPage = Math.min(o.plafond ?? 100, Math.max(1, Math.trunc(o.parPage)));
     const page = Math.max(1, Math.trunc(o.page));
     const sens = o.sens === "asc" ? "ASC" : "DESC";
     const tri = score ? null : champTri(o.tri);
@@ -333,7 +333,7 @@ export class SourceSimulee implements SourceMarche {
     const { champs } = colonnesSql(o.colonnes);
     const scoring = o.scoring === undefined ? null : ScoringSchema.parse(o.scoring);
     const tri = scoring ? null : champTri(o.tri);
-    const parPage = Math.min(100, Math.max(1, Math.trunc(o.parPage)));
+    const parPage = Math.min(o.plafond ?? 100, Math.max(1, Math.trunc(o.parPage)));
     const page = Math.max(1, Math.trunc(o.page));
     const s = o.sens === "asc" ? 1 : -1;
     const total = scoring ? scoring.criteres.reduce((a, c) => a + c.poids, 0) : 1;

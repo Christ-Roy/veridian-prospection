@@ -881,6 +881,7 @@
     - src/components/atlas/carte.tsx
     - src/components/atlas/vues.tsx
     - src/components/atlas/editeur-conditions.tsx
+    - src/components/atlas/menu-export.tsx
   covered_by:
     - __tests__/atlas-ui/atlas-flux.test.ts
     - __tests__/atlas-ui/logique.test.ts
