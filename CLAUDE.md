@@ -38,13 +38,21 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
 On travaille sur `main`, la branche qui déploie. La branche `staging` a divergé : ne pas y merger
 sans regarder.
 
-Prod : job Nomad `deploy/prospection.nomad.hcl` (toujours ce fichier, jamais une copie).
+Prod : UN SEUL chemin. Un push sur `main` : la CI construit `ghcr.io/christ-roy/prospection:<sha7>`,
+puis le job `deploy-prod` envoie le HCL du commit (`deploy/prospection.nomad.hcl`) et ce tag au bastion
+par le verbe `veridian-ci-deploy prospection` (put-job, plan, deploy canari, smoke, cleanup). Clé
+`prospection-ci-deploy` (cles-ci.tsv), commande forcée, aucun `nomad job run` à la main.
+- `image_tag` n'a AUCUN défaut : un défaut figé a fait reculer la prod (09/11 : c70ba3c servi 0537d22).
+  `scripts/ci/check-image-tag-sans-defaut.py` refuse tout défaut, auto-test compris (quality).
+- Ne jamais déployer à la main : `nomad-v deploy` et `nomad job run` ignorent le tag CI.
+- Le job prod est sur `ovh-prod` (contrainte `meta.provider`), pas sur le bastion : le verbe pré-pull
+  là où tourne l'allocation.
+- Vérifier après déploiement : `nomad job inspect prospection` (image) puis `docker ps` sur `prod-pub`.
 
-```bash
-source ~/credentials/nomad-bastion.env; export NOMAD_ADDR NOMAD_TOKEN="$NOMAD_MGMT_TOKEN"
-/usr/bin/nomad job plan -var image_tag=<sha> deploy/prospection.nomad.hcl
-/usr/bin/nomad job run -var image_tag=<sha> deploy/prospection.nomad.hcl
-```
+Staging (branche `staging`, job `prospection-staging`) : le job servi est à `count 0` ou `dead` selon
+le moment, et un conteneur `staging-2ad7ecc` tourne sur `dev-pub` en parallèle (09/11). Le
+`prospection-deploy-staging.yml` de cette branche pousse encore en Compose sur `ovh-dev` (chemin
+retiré, clé `ubuntu` en mode deny). Ne pas pousser sur `staging` avant d'avoir tranché la source.
 
 | Tier | Exemples | Action agent |
 |---|---|---|
