@@ -113,3 +113,51 @@ describe("source ClickHouse : la requête envoyée", () => {
     await expect(refus.compter({})).rejects.toThrow(/ClickHouse 500/);
   });
 });
+
+describe("source ClickHouse : 4 requêtes simultanées au plus pour toute l'app", () => {
+  test("la file garde au plus 3 requêtes en vol, toutes aboutissent", async () => {
+    const { SourceClickHouse, FileAttente } = await import("@/atlas/source");
+    let enVol = 0;
+    let pic = 0;
+    const fetchImpl = (async () => {
+      enVol++;
+      pic = Math.max(pic, enVol);
+      await new Promise((r) => setTimeout(r, 20));
+      enVol--;
+      return new Response(JSON.stringify({ data: [{ n: "1" }] }));
+    }) as unknown as typeof fetch;
+    const s = new SourceClickHouse({ url: "http://ch.test/", user: "u", password: "p" }, fetchImpl, new FileAttente(3), 1);
+    const r = await Promise.all(Array.from({ length: 10 }, () => s.compter({})));
+    expect(r).toEqual(Array(10).fill(1));
+    expect(pic).toBe(3);
+  });
+
+  test("code 202 (trop de requêtes) : rejoué puis réussi ; une autre erreur n'est pas rejouée", async () => {
+    const { SourceClickHouse, FileAttente } = await import("@/atlas/source");
+    let appels = 0;
+    const fetchImpl = (async () => {
+      appels++;
+      if (appels < 3) return new Response("Code: 202. DB::Exception: Too many simultaneous queries (TOO_MANY_SIMULTANEOUS_QUERIES)", { status: 500 });
+      return new Response(JSON.stringify({ data: [{ n: "7" }] }));
+    }) as unknown as typeof fetch;
+    const s = new SourceClickHouse({ url: "http://ch.test/", user: "u", password: "p" }, fetchImpl, new FileAttente(3), 1);
+    expect(await s.compter({})).toBe(7);
+    expect(appels).toBe(3);
+
+    let autres = 0;
+    const casse = new SourceClickHouse({ url: "http://ch.test/", user: "u", password: "p" }, (async () => {
+      autres++;
+      return new Response("Code: 62. Syntax error", { status: 400 });
+    }) as unknown as typeof fetch, new FileAttente(3), 1);
+    await expect(casse.compter({})).rejects.toThrow(/ClickHouse 400/);
+    expect(autres).toBe(1);
+  });
+
+  test("fiche : forme juridique en libellé, codes inconnus lisibles", async () => {
+    const { formeJuridique } = await import("@/atlas/source");
+    expect(formeJuridique("5499")).toBe("SARL");
+    expect(formeJuridique(1000)).toBe("EI");
+    expect(formeJuridique("7389")).toBe("catégorie 7389");
+    expect(formeJuridique("")).toBeNull();
+  });
+});

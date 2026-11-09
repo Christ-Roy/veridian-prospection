@@ -61,14 +61,54 @@ export function valeurParam(p: SqlParam): string {
   return String(p.valeur);
 }
 
+/**
+ * File d'attente des requêtes ClickHouse : le profil prospection_ro accepte 4 requêtes simultanées pour
+ * TOUTE l'app ; un écran en lance plus d'un coup (compte, aperçu, répartition, points). On en garde au
+ * plus `max` en vol par conteneur, les autres attendent leur tour.
+ */
+export class FileAttente {
+  private enVol = 0;
+  private readonly attente: (() => void)[] = [];
+  constructor(readonly max: number) {}
+  get actives() {
+    return this.enVol;
+  }
+  async executer<T>(f: () => Promise<T>): Promise<T> {
+    if (this.enVol >= this.max) await new Promise<void>((r) => this.attente.push(r));
+    this.enVol++;
+    try {
+      return await f();
+    } finally {
+      this.enVol--;
+      this.attente.shift()?.();
+    }
+  }
+}
+
+const TROP_DE_REQUETES = /TOO_MANY_SIMULTANEOUS_QUERIES|Code: 202\b/;
+
 export class SourceClickHouse implements SourceMarche {
   readonly simulee = false;
   constructor(
     private readonly cfg: { url: string; user: string; password: string },
     private readonly fetchImpl: typeof fetch = fetch,
+    private readonly file = new FileAttente(3),
+    private readonly pauseMs = 250,
   ) {}
 
+  /** Une requête refusée faute de place (code 202) est rejouée deux fois au plus, avec une courte pause. */
   private async requete<T>(sql: string, params: Record<string, SqlParam>): Promise<T[]> {
+    for (let essai = 0; ; essai++) {
+      try {
+        return await this.file.executer(() => this.envoyer<T>(sql, params));
+      } catch (e) {
+        if (essai >= 2 || !(e instanceof Error) || !TROP_DE_REQUETES.test(e.message)) throw e;
+        await new Promise((r) => setTimeout(r, this.pauseMs * (essai + 1)));
+      }
+    }
+  }
+
+  private async envoyer<T>(sql: string, params: Record<string, SqlParam>): Promise<T[]> {
     const u = new URL(this.cfg.url);
     // Aucun réglage dans l'URL : le profil prospection_ro impose lecture seule, 10 s, 15 M lignes lues
     // et 200 000 lignes de résultat, et refuse toute modification de réglage par requête.
@@ -131,13 +171,32 @@ export class SourceClickHouse implements SourceMarche {
   }
 }
 
-/** Remet les colonnes `theme__cle` en { theme: { cle: valeur } }, vides et 0/1 normalisés. */
+/** Colonnes UInt8 de la fiche : 0/1 rendus en oui/non. */
+const OUI_NON = new Set(["dirigeant__email_verifie", "contact__delivrable", "web__obsolete", "web__https", "web__responsive", "web__ecommerce", "signaux__rge", "signaux__qualiopi", "signaux__bio", "signaux__ess"]);
+
+/** Catégories juridiques INSEE les plus courantes, en libellé court ; sinon le code reste lisible. */
+const FORMES: Record<string, string> = {
+  "1000": "EI", "5499": "SARL", "5498": "EURL", "5410": "SARL", "5710": "SAS", "5720": "SASU", "5599": "SA", "5505": "SA",
+  "5202": "SNC", "5306": "SCS", "6540": "SCI", "6599": "Société civile", "6533": "GAEC", "6598": "EARL", "6597": "Société civile agricole",
+  "6316": "CUMA", "9220": "Association", "9210": "Association", "5458": "SELARL", "5785": "SELAS", "6585": "Société civile de moyens",
+};
+export function formeJuridique(code: unknown): string | null {
+  if (code === null || code === undefined || code === "") return null;
+  const c = String(code);
+  return FORMES[c] ?? `catégorie ${c}`;
+}
+
+/** Remet les colonnes `theme__cle` en { theme: { cle: valeur } } : vides en null, 0/1 en oui/non, forme juridique en libellé. */
 function regrouper(l: Record<string, unknown>): Fiche {
   const out: Fiche = {};
   for (const [k, v] of Object.entries(l)) {
     const [t, c] = k.split("__");
     out[t] ??= {};
-    out[t][c] = v === "" || v === undefined ? null : (v as string | number | null | string[]);
+    let val: string | number | boolean | null | string[] = v === "" || v === undefined ? null : (v as string | number | null | string[]);
+    if (OUI_NON.has(k) && val !== null) val = Number(val) === 1;
+    if (k === "identite__forme_juridique") val = formeJuridique(val);
+    if (Array.isArray(val) && val.length === 0) val = null;
+    out[t][c] = val;
   }
   return out;
 }
