@@ -33,6 +33,17 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
 - **Pas de provider OAuth local** : Google et Microsoft passent par le Hub.
 - `GET /api/users/by-email` expose `workspaces[].tenant_id`, cible de `update-plan` côté Hub.
 
+## MCP (contrat `veridian-hub/docs/CONTRAT-MCP.md`, 09/11)
+
+- `POST /api/mcp`, Streamable HTTP sans état (JSON, pas de session). Seule la porte du Hub l'appelle.
+- Jeton : JWT ES256 du Hub vérifié par `src/lib/mcp/jeton-hub.ts` (WebCrypto, JWKS du Hub en cache 1 h,
+  `aud` = `MCP_PUBLIC_URL`, défaut `https://prospection.app.veridian.site/api/mcp`). Utilisateur retrouvé par
+  `hub_user_id`, jamais créé ; inconnu = 401, sans espace = 403.
+- Outils (`src/lib/mcp/outils.ts`) : mêmes fonctions que les écrans, espace déduit de l'utilisateur,
+  plafond du plan appliqué, fiche par `serveLeadDetail` (quota, 30/min, masquage partagés avec l'écran).
+  Un `viewer` ne voit pas `changer_statut`. Ajouter un outil = une entrée dans `OUTILS`, le Hub le relit seul.
+- Registre : `hub mcp-app add prospection https://prospection.app.veridian.site/api/mcp --acces tous`.
+
 ## Déploiement et promotion
 
 On travaille sur `main`, la branche qui déploie. La branche `staging` a divergé : ne pas y merger

@@ -39,12 +39,22 @@ async function getAuthUser(): Promise<{ id: string; email: string } | null> {
 export async function getUserContext(): Promise<UserContext | null> {
   const user = await getAuthUser();
   if (!user) return null;
+  const cookieStore = await cookies();
+  return buildUserContext(user, cookieStore.get("active_workspace_id")?.value || null);
+}
 
+/**
+ * Contexte d'un utilisateur déjà identifié (session ou jeton du Hub pour le MCP), sans lire de
+ * cookie : l'espace actif est passé en argument. Même résolution tenant + workspaces + rôle que
+ * les écrans, pour qu'une IA n'ait jamais plus de droits que l'utilisateur dans l'interface.
+ */
+export async function buildUserContext(
+  user: { id: string; email: string },
+  activeCookie: string | null,
+): Promise<UserContext | null> {
   const cached = contextCache.get(user.id);
   if (cached && cached.expiresAt > Date.now()) {
-    const cookieStore = await cookies();
-    const active = cookieStore.get("active_workspace_id")?.value || null;
-    return { ...cached.ctx, activeWorkspaceId: active };
+    return { ...cached.ctx, activeWorkspaceId: activeCookie };
   }
 
   // 1) Tenant (local Prisma) — direct ownership puis fallback membership
@@ -103,8 +113,6 @@ export async function getUserContext(): Promise<UserContext | null> {
   const isAdmin = isOwner || hasAdminMembership;
 
   // 4) Active workspace
-  const cookieStore = await cookies();
-  const activeCookie = cookieStore.get("active_workspace_id")?.value || null;
   const activeWorkspaceId =
     activeCookie && workspaces.some((w) => w.id === activeCookie)
       ? activeCookie

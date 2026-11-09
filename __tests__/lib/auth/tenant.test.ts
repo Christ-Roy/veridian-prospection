@@ -44,7 +44,8 @@ describe("getTenantId — résolution tenant via direct + workspace fallback", (
     const result = await getTenantId("user-direct-abc");
     expect(result).toBe("t-direct-123");
     expect(tenantFindFirst).toHaveBeenCalledWith({
-      where: { userId: "user-direct-abc" },
+      // Un tenant supprimé ne rend plus l'accès : le filtre deletedAt est un garde-fou.
+      where: { userId: "user-direct-abc", deletedAt: null },
       select: { id: true },
     });
   });
