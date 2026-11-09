@@ -19,6 +19,7 @@ type Props = {
   ouvert: boolean;
   peutEcrire: boolean;
   ias: IAVue[];
+  onBrancherIA: () => void;
   clignote: string | null;
   onSelection: (id: string | null) => void;
   onCreer: (type: "dossier" | "marche" | "cible", marche?: SegmentArbre) => void;
@@ -28,7 +29,7 @@ type Props = {
  * Rail de la maquette : 56 px d'icônes, 268 px au survol ou au focus, libellés en fondu. Les marchés
  * sont rangés par dossier ; le marché actif déploie ses cibles. Sous 720 px, c'est un menu.
  */
-export function Rail({ arbre, erreur, selection, ouvert, peutEcrire, ias, clignote, onSelection, onCreer }: Props) {
+export function Rail({ arbre, erreur, selection, ouvert, peutEcrire, ias, onBrancherIA, clignote, onSelection, onCreer }: Props) {
   const { data: session } = useSession();
   const email = session?.user?.email ?? null;
   const marcheActif = arbre && selection ? marcheDe(arbre, selection) : null;
@@ -138,10 +139,10 @@ export function Rail({ arbre, erreur, selection, ouvert, peutEcrire, ias, cligno
             </div>
           ))
         )}
-        <a className="conn" href={HUB_IA} target="_blank" rel="noopener noreferrer" title="Brancher Claude, ChatGPT ou Cursor depuis le Hub">
+        <button type="button" className="conn" style={{ width: "100%", textAlign: "left" }} title="Brancher Claude, ChatGPT ou Cursor" onClick={onBrancherIA}>
           <Icone nom="plus" />
           <span className="lbl">{ias.length ? "Brancher une autre IA" : "Brancher une IA"}</span>
-        </a>
+        </button>
         <button type="button" className="conn" style={{ width: "100%", textAlign: "left" }} title={email ? `Se déconnecter (${email})` : "Se déconnecter"} onClick={() => void signOut({ callbackUrl: "/login", redirect: true })}>
           <Icone nom="retour" />
           <span className="lbl">{email ? `Se déconnecter · ${email}` : "Se déconnecter"}</span>

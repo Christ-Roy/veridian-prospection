@@ -13,6 +13,8 @@ import { CHAMPS, OPERATEURS } from "./champs";
 import { EntreeCubeSchema, entreeDepuisFiltre } from "./cube";
 import { FiltreInvalide } from "./filtres";
 import { sourceMarche } from "./source";
+import { liensIA } from "@/lib/hub/liens-ia-client";
+
 import { listerPresences } from "./presence-ia";
 import * as seg from "./segments";
 
@@ -113,10 +115,13 @@ const OUTILS_BRUTS: Outil[] = [
   {
     name: "connexions_ia",
     title: "IA branchées",
-    description: "IA (Claude, ChatGPT…) qui ont accédé à Prospection pour l'utilisateur, avec leur dernier échange.",
+    description: "IA (Claude, ChatGPT…) reliées au compte, avec leur dernier échange, et les liens pour en brancher une autre.",
     input: z.object({}),
     annotations: LECTURE,
-    run: async (_a, c) => ({ connexions: await listerPresences(c.ctx.userId) }),
+    run: async (_a, c) => {
+      const [connexions, liens] = await Promise.all([listerPresences(c.ctx.userId), liensIA()]);
+      return { connexions, liens };
+    },
   },
   {
     name: "fiche_entreprise_atlas",

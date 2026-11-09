@@ -9,7 +9,9 @@ import { DEPARTMENT_NAMES } from "@/components/dashboard/france-map-data";
 import { appeler, ErreurAtlas, estAnnulation, texteErreur } from "./api";
 import { Carte } from "./carte";
 import { departementsFiltre, titreZone } from "./carte-logique";
+import { Accueil, DialogueIA } from "./brancher-ia";
 import { DialogueCreation, type Creation } from "./dialogues";
+import { montrerAccueil, type LiensIA } from "./ia";
 import {
   avecCondition,
   avecDepartement,
@@ -105,6 +107,9 @@ export function AtlasApp() {
   const [activite, setActivite] = useState<{ ia: string; texte: string } | null>(null);
   const [ias, setIas] = useState<IAVue[]>([]);
   const [connexions, setConnexions] = useState<ConnexionIA[]>([]);
+  const [liensIA, setLiensIA] = useState<LiensIA | null>(null);
+  const [dialogueIA, setDialogueIA] = useState(false);
+  const [accueil, setAccueil] = useState(false);
   const [clignote, setClignote] = useState<string | null>(null);
   const reference = useRef<SegmentArbre[] | null>(null);
   const referenceEpingles = useRef<Set<string> | null>(null);
@@ -129,8 +134,12 @@ export function AtlasApp() {
   useEffect(() => {
     let vivant = true;
     const lire = () =>
-      appeler<{ connexions: ConnexionIA[] }>("connexions_ia")
-        .then((r) => vivant && setConnexions(r.connexions))
+      appeler<{ connexions: ConnexionIA[]; liens: LiensIA | null }>("connexions_ia")
+        .then((r) => {
+          if (!vivant) return;
+          setConnexions(r.connexions);
+          setLiensIA(r.liens);
+        })
         .catch(() => {}); // un échec garde la dernière liste : l'indicateur n'est pas une donnée critique
     void lire();
     const t = setInterval(lire, 60_000);
@@ -414,6 +423,28 @@ export function AtlasApp() {
     setVolet(null);
   }, []);
   const fermerCreation = useCallback(() => setCreation(null), []);
+  const fermerDialogueIA = useCallback(() => setDialogueIA(false), []);
+
+  // Premier passage : un espace sans marché propose de commencer avec l'IA (recommandé) ou à la main,
+  // une fois par navigateur.
+  const nbSegments = arbre ? arbre.segments.length : null;
+  useEffect(() => {
+    let vu = false;
+    try {
+      vu = localStorage.getItem("atlas.accueil.vu") === "1";
+    } catch {
+      /* stockage indisponible : on montre l'accueil, sans conséquence */
+    }
+    if (montrerAccueil(nbSegments, vu)) setAccueil(true);
+  }, [nbSegments]);
+  const fermerAccueil = useCallback(() => {
+    setAccueil(false);
+    try {
+      localStorage.setItem("atlas.accueil.vu", "1");
+    } catch {
+      /* idem */
+    }
+  }, []);
   const ouvrirFiche = useCallback((siren: string, nom: string) => setVolet({ type: "fiche", siren, nom }), []);
 
   // ---------------------------------------------------------------- rendu
@@ -502,6 +533,7 @@ export function AtlasApp() {
         ouvert={railOuvert}
         peutEcrire={peutEcrire}
         ias={toutesIAs}
+        onBrancherIA={() => setDialogueIA(true)}
         clignote={clignote}
         onSelection={choisir}
         onCreer={(type, m) => {
@@ -560,12 +592,12 @@ export function AtlasApp() {
               </span>
             </div>
           ) : (
-            <a className="presence idle" href={HUB_IA} target="_blank" rel="noopener noreferrer" title="Brancher Claude, ChatGPT ou Cursor depuis le Hub">
+            <button type="button" className="presence idle" title="Brancher Claude, ChatGPT ou Cursor" onClick={() => setDialogueIA(true)}>
               <span className="av" aria-hidden>
                 +
               </span>
               <span>Brancher une IA</span>
-            </a>
+            </button>
           )}
           {segment && !estCible && peutEcrire && marche && (
             <button type="button" className="btn ghost hide-s" onClick={() => setCreation({ type: "cible", marche, colonnes })}>
@@ -759,6 +791,20 @@ export function AtlasApp() {
           }}
           onEcritureRefusee={ecritureRefusee}
           onFermer={fermerVolet}
+        />
+      )}
+      {dialogueIA && <DialogueIA liens={liensIA} pageHub={HUB_IA} onFermer={fermerDialogueIA} />}
+      {accueil && !dialogueIA && !creation && (
+        <Accueil
+          onFermer={fermerAccueil}
+          onIA={() => {
+            fermerAccueil();
+            setDialogueIA(true);
+          }}
+          onManuel={() => {
+            fermerAccueil();
+            if (peutEcrire) setCreation({ type: "marche", filtre: null, colonnes: colonnesLibres });
+          }}
         />
       )}
       {creation && (
