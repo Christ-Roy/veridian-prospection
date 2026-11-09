@@ -48,7 +48,8 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
 - Outils (`src/lib/mcp/outils.ts`) : mêmes fonctions que les écrans, espace déduit de l'utilisateur,
   plafond du plan appliqué, fiche par `serveLeadDetail` (quota, 30/min, masquage partagés avec l'écran).
   Un `viewer` ne voit pas `changer_statut`. Ajouter un outil = une entrée dans `OUTILS`, le Hub le relit seul.
-- Registre : `hub mcp-app add prospection https://prospection.app.veridian.site/api/mcp --acces tous`.
+- Registre : `hub mcp-app add prospection https://prospection.app.veridian.site/api/mcp --acces tous` (inscrit le 09/11).
+- Journaux : `obs search '\[mcp\] outil=' --since 6h` (Loki) ; `nomad alloc logs` ne rend rien pour ce job.
 
 ## Déploiement et promotion
 
