@@ -94,6 +94,9 @@ retiré, clé `ubuntu` en mode deny). Ne pas pousser sur `staging` avant d'avoir
   Jamais de `new PrismaClient` ailleurs : un test le refuse.
 - **Rôle `prospection` : `statement_timeout` et `idle_in_transaction_session_timeout` à 60 s** (09/11).
   Une migration longue (index sur `entreprises`) commence par `SET statement_timeout = 0;`.
+- **Suppression de colonne en deux temps** : d'abord le code sans la colonne (Prisma lit tout le modèle),
+  puis la migration de DROP au déploiement suivant ; la CI migre avant de déployer (fait le 09/11, 0035).
+- **`tenants.notifuse_api_key` est encore lue** par `src/lib/invitations.ts` (staging seulement ; prod en 410).
 - **Un déploiement remplace toute l'allocation** du groupe `stack` : l'id d'alloc change.
 - **Après déploiement, lire l'image et la version dans le conteneur** ; `/api/status` renvoie
   `commit: null` et ne prouve rien.
