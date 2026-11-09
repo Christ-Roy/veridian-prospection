@@ -633,7 +633,7 @@ export function AtlasApp() {
             </div>
           </div>
 
-          <div className={kpisBusy ? "kpis busy" : "kpis"} ref={kpisRef} aria-busy={kpisBusy} aria-live="polite">
+          <div className={kpisBusy ? "kpis busy" : "kpis"} hidden={vue === "marche"} ref={kpisRef} aria-busy={kpisBusy} aria-live="polite">
             {listeKpis.map((k) => (
               <div className="kpi" key={k.id}>
                 <b className="num">{kpis && kpis[k.id] !== undefined ? formaterNombre(kpis[k.id]) : "–"}</b>

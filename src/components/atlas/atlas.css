@@ -130,6 +130,7 @@
 .atlas .switch button:hover { color: var(--fg); }
 .atlas .switch button.on { background: var(--bg); color: var(--fg); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); }
 .atlas .kpis { display: flex; gap: 40px; flex-wrap: wrap; transition: opacity 0.2s; }
+.atlas .kpis[hidden] { display: none; }
 .atlas .kpis.busy { opacity: 0.55; }
 .atlas .kpi b { display: block; font-size: 24px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; }
 .atlas .kpi span { color: var(--muted); font-size: 12.5px; }

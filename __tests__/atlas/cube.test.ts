@@ -82,6 +82,9 @@ describe("libellés", () => {
     expect(libelleCube("naf", "014A")).toBe("014A");
     expect(libelleCube("departement", "")).toMatch(/inconnu/);
     expect(libelleCube("departement", "99")).toBe("Étranger");
+    expect(libelleCube("departement", "69")).toBe("Rhône");
+    expect(libelleCube("effectif", "12")).toBe("20 à 49");
+    expect(libelleCube("forme", "entreprise_individuelle")).toBe("Entreprise individuelle");
     expect(libelleCube("annee_creation", "0")).toMatch(/inconnue/);
     expect(normaliserNaf("01.49z")).toBe("0149Z");
     expect(normaliserNaf("014A")).toBeNull();

@@ -138,7 +138,9 @@ export class SourceClickHouse implements SourceMarche {
     return {
       total: mesures(t),
       axe,
-      lignes: axe ? rep.map((l) => ({ cle: String(l.cle), libelle: libelleCube(axe, String(l.cle)), ...mesures(l) })) : [],
+      lignes: axe
+        ? rep.map((l) => ({ cle: String(l.cle), libelle: axe === "forme_juridique" ? (formeJuridique(l.cle) ?? "Inconnue") : libelleCube(axe, String(l.cle)), ...mesures(l) }))
+        : [],
       provenance: t.cube_version ? { cube_version: String(t.cube_version), calcule_le: String(t.calcule_le), version_prospection: String(t.version_prospection) } : null,
     };
   }
