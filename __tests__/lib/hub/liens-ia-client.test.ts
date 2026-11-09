@@ -15,11 +15,12 @@ describe("liensIA", () => {
     let n = 0;
     const fetchImpl = (async (url: string) => {
       n++;
-      expect(url).toBe("https://hub.test/api/mcp/liens-installation");
-      return new Response(JSON.stringify({ url: "https://app.veridian.site/api/mcp", claude: "https://claude.ai/customize/connectors?x=1", chatgpt: "javascript:alert(1)", cursor: "cursor://anysphere.cursor-deeplink/mcp/install?x", vscode: "https://vscode.dev/redirect?url=x", claudeCode: "claude mcp add veridian" }));
+      expect(url).toBe("https://hub.test/api/mcp/liens-installation?app=prospection");
+      // Forme servie par le Hub le 10/11 (champs plats + instructions imbriquées).
+      return new Response(JSON.stringify({ url: "https://app.veridian.site/api/mcp", claude: "https://claude.ai/customize/connectors?x=1", chatgpt: "javascript:alert(1)", cursor: "cursor://anysphere.cursor-deeplink/mcp/install?x", vscode: "https://vscode.dev/redirect?url=x", claudeCode: "claude mcp add veridian", instructions: { chatgpt: "Dans ChatGPT : ajoutez un serveur MCP." } }));
     }) as unknown as typeof fetch;
     const l = await liensIA({ env: ENV, fetchImpl, maintenant: T });
-    expect(l).toMatchObject({ url: "https://app.veridian.site/api/mcp", claude: "https://claude.ai/customize/connectors?x=1", chatgpt: null, claudeCode: "claude mcp add veridian" });
+    expect(l).toMatchObject({ url: "https://app.veridian.site/api/mcp", claude: "https://claude.ai/customize/connectors?x=1", chatgpt: null, claudeCode: "claude mcp add veridian", aideChatgpt: "Dans ChatGPT : ajoutez un serveur MCP." });
     expect(l?.cursor).toMatch(/^cursor:/);
     await liensIA({ env: ENV, fetchImpl, maintenant: T + 5 * 60_000 });
     expect(n).toBe(1);
