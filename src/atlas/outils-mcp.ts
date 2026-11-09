@@ -10,6 +10,7 @@ import { ErreurOutil } from "@/lib/mcp/erreur";
 import { isRateLimited } from "@/lib/rate-limit";
 
 import { CHAMPS, OPERATEURS } from "./champs";
+import { EntreeCubeSchema, entreeDepuisFiltre } from "./cube";
 import { FiltreInvalide } from "./filtres";
 import { sourceMarche } from "./source";
 import * as seg from "./segments";
@@ -84,6 +85,29 @@ const OUTILS_BRUTS: Outil[] = [
     input: z.object({ filtre: FILTRE, champ: z.string(), limite: z.number().int().min(1).max(200).default(30) }),
     annotations: LECTURE,
     run: lisible(async (a) => avecSource({ champ: a.champ, valeurs: await sourceMarche().repartition(a.filtre, a.champ as string, a.limite as number) })),
+  },
+  {
+    name: "analyser_marche",
+    title: "Analyser la taille d'un marché",
+    description:
+      "Taille du marché ENTIER (toutes les entreprises de France, pas seulement les prospectables), d'après le cube d'ODH : " +
+      "nombre d'entreprises, contacts connus (email, téléphone, site) et envoyables (ce qu'on peut promettre à un client), " +
+      "au total et réparti par axe (naf, departement, forme, forme_juridique, effectif, annee_creation, statut, diffusion). " +
+      "Codes NAF en LISTE (0149Z), jamais par intervalle. Passer `filtre` (celui d'un segment) le traduit sur le cube : " +
+      "les conditions que le cube ne couvre pas sont rendues dans `conditions_ignorees`.",
+    input: EntreeCubeSchema.extend({ filtre: FILTRE.optional() }),
+    annotations: LECTURE,
+    run: lisible(async (a) => {
+      const { filtre, ...explicite } = a;
+      const depuis = filtre ? entreeDepuisFiltre(filtre) : { entree: {}, ignorees: [] };
+      const definis = Object.fromEntries(Object.entries(explicite).filter(([, v]) => v !== undefined));
+      const r = await sourceMarche().marche({ ...depuis.entree, ...definis });
+      return avecSource({
+        ...r,
+        conditions_ignorees: depuis.ignorees,
+        lecture: "« connu » = contact trouvé, même écarté ensuite ; « envoyable » = ce qu'on peut promettre. Département vide = adresse non diffusée.",
+      });
+    }),
   },
   {
     name: "fiche_entreprise_atlas",

@@ -69,7 +69,21 @@ export type Historique = { filtre: VersionFiltre[]; scoring: VersionScoring[] };
 
 
 
-export type Vue = "carte" | "barres" | "entonnoir" | "tableau" | "priorite";
+export type Vue = "carte" | "marche" | "barres" | "entonnoir" | "tableau" | "priorite";
+
+/** Taille du marché entier (outil analyser_marche, cube d'ODH). */
+export type MesuresMarche = {
+  entreprises: number; email_connu: number; telephone_connu: number; site_connu: number; un_canal_connu: number;
+  prospectables: number; email_envoyable: number; telephone_envoyable: number;
+};
+export type AxeMarche = "naf" | "departement" | "forme" | "forme_juridique" | "effectif" | "annee_creation" | "statut" | "diffusion";
+export type AnalyseMarche = {
+  total: MesuresMarche;
+  axe: AxeMarche | null;
+  lignes: (MesuresMarche & { cle: string; libelle: string })[];
+  provenance: { cube_version: string; calcule_le: string; version_prospection: string } | null;
+  conditions_ignorees: Condition[];
+};
 
 /** Point d'une entreprise sur la carte d'un département (outil points_carte). */
 export type PointCarte = { siren: string; nom: string; commune: string; lat: number; lon: number; email: boolean; site: boolean };

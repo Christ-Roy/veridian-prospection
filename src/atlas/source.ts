@@ -4,6 +4,7 @@
  * compte) : source simulée déterministe, signalée par `simulee: true` dans chaque réponse.
  */
 import { CHAMP, CHAMPS, type Champ } from "./champs";
+import { compilerCube, libelleCube, mesures, type ResultatCube } from "./cube";
 import { FiltreInvalide, FiltreSchema, ScoringSchema, colonnesSql, compilerFiltre, type Condition, type SqlParam } from "./filtres";
 
 export type Ligne = Record<string, string | number | boolean | null>;
@@ -36,6 +37,8 @@ export interface SourceMarche {
   compter(filtre: unknown): Promise<number>;
   apercu(filtre: unknown, o: OptionsApercu): Promise<Apercu>;
   repartition(filtre: unknown, champ: string, limite?: number): Promise<{ cle: string; nombre: number }[]>;
+  /** Taille du marché entier, d'après le cube d'ODH (voir cube.ts). */
+  marche(entree: unknown): Promise<ResultatCube>;
 }
 
 const TABLE = "odh.company_prospection_current";
@@ -122,6 +125,22 @@ export class SourceClickHouse implements SourceMarche {
     const texte = await res.text();
     if (!res.ok) throw new Error(`ClickHouse ${res.status} : ${texte.slice(0, 200)}`);
     return (JSON.parse(texte) as { data: T[] }).data;
+  }
+
+  async marche(entree: unknown): Promise<ResultatCube> {
+    const c = compilerCube(entree);
+    const [total, rep] = await Promise.all([
+      this.requete<Record<string, unknown>>(c.total, c.params),
+      c.repartition ? this.requete<Record<string, unknown>>(c.repartition, c.params) : Promise.resolve([]),
+    ]);
+    const t = total[0] ?? {};
+    const axe = c.entree.axe ?? null;
+    return {
+      total: mesures(t),
+      axe,
+      lignes: axe ? rep.map((l) => ({ cle: String(l.cle), libelle: libelleCube(axe, String(l.cle)), ...mesures(l) })) : [],
+      provenance: t.cube_version ? { cube_version: String(t.cube_version), calcule_le: String(t.calcule_le), version_prospection: String(t.version_prospection) } : null,
+    };
   }
 
   async compter(filtre: unknown) {
@@ -272,6 +291,27 @@ export class SourceSimulee implements SourceMarche {
   }
   async compter(filtre: unknown) {
     return this.filtrer(filtre).length;
+  }
+  /** Cube simulé : les lignes simulées, sur les axes NAF, division et département seulement. */
+  async marche(entree: unknown): Promise<ResultatCube> {
+    const { entree: e } = compilerCube(entree); // même validation qu'en prod
+    const garde = (l: Ligne) =>
+      (!e.naf || e.naf.map((c) => c.replace(".", "").toUpperCase()).includes(String(l.naf))) &&
+      (!e.divisions || e.divisions.includes(String(l.naf_division))) &&
+      (!e.departements || e.departements.includes(String(l.departement)));
+    const compte = (ls: Ligne[]) =>
+      mesures({
+        entreprises: ls.length, email_connu: ls.filter((l) => l.email).length, telephone_connu: ls.filter((l) => l.telephone).length,
+        site_connu: ls.filter((l) => l.site).length, un_canal_connu: ls.filter((l) => l.email || l.telephone).length, prospectables: ls.length,
+        email_envoyable: ls.filter((l) => l.email_envoyable).length, telephone_envoyable: ls.filter((l) => l.telephone).length,
+      });
+    const ls = this.lignes.filter(garde);
+    const axe = e.axe ?? null;
+    const col = axe === "naf" ? "naf" : axe === "departement" ? "departement" : null;
+    const groupes = new Map<string, Ligne[]>();
+    if (col) for (const l of ls) groupes.set(String(l[col]), [...(groupes.get(String(l[col])) ?? []), l]);
+    const lignes = [...groupes].map(([cle, g]) => ({ cle, libelle: libelleCube(axe!, cle), ...compte(g) })).sort((a, b) => b.entreprises - a.entreprises).slice(0, e.limite);
+    return { total: compte(ls), axe, lignes, provenance: null };
   }
   async fiche(siren: string) {
     if (!/^\d{9}$/.test(siren)) throw new FiltreInvalide("SIREN à 9 chiffres");

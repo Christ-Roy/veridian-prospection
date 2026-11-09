@@ -870,3 +870,18 @@
     message Postgres, rejet faux positifs, input non-Error) et borne du timeout.
     Garde-fou anti-DoS. withSearchTimeout (transaction + SET LOCAL) est exercé
     end-to-end par les tests API search (mock $transaction).
+
+# ── Interface Atlas (09/11) ──────────────────────────────────────────────
+- sources:
+    - src/components/atlas/atlas-app.tsx
+    - src/components/atlas/vue-marche.tsx
+    - src/components/atlas/icones.tsx
+  covered_by:
+    - __tests__/atlas-ui/atlas-flux.test.ts
+    - __tests__/atlas-ui/logique.test.ts
+  reason: |
+    Les composants Atlas ne font que l'affichage : toute la logique (chiffres clés, parts,
+    étiquettes, colonnes connu/envoyable, entonnoir, phrases de filtre) est extraite dans
+    flux.ts, marche.ts et logique.ts, testés par ces deux fichiers. Les données viennent des
+    outils MCP, testés par __tests__/atlas et __tests__/lib/mcp. Le rendu est vérifié par
+    e2e/core/atlas-accueil.spec.ts et par le parcours visuel en prod après chaque déploiement.

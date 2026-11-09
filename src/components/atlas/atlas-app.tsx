@@ -30,6 +30,7 @@ import {
 import { Chargement, Icone, type NomIcone } from "./icones";
 import { cheminDossier, combiner, conditionsHeritees, formaterNombre, indexerChamps, phraseFiltre } from "./logique";
 import { PopoverFiltres } from "./popover-filtres";
+import { VueMarche } from "./vue-marche";
 import { Rail, type IAVue } from "./rail";
 import type { ApercuMarche, Arbre, ChampInfo, Epingle, Filtre, Historique, SegmentArbre, SegmentDetail, Vue } from "./types";
 import { VoletDossier, VoletFiche, VoletHistorique } from "./volets";
@@ -44,6 +45,7 @@ type Apercu = { version: number; filtre: Filtre } | null;
 
 const VUES: { id: Vue; libelle: string; icone: NomIcone }[] = [
   { id: "carte", libelle: "Carte", icone: "carte" },
+  { id: "marche", libelle: "Taille du marché", icone: "marche" },
   { id: "barres", libelle: "Répartition", icone: "barres" },
   { id: "entonnoir", libelle: "Entonnoir", icone: "entonnoir" },
   { id: "tableau", libelle: "Entreprises", icone: "tableau" },
@@ -661,6 +663,8 @@ export function AtlasApp() {
               <Chargement />
             ) : vue === "carte" ? (
               <Carte filtre={filtreVue} index={index} descente={descente} onDescente={setDescente} onFiche={ouvrirFiche} />
+            ) : vue === "marche" ? (
+              <VueMarche filtre={filtreChiffres} index={index} />
             ) : vue === "barres" ? (
               <VueBarres filtre={filtreChiffres} champs={champs} index={index} />
             ) : vue === "entonnoir" ? (

@@ -31,6 +31,7 @@ import {
   segmentsChanges,
 } from "@/components/atlas/flux";
 import { indexerChamps } from "@/components/atlas/logique";
+import { COLONNES_MARCHE, etiquetteLigne, part } from "@/components/atlas/marche";
 import type { Arbre, ChampInfo, PointCarte, SegmentArbre } from "@/components/atlas/types";
 
 const NOMS = { "69": "Rhône", "38": "Isère", "01": "Ain", "75": "Paris", "13": "Bouches-du-Rhône" };
@@ -262,6 +263,25 @@ describe("versions et présence de l'IA", () => {
     expect(phraseActivite("Claude", ch[1])).toBe("Claude a revu la priorité de « B » (v2)");
     expect(phraseActivite("Claude", ch[2])).toBe("Claude a créé « C »");
     expect(segmentsChanges(apres, apres)).toEqual([]);
+  });
+});
+
+describe("taille du marché", () => {
+  test("part : arrondie, « < 1 % » plutôt qu'un 0 trompeur, « – » sans total", () => {
+    expect(part(6710, 346420)).toBe("2 %");
+    expect(part(7, 14530)).toBe("< 1 %");
+    expect(part(0, 100)).toBe("0 %");
+    expect(part(5, 0)).toBe("–");
+  });
+  test("étiquette : code et libellé NAF, libellé seul sinon", () => {
+    expect(etiquetteLigne("0149Z", "Élevage d'autres animaux")).toBe("0149Z · Élevage d'autres animaux");
+    expect(etiquetteLigne("69", "69")).toBe("69");
+    expect(etiquetteLigne("", "Département inconnu (adresse non diffusée)")).toBe("Département inconnu (adresse non diffusée)");
+  });
+  test("connu et envoyable sont deux colonnes distinctes", () => {
+    const ids = COLONNES_MARCHE.map((c) => c.id);
+    expect(ids).toContain("email_connu");
+    expect(ids).toContain("email_envoyable");
   });
 });
 

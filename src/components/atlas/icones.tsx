@@ -2,6 +2,7 @@
 const TRACES = {
   carte: "M2 3.8l4-1.6 4 1.6 4-1.6v10l-4 1.6-4-1.6-4 1.6zM6 2.2v10M10 3.8v10",
   barres: "M2.5 4h7M2.5 8h11M2.5 12h5",
+  marche: "M8 2.5a5.5 5.5 0 105.5 5.5H8zM10 1.8A5 5 0 0114.2 6H10z",
   entonnoir: "M2 3h12l-4.5 5v5l-3 1V8z",
   tableau: "M2.5 3h11v10h-11zM2.5 6.5h11M6.5 6.5V13",
   priorite: "M3 12.5V9M6.5 12.5V6M10 12.5V3.5M13.5 12.5h-12",

@@ -82,6 +82,16 @@ describe("MCP Prospection", () => {
     expect(sortie.lignes).toHaveLength(3);
   });
 
+  test("analyser le marché : un segment traduit sur le cube, les conditions non couvertes sont dites", async () => {
+    const filtre = { conditions: [{ champ: "naf", op: "dans", valeur: ["0149Z"] }, { champ: "site", op: "renseigne", valeur: false }] };
+    const r = JSON.parse(texte(await traiter(appel("analyser_marche", { filtre, axe: "departement" }), c("viewer"))));
+    expect(r.total.entreprises).toBeGreaterThan(0);
+    expect(r.lignes.reduce((a: number, l: { entreprises: number }) => a + l.entreprises, 0)).toBe(r.total.entreprises);
+    expect(r.conditions_ignorees).toEqual([{ champ: "site", op: "renseigne", valeur: false }]);
+    const f = await traiter(appel("analyser_marche", { naf: ["01.4"] }), c());
+    expect(texte(f)).toMatch(/sous-classe/);
+  });
+
   test("arguments invalides : erreur lisible pour que l'IA corrige", async () => {
     const r = await traiter(appel("fiche_entreprise_atlas", { siren: "12" }), c());
     expect(r?.result).toMatchObject({ isError: true });

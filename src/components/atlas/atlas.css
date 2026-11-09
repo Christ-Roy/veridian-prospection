@@ -187,6 +187,10 @@
 .atlas .tbl tbody tr:hover td, .atlas .tbl tbody tr:focus-visible td { background: var(--soft); }
 .atlas .tbl tbody tr:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
 .atlas .tbl .busy { opacity: 0.55; transition: opacity 0.2s; }
+.atlas .tbl tbody tr.statique { cursor: default; }
+.atlas .tbl th.num, .atlas .tbl td.num { text-align: right; }
+.atlas .marche .kpis { margin-bottom: 18px; }
+.atlas .marche .hint { margin: 12px 0; max-width: 760px; }
 .atlas .r { text-align: right; }
 .atlas .tag { display: inline-block; font-size: 11.5px; padding: 0 7px; line-height: 19px; border-radius: 999px; background: var(--soft2); color: var(--fg2); white-space: nowrap; }
 .atlas .tag.ok { background: var(--ok-soft); color: oklch(0.42 0.12 150); }
