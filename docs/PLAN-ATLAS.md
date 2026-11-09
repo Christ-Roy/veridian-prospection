@@ -1,0 +1,57 @@
+# Plan technique Atlas (09/11/2026)
+
+Vision : `CLAUDE.md`, section « Vision produit ». Maquette : `docs/maquette/atlas-des-marches.html`.
+
+## Décisions
+
+| Sujet | Décision | Pourquoi |
+|---|---|---|
+| Point de départ | Produit neuf dans ce dépôt ; l'ancienne app est taguée `archive/prospection-v1-20261109` et ses écrans restent servis jusqu'à la bascule | identité Hub, MCP, déploiement canari, pg-saas et tests sont en prod et éprouvés : on ne réécrit pas la tuyauterie |
+| Données marché | ClickHouse ODH, vue `odh.company_prospection_current` (2,15 M entreprises publiées, 151 colonnes), en lecture seule | une seule source (ROB-173), déjà dédoublonnée, scorée, géocodée |
+| Données de l'app | pg-saas, base `prospection` : dossiers, segments, versions, moteurs de score, exports | ce que l'utilisateur crée lui appartient et se versionne |
+| Requêtes | Un segment est un filtre JSON validé (zod), traduit en SQL ClickHouse paramétré par un compilateur à liste blanche de champs. Jamais de SQL fourni par l'IA ou l'utilisateur | injection impossible, coût borné |
+| Code | `src/atlas/` (domaine), `src/app/atlas/` (écrans), outils MCP ajoutés au catalogue existant | séparé de l'ancien code, qui partira à la bascule |
+
+## Modèle (pg-saas)
+
+- `atlas_dossiers` : arbre (parent_id), nom, tenant.
+- `atlas_segments` : dossier, nom, parent_segment_id (un enfant hérite des filtres du parent et les restreint).
+- `atlas_segment_versions` : filtres JSON, auteur (humain ou IA, client OAuth), note ; la dernière version fait foi, toutes se restaurent.
+- `atlas_scorings` : par segment, critères pondérés JSON versionnés de la même façon.
+- `atlas_exports` : qui, quand, segment et version, nombre de lignes (plans payants seulement).
+
+Combinaisons : union, intersection, exclusion de segments, compilées en une seule requête.
+
+## Filtres (liste blanche)
+
+Métier (`naf_code`, `naf_division`, `activity_sector`), géographie (`department`, `postal_code`, `commune_insee`),
+taille (`size_band`, `headcount_range`), finances (`revenue`, `revenue_trend`), web (`primary_domain` présent,
+`web_tier`, `website_obsolete`, `is_ecommerce`, `cms`), contact (`deliverable`, `email_verification`, `phone`),
+signaux (`creation_date`, `label_rge`, `label_qualiopi`, `public_contracts_count`, `pub_permits_3y_count`),
+priorité (`priority_score_v2`, `lead_grade`). Les entreprises bloquées (`blocking_reasons`) sont exclues par défaut.
+
+## Scoring
+
+Score 0-100 = somme pondérée de critères bornés (présence, seuil, plage, liste), calculée côté ClickHouse.
+L'IA propose une version (MCP `proposer_scoring`), compare deux versions sur l'échantillon, Robert garde la meilleure.
+Plus tard : apprentissage sur les conversions remontées de Twenty.
+
+## MCP (outils ajoutés)
+
+`lister_dossiers`, `creer_segment`, `modifier_segment` (nouvelle version), `compter_segment`, `apercu_segment`
+(échantillon paginé), `repartition_segment` (par département, NAF, taille : base des vues carte et diagrammes),
+`combiner_segments`, `definir_scoring`, `classer_segment` (top N scoré), `historique_segment`, `restaurer_version`.
+Export : jamais par le MCP sans clic humain.
+
+## Phases
+
+1. Socle : compilateur de filtres + tests, modèle pg-saas, outils MCP de lecture et de segment. **En cours.**
+2. Écrans Atlas : rail des dossiers, carte réelle (`france-map-data.ts`), répartition, tableau, fiche, historique.
+3. Scoring et comparaison de versions ; combinaisons de segments.
+4. Export payant ; modules de données par l'IA (catalogue de visualisations).
+5. Bascule : Atlas devient la page d'accueil, l'ancien code est retiré.
+
+## Dépendance externe
+
+Un compte ClickHouse `prospection_ro` (lecture seule, vues `*_current` utiles, quotas de requête) et le réseau
+ovh-prod → rise:28123. Demandé à la parente le 09/11. En attendant : développement sur source simulée et tests.
