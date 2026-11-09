@@ -145,7 +145,7 @@ describe("Atlas par le MCP", () => {
       const r = await traiter({ jsonrpc: "2.0", id: 999, method: "tools/list" }, A);
       const noms = (r!.result as { tools: { name: string }[] }).tools.map((t) => t.name);
       expect(noms).not.toContain("explorer_marche");
-      expect(noms).toContain("rechercher_entreprises");
+      expect(noms).toEqual([]);
     } finally {
       process.env.ATLAS_SIMULE = "1";
     }

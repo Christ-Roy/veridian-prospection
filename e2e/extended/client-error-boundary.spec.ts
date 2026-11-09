@@ -24,7 +24,7 @@ import { test, expect, type ConsoleMessage, type Page, type Request } from "@pla
 const PROSPECTION_URL =
   process.env.PROSPECTION_URL || "https://prospection.staging.veridian.site";
 const ROBERT_EMAIL = process.env.ROBERT_EMAIL || "robert.brunon@veridian.site";
-const ROBERT_PASSWORD = process.env.ROBERT_PASSWORD || "Mincraft5*55";
+const ROBERT_PASSWORD = process.env.ROBERT_PASSWORD ?? "";
 
 async function loginRobert(page: Page) {
   await page.goto(`${PROSPECTION_URL}/login`);
