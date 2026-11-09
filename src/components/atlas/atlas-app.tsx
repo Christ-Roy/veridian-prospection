@@ -26,12 +26,14 @@ import {
   sectionsRail,
   segmentsChanges,
   ciblesDe,
+  fusionnerIAs,
+  type ConnexionIA,
 } from "./flux";
 import { Chargement, Icone, type NomIcone } from "./icones";
 import { cheminDossier, combiner, conditionsHeritees, formaterNombre, indexerChamps, phraseFiltre } from "./logique";
 import { PopoverFiltres } from "./popover-filtres";
 import { VueMarche } from "./vue-marche";
-import { Rail, type IAVue } from "./rail";
+import { HUB_IA, Rail, type IAVue } from "./rail";
 import type { ApercuMarche, Arbre, ChampInfo, Epingle, Filtre, Historique, SegmentArbre, SegmentDetail, Vue } from "./types";
 import { VoletDossier, VoletFiche, VoletHistorique } from "./volets";
 import { VueBarres, VueEntonnoir, VuePriorite, VueTableau } from "./vues";
@@ -102,6 +104,7 @@ export function AtlasApp() {
   // ---- présence de l'IA
   const [activite, setActivite] = useState<{ ia: string; texte: string } | null>(null);
   const [ias, setIas] = useState<IAVue[]>([]);
+  const [connexions, setConnexions] = useState<ConnexionIA[]>([]);
   const [clignote, setClignote] = useState<string | null>(null);
   const reference = useRef<SegmentArbre[] | null>(null);
   const referenceEpingles = useRef<Set<string> | null>(null);
@@ -121,6 +124,22 @@ export function AtlasApp() {
   }, [toast]);
 
   // ---------------------------------------------------------------- chargement initial
+  // IA branchées (venues par le connecteur du Hub), relues chaque minute : une connexion faite dans un
+  // autre onglet apparaît sans recharger.
+  useEffect(() => {
+    let vivant = true;
+    const lire = () =>
+      appeler<{ connexions: ConnexionIA[] }>("connexions_ia")
+        .then((r) => vivant && setConnexions(r.connexions))
+        .catch(() => {}); // un échec garde la dernière liste : l'indicateur n'est pas une donnée critique
+    void lire();
+    const t = setInterval(lire, 60_000);
+    return () => {
+      vivant = false;
+      clearInterval(t);
+    };
+  }, []);
+
   useEffect(() => {
     const ctl = new AbortController();
     Promise.all([appeler<{ champs: ChampInfo[] }>("lister_champs", {}, ctl.signal), appeler<Arbre>("lister_segments_atlas", {}, ctl.signal)])
@@ -315,7 +334,7 @@ export function AtlasApp() {
   // ---------------------------------------------------------------- présence de l'IA (sonde 15 s)
   const signalerIA = useCallback((ia: string, texte: string) => {
     setActivite({ ia, texte });
-    setIas((l) => [{ nom: ia, heure: heure() }, ...l.filter((x) => x.nom !== ia)]);
+    setIas((l) => [{ nom: ia, heure: heure(), etat: "active" as const }, ...l.filter((x) => x.nom !== ia)]);
   }, []);
   useEffect(() => {
     if (!activite) return;
@@ -444,7 +463,8 @@ export function AtlasApp() {
   const versionAffichee = apercu?.version ?? detail?.version ?? segment?.version ?? null;
   const epingle = (siren: string) => !!epingles?.some((e) => e.siren === siren);
   const presenceLive = !!activite;
-  const derniere = ias[0];
+  const toutesIAs = fusionnerIAs(ias, connexions);
+  const derniere = toutesIAs[0];
 
   const etapes: { id: string; libelle: string; etat: "on" | "done" | ""; action?: () => void; aide?: string }[] = [
     {
@@ -481,7 +501,7 @@ export function AtlasApp() {
         selection={selection}
         ouvert={railOuvert}
         peutEcrire={peutEcrire}
-        ias={ias}
+        ias={toutesIAs}
         clignote={clignote}
         onSelection={choisir}
         onCreer={(type, m) => {
@@ -530,12 +550,23 @@ export function AtlasApp() {
             </button>
           )}
           <span className="sp" />
-          <div className={presenceLive ? "presence live" : derniere ? "presence" : "presence idle"} role="status" aria-live="polite">
-            <span className="av" aria-hidden>
-              {initialeAuteur(activite?.ia ?? derniere?.nom ?? "IA")}
-            </span>
-            <span>{activite ? activite.texte : derniere ? `${derniere.nom} · actif à ${derniere.heure}` : "Aucune IA active"}</span>
-          </div>
+          {presenceLive || derniere ? (
+            <div className={presenceLive ? "presence live" : "presence"} role="status" aria-live="polite">
+              <span className="av" aria-hidden>
+                {initialeAuteur(activite?.ia ?? derniere?.nom ?? "IA")}
+              </span>
+              <span>
+                {activite ? activite.texte : derniere.etat === "active" ? `${derniere.nom} · actif à ${derniere.heure}` : `${derniere.nom} · branchée, dernier échange ${derniere.heure}`}
+              </span>
+            </div>
+          ) : (
+            <a className="presence idle" href={HUB_IA} target="_blank" rel="noopener noreferrer" title="Brancher Claude, ChatGPT ou Cursor depuis le Hub">
+              <span className="av" aria-hidden>
+                +
+              </span>
+              <span>Brancher une IA</span>
+            </a>
+          )}
           {segment && !estCible && peutEcrire && marche && (
             <button type="button" className="btn ghost hide-s" onClick={() => setCreation({ type: "cible", marche, colonnes })}>
               <Icone nom="cible" />

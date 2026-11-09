@@ -22,11 +22,13 @@ import {
   estMarche,
   etapeCourante,
   etapesEntonnoir,
+  fusionnerIAs,
   joursEnvoi,
   kpisDisponibles,
   marcheDe,
   nomAuteur,
   phraseActivite,
+  quand,
   sectionsRail,
   segmentsChanges,
 } from "@/components/atlas/flux";
@@ -263,6 +265,31 @@ describe("versions et présence de l'IA", () => {
     expect(phraseActivite("Claude", ch[1])).toBe("Claude a revu la priorité de « B » (v2)");
     expect(phraseActivite("Claude", ch[2])).toBe("Claude a créé « C »");
     expect(segmentsChanges(apres, apres)).toEqual([]);
+  });
+});
+
+describe("IA branchées", () => {
+  const maintenant = new Date(2026, 10, 9, 22, 40);
+  test("les IA actives de la session d'abord, puis les branchées, une ligne par nom", () => {
+    const session = [{ nom: "Claude", heure: "22:35", etat: "active" as const }];
+    const connexions = [
+      { nom: "Claude", depuis: "", dernier_appel: new Date(2026, 10, 9, 22, 30).toISOString() },
+      { nom: "ChatGPT", depuis: "", dernier_appel: new Date(2026, 10, 7, 9, 5).toISOString() },
+    ];
+    expect(fusionnerIAs(session, connexions, maintenant)).toEqual([
+      { nom: "Claude", heure: "22:35", etat: "active" },
+      { nom: "ChatGPT", heure: "07/11", etat: "branchee" },
+    ]);
+    expect(fusionnerIAs([], [], maintenant)).toEqual([]);
+  });
+  test("heure le jour même, date sinon, rien si la date est illisible", () => {
+    expect(quand(new Date(2026, 10, 9, 8, 5).toISOString(), maintenant)).toBe("08:05");
+    expect(quand(new Date(2026, 9, 31, 8, 5).toISOString(), maintenant)).toBe("31/10");
+    expect(quand("pas une date", maintenant)).toBe("");
+  });
+  test("un identifiant OAuth opaque ne s'affiche jamais", () => {
+    expect(nomAuteur("ia:mcpc_KqLKNSlHyGzUgCXS5gk")).toBe("Assistant IA");
+    expect(nomAuteur("ia:Claude")).toBe("Claude");
   });
 });
 

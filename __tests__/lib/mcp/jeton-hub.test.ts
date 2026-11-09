@@ -51,7 +51,14 @@ beforeEach(async () => {
 describe("verifierJetonHub", () => {
   test("accepte un jeton du Hub pour cette app et rend hub_user_id", async () => {
     const id = await verifierJetonHub(await signer(hub, claims()), { env: ENV, fetchImpl: jwks(hub), maintenant: MAINTENANT });
-    expect(id).toEqual({ hubUserId: SUB, email: "robert@exemple.fr", scope: "mcp", clientId: "claude", jti: "j-1", tenantId: null });
+    expect(id).toEqual({ hubUserId: SUB, email: "robert@exemple.fr", scope: "mcp", clientId: "claude", clientNom: null, jti: "j-1", tenantId: null });
+  });
+
+  test("rend le nom du client quand le Hub le donne (affichage seulement)", async () => {
+    const id = await verifierJetonHub(await signer(hub, claims({ client_name: "  Claude  " })), { env: ENV, fetchImpl: jwks(hub), maintenant: MAINTENANT });
+    expect(id.clientNom).toBe("Claude");
+    const vide = await verifierJetonHub(await signer(hub, claims({ client_name: 42 })), { env: ENV, fetchImpl: jwks(hub), maintenant: MAINTENANT });
+    expect(vide.clientNom).toBeNull();
   });
 
   test("rend le tenant_id signé, et ignore une valeur qui n'est pas un identifiant", async () => {

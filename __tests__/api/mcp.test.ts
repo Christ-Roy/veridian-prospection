@@ -3,7 +3,8 @@
  */
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-const { verifier, findFirst, buildCtx, espace } = vi.hoisted(() => ({
+const { verifier, findFirst, buildCtx, espace, presence } = vi.hoisted(() => ({
+  presence: vi.fn(async () => {}),
   verifier: vi.fn(),
   findFirst: vi.fn(),
   buildCtx: vi.fn(),
@@ -13,6 +14,7 @@ vi.mock("@/lib/mcp/jeton-hub", async (orig) => ({ ...(await orig<typeof import("
 vi.mock("@/lib/prisma", () => ({ prisma: { user: { findFirst } } }));
 vi.mock("@/lib/auth/user-context", () => ({ buildUserContext: buildCtx, espaceHub: espace, resolveInsertWorkspaceId: vi.fn(async () => "ws-1") }));
 vi.mock("@/lib/rate-limit", () => ({ isRateLimited: vi.fn(() => false) }));
+vi.mock("@/atlas/presence-ia", () => ({ noterPresence: presence }));
 vi.mock("@/lib/mcp/protocole", () => ({
   traiter: vi.fn(async (m: { id?: number }) => (m.id === undefined ? null : { jsonrpc: "2.0", id: m.id, result: { ok: true } })),
 }));
@@ -76,6 +78,23 @@ describe("POST /api/mcp", () => {
     expect(espace).toHaveBeenCalledWith("u-1", "t-signe");
     expect(await r.json()).toEqual({ jsonrpc: "2.0", id: 1, result: { ok: true } });
     expect((await POST(req({ jsonrpc: "2.0", method: "notifications/initialized" }, "x.y.z"))).status).toBe(202);
+  });
+
+  test("chaque appel authentifié note l'IA branchée ; une panne de cette écriture ne bloque rien", async () => {
+    verifier.mockResolvedValue({ hubUserId: "3f1c2b9e-8a7d-4c6b-9e5f-1a2b3c4d5e6f", email: "a@b.fr", clientId: "mcpc_x", clientNom: "Claude", tenantId: null });
+    findFirst.mockResolvedValue({ id: "u-1", email: "a@b.fr" });
+    buildCtx.mockResolvedValue({ userId: "u-1", tenantId: "t-1", workspaces: [], isAdmin: false });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    presence.mockRejectedValueOnce(new Error("base muette"));
+    expect((await POST(req(INIT, "x.y.z"))).status).toBe(200);
+    expect(presence).toHaveBeenCalledWith("u-1", "mcpc_x", "Claude");
+  });
+
+  test("jeton refusé : aucune présence notée", async () => {
+    presence.mockClear();
+    verifier.mockRejectedValue(new JetonRefuse("jeton expiré"));
+    expect((await POST(req(INIT, "x.y.z"))).status).toBe(401);
+    expect(presence).not.toHaveBeenCalled();
   });
 
   test.each([

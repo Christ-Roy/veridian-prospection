@@ -85,11 +85,36 @@ export function diffFiltres(avant: Filtre | null, apres: Filtre, champs: Readonl
 
 export const estAuteurIA = (auteur: string) => auteur.startsWith("ia:");
 
+/** IA vue dans Atlas : active pendant cette session, ou seulement branchée (déjà venue par le connecteur). */
+export type IAVue = { nom: string; heure: string; etat: "active" | "branchee" };
+export type ConnexionIA = { nom: string; depuis: string; dernier_appel: string };
+
+/** Heure si c'est aujourd'hui, sinon la date courte. */
+export function quand(iso: string, maintenant = new Date()): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return d.toDateString() === maintenant.toDateString() ? `${p(d.getHours())}:${p(d.getMinutes())}` : `${p(d.getDate())}/${p(d.getMonth() + 1)}`;
+}
+
+/** Les IA actives cette session d'abord, puis celles branchées qui n'ont pas agi ici (une ligne par nom). */
+export function fusionnerIAs(session: readonly IAVue[], connexions: readonly ConnexionIA[], maintenant = new Date()): IAVue[] {
+  const vues = new Set(session.map((i) => i.nom));
+  const branchees: IAVue[] = [];
+  for (const c of connexions) {
+    if (vues.has(c.nom)) continue;
+    vues.add(c.nom);
+    branchees.push({ nom: c.nom, heure: quand(c.dernier_appel, maintenant), etat: "branchee" });
+  }
+  return [...session, ...branchees];
+}
+
 /** « ia:claude-ai » → « Claude » ; « ia:chatgpt » → « ChatGPT » ; un humain → « Interface ». */
 export function nomAuteur(auteur: string): string {
   if (!estAuteurIA(auteur)) return "Interface";
   const client = auteur.slice(3).trim();
   const bas = client.toLowerCase();
+  if (bas.startsWith("mcpc_")) return "Assistant IA"; // identifiant OAuth opaque, sans nom donné par le Hub
   if (bas.includes("claude") || bas.includes("anthropic")) return "Claude";
   if (bas.includes("chatgpt") || bas.includes("openai") || bas.includes("gpt")) return "ChatGPT";
   if (bas.includes("mistral") || bas.includes("lechat")) return "Mistral";

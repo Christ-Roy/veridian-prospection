@@ -12,6 +12,7 @@ import { buildUserContext, espaceHub, resolveInsertWorkspaceId } from "@/lib/aut
 import { isRateLimited } from "@/lib/rate-limit";
 import { JetonRefuse, verifierJetonHub } from "@/lib/mcp/jeton-hub";
 import { traiter, type Message, type Reponse } from "@/lib/mcp/protocole";
+import { noterPresence } from "@/atlas/presence-ia";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +69,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "JSON illisible" } }, { status: 400 });
   }
 
-  const contexte = { ctx, workspaceId: await resolveInsertWorkspaceId(ctx), client: identite.clientId ?? null };
+  // Atlas affiche les IA branchées : une panne de cette écriture ne doit jamais bloquer l'appel.
+  noterPresence(user.id, identite.clientId, identite.clientNom).catch((e) => console.error("[mcp] présence IA non notée", e));
+
+  const contexte = { ctx, workspaceId: await resolveInsertWorkspaceId(ctx), client: identite.clientNom ?? identite.clientId ?? null };
   const journal = (e: { outil: string; issue: string; ms: number }) =>
     console.info(`[mcp] outil=${e.outil} issue=${e.issue} ms=${e.ms} user=${user.id} client=${identite.clientId ?? "?"}`);
 

@@ -2,13 +2,15 @@
 
 import { signOut, useSession } from "next-auth/react";
 
-import { ciblesDe, marcheDe, sectionsRail } from "./flux";
+import { ciblesDe, marcheDe, sectionsRail, type IAVue } from "./flux";
 import { Icone } from "./icones";
 import type { Arbre, SegmentArbre } from "./types";
 
 const HUB = process.env.NEXT_PUBLIC_HUB_URL || "https://app.veridian.site";
+/** Page du Hub où l'on branche Claude, ChatGPT, Cursor… (une seule connexion pour toutes les apps). */
+export const HUB_IA = `${HUB}/dashboard/settings/security`;
 
-export type IAVue = { nom: string; heure: string };
+export type { IAVue } from "./flux";
 
 type Props = {
   arbre: Arbre | null;
@@ -126,21 +128,19 @@ export function Rail({ arbre, erreur, selection, ouvert, peutEcrire, ias, cligno
         {ias.length === 0 ? (
           <div className="conn">
             <span className="d" style={{ background: "var(--off-line)" }} />
-            <span className="lbl">Aucune IA active cette session</span>
+            <span className="lbl">Aucune IA branchée</span>
           </div>
         ) : (
           ias.map((ia) => (
             <div className="conn" key={ia.nom}>
-              <span className="d" style={{ background: "var(--ok)" }} />
-              <span className="lbl">
-                {ia.nom} · active à {ia.heure}
-              </span>
+              <span className="d" style={{ background: ia.etat === "active" ? "var(--ok)" : "var(--blue)" }} />
+              <span className="lbl">{ia.etat === "active" ? `${ia.nom} · active à ${ia.heure}` : `${ia.nom} · branchée, dernier échange ${ia.heure}`}</span>
             </div>
           ))
         )}
-        <a className="conn" href={HUB} target="_blank" rel="noopener noreferrer" title="Brancher Claude ou ChatGPT depuis le Hub">
+        <a className="conn" href={HUB_IA} target="_blank" rel="noopener noreferrer" title="Brancher Claude, ChatGPT ou Cursor depuis le Hub">
           <Icone nom="plus" />
-          <span className="lbl">Connecter une IA (Hub)</span>
+          <span className="lbl">{ias.length ? "Brancher une autre IA" : "Brancher une IA"}</span>
         </a>
         <button type="button" className="conn" style={{ width: "100%", textAlign: "left" }} title={email ? `Se déconnecter (${email})` : "Se déconnecter"} onClick={() => void signOut({ callbackUrl: "/login", redirect: true })}>
           <Icone nom="retour" />

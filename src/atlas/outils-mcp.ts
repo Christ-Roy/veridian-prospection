@@ -13,6 +13,7 @@ import { CHAMPS, OPERATEURS } from "./champs";
 import { EntreeCubeSchema, entreeDepuisFiltre } from "./cube";
 import { FiltreInvalide } from "./filtres";
 import { sourceMarche } from "./source";
+import { listerPresences } from "./presence-ia";
 import * as seg from "./segments";
 
 const LECTURE = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
@@ -108,6 +109,14 @@ const OUTILS_BRUTS: Outil[] = [
         lecture: "« connu » = contact trouvé, même écarté ensuite ; « envoyable » = ce qu'on peut promettre. Département vide = adresse non diffusée.",
       });
     }),
+  },
+  {
+    name: "connexions_ia",
+    title: "IA branchées",
+    description: "IA (Claude, ChatGPT…) qui ont accédé à Prospection pour l'utilisateur, avec leur dernier échange.",
+    input: z.object({}),
+    annotations: LECTURE,
+    run: async (_a, c) => ({ connexions: await listerPresences(c.ctx.userId) }),
   },
   {
     name: "fiche_entreprise_atlas",

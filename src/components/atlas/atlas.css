@@ -84,6 +84,8 @@
 .atlas .presence { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--fg2); height: 30px; padding: 0 10px 0 6px; border-radius: 999px; max-width: 340px; min-width: 0; transition: background 0.3s; }
 .atlas .presence .av { width: 20px; height: 20px; border-radius: 50%; background: var(--claude); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 600; flex: none; position: relative; }
 .atlas .presence.idle .av { background: oklch(0.82 0 0); }
+.atlas a.presence.idle { text-decoration: none; cursor: pointer; }
+.atlas a.presence.idle:hover { background: var(--soft); color: var(--fg); }
 .atlas .presence.live { background: oklch(0.97 0.03 45); }
 .atlas .presence.live .av::after { content: ""; position: absolute; inset: -3px; border-radius: 50%; border: 2px solid var(--claude); animation: atlas-pulse 1.2s ease-out infinite; }
 .atlas .presence span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -1310,3 +1310,16 @@ model AtlasEpingle {
   @@unique([tenantId, siren])
   @@map("atlas_epingles")
 }
+
+/// IA qui ont appelé Prospection par la porte MCP du Hub (une ligne par utilisateur et client OAuth).
+model AtlasPresenceIa {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  clientId     String   @map("client_id")
+  clientNom    String?  @map("client_nom")
+  premierAppel DateTime @default(now()) @map("premier_appel") @db.Timestamptz
+  dernierAppel DateTime @default(now()) @map("dernier_appel") @db.Timestamptz
+
+  @@unique([userId, clientId])
+  @@map("atlas_presence_ia")
+}
