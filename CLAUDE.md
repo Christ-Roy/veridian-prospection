@@ -66,7 +66,7 @@ retiré, clé `ubuntu` en mode deny). Ne pas pousser sur `staging` avant d'avoir
 - **Migrations Prisma par la CI** : `deploy-prod` envoie `prisma/` au verbe (`put-migrations prod`)
   puis `migrate prod` joue `prisma migrate deploy` sur pg-saas, avant le déploiement. Une migration
   destructive (DROP, renommage) reste 💀 : en deux temps, compatible avec le code encore servi.
-- **L'ancienne base `prospection-db` du job ne sert plus** depuis la bascule (09/11) : ne rien y écrire.
+- **L'ancienne base `prospection-db` est purgée (09/11)** : job, données, dépôts pgBackRest et R2 supprimés, dump froid vérifié sur le stockage Contabo. Aucun nom `prospection-db` ni `prospection-saas-db` ne doit revenir dans la CI ni dans les skills.
 - **Un déploiement remplace toute l'allocation** du groupe `stack` : l'id d'alloc change.
 - **Après déploiement, lire l'image et la version dans le conteneur** ; `/api/status` renvoie
   `commit: null` et ne prouve rien.
