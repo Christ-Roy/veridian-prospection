@@ -23,16 +23,15 @@ retirée le 09/11 ; archive : tag `archive/prospection-v1-20261109`. Le pipeline
 ## Vision produit (Robert, 09/11) : Prospection devient un navigateur du marché sur ODH
 
 Le pipeline commercial part dans Twenty ; Prospection sert à trouver et qualifier un marché.
-Maquette : `docs/maquette/atlas-des-marches.html`. Linear : ROB-173 (ODH comme seule base).
+Maquette : `docs/maquette/atlas-des-marches.html`. Linear : ROB-173.
 Flux (Robert, 09/11) : **analyse du marché → définition de la cible → priorité (scoring froid) → envoi**.
-1. **Marché et cibles** : un marché = segment racine large (« Éleveurs de France ») qu'on analyse ; ses
-   cibles = segments enfants (une approche chacune), qui héritent des conditions. Rangés en dossiers ;
-   fusion et agrégation à venir. Un segment = des filtres versionnés, sur des champs neutres.
-2. **Moteur de priorité** : un scoring par cible pour la prospection à froid ordonne les envois ; on
-   l'itère avec l'IA.
-3. **Vues** : carte (départements, descente), diagrammes, tableau, et modules de données faits par l'IA
-   à la volée, dans un cadre sécurisé (catalogue d'actions, bac à sable, rien ne sort sans clic humain).
-4. **Export** : réservé aux plans payants Veridian, tracé.
+1. **Marché, sur la base maître** (Robert, 10/11) : la première vue montre toutes les entreprises (cube ODH). Un marché
+   = segment racine sur les champs `marche` du catalogue (NAF, division, département, forme, effectif, création).
+2. **Cible** : segment enfant qui hérite et ajoute les filtres de prospection (contact, web, signaux), sur les fiches
+   prospectables ; sa part contactable et sa part du marché s'affichent tout de suite. Rangés en dossiers.
+3. **Priorité** : des règles simples « si … alors +N points », suggestions neutres, IA hautement recommandée.
+4. **Export** : Excel ou CSV (`/api/atlas/export`, plans payants, 5 000 lignes, tracé), Notifuse à venir.
+5. **IA** : boutons pour brancher son IA dans l'app (liens lus au Hub), accueil « avec l'IA / à la main ».
 Pilotage par IA via le MCP (Claude, ChatGPT en OAuth par le Hub), jamais d'IA payée par l'app.
 
 ## Identité : le Hub est la source de vérité
@@ -165,13 +164,12 @@ npx vitest run --exclude 'e2e/integration/**'
 npx playwright test e2e/core/ --project=chromium
 ```
 
-Build d'image et tests lourds sur un nœud libre, pas sur le bastion.
+Tests et builds : `lourd <commande>` (rise), jamais en local.
 
 ## Multi-tenant
 
 - Tables Atlas (`atlas_*`) bornées au tenant. Les tables de l'ancienne app (`entreprises`…) restent en base, plus lues.
 - Résolution : session → `tenants.user_id`, sinon `workspace_members` → tenant (cache 60 s).
-- Les tenants locaux n'ont pas toujours l'id du tenant Hub.
 
 ## Règles
 
@@ -181,4 +179,5 @@ Build d'image et tests lourds sur un nœud libre, pas sur le bastion.
 ## Dette connue
 
 - `audit_log` n'existe pas en prod : les audits sont ignorés en silence.
-- `prospection-ci.yml` tourne sur `ubuntu-latest`, permis car le dépôt est public. Les images de prod sont construites par cette CI, pas de `docker build` sur un nœud.
+- `prospection-ci.yml` tourne sur `ubuntu-latest` (permis : dépôt public).
+- `check-test-mapping.sh` ne voit rien sur un push vers `main`, et le pre-push ne le lance pas.
