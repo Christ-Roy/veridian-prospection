@@ -7,16 +7,10 @@
 
 variable "image_tag" {
   type        = string
-  description = "Tag de l'image ghcr.io/christ-roy/prospection promue en prod (injecté par la CI)."
-  # `07b0b0e` n'a JAMAIS existe sur GHCR : c'etait le prefixe du DIGEST de
-  # l'image, recopie par erreur comme s'il s'agissait d'un tag. Un deploiement
-  # hors CI echouait donc a tirer l'image (manifest unknown) et se faisait
-  # rattraper par auto_revert. L'image reellement en production a ete retaguee
-  # `prod-20260815` sur GHCR (meme contenu, sha256:07b0b0ec…) pour que ce defaut
-  # designe enfin quelque chose.
-  # Recale le 2026-09-24 (chantier durcissement conteneurs) : mesure sur le
-  # job Nomad vivant = c70ba3c, juste avant ce commit.
-  default     = "c70ba3c"
+  description = "Tag de l'image ghcr.io/christ-roy/prospection promue en prod. Obligatoire : fourni par le verbe CI (`veridian-ci-deploy prospection deploy prod <sha7>`)."
+  # PAS DE DÉFAUT, jamais. Un défaut figé fait reculer la prod au prochain
+  # `nomad job run` sans -var (09/11 : défaut c70ba3c alors que la prod
+  # servait 0537d22). Contrôle CI : scripts/ci/check-image-tag-sans-defaut.py.
 }
 
 job "prospection" {

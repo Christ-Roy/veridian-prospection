@@ -68,6 +68,9 @@ jobs:
       - name: vitest unit tests (src/**/*.test.ts)
         run: npx vitest run src/
 
+      - name: contrat image_tag (aucun défaut figé dans le jobspec prod)
+        run: python3 scripts/ci/check-image-tag-sans-defaut.py deploy/prospection.nomad.hcl
+
   audit:
     name: CVE audit (high+critical bloquant)
     uses: ./.github/workflows/_audit-cve.yml
@@ -207,6 +210,67 @@ jobs:
             COMMIT_SHA=${{ github.sha }}
             BUILT_AT=${{ steps.build_time.outputs.built_at }}
 
-      # Ce job s'arrête volontairement après le push GHCR. La mutation du
-      # runtime est une étape Nomad séparée afin qu'un plan sémantique soit
-      # examiné avant chaque déploiement et qu'un drift bloque réellement.
+  # ── Déploiement prod : UN SEUL chemin (GITOPS-APPS.md §1) ───────────────
+  # Le HCL du commit et l'image de ce commit partent au bastion par le verbe
+  # `veridian-ci-deploy prospection` (clé à commande forcée) : put-job, plan,
+  # deploy (canari, fusible des tags, garde-fous), smoke. Aucun `nomad job run`
+  # direct, aucun défaut d'image figé (contrôle `contrat image_tag` ci-dessus).
+  deploy-prod:
+    name: Deploy prod (verbe bastion veridian-ci-deploy)
+    needs: [docker]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
+    env:
+      IMAGE_TAG: ${{ needs.docker.outputs.sha7 }}
+      PROD_URL: https://prospection.app.veridian.site
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Clé de déploiement (bastion)
+        run: |
+          mkdir -p ~/.ssh && umask 077
+          printf '%s\n' "${{ secrets.NOMAD_DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          # Empreinte publique : permet de la relier à la ligne de authorized_keys
+          # (prospection-ci-deploy, cles-ci.tsv). Jamais la clé elle-même.
+          ssh-keygen -lf ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.NOMAD_BASTION_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: put-job prod (HCL du commit, sur stdin)
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes \
+            "${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}" \
+            "put-job prod" < deploy/prospection.nomad.hcl
+
+      - name: plan prod (lecture seule)
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes \
+            "${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}" \
+            "plan prod $IMAGE_TAG"
+
+      - name: deploy prod (canari, suivi jusqu'à terminal)
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes \
+            "${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}" \
+            "deploy prod $IMAGE_TAG"
+
+      - name: smoke prod (bastion puis public, retry)
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes \
+            "${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}" "smoke prod"
+          for i in $(seq 1 6); do
+            CODE=$(curl -sS -o /dev/null -w "%{http_code}" "$PROD_URL/api/health" || echo 000)
+            echo "[$i/6] /api/health -> $CODE"
+            [ "$CODE" = "200" ] && exit 0
+            sleep 10
+          done
+          echo "::error::smoke public en échec"; exit 1
+
+      - name: Nettoyage (HCL distant, clé locale)
+        if: always()
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes \
+            "${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}" "cleanup prod" || true
+          rm -f ~/.ssh/id_ed25519
