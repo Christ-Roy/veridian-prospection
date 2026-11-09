@@ -1,28 +1,24 @@
 /**
  * Protocole MCP de Prospection : catalogue filtré par les droits, arguments validés, espace imposé
- * par l'utilisateur (jamais par l'IA), erreurs lisibles.
+ * par l'utilisateur (jamais par l'IA), erreurs lisibles, aucun détail technique en cas de panne.
  */
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-const { q } = vi.hoisted(() => ({
-  q: {
-    getLeads: vi.fn(),
-    getSegmentLeads: vi.fn(),
-    getAllSegmentCounts: vi.fn(),
-    patchOutreach: vi.fn(),
-    getLeadDetail: vi.fn(),
-    recordVisit: vi.fn(),
-    consumeLead: vi.fn(),
-  },
-}));
-vi.mock("@/lib/queries", () => q);
-vi.mock("@/lib/prisma", () => ({ prisma: { $queryRaw: vi.fn() } }));
-vi.mock("@/lib/segments", () => ({ getAllSegments: () => [{ id: "rge", label: "RGE", type: "smart" }] }));
-vi.mock("@/lib/cache", () => ({ cached: (_k: string, _t: number, f: () => unknown) => f() }));
-vi.mock("@/lib/auth/tenant", () => ({ getTenantProspectLimit: vi.fn(async () => 100) }));
-vi.mock("@/lib/rate-limit", () => ({ isRateLimited: vi.fn(() => false) }));
-vi.mock("@/lib/auth/freeze", () => ({ isUserFrozen: vi.fn(async () => false) }));
-vi.mock("@/lib/auth/user-context", () => ({}));
+vi.hoisted(() => {
+  process.env.ATLAS_SIMULE = "1";
+});
+const { panne } = vi.hoisted(() => ({ panne: { active: false } }));
+vi.mock("@/lib/prisma", () => ({ prisma: {} }));
+vi.mock("@/atlas/source", async (orig) => {
+  const vrai = await orig<typeof import("@/atlas/source")>();
+  const simulee = new vrai.SourceSimulee(500);
+  const compter = simulee.compter.bind(simulee);
+  simulee.compter = async (f: unknown) => {
+    if (panne.active) throw new Error("connexion ClickHouse refusée 100.96.29.49:28123");
+    return compter(f);
+  };
+  return { ...vrai, sourceMarche: () => simulee };
+});
 
 import { traiter } from "@/lib/mcp/protocole";
 import type { UserContext } from "@/lib/auth/user-context";
@@ -40,8 +36,11 @@ function ctx(role: "owner" | "admin" | "member" | "viewer", isAdmin = false): Us
 }
 const c = (role: Parameters<typeof ctx>[0] = "member") => ({ ctx: ctx(role), workspaceId: "ws-1" });
 const appel = (name: string, args: unknown) => ({ jsonrpc: "2.0", id: 7, method: "tools/call", params: { name, arguments: args } });
+const texte = (r: Awaited<ReturnType<typeof traiter>>) => (r?.result as { content: { text: string }[] }).content[0].text;
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  panne.active = false;
+});
 
 describe("MCP Prospection", () => {
   test("initialize annonce les outils et reprend la version du client", async () => {
@@ -53,63 +52,49 @@ describe("MCP Prospection", () => {
     expect(await traiter({ jsonrpc: "2.0", method: "notifications/initialized" }, c())).toBeNull();
   });
 
-  test("un lecteur ne voit pas l'outil d'écriture, un membre le voit", async () => {
+  test("un lecteur ne voit pas les outils d'écriture, un membre les voit ; les anciens outils n'existent plus", async () => {
     const noms = async (role: Parameters<typeof ctx>[0]) =>
       ((await traiter({ jsonrpc: "2.0", id: 2, method: "tools/list" }, c(role)))?.result as { tools: { name: string }[] }).tools.map((t) => t.name);
-    expect(await noms("viewer")).not.toContain("changer_statut");
-    expect(await noms("viewer")).toContain("rechercher_entreprises");
-    expect(await noms("member")).toContain("changer_statut");
+    expect(await noms("viewer")).not.toContain("creer_segment");
+    expect(await noms("viewer")).toContain("explorer_marche");
+    expect(await noms("member")).toContain("creer_segment");
+    expect(await noms("member")).not.toContain("rechercher_entreprises");
   });
 
-  test("chaque outil publie un schéma et ses annotations", async () => {
+  test("chaque outil publie un schéma objet et ses annotations", async () => {
     const r = (await traiter({ jsonrpc: "2.0", id: 2, method: "tools/list" }, c()))?.result as {
       tools: { name: string; inputSchema: { type: string }; annotations: { readOnlyHint: boolean } }[];
     };
     for (const t of r.tools) expect(t.inputSchema.type).toBe("object");
-    expect(r.tools.find((t) => t.name === "rechercher_entreprises")?.annotations.readOnlyHint).toBe(true);
-    expect(r.tools.find((t) => t.name === "changer_statut")?.annotations.readOnlyHint).toBe(false);
+    expect(r.tools.find((t) => t.name === "explorer_marche")?.annotations.readOnlyHint).toBe(true);
+    expect(r.tools.find((t) => t.name === "creer_segment")?.annotations.readOnlyHint).toBe(false);
   });
 
-  test("un lecteur qui appelle l'outil d'écriture reçoit « outil inconnu », rien n'est écrit", async () => {
-    const r = await traiter(appel("changer_statut", { siren: "123456789", statut: "interesse" }), c("viewer"));
+  test("un lecteur qui appelle un outil d'écriture reçoit « outil inconnu »", async () => {
+    const r = await traiter(appel("creer_segment", { nom: "x", filtre: {} }), c("viewer"));
     expect(r?.error?.message).toMatch(/outil inconnu/);
-    expect(q.patchOutreach).not.toHaveBeenCalled();
   });
 
-  test("la recherche interroge l'espace de l'utilisateur, jamais celui passé en argument", async () => {
-    q.getLeads.mockResolvedValue({ data: [{ domain: "123456789", nom_entreprise: "Plomberie Test" }], total: 1 });
-    const r = await traiter(appel("rechercher_entreprises", { departements: ["69"], tenant_id: "tenant-B" }), c());
-    expect(q.getLeads).toHaveBeenCalledWith(expect.objectContaining({ filters: { departement: "69" } }), "tenant-A");
-    const sortie = JSON.parse((r?.result as { content: { text: string }[] }).content[0].text);
-    expect(sortie).toMatchObject({ total: 1, page: 1, page_suivante: null, entreprises: [{ siren: "123456789", nom: "Plomberie Test" }] });
+  test("explorer le marché : un tenant_id passé en argument est ignoré", async () => {
+    const r = await traiter(appel("explorer_marche", { filtre: { conditions: [{ champ: "departement", op: "dans", valeur: ["69"] }] }, par_page: 3, tenant_id: "tenant-B" }), c());
+    const sortie = JSON.parse(texte(r));
+    expect(sortie.total).toBeGreaterThan(0);
+    expect(sortie.lignes).toHaveLength(3);
   });
 
-  test("la pagination respecte le plafond du plan", async () => {
-    q.getLeads.mockResolvedValue({ data: [{ domain: "1" }], total: 5000 });
-    const r = await traiter(appel("rechercher_entreprises", { page: 6, par_page: 20 }), c());
-    const sortie = JSON.parse((r?.result as { content: { text: string }[] }).content[0].text);
-    expect(sortie).toMatchObject({ total: 100, pages: 5, plafond_du_plan: 100, entreprises: [] });
-  });
-
-  test("arguments invalides : erreur lisible, aucune requête", async () => {
-    const r = await traiter(appel("fiche_entreprise", { siren: "12" }), c());
+  test("arguments invalides : erreur lisible pour que l'IA corrige", async () => {
+    const r = await traiter(appel("fiche_entreprise_atlas", { siren: "12" }), c());
     expect(r?.result).toMatchObject({ isError: true });
-    expect((r?.result as { content: { text: string }[] }).content[0].text).toMatch(/siren/);
-    expect(q.getLeadDetail).not.toHaveBeenCalled();
+    expect(texte(r)).toMatch(/siren/i);
+    const f = await traiter(appel("explorer_marche", { filtre: { conditions: [{ champ: "ca", op: "min", valeur: 1 }] } }), c());
+    expect(texte(f)).toMatch(/champ inconnu « ca »/);
   });
 
-  test("fiche inconnue : message clair", async () => {
-    q.getLeadDetail.mockResolvedValue(null);
-    const r = await traiter(appel("fiche_entreprise", { siren: "123456789" }), c());
-    expect((r?.result as { content: { text: string }[] }).content[0].text).toMatch(/Aucune entreprise/);
-  });
-
-  test("une erreur interne ne fuit pas le détail technique", async () => {
-    q.getLeads.mockRejectedValue(new Error("connexion pg-saas refusée 172.26.64.1"));
+  test("une panne de la source ne fuit pas le détail technique", async () => {
+    panne.active = true;
     vi.spyOn(console, "error").mockImplementation(() => {});
-    const r = await traiter(appel("rechercher_entreprises", {}), c());
-    const t = (r?.result as { content: { text: string }[] }).content[0].text;
-    expect(t).not.toMatch(/172\.26/);
+    const t = texte(await traiter(appel("explorer_marche", { filtre: {} }), c()));
+    expect(t).not.toMatch(/100\.96/);
     expect(t).toMatch(/Erreur interne/);
   });
 

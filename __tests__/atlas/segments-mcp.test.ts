@@ -66,11 +66,6 @@ vi.mock("@/lib/prisma", () => {
   };
   return { prisma };
 });
-vi.mock("@/lib/queries", () => ({}));
-vi.mock("@/lib/segments", () => ({ getAllSegments: () => [] }));
-vi.mock("@/lib/cache", () => ({ cached: (_k: string, _t: number, f: () => unknown) => f() }));
-vi.mock("@/lib/auth/tenant", () => ({ getTenantProspectLimit: vi.fn(async () => 100) }));
-vi.mock("@/lib/leads/serve-detail", () => ({}));
 vi.mock("@/lib/auth/user-context", () => ({}));
 
 import { traiter } from "@/lib/mcp/protocole";
