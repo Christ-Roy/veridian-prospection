@@ -7,7 +7,7 @@ import { EditeurConditions } from "./editeur-conditions";
 import { avecCondition, type EtapeEntonnoir } from "./flux";
 import { Chargement, Icone } from "./icones";
 import { DEMANDE_PRIORITE, lignesDepuis, suggestionsRestantes, validerCriteres, type LigneEditeur } from "./lignes";
-import { colonnesAffichees, formaterCellule, formaterNombre, grouperChamps, largeurBarre, libelleColonne } from "./logique";
+import { colonnesAffichees, formaterCellule, formaterNombre, grouperChamps, largeurBarre, libelleColonne, valeurLisible } from "./logique";
 import type { ApercuMarche, ChampInfo, Critere, Filtre, LigneMarche, RepartitionMarche } from "./types";
 
 const PAR_PAGE = 20;
@@ -78,7 +78,7 @@ export function VueBarres({ filtre, champs, index }: { filtre: Filtre; champs: C
         <div className="hbars">
           {donnees.map((d) => (
             <div key={d.cle} className="hb">
-              <span title={d.cle}>{d.cle}</span>
+              <span title={d.cle}>{valeurLisible(champ, d.cle)}</span>
               <span className="t" aria-hidden>
                 {d.site === null ? (
                   <i style={{ width: `${largeurBarre(d.total, max)}%`, background: "var(--blue)" }} />

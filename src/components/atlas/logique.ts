@@ -254,12 +254,29 @@ export function cheminDossier(a: Arbre, dossierId: string | null): string[] {
 
 // ---------------------------------------------------------------- cellules
 
+/** Valeurs codées d'ODH lues en clair : motif de non-envoi d'un email. Une valeur inconnue reste telle quelle. */
+export const VALEURS_LISIBLES: Record<string, Record<string, string>> = {
+  motif_email: {
+    domaine_mort: "Domaine mort",
+    mx_injoignable: "Serveur mail injoignable",
+    boite_inexistante: "Boîte inexistante",
+    email_disparu_du_site: "Email retiré du site",
+    email_placeholder: "Adresse fictive",
+    email_role_non_commercial: "Adresse générique non commerciale",
+    contact_de_prestataire: "Contact d'un prestataire",
+    email_invalide: "Adresse invalide",
+  },
+};
+export function valeurLisible(champ: string, v: string): string {
+  return VALEURS_LISIBLES[champ]?.[v] ?? v;
+}
+
 export function formaterCellule(v: Cellule | undefined, champ?: ChampInfo): string {
   if (v === null || v === undefined || v === "") return "—";
   if (typeof v === "boolean") return v ? "Oui" : "Non";
   if (typeof v === "number") return formaterNombre(v);
   if (champ?.type === "date") return formaterDate(v);
-  return v;
+  return champ ? valeurLisible(champ.id, v) : v;
 }
 
 export function libelleColonne(id: string, champs: ReadonlyMap<string, ChampInfo>): string {

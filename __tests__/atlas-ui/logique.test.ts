@@ -21,6 +21,7 @@ import {
   phraseFiltre,
   saisieVide,
   sansConditionsDans,
+  valeurLisible,
 } from "@/components/atlas/logique";
 import type { ChampInfo } from "@/components/atlas/types";
 
@@ -169,5 +170,19 @@ describe("formats", () => {
     expect(ajouterValeurs(["a"], "b, c;a\nd")).toEqual(["a", "b", "c", "d"]);
     expect(largeurBarre(50, 200)).toBe(25);
     expect(largeurBarre(5, 0)).toBe(0);
+  });
+});
+
+describe("valeurs codées en clair", () => {
+  test("motif de non-envoi lisible, valeur inconnue rendue telle quelle, autres champs intacts", () => {
+    expect(valeurLisible("motif_email", "domaine_mort")).toBe("Domaine mort");
+    expect(valeurLisible("motif_email", "nouveau_motif")).toBe("nouveau_motif");
+    expect(valeurLisible("departement", "domaine_mort")).toBe("domaine_mort");
+  });
+  test("chaque motif annoncé par ODH (ODH-0239) a un libellé", async () => {
+    const { VALEURS_LISIBLES } = await import("@/components/atlas/logique");
+    for (const m of ["boite_inexistante", "domaine_mort", "mx_injoignable", "email_disparu_du_site", "email_placeholder", "email_role_non_commercial", "contact_de_prestataire", "email_invalide"]) {
+      expect(VALEURS_LISIBLES.motif_email[m], m).toBeDefined();
+    }
   });
 });

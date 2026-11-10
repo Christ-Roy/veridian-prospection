@@ -2,7 +2,7 @@
  * Fiche entreprise : thèmes ordonnés, libellés, valeurs mises en forme, valeurs vides masquées.
  * Logique pure (testée dans __tests__/atlas-ui).
  */
-import { formaterDate, formaterNombre } from "./logique";
+import { formaterDate, formaterNombre, valeurLisible } from "./logique";
 import type { Fiche, ValeurFiche } from "./types";
 
 export const THEMES: readonly { id: string; titre: string }[] = [
@@ -133,7 +133,7 @@ export function formaterValeur(cle: string, v: Exclude<ValeurFiche, null>): stri
   }
   if (DATES.has(cle)) return formaterDate(v);
   if (cle === "siren") return formaterSiren(v);
-  return v;
+  return valeurLisible(cle, v);
 }
 
 /** Thèmes dans l'ordre de la maquette ; valeurs vides et thèmes vides retirés ; thèmes inconnus à la fin. */
