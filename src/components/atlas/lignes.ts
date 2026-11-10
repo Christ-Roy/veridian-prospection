@@ -21,7 +21,7 @@ export function lignesDepuis(conditions: readonly (Condition & { poids?: number 
  */
 export const REGLES_SUGGEREES: { id: string; libelle: string; condition: Condition; points: number }[] = [
   { id: "email_envoyable", libelle: "Email envoyable", condition: { champ: "email_envoyable", op: "est", valeur: true }, points: 3 },
-  { id: "telephone", libelle: "Téléphone connu", condition: { champ: "telephone", op: "renseigne", valeur: true }, points: 2 },
+  { id: "telephone_envoyable", libelle: "Téléphone utilisable", condition: { champ: "telephone_envoyable", op: "est", valeur: true }, points: 2 },
   { id: "dirigeant", libelle: "Dirigeant identifié", condition: { champ: "dirigeant", op: "renseigne", valeur: true }, points: 1 },
   { id: "site", libelle: "Site web connu", condition: { champ: "site", op: "renseigne", valeur: true }, points: 1 },
   { id: "chiffre_affaires", libelle: "Chiffre d'affaires publié", condition: { champ: "chiffre_affaires", op: "renseigne", valeur: true }, points: 1 },

@@ -68,8 +68,8 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
 - ClickHouse (`src/atlas/source.ts`) : compte `prospection_ro`, 12 requêtes simultanées pour toute l'app, aucun
   réglage par requête (profil readonly). File de 3 par conteneur et rejeu du code 202 : ne pas les retirer.
   Champs = liste blanche `src/atlas/champs.ts`, filtres compilés en paramètres typés (`src/atlas/filtres.ts`).
-  `deliverable` d'ODH = joignable par un canal, pas email envoyable. Champ `email_envoyable` = règle provisoire
-  d'ODH ; à l'annonce de leur release (ODH-0239), le passer sur leur colonne `email_envoyable = 1`.
+  `deliverable` d'ODH = joignable par un canal. Email et téléphone se filtrent sur `email_envoyable` et
+  `telephone_envoyable` (ODH-0239, même règle que leur export Notifuse).
 - Cube de marché ODH-0245 (`odh.market_cube_current`, `src/atlas/cube.ts`, outil `analyser_marche`, vue « Taille du
   marché ») : le marché ENTIER, pas que les fiches prospectables. Sélection par LISTE de codes NAF avec
   `naf_rev2 = 1`, jamais par intervalle de chaînes ; prévoir « département inconnu » (diffusion partielle) ;

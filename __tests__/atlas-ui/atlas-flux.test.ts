@@ -281,10 +281,10 @@ describe("export", () => {
 
 describe("priorité : règles simples", () => {
   test("les suggestions portent sur des champs du catalogue et disparaissent une fois utilisées", () => {
-    const idx = indexerChamps([champ("email_envoyable", "oui_non", ["est"]), champ("telephone", "texte", ["egal", "contient", "renseigne"])]);
-    expect(suggestionsRestantes([], idx).map((r) => r.id)).toEqual(["email_envoyable", "telephone"]);
+    const idx = indexerChamps([champ("email_envoyable", "oui_non", ["est"]), champ("telephone_envoyable", "oui_non", ["est"])]);
+    expect(suggestionsRestantes([], idx).map((r) => r.id)).toEqual(["email_envoyable", "telephone_envoyable"]);
     const lignes = lignesDepuis([{ champ: "email_envoyable", op: "est", valeur: true, poids: 3 }]);
-    expect(suggestionsRestantes(lignes, idx).map((r) => r.id)).toEqual(["telephone"]);
+    expect(suggestionsRestantes(lignes, idx).map((r) => r.id)).toEqual(["telephone_envoyable"]);
   });
   test("chaque règle suggérée est une condition valide de son champ, avec des points positifs", async () => {
     const { CHAMP, OPERATEURS } = await import("@/atlas/champs");

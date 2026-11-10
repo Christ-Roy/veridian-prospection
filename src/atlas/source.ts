@@ -22,7 +22,7 @@ export const FICHE: Record<string, Record<string, string>> = {
   activite: { naf: "naf_code", secteur: "activity_sector", activite: "activity_label", services: "activity_services", idcc: "idcc_label", opco: "opco_name" },
   lieu: { commune: "city", code_postal: "postal_code", departement: "department", commune_insee: "commune_insee", latitude: "latitude", longitude: "longitude" },
   dirigeant: { nom: "director_name", role: "director_role", email: "director_email", email_verifie: "director_email_verified" },
-  contact: { email: "email", type_email: "email_type", verification: "email_verification", preuve: "email_verification_basis", messagerie: "mail_provider_group", telephone: "phone", delivrable: "deliverable" },
+  contact: { email: "email", type_email: "email_type", verification: "email_verification", preuve: "email_verification_basis", email_envoyable: "email_envoyable", motif_email: "motif_email_non_envoyable", telephone_envoyable: "telephone_envoyable", messagerie: "mail_provider_group", telephone: "phone", delivrable: "deliverable" },
   web: { site: "primary_domain", domaines: "domains", niveau: "web_tier", obsolete: "website_obsolete", https: "has_https", responsive: "has_responsive", outil: "cms", ecommerce: "is_ecommerce", plateforme_ecommerce: "ecom_platform" },
   finances: { chiffre_affaires: "revenue", resultat_net: "net_income", ebe: "ebe", tresorerie_nette: "net_cash", annee: "financials_year", croissance_pct: "revenue_growth_pct", tendance: "revenue_trend", effectif: "headcount_value", taille: "size_band" },
   groupe: { maison_mere: "parent_name", filiales: "subsidiaries_count", tete_de_groupe: "group_root_name", taille_groupe: "group_size" },
@@ -193,7 +193,7 @@ export class SourceClickHouse implements SourceMarche {
 }
 
 /** Colonnes UInt8 de la fiche : 0/1 rendus en oui/non. */
-const OUI_NON = new Set(["dirigeant__email_verifie", "contact__delivrable", "web__obsolete", "web__https", "web__responsive", "web__ecommerce", "signaux__rge", "signaux__qualiopi", "signaux__bio", "signaux__ess"]);
+const OUI_NON = new Set(["dirigeant__email_verifie", "contact__delivrable", "contact__email_envoyable", "contact__telephone_envoyable", "web__obsolete", "web__https", "web__responsive", "web__ecommerce", "signaux__rge", "signaux__qualiopi", "signaux__bio", "signaux__ess"]);
 
 /** Catégories juridiques INSEE les plus courantes, en libellé court ; sinon le code reste lisible. */
 const FORMES: Record<string, string> = {
@@ -284,7 +284,12 @@ export class SourceSimulee implements SourceMarche {
         permis_3_ans: r() < 0.1 ? 1 : 0, score_odh: Math.round(r() * 100), grade: pick(["or", "a_requalifier"]),
       };
     });
-    for (const l of this.lignes) l.email_envoyable = l.email !== "" && l.email_verification !== "n_existe_pas" && l.email_preuve !== "web_disparu";
+    // Simulation de la règle d'ODH : email connu, boîte non inexistante, toujours publié.
+    for (const l of this.lignes) {
+      l.email_envoyable = l.email !== "" && l.email_verification !== "n_existe_pas" && l.email_preuve !== "web_disparu";
+      l.motif_email = l.email === "" || l.email_envoyable ? "" : l.email_verification === "n_existe_pas" ? "boite_inexistante" : "email_disparu_du_site";
+      l.telephone_envoyable = l.telephone !== "";
+    }
   }
   private filtrer(filtre: unknown): Ligne[] {
     compilerFiltre(filtre); // même validation, mêmes erreurs qu'en prod

@@ -87,15 +87,14 @@ describe("source simulée : même sémantique que le SQL", () => {
     expect(rep).toEqual([{ cle: "69", nombre: n }]);
   });
 
-  test("email envoyable : connu, boîte non inexistante, toujours publié (règle ODH du 09/11)", async () => {
+  test("email envoyable : la colonne d'ODH (même règle que leur export Notifuse) ; simulée à l'identique", async () => {
     const envoyable = (l: (typeof s.lignes)[number]) => l.email !== "" && l.email_verification !== "n_existe_pas" && l.email_preuve !== "web_disparu";
     const n = await s.compter({ conditions: [{ champ: "email_envoyable", op: "est", valeur: true }] });
     expect(n).toBe(s.lignes.filter(envoyable).length);
     expect(n).toBeLessThan(s.lignes.filter((l) => l.email !== "").length);
     const { where } = compilerFiltre({ conditions: [{ champ: "email_envoyable", op: "est", valeur: true }] });
-    expect(where).toContain("email_verification != 'n_existe_pas'");
-    expect(where).toContain("email_verification_basis != 'web_disparu'");
-    expect(where).toContain("email != ''");
+    expect(where).toContain("email_envoyable = 1");
+    expect(compilerFiltre({ conditions: [{ champ: "telephone_envoyable", op: "est", valeur: true }] }).where).toContain("telephone_envoyable = 1");
   });
 
   test("tri et répartition refusés hors catalogue", async () => {
