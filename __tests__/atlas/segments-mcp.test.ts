@@ -178,6 +178,11 @@ describe("Atlas par le MCP", () => {
   test("dossier de travail : épingler, idempotent, lister, retirer ; invisible depuis un autre espace", async () => {
     expect((await appel(A, "epingler", { siren: "900000001", nom: "Élevage test", note: "à rappeler" })).epingle).toBe(true);
     await appel(A, "epingler", { siren: "900000001", nom: "Élevage test" });
+    // Sans nom, il est retrouvé par le SIREN (l'IA n'a pas à le recopier) ; SIREN inconnu : message lisible.
+    expect((await appel(A, "epingler", { siren: "900000002" })).epingle).toBe(true);
+    expect((await appel(A, "lister_epingles")).epingles.find((e: { siren: string }) => e.siren === "900000002")?.nom).toBe("Entreprise simulée 2");
+    expect((await appel(A, "epingler", { siren: "999999999" })).erreur).toMatch(/Aucune entreprise/);
+    await appel(A, "retirer_epingle", { siren: "900000002" });
     const l = await appel(A, "lister_epingles");
     expect(l.epingles).toHaveLength(1);
     expect(l.epingles[0]).toMatchObject({ siren: "900000001", note: "à rappeler", auteur: "ia:claude" });

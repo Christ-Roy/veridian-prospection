@@ -215,11 +215,20 @@ const OUTILS_BRUTS: Outil[] = [
   {
     name: "epingler",
     title: "Épingler une entreprise",
-    description: "Ajoute une entreprise au dossier de travail, avec une note facultative.",
-    input: z.object({ siren: z.string().regex(/^\d{9}$/), nom: z.string().trim().min(1).max(200), note: z.string().max(500).optional() }),
+    description: "Ajoute une entreprise au dossier de travail, avec une note facultative. Le nom est retrouvé par le SIREN s'il n'est pas donné.",
+    input: z.object({ siren: z.string().regex(/^\d{9}$/), nom: z.string().trim().min(1).max(200).optional(), note: z.string().max(500).optional() }),
     annotations: { ...ECRITURE, idempotentHint: true },
     visible: peutEcrire,
-    run: lisible(async (a, c) => seg.epingler(c.ctx.tenantId, { siren: a.siren as string, nom: a.nom as string, note: a.note as string | undefined }, auteur(c))),
+    run: lisible(async (a, c) => {
+      let nom = a.nom as string | undefined;
+      if (!nom) {
+        // L'IA n'a pas à recopier le nom : on le lit (fiche prospectable, sinon base maître).
+        const f = (await sourceMarche().fiche(a.siren as string)) ?? (await sourceMarche().ficheMaitre(a.siren as string));
+        nom = typeof f?.identite?.nom === "string" ? f.identite.nom : undefined;
+        if (!nom) throw new ErreurOutil(`Aucune entreprise avec le SIREN ${a.siren}.`);
+      }
+      return seg.epingler(c.ctx.tenantId, { siren: a.siren as string, nom, note: a.note as string | undefined }, auteur(c));
+    }),
   },
   {
     name: "retirer_epingle",
