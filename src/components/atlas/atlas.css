@@ -357,3 +357,13 @@
 .atlas .marche td .barre, .atlas .marche td .barre-p { position: absolute; left: 0; bottom: 3px; height: 3px; border-radius: 2px; }
 .atlas .marche td .barre { background: var(--soft2); }
 .atlas .marche td .barre-p { background: var(--blue); }
+.atlas .marche .dossier { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr); gap: 28px; margin-bottom: 26px; }
+.atlas .marche .dossier h4 { margin: 0 0 10px; font-size: 13px; font-weight: 600; }
+.atlas .marche .dossier .evo { color: var(--blue); font-weight: 500; }
+.atlas .marche .dossier .colonnes { display: flex; align-items: flex-end; gap: 4px; height: 140px; }
+.atlas .marche .dossier .col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 4px; }
+.atlas .marche .dossier .col i { display: block; width: 100%; background: var(--blue); border-radius: 3px 3px 0 0; min-height: 2px; }
+.atlas .marche .dossier .col.encours i { opacity: 0.4; }
+.atlas .marche .dossier .col span { font-size: 10.5px; color: var(--muted); }
+.atlas .marche .dossier .hb { grid-template-columns: 150px minmax(0, 1fr) 64px; gap: 10px; margin-bottom: 8px; font-size: 12.5px; }
+@media (max-width: 900px) { .atlas .marche .dossier { grid-template-columns: 1fr; } }

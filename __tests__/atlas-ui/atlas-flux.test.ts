@@ -33,7 +33,7 @@ import {
   segmentsChanges,
 } from "@/components/atlas/flux";
 import { indexerChamps } from "@/components/atlas/logique";
-import { COLONNES_MARCHE, etiquetteLigne, part } from "@/components/atlas/marche";
+import { COLONNES_MARCHE, etiquetteLigne, evolution, parClasseEffectif, part, serieCreations } from "@/components/atlas/marche";
 import { PREMIERE_DEMANDE, boutonsIA, montrerAccueil } from "@/components/atlas/ia";
 import { REGLES_SUGGEREES, lignesDepuis, suggestionsRestantes } from "@/components/atlas/lignes";
 import { messageExport } from "@/components/atlas/api";
@@ -337,6 +337,29 @@ describe("IA branchées", () => {
   test("un identifiant OAuth opaque ne s'affiche jamais", () => {
     expect(nomAuteur("ia:mcpc_KqLKNSlHyGzUgCXS5gk")).toBe("Assistant IA");
     expect(nomAuteur("ia:Claude")).toBe("Claude");
+  });
+});
+
+describe("dossier du marché", () => {
+  test("créations : quinze ans sans trou, année inconnue écartée, évolution sur dix ans", () => {
+    const lignes = [{ cle: "0", entreprises: 999 }, { cle: "2014", entreprises: 11012 }, { cle: "2024", entreprises: 36645 }, { cle: "2025", entreprises: 3000 }];
+    const s = serieCreations(lignes, 2025);
+    expect(s).toHaveLength(15);
+    expect(s[0]).toEqual({ annee: 2011, n: 0 });
+    expect(s.find((x) => x.annee === 2024)?.n).toBe(36645);
+    expect(s.some((x) => x.annee === 0)).toBe(false);
+    // Une date de création dans le futur (erreur de source) n'entre pas dans la courbe.
+    expect(serieCreations([{ cle: "2027", entreprises: 10 }], 2026).some((x) => x.annee === 2027)).toBe(false);
+    expect(evolution(s, 2025)).toBe("× 3,3 en dix ans");
+    expect(evolution(serieCreations([{ cle: "2014", entreprises: 100 }, { cle: "2024", entreprises: 110 }], 2025), 2025)).toBe("stable sur dix ans");
+    expect(evolution(serieCreations([], 2025), 2025)).toBeNull();
+  });
+  test("taille : codes SIRENE regroupés en cinq classes, sans perte", () => {
+    const l = [{ cle: "NN", entreprises: 10 }, { cle: "00", entreprises: 5 }, { cle: "02", entreprises: 3 }, { cle: "12", entreprises: 2 }, { cle: "53", entreprises: 1 }];
+    const c = parClasseEffectif(l);
+    expect(c.map((x) => x.libelle)[0]).toBe("Non renseignée"); // jamais mêlée au « 0 salarié »
+    expect(c.map((x) => x.n)).toEqual([10, 5, 3, 2, 0, 1]);
+    expect(c.reduce((a, x) => a + x.n, 0)).toBe(21);
   });
 });
 

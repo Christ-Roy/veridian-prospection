@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { appeler, estAnnulation, texteErreur } from "./api";
 import { Chargement, Icone } from "./icones";
 import { formaterNombre, phraseCondition } from "./logique";
-import { AXES_MARCHE, COLONNES_MARCHE, STATUTS_MARCHE, etiquetteLigne, part, type StatutMarche } from "./marche";
+import { AXES_MARCHE, COLONNES_MARCHE, STATUTS_MARCHE, etiquetteLigne, evolution, parClasseEffectif, part, serieCreations, type StatutMarche } from "./marche";
 import type { AnalyseMarche, AxeMarche, ChampInfo, Filtre } from "./types";
 
 type CodeActivite = { naf: string; libelle: string; signaux: string[]; par_nom: number; entreprises_actives: number; contactables: number; email_envoyable: number };
@@ -78,6 +78,79 @@ function RechercheMetier({ onCodes }: { onCodes: (codes: string[]) => void }) {
 }
 
 /**
+ * Dossier du marché, sur toutes les entreprises (cube d'ODH) : la dynamique (créations sur quinze ans), la
+ * structure (taille, forme) ; la partie financière s'ajoutera avec le cube v4.
+ */
+function Dossier({ filtre }: { filtre: Filtre }) {
+  const [d, setD] = useState<{ creations: AnalyseMarche; effectif: AnalyseMarche; forme: AnalyseMarche } | null>(null);
+  const cle = JSON.stringify(filtre);
+  useEffect(() => {
+    const ctl = new AbortController();
+    const f = JSON.parse(cle) as Filtre;
+    setD(null);
+    Promise.all([
+      appeler<AnalyseMarche>("analyser_marche", { filtre: f, axe: "annee_creation", statut: "tous", limite: 200 }, ctl.signal),
+      appeler<AnalyseMarche>("analyser_marche", { filtre: f, axe: "effectif", limite: 30 }, ctl.signal),
+      appeler<AnalyseMarche>("analyser_marche", { filtre: f, axe: "forme", limite: 10 }, ctl.signal),
+    ])
+      .then(([creations, effectif, forme]) => setD({ creations, effectif, forme }))
+      .catch(() => {}); // le dossier est un complément : le tableau dessous dit l'erreur
+    return () => ctl.abort();
+  }, [cle]);
+  if (!d) return <Chargement />;
+  const fin = new Date().getFullYear();
+  const serie = serieCreations(d.creations.lignes, fin);
+  const maxC = Math.max(1, ...serie.map((s) => s.n));
+  const evo = evolution(serie, fin);
+  const classes = parClasseEffectif(d.effectif.lignes);
+  const maxE = Math.max(1, ...classes.map((c) => c.n));
+  const formes = d.forme.lignes.filter((l) => l.entreprises > 0);
+  const maxF = Math.max(1, ...formes.map((l) => l.entreprises));
+  return (
+    <div className="dossier">
+      <section aria-labelledby="dossier-creations">
+        <h4 id="dossier-creations">
+          Créations par an{evo ? <span className="evo"> · {evo}</span> : null}
+        </h4>
+        <div className="colonnes" role="img" aria-label={`Créations par an de ${serie[0].annee} à ${fin}`}>
+          {serie.map((s) => (
+            <div key={s.annee} className={s.annee === fin ? "col encours" : "col"} title={`${s.annee} : ${formaterNombre(s.n)} créations${s.annee === fin ? " (année en cours)" : ""}`}>
+              <i style={{ height: `${Math.max(2, (s.n / maxC) * 100)}%` }} />
+              <span>{String(s.annee).slice(2)}</span>
+            </div>
+          ))}
+        </div>
+        <p className="hint">Toutes les entreprises créées chaque année, actives ou fermées depuis. L&apos;année en cours est partielle.</p>
+      </section>
+      <section aria-labelledby="dossier-taille">
+        <h4 id="dossier-taille">Taille (salariés)</h4>
+        {classes.map((c) => (
+          <div key={c.libelle} className="hb">
+            <span>{c.libelle}</span>
+            <span className="t" aria-hidden>
+              <i style={{ width: `${(c.n / maxE) * 100}%`, background: "var(--blue)" }} />
+            </span>
+            <span className="v num">{formaterNombre(c.n)}</span>
+          </div>
+        ))}
+      </section>
+      <section aria-labelledby="dossier-forme">
+        <h4 id="dossier-forme">Forme</h4>
+        {formes.map((l) => (
+          <div key={l.cle} className="hb">
+            <span>{l.libelle}</span>
+            <span className="t" aria-hidden>
+              <i style={{ width: `${(l.entreprises / maxF) * 100}%`, background: "var(--blue)" }} />
+            </span>
+            <span className="v num">{formaterNombre(l.entreprises)}</span>
+          </div>
+        ))}
+      </section>
+    </div>
+  );
+}
+
+/**
  * Taille du marché entier (cube d'ODH) pour le filtre courant : l'étape « analyse du marché ».
  * Les autres vues ne montrent que les fiches prospectables ; celle-ci compte toutes les entreprises.
  */
@@ -103,6 +176,7 @@ export function VueMarche({ filtre, index, onCodes }: { filtre: Filtre; index: R
   const max = Math.max(1, ...(donnees?.lignes ?? []).map((l) => l.entreprises));
   return (
     <div className="marche">
+      <Dossier filtre={filtre} />
       <RechercheMetier onCodes={onCodes} />
       <div className="tools">
         <label htmlFor="atlas-axe-marche">Répartir par</label>
