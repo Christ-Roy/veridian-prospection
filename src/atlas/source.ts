@@ -154,11 +154,14 @@ export class SourceClickHouse implements SourceMarche {
     const texte = "replaceRegexpAll(normalizeUTF8NFD(lowerUTF8(concat(legal_name, ' ', activity_label))), '\\\\p{Mn}', '')"; // le SQL reçoit '\\p{Mn}' : classe Unicode des accents
     const params: Record<string, SqlParam> = {};
     const conds = radicaux.map((m, i) => {
+      params[`r${i}`] = { type: "String", valeur: m };
       params[`m${i}`] = { type: "String", valeur: motifMot(m) };
-      return `match(${texte}, {m${i}:String})`;
+      // Sous-chaîne d'abord (rapide, mesuré 0,6 s sur 2 M de fiches), mot entier ensuite sur les seules lignes
+      // retenues : l'expression régulière sur toutes les lignes dépassait les 10 s du compte (14/11).
+      return `positionUTF8(t, {r${i}:String}) > 0 AND match(t, {m${i}:String})`;
     });
     const usage = await this.requete<{ naf: string; n: string }>(
-      `SELECT naf_code AS naf, count() AS n FROM ${TABLE} WHERE is_deleted = 0 AND naf_code != '' AND ${conds.join(" AND ")} GROUP BY naf ORDER BY n DESC, naf LIMIT ${Math.min(40, Math.max(1, limite))}`,
+      `WITH ${texte} AS t SELECT naf_code AS naf, count() AS n FROM ${TABLE} WHERE is_deleted = 0 AND naf_code != '' AND ${conds.join(" AND ")} GROUP BY naf ORDER BY n DESC, naf LIMIT ${Math.min(40, Math.max(1, limite))}`,
       params,
     );
     const parNom = new Map(usage.map((u) => [u.naf, Number(u.n)]));

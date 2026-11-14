@@ -48,10 +48,13 @@ describe("source", () => {
     }) as unknown as typeof fetch;
     const s = new SourceClickHouse({ url: "http://ch.test/", user: "u", password: "p" }, fetchImpl);
     const r = await s.activites(["chass"], ["0170Z"], 10);
-    expect(corps[0]).toContain("match(replaceRegexpAll(normalizeUTF8NFD(lowerUTF8(");
+    expect(corps[0]).toContain("WITH replaceRegexpAll(normalizeUTF8NFD(lowerUTF8(");
+    // Filtre rapide d'abord, mot entier ensuite (sinon plus de 10 s en prod).
+    expect(corps[0]).toMatch(/positionUTF8\(t, \{r0:String\}\) > 0 AND match\(t, \{m0:String\}\)/);
     expect(corps[0]).toContain("'\\\\p{Mn}'");
     expect(corps[0]).not.toContain("chass");
     expect(urls[0].searchParams.get("param_m0")).toBe(motifMot("chass"));
+    expect(urls[0].searchParams.get("param_r0")).toBe("chass");
     // Le code dont le libellé correspond passe en tête, même avec peu de noms : il n'est jamais coupé par la limite.
     expect(r[0]).toMatchObject({ naf: "0170Z", signaux: ["libelle", "usage"], contactables: 20 });
     expect(r[1]).toMatchObject({ naf: "9319Z", signaux: ["usage"], par_nom: 218, entreprises_actives: 60000 });
