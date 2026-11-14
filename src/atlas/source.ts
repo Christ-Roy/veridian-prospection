@@ -98,6 +98,8 @@ export class FileAttente {
   }
 }
 
+export const MESSAGE_SANS_FILTRE = "Pour lister les entreprises, précisez une activité (NAF), un nom ou un département : les totaux de la France entière sont dans analyser_marche.";
+export const MESSAGE_TROP_LARGE = "Filtre trop large pour lister ici : ajoutez une activité (NAF) ou un nom.";
 /** Limites du compte dépassées (lignes lues, durée, octets) : un filtre trop large, pas une panne. */
 const LIMITE_DEPASSEE = /Code: (158|159|307)\b|TOO_MANY_ROWS|TIMEOUT_EXCEEDED|TOO_MANY_BYTES/;
 const TROP_DE_REQUETES = /TOO_MANY_SIMULTANEOUS_QUERIES|Code: 202\b/;
@@ -213,15 +215,21 @@ export class SourceClickHouse implements SourceMarche {
     // trop large pour trier tout le résultat dans les limites du compte, aucun tri : l'ordre physique de la table
     // (rangée par NAF et département, pas par SIREN) ne lit que la page ; un tri par SIREN lirait les 30 M.
     const sql = (ordre: string | null) => `SELECT ${cols.join(", ")} FROM ${TABLE_MAITRE} WHERE ${c.where}${ordre ? ` ORDER BY ${ordre}` : ""} LIMIT ${n} OFFSET ${(p - 1) * n}`;
+    // Sans filtre, ClickHouse estime 16 M de lignes avant même de lire et refuse (mesuré en prod le 14/11) :
+    // on demande un critère plutôt que d'échouer ; les totaux de la France entière viennent du cube.
+    if (!c.filtre) throw new FiltreInvalide(MESSAGE_SANS_FILTRE);
     let lignes: Ligne[];
-    if (!c.filtre) lignes = await this.requete<Ligne>(sql(null), c.params);
-    else
+    try {
+      lignes = await this.requete<Ligne>(sql("rank DESC, siren"), c.params);
+    } catch (e) {
+      if (!(e instanceof Error && LIMITE_DEPASSEE.test(e.message))) throw e;
       try {
-        lignes = await this.requete<Ligne>(sql("rank DESC, siren"), c.params);
-      } catch (e) {
-        if (!(e instanceof Error && LIMITE_DEPASSEE.test(e.message))) throw e;
         lignes = await this.requete<Ligne>(sql(null), c.params);
+      } catch (e2) {
+        if (e2 instanceof Error && LIMITE_DEPASSEE.test(e2.message)) throw new FiltreInvalide(MESSAGE_TROP_LARGE);
+        throw e2;
       }
+    }
     return {
       colonnes: Object.keys(COLONNES_MAITRE),
       lignes: lignes.map((l) => Object.fromEntries(Object.entries(l).map(([k, v]) => [k, k.startsWith("a_") || k === "prospectable" ? Number(v) === 1 : v === "" ? null : v]))),
@@ -436,7 +444,8 @@ export class SourceSimulee implements SourceMarche {
     return c.filtre ? this.filtrer({ conditions }).length : null;
   }
   async listerMaitre(filtre: unknown, page: number, parPage: number) {
-    const { conditions } = this.traduisibles(filtre);
+    const { c, conditions } = this.traduisibles(filtre);
+    if (!c.filtre) throw new FiltreInvalide(MESSAGE_SANS_FILTRE);
     const ls = this.filtrer({ conditions });
     const lignes = ls.slice((page - 1) * parPage, page * parPage).map((l) => ({
       siren: l.siren, nom: l.nom, enseigne: null, commune: l.commune, departement: l.departement, naf: l.naf, forme: "societe", effectif: null,

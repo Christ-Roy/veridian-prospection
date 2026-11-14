@@ -314,7 +314,10 @@ export function VueTableau({
   const cleCols = colonnes.join(",");
 
   useEffect(() => setPage(1), [cle]);
+  // Base maître sans critère : 30 M d'entreprises, on demande d'abord un critère (aucune requête).
+  const sansCritere = base === "maitre" && filtre.conditions.length === 0;
   useEffect(() => {
+    if (sansCritere) return;
     const ctl = new AbortController();
     setBusy(true);
     setErreur(null);
@@ -330,7 +333,7 @@ export function VueTableau({
       .catch((e) => !estAnnulation(e) && setErreur(texteErreur(e)))
       .finally(() => !ctl.signal.aborted && setBusy(false));
     return () => ctl.abort();
-  }, [cle, cleCols, page, essai, base]);
+  }, [cle, cleCols, page, essai, base, sansCritere]);
 
   return (
     <div>
@@ -344,6 +347,10 @@ export function VueTableau({
           </>
         )}
       </div>
+      {sansCritere ? (
+        <p className="empty">Choisissez une activité, un nom ou un département (Filtres, ou un métier dans « Taille du marché ») pour lister les entreprises.</p>
+      ) : (
+        <>
       {erreur && <Erreur texte={erreur} onReessayer={() => setEssai((n) => n + 1)} />}
       {!apercu && !erreur && <Chargement />}
       {apercu && apercu.lignes.length === 0 && <p className="empty">Aucune entreprise ne répond à ces filtres.</p>}
@@ -351,6 +358,8 @@ export function VueTableau({
         <>
           <Tableau apercu={apercu} index={index} onFiche={onFiche} busy={busy} montrerSiren={colonnes.includes("siren")} />
           <Pager page={page} total={apercu.total} parPage={PAR_PAGE} busy={busy} onPage={setPage} />
+        </>
+      )}
         </>
       )}
     </div>
