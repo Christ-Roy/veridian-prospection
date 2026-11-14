@@ -206,8 +206,9 @@ export class SourceClickHouse implements SourceMarche {
     const n = Math.min(100, Math.max(1, Math.trunc(parPage)));
     const p = Math.max(1, Math.trunc(page));
     const cols = Object.entries(COLONNES_MAITRE).map(([id, col]) => `${col} AS ${id}`);
-    // Tri par SIREN : l'ordre physique dans un NAF × département, très rapide (mesuré 0,03 s par ODH).
-    const lignes = await this.requete<Ligne>(`SELECT ${cols.join(", ")} FROM ${TABLE_MAITRE} WHERE ${c.where} ORDER BY siren LIMIT ${n} OFFSET ${(p - 1) * n}`, c.params);
+    // Tri par pertinence d'ODH (rank) : par SIREN, « chasseurs » sortait d'abord des syndics de copropriété.
+    // Mesuré le 14/11 : 0,5 à 0,8 s, même sur un NAF de 262 000 entreprises.
+    const lignes = await this.requete<Ligne>(`SELECT ${cols.join(", ")} FROM ${TABLE_MAITRE} WHERE ${c.where} ORDER BY rank DESC, siren LIMIT ${n} OFFSET ${(p - 1) * n}`, c.params);
     return {
       colonnes: Object.keys(COLONNES_MAITRE),
       lignes: lignes.map((l) => Object.fromEntries(Object.entries(l).map(([k, v]) => [k, k.startsWith("a_") || k === "prospectable" ? Number(v) === 1 : v === "" ? null : v]))),

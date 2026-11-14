@@ -322,7 +322,7 @@ export function VueTableau({
     const requete =
       base === "maitre"
         ? appeler<Omit<ApercuMarche, "total"> & { total: number | null; page_suivante: number | null }>("lister_entreprises", { filtre: f, page, par_page: PAR_PAGE }, ctl.signal).then(
-            (r): ApercuMarche => ({ ...r, parPage: PAR_PAGE, tri: "siren", total: r.total ?? (page - 1) * PAR_PAGE + r.lignes.length + (r.page_suivante ? 1 : 0) }),
+            (r): ApercuMarche => ({ ...r, parPage: PAR_PAGE, tri: "rank", total: r.total ?? (page - 1) * PAR_PAGE + r.lignes.length + (r.page_suivante ? 1 : 0) }),
           )
         : appeler<ApercuMarche>("explorer_marche", { filtre: f, colonnes: cleCols.split(","), page, par_page: PAR_PAGE }, ctl.signal);
     requete

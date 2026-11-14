@@ -63,7 +63,7 @@ describe("source ClickHouse : base maître", () => {
       new Response(JSON.stringify({ data: [{ siren: "812611853", nom: "LES CHASSES DE DIANE", enseigne: "", a_email: 1, a_telephone: "0", a_site: 1, prospectable: 0 }] })),
     );
     const r = await s.listerMaitre({ conditions: [{ champ: "naf", op: "dans", valeur: ["9319Z"] }] }, 2, 20);
-    expect(sql[0]).toMatch(/FROM odh\.company_master_current WHERE .* ORDER BY siren LIMIT 20 OFFSET 20 FORMAT JSON$/);
+    expect(sql[0]).toMatch(/FROM odh\.company_master_current WHERE .* ORDER BY rank DESC, siren LIMIT 20 OFFSET 20 FORMAT JSON$/);
     // Seulement des drapeaux (has_email…) : aucune colonne de coordonnée brute n'est lue.
     expect(sql[0]).not.toMatch(/\b(emails|phones|domains|email|phone)\b(?= AS| FROM|,)/);
     expect(r.lignes[0]).toMatchObject({ nom: "LES CHASSES DE DIANE", enseigne: null, a_email: true, a_telephone: false, prospectable: false });
