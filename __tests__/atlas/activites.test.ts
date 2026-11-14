@@ -5,20 +5,28 @@
 import { describe, expect, test } from "vitest";
 
 import { FiltreInvalide } from "@/atlas/filtres";
-import { codesParLibelle, motsCles, normaliser, validerActivites } from "@/atlas/activites";
+import { codesParLibelle, motifMot, motsCles, normaliser, validerActivites } from "@/atlas/activites";
 import { SourceClickHouse, SourceSimulee } from "@/atlas/source";
 
 describe("mots et libellés", () => {
   test("radicaux : sans accents, pluriels et mots vides retirés", () => {
     expect(normaliser("Élevage")).toBe("elevage");
     expect(motsCles("Les chasseurs")).toEqual(["chass"]);
-    expect(motsCles("toilettage pour chiens")).toEqual(["toilettage", "chien"]);
+    expect(motsCles("toilettage pour chiens")).toEqual(["toilett", "chien"]);
+    expect(motsCles("éleveurs")).toEqual(["elev"]);
   });
   test("libellés officiels : chasse → 0170Z, élevage de chiens → 0149Z jamais en dur", () => {
     expect(codesParLibelle(motsCles("chasse"))).toContain("0170Z");
     expect(codesParLibelle(motsCles("élevage"))).toEqual(expect.arrayContaining(["0141Z", "0149Z"]));
     expect(codesParLibelle([])).toEqual([]);
   });
+  test("mot entier de la famille : chasse, chasseurs oui ; Chasseneuil, châssis non", () => {
+    const r = new RegExp(motifMot("chass"));
+    for (const ok of ["federation des chasseurs", "societe de chasse", "le chasseur"]) expect(r.test(ok), ok).toBe(true);
+    for (const non of ["chasseneuil du poitou", "chassagne montrachet", "garage du chassis"]) expect(r.test(non), non).toBe(false);
+    expect(new RegExp(motifMot("toilett")).test("salon de toilettage")).toBe(true);
+  });
+
   test("entrée : 3 lettres au moins, erreur lisible", () => {
     expect(() => validerActivites({ mots: "ab" })).toThrow(FiltreInvalide);
     expect(validerActivites({ mots: "Chasseurs" }).radicaux).toEqual(["chass"]);
@@ -40,12 +48,13 @@ describe("source", () => {
     }) as unknown as typeof fetch;
     const s = new SourceClickHouse({ url: "http://ch.test/", user: "u", password: "p" }, fetchImpl);
     const r = await s.activites(["chass"], ["0170Z"], 10);
-    expect(corps[0]).toContain("positionUTF8(replaceRegexpAll(normalizeUTF8NFD(lowerUTF8(");
+    expect(corps[0]).toContain("match(replaceRegexpAll(normalizeUTF8NFD(lowerUTF8(");
     expect(corps[0]).toContain("'\\\\p{Mn}'");
     expect(corps[0]).not.toContain("chass");
-    expect(urls[0].searchParams.get("param_m0")).toBe("chass");
-    expect(r[0]).toMatchObject({ naf: "9319Z", signaux: ["usage"], par_nom: 218, entreprises_actives: 60000 });
-    expect(r[1]).toMatchObject({ naf: "0170Z", signaux: ["libelle", "usage"], contactables: 20 });
+    expect(urls[0].searchParams.get("param_m0")).toBe(motifMot("chass"));
+    // Le code dont le libellé correspond passe en tête, même avec peu de noms : il n'est jamais coupé par la limite.
+    expect(r[0]).toMatchObject({ naf: "0170Z", signaux: ["libelle", "usage"], contactables: 20 });
+    expect(r[1]).toMatchObject({ naf: "9319Z", signaux: ["usage"], par_nom: 218, entreprises_actives: 60000 });
   });
   test("simulée : même forme, codes par nom", async () => {
     const r = await new SourceSimulee(300).activites(["simulee"], [], 5);

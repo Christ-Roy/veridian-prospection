@@ -4,7 +4,7 @@
  * compte) : source simulée déterministe, signalée par `simulee: true` dans chaque réponse.
  */
 import { CHAMP, CHAMPS, type Champ } from "./champs";
-import type { CodeActivite } from "./activites";
+import { motifMot, type CodeActivite } from "./activites";
 import { compilerCube, libelleCube, mesures, TABLE_CUBE, type ResultatCube } from "./cube";
 import { NAF_LIBELLES } from "./naf";
 import { FiltreInvalide, FiltreSchema, ScoringSchema, colonnesSql, compilerFiltre, type Condition, type SqlParam } from "./filtres";
@@ -154,8 +154,8 @@ export class SourceClickHouse implements SourceMarche {
     const texte = "replaceRegexpAll(normalizeUTF8NFD(lowerUTF8(concat(legal_name, ' ', activity_label))), '\\\\p{Mn}', '')"; // le SQL reçoit '\\p{Mn}' : classe Unicode des accents
     const params: Record<string, SqlParam> = {};
     const conds = radicaux.map((m, i) => {
-      params[`m${i}`] = { type: "String", valeur: m };
-      return `positionUTF8(${texte}, {m${i}:String}) > 0`;
+      params[`m${i}`] = { type: "String", valeur: motifMot(m) };
+      return `match(${texte}, {m${i}:String})`;
     });
     const usage = await this.requete<{ naf: string; n: string }>(
       `SELECT naf_code AS naf, count() AS n FROM ${TABLE} WHERE is_deleted = 0 AND naf_code != '' AND ${conds.join(" AND ")} GROUP BY naf ORDER BY n DESC, naf LIMIT ${Math.min(40, Math.max(1, limite))}`,
@@ -181,7 +181,7 @@ export class SourceClickHouse implements SourceMarche {
         contactables: Number(parCode.get(c)?.contactables ?? 0),
         email_envoyable: Number(parCode.get(c)?.email ?? 0),
       }))
-      .sort((a, b) => b.par_nom - a.par_nom || b.entreprises_actives - a.entreprises_actives)
+      .sort((a, b) => Number(b.signaux.includes("libelle")) - Number(a.signaux.includes("libelle")) || b.par_nom - a.par_nom || b.entreprises_actives - a.entreprises_actives)
       .slice(0, limite);
   }
 
@@ -344,7 +344,7 @@ export class SourceSimulee implements SourceMarche {
     const parNom = new Map<string, number>();
     for (const l of this.lignes) {
       const t = n(`${l.nom} ${l.activite}`);
-      if (radicaux.every((m) => t.includes(m))) parNom.set(String(l.naf), (parNom.get(String(l.naf)) ?? 0) + 1);
+      if (radicaux.every((m) => new RegExp(motifMot(m)).test(t))) parNom.set(String(l.naf), (parNom.get(String(l.naf)) ?? 0) + 1);
     }
     const libelles = new Set(codesLibelle);
     return [...new Set([...codesLibelle, ...parNom.keys()])]
@@ -360,7 +360,7 @@ export class SourceSimulee implements SourceMarche {
           email_envoyable: ls.filter((l) => l.email_envoyable).length,
         };
       })
-      .sort((a, b) => b.par_nom - a.par_nom || b.entreprises_actives - a.entreprises_actives)
+      .sort((a, b) => Number(b.signaux.includes("libelle")) - Number(a.signaux.includes("libelle")) || b.par_nom - a.par_nom || b.entreprises_actives - a.entreprises_actives)
       .slice(0, limite);
   }
 

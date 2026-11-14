@@ -22,21 +22,31 @@ export function normaliser(s: string): string {
   return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 }
 
-/** Mots significatifs (3 lettres et plus, sans les mots vides), radical court pour attraper les pluriels. */
+/** Mots significatifs (3 lettres et plus, sans les mots vides), réduits à leur radical (pluriel, -eur, -age…). */
 export function motsCles(mots: string): string[] {
   const vides = new Set(["les", "des", "pour", "avec", "sans", "dans", "aux", "une", "est", "par", "sur", "and"]);
   return [...new Set(normaliser(mots).split(/[^a-z0-9]+/).filter((m) => m.length >= 3 && !vides.has(m)))]
-    .map((m) => (m.length > 5 ? m.replace(/(s|x|eurs?|euses?|es)$/, "") : m))
+    .map((m) => (m.length > 5 ? m.replace(/(eurs?|euses?|ages?|ieres?|iers?|es|s|x|e)$/, "") : m.replace(/(s|x)$/, "")))
     .slice(0, 5);
 }
 
-/** Sous-classes dont le libellé contient TOUS les mots (radicaux). */
+/**
+ * Un radical se cherche comme MOT ENTIER de sa famille (chasse, chasses, chasseur, chasseurs…), jamais comme
+ * début de mot : « chass » ne doit pas attraper « Chasseneuil » ni « châssis ». Même motif en SQL et en JS.
+ */
+export const FAMILLE = "(e|es|s|x|eur|eurs|euse|euses|age|ages|ier|iers|iere|ieres)?";
+export function motifMot(radical: string): string {
+  return `(^|[^a-z0-9])${radical.replace(/[^a-z0-9]/g, "")}${FAMILLE}([^a-z0-9]|$)`;
+}
+
+/** Sous-classes dont le libellé contient TOUS les mots (familles de mots entiers). */
 export function codesParLibelle(mots: readonly string[]): string[] {
   if (!mots.length) return [];
+  const motifs = mots.map((m) => new RegExp(motifMot(m)));
   return Object.entries(NAF_LIBELLES)
     .filter(([, l]) => {
       const n = normaliser(l);
-      return mots.every((m) => n.includes(m));
+      return motifs.every((r) => r.test(n));
     })
     .map(([c]) => c);
 }
