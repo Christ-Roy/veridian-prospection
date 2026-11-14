@@ -98,6 +98,8 @@ export class FileAttente {
   }
 }
 
+/** Limites du compte dépassées (lignes lues, durée, octets) : un filtre trop large, pas une panne. */
+const LIMITE_DEPASSEE = /Code: (158|159|307)\b|TOO_MANY_ROWS|TIMEOUT_EXCEEDED|TOO_MANY_BYTES/;
 const TROP_DE_REQUETES = /TOO_MANY_SIMULTANEOUS_QUERIES|Code: 202\b/;
 
 export class SourceClickHouse implements SourceMarche {
@@ -196,7 +198,7 @@ export class SourceClickHouse implements SourceMarche {
       return Number(r[0]?.n ?? 0);
     } catch (e) {
       // Filtre trop large pour les 15 M lignes du compte : on le dit plutôt que d'échouer.
-      if (e instanceof Error && /Code: (158|159|307)\b|TOO_MANY_ROWS|TIMEOUT_EXCEEDED|TOO_MANY_BYTES/.test(e.message)) return null;
+      if (e instanceof Error && LIMITE_DEPASSEE.test(e.message)) return null;
       throw e;
     }
   }
@@ -207,8 +209,19 @@ export class SourceClickHouse implements SourceMarche {
     const p = Math.max(1, Math.trunc(page));
     const cols = Object.entries(COLONNES_MAITRE).map(([id, col]) => `${col} AS ${id}`);
     // Tri par pertinence d'ODH (rank) : par SIREN, « chasseurs » sortait d'abord des syndics de copropriété.
-    // Mesuré le 14/11 : 0,5 à 0,8 s, même sur un NAF de 262 000 entreprises.
-    const lignes = await this.requete<Ligne>(`SELECT ${cols.join(", ")} FROM ${TABLE_MAITRE} WHERE ${c.where} ORDER BY rank DESC, siren LIMIT ${n} OFFSET ${(p - 1) * n}`, c.params);
+    // Mesuré le 14/11 : 0,5 à 0,8 s, même sur un NAF de 262 000 entreprises. Sans filtre, ou si le filtre est
+    // trop large pour trier tout le résultat dans les limites du compte, aucun tri : l'ordre physique de la table
+    // (rangée par NAF et département, pas par SIREN) ne lit que la page ; un tri par SIREN lirait les 30 M.
+    const sql = (ordre: string | null) => `SELECT ${cols.join(", ")} FROM ${TABLE_MAITRE} WHERE ${c.where}${ordre ? ` ORDER BY ${ordre}` : ""} LIMIT ${n} OFFSET ${(p - 1) * n}`;
+    let lignes: Ligne[];
+    if (!c.filtre) lignes = await this.requete<Ligne>(sql(null), c.params);
+    else
+      try {
+        lignes = await this.requete<Ligne>(sql("rank DESC, siren"), c.params);
+      } catch (e) {
+        if (!(e instanceof Error && LIMITE_DEPASSEE.test(e.message))) throw e;
+        lignes = await this.requete<Ligne>(sql(null), c.params);
+      }
     return {
       colonnes: Object.keys(COLONNES_MAITRE),
       lignes: lignes.map((l) => Object.fromEntries(Object.entries(l).map(([k, v]) => [k, k.startsWith("a_") || k === "prospectable" ? Number(v) === 1 : v === "" ? null : v]))),

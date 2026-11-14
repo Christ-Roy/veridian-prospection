@@ -58,6 +58,18 @@ describe("source ClickHouse : base maître", () => {
     await expect(autre.s.compterMaitre({ conditions: [{ champ: "naf", op: "dans", valeur: ["7500Z"] }] })).rejects.toThrow(/Syntax/);
   });
 
+  test("lister sans filtre : aucun tri (jamais un tri sur 30 M) ; tri trop large : repli sans panne", async () => {
+    const { s, sql } = source(() => new Response(JSON.stringify({ data: [] })));
+    await s.listerMaitre({}, 1, 20);
+    expect(sql[0]).toMatch(/WHERE administrative_status = 'A' LIMIT 20 OFFSET 0/);
+    expect(sql[0]).not.toContain("ORDER BY");
+    let n = 0;
+    const repli = source(() => (n++ === 0 ? new Response("Code: 158. Limit for rows exceeded", { status: 500 }) : new Response(JSON.stringify({ data: [] }))));
+    await repli.s.listerMaitre({ conditions: [{ champ: "departement", op: "dans", valeur: ["75"] }] }, 1, 20);
+    expect(repli.sql[0]).toMatch(/ORDER BY rank DESC, siren/);
+    expect(repli.sql[1]).not.toContain("ORDER BY");
+  });
+
   test("lister : colonnes de la base maître, drapeaux en vrai/faux, aucune coordonnée", async () => {
     const { s, sql } = source(() =>
       new Response(JSON.stringify({ data: [{ siren: "812611853", nom: "LES CHASSES DE DIANE", enseigne: "", a_email: 1, a_telephone: "0", a_site: 1, prospectable: 0 }] })),
