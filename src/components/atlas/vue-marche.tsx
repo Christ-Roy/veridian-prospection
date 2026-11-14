@@ -8,11 +8,80 @@ import { formaterNombre, phraseCondition } from "./logique";
 import { AXES_MARCHE, COLONNES_MARCHE, STATUTS_MARCHE, etiquetteLigne, part, type StatutMarche } from "./marche";
 import type { AnalyseMarche, AxeMarche, ChampInfo, Filtre } from "./types";
 
+type CodeActivite = { naf: string; libelle: string; signaux: string[]; par_nom: number; entreprises_actives: number; contactables: number; email_envoyable: number };
+
+/** Trouver les codes d'un métier : libellés officiels et codes réellement portés par les entreprises du métier. */
+function RechercheMetier({ onCodes }: { onCodes: (codes: string[]) => void }) {
+  const [mots, setMots] = useState("");
+  const [codes, setCodes] = useState<CodeActivite[] | null>(null);
+  const [choisis, setChoisis] = useState<Set<string>>(new Set());
+  const [erreur, setErreur] = useState<string | null>(null);
+  const [envoi, setEnvoi] = useState(false);
+  const chercher = async () => {
+    setEnvoi(true);
+    setErreur(null);
+    try {
+      const r = await appeler<{ codes: CodeActivite[] }>("chercher_activites", { mots });
+      setCodes(r.codes);
+      setChoisis(new Set(r.codes.filter((c) => c.signaux.includes("libelle") || c.par_nom >= 20).map((c) => c.naf)));
+    } catch (e) {
+      setErreur(texteErreur(e));
+    } finally {
+      setEnvoi(false);
+    }
+  };
+  return (
+    <div className="metier">
+      <form
+        className="tools"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (mots.trim().length >= 3) void chercher();
+        }}
+      >
+        <label htmlFor="atlas-metier">Un métier</label>
+        <input id="atlas-metier" className="sel" type="search" placeholder="ex. chasse, toilettage chien" value={mots} onChange={(e) => setMots(e.target.value)} />
+        <button type="submit" className="btn" disabled={envoi || mots.trim().length < 3}>
+          {envoi ? "Recherche…" : "Trouver les codes"}
+        </button>
+      </form>
+      {erreur && <p className="err">{erreur}</p>}
+      {codes && codes.length === 0 && <p className="hint">Aucun code trouvé : essayez un autre mot.</p>}
+      {codes && codes.length > 0 && (
+        <>
+          <p className="hint">Codes dont le libellé correspond, et codes portés par les entreprises du métier (par leur nom). Cochez ceux qui ont du sens.</p>
+          <div className="codes">
+            {codes.map((c) => (
+              <label key={c.naf} className="ck">
+                <input
+                  type="checkbox"
+                  checked={choisis.has(c.naf)}
+                  onChange={(e) => setChoisis((s) => { const n = new Set(s); if (e.target.checked) n.add(c.naf); else n.delete(c.naf); return n; })}
+                />
+                <span>
+                  <b>{c.naf}</b> {c.libelle}
+                  <i>
+                    {formaterNombre(c.entreprises_actives)} entreprises · {formaterNombre(c.contactables)} contactables
+                    {c.par_nom ? ` · ${formaterNombre(c.par_nom)} par le nom` : ""}
+                  </i>
+                </span>
+              </label>
+            ))}
+          </div>
+          <button type="button" className="btn pri" disabled={choisis.size === 0} onClick={() => onCodes([...choisis])}>
+            Filtrer sur ces {choisis.size} code{choisis.size > 1 ? "s" : ""}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 /**
  * Taille du marché entier (cube d'ODH) pour le filtre courant : l'étape « analyse du marché ».
  * Les autres vues ne montrent que les fiches prospectables ; celle-ci compte toutes les entreprises.
  */
-export function VueMarche({ filtre, index }: { filtre: Filtre; index: ReadonlyMap<string, ChampInfo> }) {
+export function VueMarche({ filtre, index, onCodes }: { filtre: Filtre; index: ReadonlyMap<string, ChampInfo>; onCodes: (codes: string[]) => void }) {
   const [axe, setAxe] = useState<AxeMarche>(() => (filtre.conditions.some((c) => c.champ === "naf" && c.op === "dans") ? "naf" : "departement"));
   const [statut, setStatut] = useState<StatutMarche>("actif");
   const [donnees, setDonnees] = useState<AnalyseMarche | null>(null);
@@ -31,8 +100,10 @@ export function VueMarche({ filtre, index }: { filtre: Filtre; index: ReadonlyMa
   }, [cle, axe, statut, essai]);
 
   const t = donnees?.total;
+  const max = Math.max(1, ...(donnees?.lignes ?? []).map((l) => l.entreprises));
   return (
     <div className="marche">
+      <RechercheMetier onCodes={onCodes} />
       <div className="tools">
         <label htmlFor="atlas-axe-marche">Répartir par</label>
         <select id="atlas-axe-marche" className="sel" value={axe} onChange={(e) => setAxe(e.target.value as AxeMarche)}>
@@ -112,7 +183,11 @@ export function VueMarche({ filtre, index }: { filtre: Filtre; index: ReadonlyMa
                 <tbody>
                   {donnees.lignes.map((l) => (
                     <tr key={l.cle} className="statique">
-                      <td title={etiquetteLigne(l.cle, l.libelle)}>{etiquetteLigne(l.cle, l.libelle)}</td>
+                      <td title={etiquetteLigne(l.cle, l.libelle)}>
+                        <span className="barre" aria-hidden style={{ width: `${Math.max(2, (l.entreprises / max) * 100)}%` }} />
+                        <span className="barre-p" aria-hidden style={{ width: `${(l.prospectables / max) * 100}%` }} />
+                        {etiquetteLigne(l.cle, l.libelle)}
+                      </td>
                       {COLONNES_MARCHE.map((c) => (
                         <td key={c.id} className="num">
                           {formaterNombre(l[c.id])}

@@ -794,7 +794,13 @@ export function AtlasApp() {
             ) : vue === "carte" ? (
               <Carte base={baseMarche ? "marche" : "prospection"} filtre={filtreVue} index={index} descente={descente} onDescente={setDescente} onFiche={ouvrirFiche} />
             ) : vue === "marche" ? (
-              <VueMarche filtre={filtreChiffres} index={index} />
+              <VueMarche
+                filtre={filtreChiffres}
+                index={index}
+                onCodes={(codes) =>
+                  void changerFiltre({ ...travail, conditions: [...travail.conditions.filter((c) => c.champ !== "naf"), { champ: "naf", op: "dans", valeur: codes }] })
+                }
+              />
             ) : vue === "barres" ? (
               <VueBarres filtre={filtreChiffres} champs={champs} index={index} />
             ) : vue === "entonnoir" ? (

@@ -347,3 +347,13 @@
 .atlas .mexport .menu .later { color: var(--muted); cursor: default; }
 .atlas .mexport .menu .hint { padding: 4px 10px 2px; }
 .atlas .mexport .menu .lnk { padding: 2px 10px 6px; font-size: 12.5px; }
+.atlas .marche .metier { margin-bottom: 18px; display: flex; flex-direction: column; gap: 10px; max-width: 900px; }
+.atlas .marche .metier input[type="search"] { min-width: 240px; }
+.atlas .marche .codes { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 6px 16px; }
+.atlas .marche .codes .ck { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }
+.atlas .marche .codes .ck i { display: block; font-style: normal; color: var(--muted); font-size: 12px; }
+.atlas .marche .metier .btn.pri { align-self: flex-start; }
+.atlas .marche td { position: relative; }
+.atlas .marche td .barre, .atlas .marche td .barre-p { position: absolute; left: 0; bottom: 3px; height: 3px; border-radius: 2px; }
+.atlas .marche td .barre { background: var(--soft2); }
+.atlas .marche td .barre-p { background: var(--blue); }

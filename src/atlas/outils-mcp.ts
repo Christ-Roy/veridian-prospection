@@ -10,6 +10,7 @@ import { ErreurOutil } from "@/lib/mcp/erreur";
 import { isRateLimited } from "@/lib/rate-limit";
 
 import { CHAMPS, OPERATEURS } from "./champs";
+import { EntreeActivitesSchema, codesParLibelle, validerActivites } from "./activites";
 import { EntreeCubeSchema, entreeDepuisFiltre } from "./cube";
 import { FiltreInvalide } from "./filtres";
 import { sourceMarche } from "./source";
@@ -66,7 +67,10 @@ const OUTILS_BRUTS: Outil[] = [
   {
     name: "explorer_marche",
     title: "Explorer le marché",
-    description: "Compte et donne un aperçu des entreprises françaises répondant à un filtre, sans rien enregistrer ; paginé.",
+    description:
+      "Liste et compte les FICHES PROSPECTABLES (environ 1,3 M d'entreprises contactables, non bloquées) qui répondent à un filtre ; paginé, rien n'est enregistré. " +
+      "Ce n'est pas la taille du marché : `marche_entier` (quand le filtre s'y prête) ou analyser_marche comptent TOUTES les entreprises de France. " +
+      "Pour trouver les codes NAF d'un métier, appeler d'abord chercher_activites.",
     input: z.object({
       filtre: FILTRE,
       colonnes: z.array(z.string()).max(25).optional(),
@@ -81,7 +85,13 @@ const OUTILS_BRUTS: Outil[] = [
         s.apercu(a.filtre, { colonnes: (a.colonnes as string[]) ?? ["nom", "commune", "departement", "naf"], page: a.page as number, parPage: a.par_page as number }),
       ]);
       const suivante = (a.page as number) * (a.par_page as number) < total ? (a.page as number) + 1 : null;
-      return avecSource({ total, page_suivante: suivante, ...apercu });
+      // Le marché entier à côté des fiches : sans lui, « 20 chasseurs » se lit comme la taille du marché.
+      const { entree, ignorees } = entreeDepuisFiltre(a.filtre);
+      const entier = await s
+        .marche(entree)
+        .then((m) => ({ entreprises_actives: m.total.entreprises, contactables: m.total.prospectables, email_envoyable: m.total.email_envoyable, conditions_non_comptees: ignorees }))
+        .catch(() => null);
+      return avecSource({ total, page_suivante: suivante, ...apercu, ...(entier ? { marche_entier: entier } : {}) });
     }),
   },
   {
@@ -113,6 +123,22 @@ const OUTILS_BRUTS: Outil[] = [
         conditions_ignorees: depuis.ignorees,
         lecture: "« connu » = contact trouvé, même écarté ensuite ; « envoyable » = ce qu'on peut promettre. Département vide = adresse non diffusée.",
       });
+    }),
+  },
+  {
+    name: "chercher_activites",
+    title: "Trouver les codes NAF d'un métier",
+    description:
+      "À appeler AVANT de définir un marché par activité. Donne, pour des mots (« chasse », « toilettage chien »), les codes NAF dont le libellé " +
+      "correspond (signal libelle) ET ceux réellement portés par les entreprises dont le nom ou l'activité contient ces mots (signal usage, " +
+      "par_nom), avec la taille du marché entier de chaque code. Un métier tient rarement dans un seul code : regroupez ceux qui ont du sens, " +
+      "puis combinez avec une condition sur le nom si besoin. Aucune liste n'est figée : c'est à vous de juger.",
+    input: EntreeActivitesSchema,
+    annotations: LECTURE,
+    run: lisible(async (a) => {
+      const e = validerActivites(a);
+      const codes = await sourceMarche().activites(e.radicaux, codesParLibelle(e.radicaux), e.limite);
+      return avecSource({ mots: e.radicaux, codes, lecture: "par_nom : fiches lisibles par Atlas dont le nom ou l'activité contient les mots ; entreprises_actives : tout le marché (cube)." });
     }),
   },
   {

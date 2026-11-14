@@ -4,7 +4,9 @@
  * compte) : source simulée déterministe, signalée par `simulee: true` dans chaque réponse.
  */
 import { CHAMP, CHAMPS, type Champ } from "./champs";
-import { compilerCube, libelleCube, mesures, type ResultatCube } from "./cube";
+import type { CodeActivite } from "./activites";
+import { compilerCube, libelleCube, mesures, TABLE_CUBE, type ResultatCube } from "./cube";
+import { NAF_LIBELLES } from "./naf";
 import { FiltreInvalide, FiltreSchema, ScoringSchema, colonnesSql, compilerFiltre, type Condition, type SqlParam } from "./filtres";
 
 export type Ligne = Record<string, string | number | boolean | null>;
@@ -39,6 +41,8 @@ export interface SourceMarche {
   repartition(filtre: unknown, champ: string, limite?: number): Promise<{ cle: string; nombre: number }[]>;
   /** Taille du marché entier, d'après le cube d'ODH (voir cube.ts). */
   marche(entree: unknown): Promise<ResultatCube>;
+  /** Codes NAF d'un métier : par libellé et par usage réel (voir activites.ts). */
+  activites(radicaux: readonly string[], codesLibelle: readonly string[], limite: number): Promise<CodeActivite[]>;
 }
 
 const TABLE = "odh.company_prospection_current";
@@ -143,6 +147,42 @@ export class SourceClickHouse implements SourceMarche {
         : [],
       provenance: t.cube_version ? { cube_version: String(t.cube_version), calcule_le: String(t.calcule_le), version_prospection: String(t.version_prospection) } : null,
     };
+  }
+
+  async activites(radicaux: readonly string[], codesLibelle: readonly string[], limite: number): Promise<CodeActivite[]> {
+    // Texte comparé sans accents ni casse : « ÉLEVAGE » et « elevage » se rejoignent.
+    const texte = "replaceRegexpAll(normalizeUTF8NFD(lowerUTF8(concat(legal_name, ' ', activity_label))), '\\\\p{Mn}', '')"; // le SQL reçoit '\\p{Mn}' : classe Unicode des accents
+    const params: Record<string, SqlParam> = {};
+    const conds = radicaux.map((m, i) => {
+      params[`m${i}`] = { type: "String", valeur: m };
+      return `positionUTF8(${texte}, {m${i}:String}) > 0`;
+    });
+    const usage = await this.requete<{ naf: string; n: string }>(
+      `SELECT naf_code AS naf, count() AS n FROM ${TABLE} WHERE is_deleted = 0 AND naf_code != '' AND ${conds.join(" AND ")} GROUP BY naf ORDER BY n DESC, naf LIMIT ${Math.min(40, Math.max(1, limite))}`,
+      params,
+    );
+    const parNom = new Map(usage.map((u) => [u.naf, Number(u.n)]));
+    const codes = [...new Set([...codesLibelle, ...parNom.keys()])].filter((c) => /^\d{4}[A-Z]$/.test(c));
+    if (!codes.length) return [];
+    const cube = await this.requete<Record<string, unknown>>(
+      `SELECT naf_code AS naf, sum(nb_entreprises) AS entreprises, sum(nb_prospectables) AS contactables, sum(nb_email_livrable) AS email
+       FROM ${TABLE_CUBE} WHERE naf_rev2 = 1 AND statut = 'actif' AND naf_code IN {codes:Array(String)} GROUP BY naf`,
+      { codes: { type: "Array(String)", valeur: codes } },
+    );
+    const parCode = new Map(cube.map((l) => [String(l.naf), l]));
+    const libelles = new Set(codesLibelle);
+    return codes
+      .map((c) => ({
+        naf: c,
+        libelle: NAF_LIBELLES[c] ?? c,
+        signaux: [...(libelles.has(c) ? (["libelle"] as const) : []), ...(parNom.has(c) ? (["usage"] as const) : [])],
+        par_nom: parNom.get(c) ?? 0,
+        entreprises_actives: Number(parCode.get(c)?.entreprises ?? 0),
+        contactables: Number(parCode.get(c)?.contactables ?? 0),
+        email_envoyable: Number(parCode.get(c)?.email ?? 0),
+      }))
+      .sort((a, b) => b.par_nom - a.par_nom || b.entreprises_actives - a.entreprises_actives)
+      .slice(0, limite);
   }
 
   async compter(filtre: unknown) {
@@ -299,6 +339,31 @@ export class SourceSimulee implements SourceMarche {
   async compter(filtre: unknown) {
     return this.filtrer(filtre).length;
   }
+  async activites(radicaux: readonly string[], codesLibelle: readonly string[], limite: number): Promise<CodeActivite[]> {
+    const n = (s: unknown) => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    const parNom = new Map<string, number>();
+    for (const l of this.lignes) {
+      const t = n(`${l.nom} ${l.activite}`);
+      if (radicaux.every((m) => t.includes(m))) parNom.set(String(l.naf), (parNom.get(String(l.naf)) ?? 0) + 1);
+    }
+    const libelles = new Set(codesLibelle);
+    return [...new Set([...codesLibelle, ...parNom.keys()])]
+      .map((c) => {
+        const ls = this.lignes.filter((l) => l.naf === c);
+        return {
+          naf: c,
+          libelle: NAF_LIBELLES[c] ?? c,
+          signaux: [...(libelles.has(c) ? (["libelle"] as const) : []), ...(parNom.has(c) ? (["usage"] as const) : [])],
+          par_nom: parNom.get(c) ?? 0,
+          entreprises_actives: ls.length,
+          contactables: ls.length,
+          email_envoyable: ls.filter((l) => l.email_envoyable).length,
+        };
+      })
+      .sort((a, b) => b.par_nom - a.par_nom || b.entreprises_actives - a.entreprises_actives)
+      .slice(0, limite);
+  }
+
   /** Cube simulé : les lignes simulées, sur les axes NAF, division et département seulement. */
   async marche(entree: unknown): Promise<ResultatCube> {
     const { entree: e } = compilerCube(entree); // même validation qu'en prod

@@ -92,6 +92,19 @@ describe("MCP Prospection", () => {
     expect(texte(f)).toMatch(/sous-classe/);
   });
 
+  test("explorer donne aussi le marché entier, et dit ce qu'il ne compte pas", async () => {
+    const filtre = { conditions: [{ champ: "naf", op: "dans", valeur: ["0149Z"] }, { champ: "site", op: "renseigne", valeur: true }] };
+    const r = JSON.parse(texte(await traiter(appel("explorer_marche", { filtre, par_page: 2 }), c())));
+    expect(r.marche_entier.entreprises_actives).toBeGreaterThanOrEqual(r.total);
+    expect(r.marche_entier.conditions_non_comptees).toEqual([{ champ: "site", op: "renseigne", valeur: true }]);
+  });
+
+  test("chercher_activites : codes du métier avec leurs comptes", async () => {
+    const r = JSON.parse(texte(await traiter(appel("chercher_activites", { mots: "simulée" }), c("viewer"))));
+    expect(r.codes.length).toBeGreaterThan(0);
+    expect(r.codes[0]).toHaveProperty("entreprises_actives");
+  });
+
   test("arguments invalides : erreur lisible pour que l'IA corrige", async () => {
     const r = await traiter(appel("fiche_entreprise_atlas", { siren: "12" }), c());
     expect(r?.result).toMatchObject({ isError: true });
