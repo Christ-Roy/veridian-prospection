@@ -8,6 +8,9 @@ import { formaterNombre, phraseCondition } from "./logique";
 import { AXES_MARCHE, COLONNES_MARCHE, STATUTS_MARCHE, codesPreselectionnes, etiquetteLigne, evolution, parClasseEffectif, part, serieCreations, type StatutMarche } from "./marche";
 import type { AnalyseMarche, AxeMarche, ChampInfo, Filtre } from "./types";
 
+/** Lignes du tableau montrées d'abord : au-delà, le dossier disparaît sous 100 départements. */
+const LIGNES_VISIBLES = 20;
+
 type CodeActivite = { naf: string; libelle: string; signaux: string[]; par_nom: number; entreprises_actives: number; contactables: number; email_envoyable: number };
 
 /** Trouver les codes d'un métier : libellés officiels et codes réellement portés par les entreprises du métier. */
@@ -68,7 +71,10 @@ function RechercheMetier({ onCodes }: { onCodes: (codes: string[]) => void }) {
               </label>
             ))}
           </div>
-          <button type="button" className="btn pri" disabled={choisis.size === 0} onClick={() => onCodes([...choisis])}>
+          <button type="button" className="btn pri" disabled={choisis.size === 0} onClick={() => {
+              onCodes([...choisis]);
+              setCodes(null); // la liste se replie : le dossier du marché filtré reprend la place
+            }}>
             Filtrer sur ces {choisis.size} code{choisis.size > 1 ? "s" : ""}
           </button>
         </>
@@ -160,6 +166,7 @@ export function VueMarche({ filtre, index, onCodes }: { filtre: Filtre; index: R
   const [donnees, setDonnees] = useState<AnalyseMarche | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [essai, setEssai] = useState(0);
+  const [toutVoir, setToutVoir] = useState(false);
   const cle = JSON.stringify(filtre);
 
   useEffect(() => {
@@ -255,7 +262,7 @@ export function VueMarche({ filtre, index, onCodes }: { filtre: Filtre; index: R
                   </tr>
                 </thead>
                 <tbody>
-                  {donnees.lignes.map((l) => (
+                  {(toutVoir ? donnees.lignes : donnees.lignes.slice(0, LIGNES_VISIBLES)).map((l) => (
                     <tr key={l.cle} className="statique">
                       <td title={etiquetteLigne(l.cle, l.libelle)}>
                         <span className="barre" aria-hidden style={{ width: `${Math.max(2, (l.entreprises / max) * 100)}%` }} />
@@ -272,6 +279,11 @@ export function VueMarche({ filtre, index, onCodes }: { filtre: Filtre; index: R
                 </tbody>
               </table>
             </div>
+          )}
+          {donnees.lignes.length > LIGNES_VISIBLES && (
+            <button type="button" className="lnk" onClick={() => setToutVoir((v) => !v)}>
+              {toutVoir ? "Réduire" : `Voir les ${donnees.lignes.length} lignes`}
+            </button>
           )}
 
           <p className="hint">
