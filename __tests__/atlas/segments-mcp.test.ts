@@ -63,6 +63,7 @@ vi.mock("@/lib/prisma", () => {
     atlasSegmentVersion: modele("atlasSegmentVersion"),
     atlasScoringVersion: modele("atlasScoringVersion"),
     atlasEpingle: modele("atlasEpingle"),
+    tenant: modele("tenant"),
     $transaction: async (f: (tx: unknown) => unknown) => f(prisma),
   };
   return { prisma };
@@ -133,6 +134,33 @@ describe("Atlas par le MCP", () => {
     const noms = (await appel(A, "lister_segments_atlas")).segments.map((s: { nom: string }) => s.nom);
     expect(noms).not.toContain("Marché à supprimer");
     expect(noms).not.toContain("Sous-cible");
+  });
+
+  test("dossiers : ranger un marché, renommer, supprimer sans jamais perdre de marché ; une cible suit son marché", async () => {
+    const d1 = await appel(A, "creer_dossier", { nom: "D1" });
+    const d2 = await appel(A, "creer_dossier", { nom: "D2" });
+    const m = await appel(A, "creer_segment", { nom: "Marché rangé", filtre: DEP69, dossier_id: d1.id });
+    const cible = await appel(A, "creer_segment", { nom: "Cible", filtre: { conditions: [] }, parent_id: m.id });
+    await appel(A, "modifier_segment", { segment_id: m.id, dossier_id: d2.id });
+    const arbre = () => appel(A, "lister_segments_atlas");
+    expect((await arbre()).segments.find((s: { id: string }) => s.id === m.id).dossier_id).toBe(d2.id);
+    expect((await appel(A, "modifier_segment", { segment_id: cible.id, dossier_id: d1.id })).erreur).toMatch(/suit son marché/);
+    expect((await appel(A, "renommer_dossier", { dossier_id: d2.id, nom: "Clients" })).nom).toBe("Clients");
+    const r = await appel(A, "supprimer_dossier", { dossier_id: d2.id });
+    expect(r).toMatchObject({ supprime: true, marches_remontes: 1 });
+    const apres = await arbre();
+    expect(apres.dossiers.map((d: { nom: string }) => d.nom)).not.toContain("Clients");
+    expect(apres.segments.find((s: { id: string }) => s.id === m.id)).toMatchObject({ dossier_id: null });
+    expect((await appel(ctx("tenant-B"), "supprimer_dossier", { dossier_id: d1.id })).erreur).toMatch(/introuvable/i);
+  });
+
+  test("préparer un export : des liens à cliquer, jamais les données ; refusé hors plan payant", async () => {
+    const s = await appel(A, "creer_segment", { nom: "À exporter", filtre: DEP69 });
+    const r = await appel(A, "preparer_export", { segment_id: s.id });
+    expect(r.autorise).toBe(false);
+    expect(r.excel).toBeUndefined();
+    expect(r.message).toMatch(/plans payants/);
+    expect(JSON.stringify(r)).not.toMatch(/@|siren/i);
   });
 
   test("scoring : classement par score décroissant, ancienne version comparable", async () => {

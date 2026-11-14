@@ -62,7 +62,7 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
   Tenants existants : `POST /api/tenants/link-hub` (HMAC, `{hub_user_id, hub_tenant_id}`) ne pose que ce lien.
   Ne pas rejouer `provision` sur un vrai client : il remet le propriétaire `admin` et recrée `default`.
   `by-email` rend `workspaces[].hub_tenant_id` pour `hub reconcile`.
-- Outils : `src/atlas/outils-mcp.ts` (17), les mêmes que l'écran appelle par `/api/atlas/[outil]` avec la session.
+- Outils : `src/atlas/outils-mcp.ts` (25), les mêmes que l'écran appelle par `/api/atlas/[outil]` avec la session.
   Espace déduit de l'utilisateur, un `viewer` ne voit pas les outils d'écriture, fiche limitée à 60/min.
   Ajouter un outil = une entrée dans `OUTILS_ATLAS`, le Hub le relit seul.
 - ClickHouse (`src/atlas/source.ts`) : compte `prospection_ro`, 12 requêtes simultanées pour toute l'app, aucun

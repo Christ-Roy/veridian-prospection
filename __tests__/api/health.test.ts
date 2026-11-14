@@ -27,9 +27,7 @@ describe("GET /api/health", () => {
   });
 
   test("returns 200 + status=ok when DB ping succeeds", async () => {
-    prismaMock.$queryRaw
-      .mockResolvedValueOnce([{ ok: 1 }]) // SELECT 1
-      .mockResolvedValueOnce([{ count: BigInt(42) }]); // COUNT entreprises
+    prismaMock.$queryRaw.mockResolvedValueOnce([{ ok: 1 }]); // SELECT 1
 
     const res = await GET();
     expect(res.status).toBe(200);
@@ -37,7 +35,9 @@ describe("GET /api/health", () => {
     const body = (await readJson(res)) as Record<string, unknown>;
     expect(body.status).toBe("ok");
     expect(body.db).toBe("ok");
-    expect(body.leadCount).toBe(42);
+    // L'ancienne table « entreprises » n'est plus lue (Atlas sur ODH) : une seule requête, aucun leadCount.
+    expect(body.leadCount).toBeUndefined();
+    expect(prismaMock.$queryRaw).toHaveBeenCalledTimes(1);
     expect(typeof body.version).toBe("string");
     expect(typeof body.timestamp).toBe("string");
     // Sans CLICKHOUSE_PASSWORD (tests), Atlas tourne sur la source simulée : ClickHouse « skipped ».
@@ -53,19 +53,5 @@ describe("GET /api/health", () => {
     const body = (await readJson(res)) as Record<string, unknown>;
     expect(body.status).toBe("down");
     expect(body.db).toBe("ko");
-  });
-
-  test("omits leadCount silently when entreprises table missing", async () => {
-    prismaMock.$queryRaw
-      .mockResolvedValueOnce([{ ok: 1 }])
-      .mockRejectedValueOnce(new Error("relation entreprises does not exist"));
-
-    const res = await GET();
-    expect(res.status).toBe(200);
-
-    const body = (await readJson(res)) as Record<string, unknown>;
-    expect(body.status).toBe("ok");
-    expect(body.db).toBe("ok");
-    expect(body.leadCount).toBeUndefined();
   });
 });

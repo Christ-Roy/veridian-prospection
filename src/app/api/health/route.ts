@@ -13,8 +13,7 @@ import pkg from "../../../../package.json";
  *     db: "ok" | "ko",
  *     dependencies: Record<string, "ok" | "ko" | "skipped">,
  *     timestamp: string (ISO8601),
- *     // extras Prospection (rétro-compat)
- *     leadCount?: number,
+ *     atlasEntreprises?: number,
  *   }
  *
  * HTTP code :
@@ -51,7 +50,6 @@ export async function GET() {
 
   // --- DB check (bloquant pour le status) ---
   let db: "ok" | "ko" = "ko";
-  let leadCount: number | undefined = undefined;
 
   try {
     const dbResult = await withTimeout(
@@ -60,16 +58,6 @@ export async function GET() {
     );
     if (dbResult && dbResult[0]?.ok === 1) {
       db = "ok";
-      // Extra Prospection : nombre d'entreprises (best-effort, non bloquant)
-      try {
-        const count = await withTimeout(
-          prisma.$queryRaw<[{ count: bigint }]>`SELECT COUNT(*) as count FROM entreprises`,
-          TIMEOUT_MS,
-        );
-        if (count) leadCount = Number(count[0]?.count ?? 0);
-      } catch {
-        /* table may not exist on fresh DB */
-      }
     }
   } catch {
     db = "ko";
@@ -93,7 +81,6 @@ export async function GET() {
     db,
     dependencies,
     timestamp: new Date().toISOString(),
-    ...(leadCount !== undefined ? { leadCount } : {}),
     ...(atlas.entreprises !== undefined ? { atlasEntreprises: atlas.entreprises } : {}),
   };
 

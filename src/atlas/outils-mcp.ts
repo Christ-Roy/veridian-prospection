@@ -7,11 +7,13 @@ import { z } from "zod";
 
 import type { ContexteOutil, Outil } from "@/lib/mcp/outils";
 import { ErreurOutil } from "@/lib/mcp/erreur";
+import { prisma } from "@/lib/prisma";
 import { isRateLimited } from "@/lib/rate-limit";
 
 import { CHAMPS, OPERATEURS } from "./champs";
 import { EntreeActivitesSchema, codesParLibelle, validerActivites } from "./activites";
 import { EntreeCubeSchema, entreeDepuisFiltre } from "./cube";
+import { peutExporter } from "./export";
 import { compilerMaitre } from "./maitre";
 import { FiltreInvalide } from "./filtres";
 import { sourceMarche } from "./source";
@@ -295,11 +297,18 @@ const OUTILS_BRUTS: Outil[] = [
     name: "modifier_segment",
     title: "Modifier un segment",
     description: "Nouveau filtre (crée une version), nouveau nom ou nouvelles colonnes affichées.",
-    input: z.object({ segment_id: UUID, filtre: FILTRE.optional(), nom: z.string().trim().min(1).max(120).optional(), colonnes: z.array(z.string()).max(25).optional(), note: z.string().max(300).optional() }),
+    input: z.object({
+      segment_id: UUID,
+      filtre: FILTRE.optional(),
+      nom: z.string().trim().min(1).max(120).optional(),
+      colonnes: z.array(z.string()).max(25).optional(),
+      dossier_id: UUID.nullable().optional().describe("Ranger le marché dans ce dossier ; null = sans dossier"),
+      note: z.string().max(300).optional(),
+    }),
     annotations: ECRITURE,
     visible: peutEcrire,
     run: lisible(async (a, c) => {
-      const r = await seg.modifierSegment(c.ctx.tenantId, a.segment_id as string, { filtre: a.filtre, nom: a.nom as string, colonnes: a.colonnes, note: a.note as string }, auteur(c));
+      const r = await seg.modifierSegment(c.ctx.tenantId, a.segment_id as string, { filtre: a.filtre, nom: a.nom as string, colonnes: a.colonnes, note: a.note as string, dossierId: a.dossier_id as string | null | undefined }, auteur(c));
       return avecSource({ ...r, total: await sourceMarche().compter(await seg.filtreEffectif(c.ctx.tenantId, r.id)) });
     }),
   },
@@ -358,6 +367,45 @@ const OUTILS_BRUTS: Outil[] = [
     annotations: ECRITURE,
     visible: peutEcrire,
     run: lisible(async (a, c) => seg.restaurerVersion(c.ctx.tenantId, a.segment_id as string, a.version as number, auteur(c))),
+  },
+  {
+    name: "renommer_dossier",
+    title: "Renommer un dossier",
+    description: "Change le nom d'un dossier de l'espace.",
+    input: z.object({ dossier_id: UUID, nom: z.string().trim().min(1).max(120) }),
+    annotations: { ...ECRITURE, idempotentHint: true },
+    visible: peutEcrire,
+    run: lisible(async (a, c) => seg.renommerDossier(c.ctx.tenantId, a.dossier_id as string, a.nom as string)),
+  },
+  {
+    name: "supprimer_dossier",
+    title: "Supprimer un dossier",
+    description: "Supprime un dossier ; ses marchés et sous-dossiers ne sont jamais supprimés avec lui, ils remontent d'un niveau.",
+    input: z.object({ dossier_id: UUID }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    visible: peutEcrire,
+    run: lisible(async (a, c) => seg.supprimerDossier(c.ctx.tenantId, a.dossier_id as string)),
+  },
+  {
+    name: "preparer_export",
+    title: "Préparer un export",
+    description:
+      "Donne les liens de téléchargement Excel et CSV d'un segment (5 000 entreprises au plus, classées par sa priorité), à cliquer par " +
+      "l'utilisateur connecté : aucune donnée n'est rendue ici, l'export reste un geste humain. Indique si le plan de l'espace le permet.",
+    input: z.object({ segment_id: UUID }),
+    annotations: LECTURE,
+    run: lisible(async (a, c) => {
+      const s = await seg.lireSegment(c.ctx.tenantId, a.segment_id as string);
+      const t = await prisma.tenant.findUnique({ where: { id: c.ctx.tenantId }, select: { plan: true } });
+      const base = (process.env.NEXTAUTH_URL || "https://prospection.app.veridian.site").replace(/\/$/, "");
+      const lien = (f: string) => `${base}/api/atlas/export?segment_id=${s.id}&format=${f}`;
+      return {
+        segment: s.nom,
+        autorise: peutExporter(t?.plan),
+        ...(peutExporter(t?.plan) ? { excel: lien("xlsx"), csv: lien("csv") } : { message: "L'export est réservé aux plans payants Veridian." }),
+        lecture: "Liens à ouvrir par l'utilisateur, connecté à Atlas dans son navigateur.",
+      };
+    }),
   },
   {
     name: "supprimer_segment",

@@ -66,6 +66,32 @@ export async function creerDossier(tenantId: string, nom: string, parentId?: str
   return { id: d.id, nom: d.nom, parent_id: d.parentId };
 }
 
+async function dossierDuTenant(tenantId: string, dossierId: string) {
+  const d = await prisma.atlasDossier.findFirst({ where: { id: dossierId, tenantId, deletedAt: null } });
+  if (!d) throw new Introuvable(`dossier introuvable : ${dossierId}`);
+  return d;
+}
+
+export async function renommerDossier(tenantId: string, dossierId: string, nom: string) {
+  const d = await dossierDuTenant(tenantId, dossierId);
+  await prisma.atlasDossier.update({ where: { id: d.id }, data: { nom: nom.trim().slice(0, 120) } });
+  return { id: d.id, nom: nom.trim().slice(0, 120) };
+}
+
+/**
+ * Supprime un dossier (marquage). Ses marchés et sous-dossiers ne disparaissent jamais avec lui : ils
+ * remontent d'un niveau (dans le dossier parent, ou « sans dossier »).
+ */
+export async function supprimerDossier(tenantId: string, dossierId: string) {
+  const d = await dossierDuTenant(tenantId, dossierId);
+  const marches = await prisma.atlasSegment.findMany({ where: { tenantId, dossierId: d.id, deletedAt: null }, select: { id: true } });
+  for (const m of marches) await prisma.atlasSegment.update({ where: { id: m.id }, data: { dossierId: d.parentId } });
+  const sous = await prisma.atlasDossier.findMany({ where: { tenantId, parentId: d.id, deletedAt: null }, select: { id: true } });
+  for (const x of sous) await prisma.atlasDossier.update({ where: { id: x.id }, data: { parentId: d.parentId } });
+  await prisma.atlasDossier.update({ where: { id: d.id }, data: { deletedAt: new Date() } });
+  return { id: d.id, supprime: true, marches_remontes: marches.length, sous_dossiers_remontes: sous.length };
+}
+
 export async function creerSegment(
   tenantId: string,
   a: { nom: string; dossierId?: string | null; parentId?: string | null; filtre?: unknown; colonnes?: unknown; note?: string },
@@ -94,12 +120,20 @@ export async function creerSegment(
 export async function modifierSegment(
   tenantId: string,
   segmentId: string,
-  a: { nom?: string; filtre?: unknown; colonnes?: unknown; note?: string },
+  a: { nom?: string; filtre?: unknown; colonnes?: unknown; note?: string; dossierId?: string | null },
   auteur: Auteur,
 ) {
   const s = await segmentDuTenant(tenantId, segmentId);
-  const data: { nom?: string; colonnes?: string[] } = {};
+  const data: { nom?: string; colonnes?: string[]; dossierId?: string | null } = {};
   if (a.nom) data.nom = a.nom.trim().slice(0, 120);
+  // Déplacer : seul un marché se range dans un dossier (une cible suit son marché) ; null = sans dossier.
+  if (a.dossierId !== undefined) {
+    if (s.parentId) throw new Refus("Une cible suit son marché : déplacez le marché.");
+    if (a.dossierId && !(await prisma.atlasDossier.findFirst({ where: { id: a.dossierId, tenantId, deletedAt: null } }))) {
+      throw new Introuvable(`dossier introuvable : ${a.dossierId}`);
+    }
+    data.dossierId = a.dossierId;
+  }
   if (a.colonnes !== undefined) data.colonnes = validerColonnes(a.colonnes);
   if (Object.keys(data).length) await prisma.atlasSegment.update({ where: { id: s.id }, data });
   if (a.filtre === undefined) return { id: s.id, version: (await versionCourante(s.id)).numero };
