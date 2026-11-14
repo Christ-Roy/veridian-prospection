@@ -294,7 +294,10 @@ export function VueTableau({
   index,
   onColonnes,
   onFiche,
+  base = "prospection",
 }: {
+  /** « maitre » : toutes les entreprises (lister_entreprises) ; « prospection » : les fiches prospectables. */
+  base?: "maitre" | "prospection";
   filtre: Filtre;
   colonnes: string[];
   champs: ChampInfo[];
@@ -315,18 +318,31 @@ export function VueTableau({
     const ctl = new AbortController();
     setBusy(true);
     setErreur(null);
-    appeler<ApercuMarche>("explorer_marche", { filtre: JSON.parse(cle) as Filtre, colonnes: cleCols.split(","), page, par_page: PAR_PAGE }, ctl.signal)
+    const f = JSON.parse(cle) as Filtre;
+    const requete =
+      base === "maitre"
+        ? appeler<Omit<ApercuMarche, "total"> & { total: number | null; page_suivante: number | null }>("lister_entreprises", { filtre: f, page, par_page: PAR_PAGE }, ctl.signal).then(
+            (r): ApercuMarche => ({ ...r, parPage: PAR_PAGE, tri: "siren", total: r.total ?? (page - 1) * PAR_PAGE + r.lignes.length + (r.page_suivante ? 1 : 0) }),
+          )
+        : appeler<ApercuMarche>("explorer_marche", { filtre: f, colonnes: cleCols.split(","), page, par_page: PAR_PAGE }, ctl.signal);
+    requete
       .then(setApercu)
       .catch((e) => !estAnnulation(e) && setErreur(texteErreur(e)))
       .finally(() => !ctl.signal.aborted && setBusy(false));
     return () => ctl.abort();
-  }, [cle, cleCols, page, essai]);
+  }, [cle, cleCols, page, essai, base]);
 
   return (
     <div>
       <div className="tools">
-        <span>Entreprises du segment, par ordre du catalogue.</span>
-        <SelecteurColonnes champs={champs} colonnes={colonnes} onChange={onColonnes} />
+        {base === "maitre" ? (
+          <span>Toutes les entreprises actives de France (base maître) : identité et lieu. Les coordonnées s&apos;ouvrent dans la fiche des entreprises prospectables.</span>
+        ) : (
+          <>
+            <span>Entreprises du segment, par ordre du catalogue.</span>
+            <SelecteurColonnes champs={champs} colonnes={colonnes} onChange={onColonnes} />
+          </>
+        )}
       </div>
       {erreur && <Erreur texte={erreur} onReessayer={() => setEssai((n) => n + 1)} />}
       {!apercu && !erreur && <Chargement />}

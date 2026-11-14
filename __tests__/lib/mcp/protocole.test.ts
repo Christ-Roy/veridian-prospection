@@ -105,6 +105,15 @@ describe("MCP Prospection", () => {
     expect(r.codes[0]).toHaveProperty("entreprises_actives");
   });
 
+  test("lister_entreprises : base maître, conditions non applicables dites", async () => {
+    const filtre = { conditions: [{ champ: "departement", op: "dans", valeur: ["69"] }, { champ: "score_odh", op: "min", valeur: 10 }] };
+    const r = JSON.parse(texte(await traiter(appel("lister_entreprises", { filtre, par_page: 3 }), c("viewer"))));
+    expect(r.lignes.length).toBeGreaterThan(0);
+    expect(r.lignes[0]).toHaveProperty("a_email");
+    expect(r.lignes[0]).not.toHaveProperty("email");
+    expect(r.conditions_ignorees.map((x: { champ: string }) => x.champ)).toEqual(["score_odh"]);
+  });
+
   test("arguments invalides : erreur lisible pour que l'IA corrige", async () => {
     const r = await traiter(appel("fiche_entreprise_atlas", { siren: "12" }), c());
     expect(r?.result).toMatchObject({ isError: true });

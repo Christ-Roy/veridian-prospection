@@ -22,6 +22,7 @@ import {
   saisieVide,
   sansConditionsDans,
   valeurLisible,
+  libelleColonne as libelleCol,
 } from "@/components/atlas/logique";
 import type { ChampInfo } from "@/components/atlas/types";
 
@@ -184,5 +185,15 @@ describe("valeurs codées en clair", () => {
     for (const m of ["boite_inexistante", "domaine_mort", "mx_injoignable", "email_disparu_du_site", "email_placeholder", "email_role_non_commercial", "contact_de_prestataire", "email_invalide"]) {
       expect(VALEURS_LISIBLES.motif_email[m], m).toBeDefined();
     }
+  });
+});
+
+describe("colonnes de la base maître", () => {
+  test("libellés hors catalogue et valeurs codées lisibles (forme, tranche d'effectif)", () => {
+    expect(libelleCol("a_email", new Map())).toBe("Email connu");
+    expect(libelleCol("prospectable", new Map())).toBe("Prospectable");
+    expect(valeurLisible("forme", "entreprise_individuelle")).toBe("Entreprise individuelle");
+    expect(valeurLisible("effectif", "12")).toBe("20 à 49");
+    expect(valeurLisible("effectif", "")).toBe("Inconnue");
   });
 });

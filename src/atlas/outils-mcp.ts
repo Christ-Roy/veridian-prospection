@@ -12,6 +12,7 @@ import { isRateLimited } from "@/lib/rate-limit";
 import { CHAMPS, OPERATEURS } from "./champs";
 import { EntreeActivitesSchema, codesParLibelle, validerActivites } from "./activites";
 import { EntreeCubeSchema, entreeDepuisFiltre } from "./cube";
+import { compilerMaitre } from "./maitre";
 import { FiltreInvalide } from "./filtres";
 import { sourceMarche } from "./source";
 import { liensIA } from "@/lib/hub/liens-ia-client";
@@ -69,7 +70,7 @@ const OUTILS_BRUTS: Outil[] = [
     title: "Explorer le marché",
     description:
       "Liste et compte les FICHES PROSPECTABLES (environ 1,3 M d'entreprises contactables, non bloquées) qui répondent à un filtre ; paginé, rien n'est enregistré. " +
-      "Ce n'est pas la taille du marché : `marche_entier` (quand le filtre s'y prête) ou analyser_marche comptent TOUTES les entreprises de France. " +
+      "Ce n'est pas le marché : pour lister TOUTES les entreprises de France, utilisez lister_entreprises ; pour les compter par axe, analyser_marche. " +
       "Pour trouver les codes NAF d'un métier, appeler d'abord chercher_activites.",
     input: z.object({
       filtre: FILTRE,
@@ -126,6 +127,32 @@ const OUTILS_BRUTS: Outil[] = [
     }),
   },
   {
+    name: "lister_entreprises",
+    title: "Lister toutes les entreprises",
+    description:
+      "Liste et compte TOUTES les entreprises actives de France (base maître d'ODH, 30 M de SIREN), pas seulement les prospectables. " +
+      "Filtrez par naf, naf_division, departement, forme_juridique, effectif, code_postal, commune (egal), date_creation, nom (contient, mots entiers " +
+      "de la même famille) et par les drapeaux email, telephone, site, email_envoyable, telephone_envoyable. Aucune coordonnée n'est rendue : " +
+      "seulement a_email, a_telephone, a_site et prospectable (les coordonnées d'une fiche prospectable passent par fiche_entreprise_atlas). " +
+      "Les autres champs ne s'appliquent pas ici et sont rendus dans conditions_ignorees. Toujours filtrer par NAF, nom ou département + NAF.",
+    input: z.object({ filtre: FILTRE, page: z.number().int().min(1).max(200).default(1), par_page: z.number().int().min(1).max(50).default(20) }),
+    annotations: LECTURE,
+    run: lisible(async (a) => {
+      const s = sourceMarche();
+      const { ignorees } = compilerMaitre(a.filtre);
+      const [total, liste] = await Promise.all([s.compterMaitre(a.filtre), s.listerMaitre(a.filtre, a.page as number, a.par_page as number)]);
+      const plein = liste.lignes.length === (a.par_page as number);
+      return avecSource({
+        total,
+        ...(total === null ? { total_note: "Filtre trop large pour compter ici : affinez (NAF, nom, département) ou utilisez analyser_marche." } : {}),
+        page: a.page,
+        page_suivante: plein && (total === null || (a.page as number) * (a.par_page as number) < total) ? (a.page as number) + 1 : null,
+        conditions_ignorees: ignorees,
+        ...liste,
+      });
+    }),
+  },
+  {
     name: "chercher_activites",
     title: "Trouver les codes NAF d'un métier",
     description:
@@ -162,8 +189,11 @@ const OUTILS_BRUTS: Outil[] = [
       // Anti-aspiration : 60 fiches par minute et par utilisateur, écran et IA confondus.
       if (isRateLimited(`atlas-fiche:${c.ctx.userId}`, 60, 60_000)) throw new ErreurOutil("Trop de fiches ouvertes cette minute (60 au plus).");
       const f = await sourceMarche().fiche(a.siren as string);
-      if (!f) throw new ErreurOutil(`Aucune entreprise prospectable avec le SIREN ${a.siren}.`);
-      return avecSource({ fiche: f });
+      if (f) return avecSource({ fiche: f, base: "prospectable" });
+      // Pas dans la vue prospectable : l'identité vient de la base maître, sans coordonnée.
+      const m = await sourceMarche().ficheMaitre(a.siren as string);
+      if (!m) throw new ErreurOutil(`Aucune entreprise avec le SIREN ${a.siren}.`);
+      return avecSource({ fiche: m, base: "maitre", note: "Entreprise hors fiches prospectables : identité seulement, aucune coordonnée." });
     }),
   },
   {

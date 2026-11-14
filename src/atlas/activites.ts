@@ -34,7 +34,13 @@ export function motsCles(mots: string): string[] {
  * Un radical se cherche comme MOT ENTIER de sa famille (chasse, chasses, chasseur, chasseurs…), jamais comme
  * début de mot : « chass » ne doit pas attraper « Chasseneuil » ni « châssis ». Même motif en SQL et en JS.
  */
-export const FAMILLE = "(e|es|s|x|eur|eurs|euse|euses|age|ages|ier|iers|iere|ieres)?";
+export const SUFFIXES_FAMILLE = ["", "e", "es", "s", "x", "eur", "eurs", "euse", "euses", "age", "ages", "ier", "iers", "iere", "ieres"];
+export const FAMILLE = `(${SUFFIXES_FAMILLE.filter(Boolean).join("|")})?`;
+/** Les mots entiers d'une famille (chass → chasse, chasseur, chasseurs…), pour les index de jetons d'ODH. */
+export function formesFamille(radical: string): string[] {
+  const r = radical.replace(/[^a-z0-9]/g, "");
+  return SUFFIXES_FAMILLE.map((s) => r + s);
+}
 export function motifMot(radical: string): string {
   return `(^|[^a-z0-9])${radical.replace(/[^a-z0-9]/g, "")}${FAMILLE}([^a-z0-9]|$)`;
 }

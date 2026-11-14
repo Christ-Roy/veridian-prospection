@@ -806,7 +806,7 @@ export function AtlasApp() {
             ) : vue === "entonnoir" ? (
               <VueEntonnoir etapes={etapesEntonnoir(propres.conditions, descente ? [...heritees, { champ: "departement", op: "dans", valeur: [descente] }] : heritees, !!propres.inclure_bloques, index)} />
             ) : vue === "tableau" ? (
-              <VueTableau filtre={filtreChiffres} colonnes={colonnes} champs={champs} index={index} onColonnes={(c) => void changerColonnes(c)} onFiche={ouvrirFiche} />
+              <VueTableau base={baseMarche ? "maitre" : "prospection"} filtre={filtreChiffres} colonnes={colonnes} champs={champs} index={index} onColonnes={(c) => void changerColonnes(c)} onFiche={ouvrirFiche} />
             ) : vue === "priorite" && detail && estCible ? (
               <VuePriorite
                 segmentId={detail.id}

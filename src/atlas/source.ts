@@ -5,6 +5,7 @@
  */
 import { CHAMP, CHAMPS, type Champ } from "./champs";
 import { motifMot, type CodeActivite } from "./activites";
+import { COLONNES_MAITRE, TABLE_MAITRE, compilerMaitre, conditionNom } from "./maitre";
 import { compilerCube, libelleCube, mesures, TABLE_CUBE, type ResultatCube } from "./cube";
 import { NAF_LIBELLES } from "./naf";
 import { FiltreInvalide, FiltreSchema, ScoringSchema, colonnesSql, compilerFiltre, type Condition, type SqlParam } from "./filtres";
@@ -41,6 +42,11 @@ export interface SourceMarche {
   repartition(filtre: unknown, champ: string, limite?: number): Promise<{ cle: string; nombre: number }[]>;
   /** Taille du marché entier, d'après le cube d'ODH (voir cube.ts). */
   marche(entree: unknown): Promise<ResultatCube>;
+  /** Base maître : nombre d'entreprises (null si le filtre est trop large pour le compte) et liste paginée. */
+  compterMaitre(filtre: unknown): Promise<number | null>;
+  listerMaitre(filtre: unknown, page: number, parPage: number): Promise<{ colonnes: string[]; lignes: Ligne[] }>;
+  /** Identité d'une entreprise d'après la base maître (sans contact), pour une fiche non prospectable. */
+  ficheMaitre(siren: string): Promise<Fiche | null>;
   /** Codes NAF d'un métier : par libellé et par usage réel (voir activites.ts). */
   activites(radicaux: readonly string[], codesLibelle: readonly string[], limite: number): Promise<CodeActivite[]>;
 }
@@ -150,18 +156,12 @@ export class SourceClickHouse implements SourceMarche {
   }
 
   async activites(radicaux: readonly string[], codesLibelle: readonly string[], limite: number): Promise<CodeActivite[]> {
-    // Texte comparé sans accents ni casse : « ÉLEVAGE » et « elevage » se rejoignent.
-    const texte = "replaceRegexpAll(normalizeUTF8NFD(lowerUTF8(concat(legal_name, ' ', activity_label))), '\\\\p{Mn}', '')"; // le SQL reçoit '\\p{Mn}' : classe Unicode des accents
+    // Base maître (30 M, toutes les entreprises actives), par les mots entiers de chaque famille dans l'index de
+    // noms d'ODH : 0,5 à 0,7 s mesurés (14/11), là où l'expression régulière sur la vue prospectable frôlait 10 s.
     const params: Record<string, SqlParam> = {};
-    const conds = radicaux.map((m, i) => {
-      params[`r${i}`] = { type: "String", valeur: m };
-      params[`m${i}`] = { type: "String", valeur: motifMot(m) };
-      // Sous-chaîne d'abord (rapide, mesuré 0,6 s sur 2 M de fiches), mot entier ensuite sur les seules lignes
-      // retenues : l'expression régulière sur toutes les lignes dépassait les 10 s du compte (14/11).
-      return `positionUTF8(t, {r${i}:String}) > 0 AND match(t, {m${i}:String})`;
-    });
+    const conds = radicaux.map((m, i) => conditionNom(m, `m${i}`, params));
     const usage = await this.requete<{ naf: string; n: string }>(
-      `WITH ${texte} AS t SELECT naf_code AS naf, count() AS n FROM ${TABLE} WHERE is_deleted = 0 AND naf_code != '' AND ${conds.join(" AND ")} GROUP BY naf ORDER BY n DESC, naf LIMIT ${Math.min(40, Math.max(1, limite))}`,
+      `SELECT naf_code AS naf, count() AS n FROM ${TABLE_MAITRE} WHERE administrative_status = 'A' AND naf_rev2 = 1 AND ${conds.join(" AND ")} GROUP BY naf ORDER BY n DESC, naf LIMIT ${Math.min(40, Math.max(1, limite))}`,
       params,
     );
     const parNom = new Map(usage.map((u) => [u.naf, Number(u.n)]));
@@ -186,6 +186,50 @@ export class SourceClickHouse implements SourceMarche {
       }))
       .sort((a, b) => Number(b.signaux.includes("libelle")) - Number(a.signaux.includes("libelle")) || b.par_nom - a.par_nom || b.entreprises_actives - a.entreprises_actives)
       .slice(0, limite);
+  }
+
+  async compterMaitre(filtre: unknown): Promise<number | null> {
+    const c = compilerMaitre(filtre);
+    if (!c.filtre) return null; // sans filtre : 30 M de lignes, au-delà du compte ; le cube donne le total
+    try {
+      const r = await this.requete<{ n: string }>(`SELECT count() AS n FROM ${TABLE_MAITRE} WHERE ${c.where}`, c.params);
+      return Number(r[0]?.n ?? 0);
+    } catch (e) {
+      // Filtre trop large pour les 15 M lignes du compte : on le dit plutôt que d'échouer.
+      if (e instanceof Error && /Code: (158|159|307)\b|TOO_MANY_ROWS|TIMEOUT_EXCEEDED|TOO_MANY_BYTES/.test(e.message)) return null;
+      throw e;
+    }
+  }
+
+  async listerMaitre(filtre: unknown, page: number, parPage: number) {
+    const c = compilerMaitre(filtre);
+    const n = Math.min(100, Math.max(1, Math.trunc(parPage)));
+    const p = Math.max(1, Math.trunc(page));
+    const cols = Object.entries(COLONNES_MAITRE).map(([id, col]) => `${col} AS ${id}`);
+    // Tri par SIREN : l'ordre physique dans un NAF × département, très rapide (mesuré 0,03 s par ODH).
+    const lignes = await this.requete<Ligne>(`SELECT ${cols.join(", ")} FROM ${TABLE_MAITRE} WHERE ${c.where} ORDER BY siren LIMIT ${n} OFFSET ${(p - 1) * n}`, c.params);
+    return {
+      colonnes: Object.keys(COLONNES_MAITRE),
+      lignes: lignes.map((l) => Object.fromEntries(Object.entries(l).map(([k, v]) => [k, k.startsWith("a_") || k === "prospectable" ? Number(v) === 1 : v === "" ? null : v]))),
+    };
+  }
+
+  async ficheMaitre(siren: string): Promise<Fiche | null> {
+    if (!/^\d{9}$/.test(siren)) throw new FiltreInvalide("SIREN à 9 chiffres");
+    const r = await this.requete<Record<string, unknown>>(
+      `SELECT legal_name, trade_name, legal_form, forme_type, tranche_effectif, creation_date, administrative_status, naf_code, postal_code, department, city, has_email, has_phone, has_site, prospectable
+       FROM ${TABLE_MAITRE} WHERE siren = {s:String} LIMIT 1`,
+      { s: { type: "String", valeur: siren } },
+    );
+    const l = r[0];
+    if (!l) return null;
+    const v = (x: unknown) => (x === "" || x === null || x === undefined ? null : (x as string));
+    return {
+      identite: { siren, nom: v(l.legal_name), enseigne: v(l.trade_name), forme_juridique: formeJuridique(l.legal_form), date_creation: v(l.creation_date), statut: l.administrative_status === "A" ? "actif" : "fermé" },
+      activite: { naf: v(l.naf_code) },
+      lieu: { commune: v(l.city), code_postal: v(l.postal_code), departement: v(l.department) },
+      contact: { email_connu: Number(l.has_email) === 1, telephone_connu: Number(l.has_phone) === 1, site_connu: Number(l.has_site) === 1, prospectable: Number(l.prospectable) === 1 },
+    } as Fiche;
   }
 
   async compter(filtre: unknown) {
@@ -365,6 +409,29 @@ export class SourceSimulee implements SourceMarche {
       })
       .sort((a, b) => Number(b.signaux.includes("libelle")) - Number(a.signaux.includes("libelle")) || b.par_nom - a.par_nom || b.entreprises_actives - a.entreprises_actives)
       .slice(0, limite);
+  }
+
+  /** Conditions que la base maître sait appliquer (les autres sont rendues comme ignorées). */
+  private traduisibles(filtre: unknown) {
+    const c = compilerMaitre(filtre);
+    const ign = new Set(c.ignorees.map((x) => JSON.stringify(x)));
+    return { c, conditions: FiltreSchema.parse(filtre ?? {}).conditions.filter((x) => !ign.has(JSON.stringify(x))) };
+  }
+  async compterMaitre(filtre: unknown) {
+    const { c, conditions } = this.traduisibles(filtre);
+    return c.filtre ? this.filtrer({ conditions }).length : null;
+  }
+  async listerMaitre(filtre: unknown, page: number, parPage: number) {
+    const { conditions } = this.traduisibles(filtre);
+    const ls = this.filtrer({ conditions });
+    const lignes = ls.slice((page - 1) * parPage, page * parPage).map((l) => ({
+      siren: l.siren, nom: l.nom, enseigne: null, commune: l.commune, departement: l.departement, naf: l.naf, forme: "societe", effectif: null,
+      date_creation: l.date_creation, a_email: !!l.email, a_telephone: !!l.telephone, a_site: !!l.site, prospectable: true,
+    }));
+    return { colonnes: Object.keys(COLONNES_MAITRE), lignes };
+  }
+  async ficheMaitre(siren: string) {
+    return this.fiche(siren);
   }
 
   /** Cube simulé : les lignes simulées, sur les axes NAF, division et département seulement. */

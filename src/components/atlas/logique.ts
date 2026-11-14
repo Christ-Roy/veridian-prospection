@@ -2,6 +2,7 @@
  * Logique pure des écrans Atlas (sans React, sans réseau) : phrases de filtres, construction d'une
  * condition selon le type du champ, arbre des dossiers, filtre de la carte. Testée dans __tests__/atlas-ui.
  */
+import { MOTS, TRANCHES } from "@/atlas/cube";
 import type { Arbre, Cellule, ChampInfo, Condition, DossierArbre, Filtre, SegmentArbre, TypeChamp } from "./types";
 
 export const CHAMP_DEPARTEMENT = "departement";
@@ -256,6 +257,8 @@ export function cheminDossier(a: Arbre, dossierId: string | null): string[] {
 
 /** Valeurs codées d'ODH lues en clair : motif de non-envoi d'un email. Une valeur inconnue reste telle quelle. */
 export const VALEURS_LISIBLES: Record<string, Record<string, string>> = {
+  forme: MOTS,
+  effectif: { ...TRANCHES, "": "Inconnue" },
   motif_email: {
     domaine_mort: "Domaine mort",
     mx_injoignable: "Serveur mail injoignable",
@@ -279,9 +282,19 @@ export function formaterCellule(v: Cellule | undefined, champ?: ChampInfo): stri
   return champ ? valeurLisible(champ.id, v) : v;
 }
 
+/** Colonnes de la base maître qui n'ont pas d'équivalent dans le catalogue. */
+const LIBELLES_HORS_CATALOGUE: Record<string, string> = {
+  enseigne: "Enseigne",
+  forme: "Forme",
+  a_email: "Email connu",
+  a_telephone: "Tél. connu",
+  a_site: "Site connu",
+  prospectable: "Prospectable",
+};
+
 export function libelleColonne(id: string, champs: ReadonlyMap<string, ChampInfo>): string {
   if (id === "score") return "Score";
-  return champs.get(id)?.libelle ?? id;
+  return champs.get(id)?.libelle ?? LIBELLES_HORS_CATALOGUE[id] ?? id;
 }
 
 /** Colonnes affichées : celles de la réponse ; « score » s'ajoute si les lignes en portent un. */

@@ -102,12 +102,12 @@ export function compilerCube(brut: unknown): { total: string; repartition: strin
 }
 
 /** Tranches d'effectif SIRENE (salariés). */
-const TRANCHES: Record<string, string> = {
+export const TRANCHES: Record<string, string> = {
   NN: "Non renseignée", "00": "0 salarié", "01": "1 ou 2", "02": "3 à 5", "03": "6 à 9", "11": "10 à 19", "12": "20 à 49",
   "21": "50 à 99", "22": "100 à 199", "31": "200 à 249", "32": "250 à 499", "41": "500 à 999", "42": "1 000 à 1 999",
   "51": "2 000 à 4 999", "52": "5 000 à 9 999", "53": "10 000 et plus",
 };
-const MOTS: Record<string, string> = {
+export const MOTS: Record<string, string> = {
   entreprise_individuelle: "Entreprise individuelle", societe: "Société", autre: "Autre", inconnu: "Inconnu",
   actif: "Active", ferme: "Fermée", diffusible: "Diffusible", partielle: "Diffusion partielle", non_diffusible: "Non diffusible", inconnue: "Inconnue",
 };
