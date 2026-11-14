@@ -79,3 +79,12 @@ export const CLASSES_EFFECTIF: { libelle: string; codes: string[] }[] = [
 export function parClasseEffectif(lignes: readonly { cle: string; entreprises: number }[]): { libelle: string; n: number }[] {
   return CLASSES_EFFECTIF.map((c) => ({ libelle: c.libelle, n: lignes.filter((l) => c.codes.includes(l.cle)).reduce((a, l) => a + l.entreprises, 0) }));
 }
+
+/**
+ * Codes cochés d'office dans la recherche par métier : seulement ceux dont le LIBELLÉ officiel correspond.
+ * Un code trouvé par le nom des entreprises reste proposé, jamais coché : « vétérinaire » remonte 6820B
+ * (des SCI « Clinique vétérinaire »), ce qui gonflait le marché de 15 248 à 2,4 M (mesuré le 14/11).
+ */
+export function codesPreselectionnes(codes: readonly { naf: string; signaux: string[] }[]): string[] {
+  return codes.filter((c) => c.signaux.includes("libelle")).map((c) => c.naf);
+}

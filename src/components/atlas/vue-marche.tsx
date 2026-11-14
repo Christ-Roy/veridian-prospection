@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { appeler, estAnnulation, texteErreur } from "./api";
 import { Chargement, Icone } from "./icones";
 import { formaterNombre, phraseCondition } from "./logique";
-import { AXES_MARCHE, COLONNES_MARCHE, STATUTS_MARCHE, etiquetteLigne, evolution, parClasseEffectif, part, serieCreations, type StatutMarche } from "./marche";
+import { AXES_MARCHE, COLONNES_MARCHE, STATUTS_MARCHE, codesPreselectionnes, etiquetteLigne, evolution, parClasseEffectif, part, serieCreations, type StatutMarche } from "./marche";
 import type { AnalyseMarche, AxeMarche, ChampInfo, Filtre } from "./types";
 
 type CodeActivite = { naf: string; libelle: string; signaux: string[]; par_nom: number; entreprises_actives: number; contactables: number; email_envoyable: number };
@@ -23,7 +23,7 @@ function RechercheMetier({ onCodes }: { onCodes: (codes: string[]) => void }) {
     try {
       const r = await appeler<{ codes: CodeActivite[] }>("chercher_activites", { mots });
       setCodes(r.codes);
-      setChoisis(new Set(r.codes.filter((c) => c.signaux.includes("libelle") || c.par_nom >= 20).map((c) => c.naf)));
+      setChoisis(new Set(codesPreselectionnes(r.codes)));
     } catch (e) {
       setErreur(texteErreur(e));
     } finally {
@@ -107,7 +107,7 @@ function Dossier({ filtre }: { filtre: Filtre }) {
   const formes = d.forme.lignes.filter((l) => l.entreprises > 0);
   const maxF = Math.max(1, ...formes.map((l) => l.entreprises));
   return (
-    <div className="dossier">
+    <div className="dossier-marche">
       <section aria-labelledby="dossier-creations">
         <h4 id="dossier-creations">
           Créations par an{evo ? <span className="evo"> · {evo}</span> : null}

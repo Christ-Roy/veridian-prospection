@@ -33,7 +33,7 @@ import {
   segmentsChanges,
 } from "@/components/atlas/flux";
 import { indexerChamps } from "@/components/atlas/logique";
-import { COLONNES_MARCHE, etiquetteLigne, evolution, parClasseEffectif, part, serieCreations } from "@/components/atlas/marche";
+import { COLONNES_MARCHE, codesPreselectionnes, etiquetteLigne, evolution, parClasseEffectif, part, serieCreations } from "@/components/atlas/marche";
 import { PREMIERE_DEMANDE, boutonsIA, montrerAccueil } from "@/components/atlas/ia";
 import { REGLES_SUGGEREES, lignesDepuis, suggestionsRestantes } from "@/components/atlas/lignes";
 import { messageExport } from "@/components/atlas/api";
@@ -337,6 +337,18 @@ describe("IA branchées", () => {
   test("un identifiant OAuth opaque ne s'affiche jamais", () => {
     expect(nomAuteur("ia:mcpc_KqLKNSlHyGzUgCXS5gk")).toBe("Assistant IA");
     expect(nomAuteur("ia:Claude")).toBe("Claude");
+  });
+});
+
+describe("recherche par métier", () => {
+  test("seuls les codes au libellé correspondant sont cochés d'office (cas « vétérinaire » → 6820B)", () => {
+    const codes = [
+      { naf: "7500Z", signaux: ["libelle", "usage"] },
+      { naf: "6820B", signaux: ["usage"] },
+      { naf: "9609Z", signaux: ["usage"] },
+    ];
+    expect(codesPreselectionnes(codes)).toEqual(["7500Z"]);
+    expect(codesPreselectionnes([{ naf: "9319Z", signaux: ["usage"] }])).toEqual([]);
   });
 });
 
