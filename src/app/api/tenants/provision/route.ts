@@ -5,7 +5,6 @@ import { verifyHubHmac } from "@/lib/hub/hmac";
 import { lierTenantHub, UUID_RE } from "@/lib/hub/link-tenant";
 import { generateApiKey, hashApiKey } from "@/lib/hub/apiKey";
 import { resolveOrCreateUserFromHub } from "@/lib/hub/identity";
-import { seedDefaultPipelineStages } from "@/lib/outreach/pipeline-stages";
 
 /**
  * Crée (idempotent) le User + Tenant local + workspace "default" + membership
@@ -87,8 +86,6 @@ async function ensureOwnerWorkspace(
         },
         select: { id: true, apiKeyHash: true },
       });
-      // Seed les 8 stages canoniques (sinon /pipeline naît vide).
-      await seedDefaultPipelineStages(prisma, workspace.id);
     }
 
     await prisma.workspaceMember.upsert({

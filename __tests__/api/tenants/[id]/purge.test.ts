@@ -87,11 +87,9 @@ function req(tenantId: string, raw: string, headers: Record<string, string>) {
 function setupTxMock(rowCounts: Record<string, number> = {}) {
   mocks.prismaTransaction.mockImplementationOnce(async (cb) => {
     const tx = {
-      outreach: { deleteMany: vi.fn().mockResolvedValue({ count: rowCounts.outreach ?? 0 }) },
-      callLog: { deleteMany: vi.fn().mockResolvedValue({ count: rowCounts.call_log ?? 0 }) },
-      claudeActivity: { deleteMany: vi.fn().mockResolvedValue({ count: rowCounts.claude_activity ?? 0 }) },
-      followup: { deleteMany: vi.fn().mockResolvedValue({ count: rowCounts.followups ?? 0 }) },
-      appointment: { deleteMany: vi.fn().mockResolvedValue({ count: rowCounts.appointments ?? 0 }) },
+      atlasEpingle: { deleteMany: vi.fn().mockResolvedValue({ count: rowCounts.atlas_epingles ?? 0 }) },
+      atlasSegment: { deleteMany: vi.fn().mockResolvedValue({ count: rowCounts.atlas_segments ?? 0 }) },
+      atlasDossier: { deleteMany: vi.fn().mockResolvedValue({ count: rowCounts.atlas_dossiers ?? 0 }) },
       planHistory: { deleteMany: vi.fn().mockResolvedValue({ count: rowCounts.plan_history ?? 0 }) },
       workspace: { deleteMany: vi.fn().mockResolvedValue({ count: rowCounts.workspaces ?? 0 }) },
       tenant: { update: mocks.txTenantUpdate.mockResolvedValueOnce({}) },
@@ -292,11 +290,9 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
       purgedAt: null,
     });
     setupTxMock({
-      outreach: 42,
-      call_log: 8,
-      claude_activity: 100,
-      followups: 5,
-      appointments: 3,
+      atlas_epingles: 3,
+      atlas_segments: 12,
+      atlas_dossiers: 2,
       plan_history: 4,
       workspaces: 2,
     });
@@ -316,11 +312,9 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
     expect(body.tenant_id).toBe(TENANT_ID);
     expect(body.purged_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(body.rows_deleted).toEqual({
-      outreach: 42,
-      call_log: 8,
-      claude_activity: 100,
-      followups: 5,
-      appointments: 3,
+      atlas_epingles: 3,
+      atlas_segments: 12,
+      atlas_dossiers: 2,
       plan_history: 4,
       workspaces: 2,
     });
@@ -373,7 +367,7 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
       purgeEligibleAt: pastDate,
       purgedAt: null,
     });
-    setupTxMock({ outreach: 1 });
+    setupTxMock({ atlas_segments: 1 });
     const { raw, headers } = signed({
       confirm_slug: "client-acme",
       reason: "GDPR via Hub legacy by email",

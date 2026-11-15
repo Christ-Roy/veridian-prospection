@@ -2,7 +2,7 @@
  * Middleware d'auth HMAC Hub pour les routes contrat §5.
  *
  * Wrapper standard pour les nouveaux endpoints (attach-owner, suspend, resume,
- * health, update-plan, soft-delete, restore, purge, usage-summary).
+ * health, update-plan, soft-delete, restore, purge).
  *
  * Standard-only : le Hub signe tous ses appels en HMAC §6.1, aucun mode legacy.
  *

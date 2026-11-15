@@ -133,45 +133,10 @@
 # centralisés dans src/app/api/workspaces/pipeline-stages-rbac.test.ts
 # qui exercent l'invariant clé (RBAC + seed + soft-delete + transaction).
 
-- sources:
-    - src/lib/outreach/pipeline-stages.ts
-    - src/lib/outreach/pipeline-stages.test.ts
-  covered_by:
-    - src/lib/outreach/pipeline-stages.test.ts
-  reason: |
-    Test colocalisé `src/lib/outreach/pipeline-stages.test.ts` (pattern
-    `src/lib/<X>.test.ts` couvre `src/lib/<X>.ts` cf src/lib/audit, invitations,
-    errors/dedupe). 10 tests Vitest : DEFAULT_PIPELINE_STAGES (3 cas :
-    8 stages canoniques alignés migration 0020, positions 0..7, label
-    non-vide + couleur Tailwind) + slugifyStage (5 cas : normalisation
-    snake_case ascii, retire bord, tronque 64 char, refuse bouillie,
-    collapse séparateurs). Sabotage : muter DEFAULT_PIPELINE_STAGES.length
-    à 7 casse "8 stages canoniques alignés migration".
-
 # Audit trial résidus 2026-05-24 (Agent R, commit d8a3cc3) — fixes "client payant
 # = AUCUN cap visible". 5 fichiers modifiés, couverts par 3 tests dédiés à
 # l'audit (matrice 7 plans payants + cache invalidation) plutôt que par les tests
 # canoniques (qui restent pertinents pour le comportement non-trial).
-- sources:
-    - src/app/api/tenants/[id]/credit-leads/route.ts
-  covered_by:
-    - __tests__/api/tenants/[id]/credit-leads.test.ts
-    - __tests__/api/tenants/[id]/credit-leads-filters.test.ts
-  reason: |
-    La route credit-leads a 2 surfaces : (1) le contrat v2.0 historique
-    (HMAC entrant + idempotency + welcome double-grant) couvert par
-    credit-leads.test.ts ; (2) l'extension v2.1 `filters` (LeadOrder
-    persisté pour les achats refill ICP) couverte par
-    credit-leads-filters.test.ts. Les 2 tests sont complémentaires :
-    canonique = invariants existants, filters = nouvel ajout v2.1.
-
-# ── Composants billing/refill-icp/* + page /leads/buy ───────────────────
-# Les 8 composants Radix (Slider/MultiSelect) et la page /leads/buy ont
-# une couverture source-level dans __tests__/components/billing/
-# refill-icp.test.tsx (50 tests assertant présence imports, contrôles
-# value/onChange, debounce 300ms, fetch endpoints, gating qualifiers
-# business, anti-tampering UI, etc).
-
 # ── Moteur de recherche IA (/api/search/*) — 2026-06-17 ──────────────────────
 # ── Interface Atlas (09/11) ──────────────────────────────────────────────
 - sources:

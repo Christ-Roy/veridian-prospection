@@ -138,21 +138,16 @@ export async function POST(
   const rowsDeleted = await prisma.$transaction(async (tx) => {
     const rows: Record<string, number> = {};
 
-    // Tables tenant_id-scoped (data métier)
-    const r1 = await tx.outreach.deleteMany({ where: { tenantId } });
-    rows.outreach = r1.count;
+    // Données Atlas de l'espace (l'ancienne app et ses tables sont retirées le 15/11) :
+    // épingles, segments (leurs versions et scorings suivent par clé étrangère), dossiers.
+    const r1 = await tx.atlasEpingle.deleteMany({ where: { tenantId } });
+    rows.atlas_epingles = r1.count;
 
-    const r3 = await tx.callLog.deleteMany({ where: { tenantId } });
-    rows.call_log = r3.count;
+    const r2 = await tx.atlasSegment.deleteMany({ where: { tenantId } });
+    rows.atlas_segments = r2.count;
 
-    const r4 = await tx.claudeActivity.deleteMany({ where: { tenantId } });
-    rows.claude_activity = r4.count;
-
-    const r5 = await tx.followup.deleteMany({ where: { tenantId } });
-    rows.followups = r5.count;
-
-    const r6 = await tx.appointment.deleteMany({ where: { tenantId } });
-    rows.appointments = r6.count;
+    const r3 = await tx.atlasDossier.deleteMany({ where: { tenantId } });
+    rows.atlas_dossiers = r3.count;
 
     // Plan history — audit du tenant lui-même, on vire en cascade
     const r7 = await tx.planHistory.deleteMany({ where: { tenantId } });

@@ -57,7 +57,7 @@ import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 export const E2E_USER_EMAIL = "e2e-persistent@yopmail.com";
-export const E2E_USER_PASSWORD = "E2ePersistent2026!";
+export const E2E_USER_PASSWORD = process.env.E2E_USER_PASSWORD ?? "";
 export const E2E_TENANT_NAME = "e2e-persistent";
 
 /**
@@ -66,7 +66,7 @@ export const E2E_TENANT_NAME = "e2e-persistent";
  * /prospects + /pipeline sans privilèges admin).
  */
 export const E2E_INVITED_EMAIL = "e2e-invited@yopmail.com";
-export const E2E_INVITED_PASSWORD = "E2eInvited2026!";
+export const E2E_INVITED_PASSWORD = process.env.E2E_INVITED_PASSWORD ?? "";
 
 /**
  * Lead canonique — Entreprise + Outreach posés dans le tenant E2E. Sert de
@@ -75,7 +75,6 @@ export const E2E_INVITED_PASSWORD = "E2eInvited2026!";
  * pas attribué par l'INSEE) pour ne jamais entrer en collision avec la dump
  * INSEE de 996K entreprises présente en staging/prod.
  */
-const E2E_CANONICAL_SIREN = "900000001";
 
 /**
  * UUIDs fixes du compte canonique. Posés en dur (pas générés) pour que le
@@ -265,60 +264,6 @@ export async function ensureCanonicalUser(): Promise<void> {
       userId: invitedUser.id,
       role: "member",
       visibilityScope: "own",
-    },
-  });
-
-  // 7) Lead canonique — Entreprise (SIREN hors plage SIRENE) + Outreach
-  //    rattaché au tenant E2E. Garantit qu'une DB fraîche (env neuf, clone
-  //    vierge) renvoie ≥ 1 row sur /prospects pour le tenant canonique.
-  //    SQL brut : la table `entreprises` est gérée hors Prisma (ETL INSEE),
-  //    le client TypeScript n'expose pas toutes ses colonnes ; un upsert
-  //    Prisma typé refuserait des champs nécessaires aux filtres /prospects.
-  await prisma.$executeRawUnsafe(
-    `INSERT INTO entreprises
-       (siren, denomination, code_naf, naf_libelle, commune, departement,
-        code_postal, tranche_effectifs, chiffre_affaires, best_phone_e164,
-        best_email_normalized, web_domain, web_domain_normalized,
-        is_registrar, ca_suspect, is_prospectable, prospect_score,
-        prospect_tier, secteur_final, master_updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-             false, false, true, 75, 'tier1', 'services', now())
-     ON CONFLICT (siren) DO UPDATE SET
-       denomination = EXCLUDED.denomination,
-       best_phone_e164 = EXCLUDED.best_phone_e164,
-       best_email_normalized = EXCLUDED.best_email_normalized,
-       is_registrar = false,
-       ca_suspect = false,
-       is_prospectable = true,
-       prospect_score = 75,
-       master_updated_at = now()`,
-    E2E_CANONICAL_SIREN,
-    "E2E Canonical Lead",
-    "6201Z",
-    "Programmation informatique",
-    "Paris",
-    "75",
-    "75001",
-    "00",
-    BigInt(500000),
-    "+33123456789",
-    "contact@e2e-canonical.example.fr",
-    "e2e-canonical.example.fr",
-    "e2e-canonical.example.fr",
-  );
-
-  await prisma.outreach.upsert({
-    where: {
-      siren_tenantId: { siren: E2E_CANONICAL_SIREN, tenantId: tenant.id },
-    },
-    update: { status: "a_contacter", userId: user.id, workspaceId: workspace.id },
-    create: {
-      siren: E2E_CANONICAL_SIREN,
-      tenantId: tenant.id,
-      workspaceId: workspace.id,
-      userId: user.id,
-      status: "a_contacter",
-      position: 0,
     },
   });
 }

@@ -127,14 +127,10 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:testpass@localhost:5432/prospection_test
         run: npx prisma db push --accept-data-loss --skip-generate
-      - name: Run integration tests (parallel — disjoint tenant_id + SIREN prefixes)
+      - name: Run integration tests (isolation des données Atlas entre espaces)
         env:
           DATABASE_URL: postgresql://postgres:testpass@localhost:5432/prospection_test
-        run: |
-          # tenant-isolation uses tenants aaaa/bbbb + SIREN prefix 998.
-          # workspace-isolation uses tenants cccc/dddd + SIREN prefix 999.
-          # No overlap → safe to run in parallel (vitest default).
-          npx vitest run e2e/integration/tenant-isolation.test.ts e2e/integration/workspace-isolation.test.ts
+        run: npx vitest run e2e/integration/atlas-isolation.test.ts
 
   # ── Build + push image GHCR (sur push main uniquement) ──────────────────
   docker:

@@ -14,6 +14,8 @@
  *  - 200 restore après soft-delete
  *  - visibility_scope=own par défaut sur nouveau membre
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, test, vi, beforeEach } from "vitest";
 import { createHmac } from "crypto";
 
@@ -87,12 +89,6 @@ vi.mock("@/lib/hub-webhook/outbox", () => ({
 // (ticket 2026-05-23 pipeline-stages-customisables) — mock no-op pour
 // ne pas tester la lib pipeline-stages depuis sync-member (couverte
 // ailleurs cf src/lib/outreach/pipeline-stages.test.ts).
-const { seedStagesMock } = vi.hoisted(() => ({
-  seedStagesMock: vi.fn(),
-}));
-vi.mock("@/lib/outreach/pipeline-stages", () => ({
-  seedDefaultPipelineStages: seedStagesMock,
-}));
 
 import { POST } from "@/app/api/tenants/[id]/sync-member/route";
 import { makeRequest, readJson } from "../../_helpers";
@@ -387,33 +383,12 @@ describe("POST /api/tenants/[id]/sync-member", () => {
 });
 
 /**
- * Anti-régression seed pipeline stages (ticket 2026-05-23) — la route
- * sync-member doit appeler `seedDefaultPipelineStages` quand elle crée
- * le workspace "default" d'un tenant qui n'en avait pas.
- *
- * Source-level (mocks Prisma chaînés trop coûteux à brancher ici) :
- * sabotage = retirer l'appel ou l'import = rouge.
+ * Atlas (15/11) : l'ancienne app et son pipeline sont retirés. Créer l'espace ne crée plus aucune étape
+ * de pipeline (la table workspace_pipeline_stages disparaît).
  */
-describe("sync-member — seed pipeline stages sur workspace.create", () => {
-  let source = "";
-
-  test("setup : lecture du source", async () => {
-    const fs = await import("node:fs/promises");
-    const path = await import("node:path");
-    source = await fs.readFile(
-      path.resolve(process.cwd(), "src/app/api/tenants/[id]/sync-member/route.ts"),
-      "utf-8",
-    );
-    expect(source.length).toBeGreaterThan(0);
-  });
-
-  test("importe seedDefaultPipelineStages depuis lib outreach", () => {
-    expect(source).toMatch(
-      /import\s*\{[^}]*seedDefaultPipelineStages[^}]*\}\s*from\s*["']@\/lib\/outreach\/pipeline-stages["']/,
-    );
-  });
-
-  test("appelle seedDefaultPipelineStages(prisma, workspace.id) après workspace.create", () => {
-    expect(source).toMatch(/seedDefaultPipelineStages\(\s*prisma\s*,\s*workspace\.id\s*\)/);
+describe("sync-member — plus de pipeline de l'ancienne app", () => {
+  const source = readFileSync(join(process.cwd(), "src/app/api/tenants/[id]/sync-member/route.ts"), "utf8");
+  test("n'importe plus rien de l'ancienne app (outreach, pipeline)", () => {
+    expect(source).not.toMatch(/@\/lib\/outreach|seedDefaultPipelineStages|pipelineStage/);
   });
 });
