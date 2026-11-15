@@ -20,7 +20,7 @@ retirée le 09/11 ; archive : tag `archive/prospection-v1-20261109`. Le pipeline
 - Auth.js v5, sessions JWT
 - Playwright (e2e), Vitest (unitaires)
 
-## Vision produit (Robert, 09/11) : Prospection devient un navigateur du marché sur ODH
+## Vision produit : `docs/VISION-ATLAS.md` fait foi (Robert, 15/11 : Pappers des marchés, lead magnet, chaîne Atlas → Notifuse → CRM → ERP, API)
 
 Le pipeline commercial part dans Twenty ; Prospection sert à trouver et qualifier un marché.
 Maquette : `docs/maquette/atlas-des-marches.html`. Linear : ROB-173.
