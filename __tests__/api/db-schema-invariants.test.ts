@@ -17,6 +17,12 @@ const BANNED_MODELS = [
   // Migration : prisma/migrations/0012_drop_outreach_emails/
   // Raison : table vidée commit 61427f9, plus aucun writer/reader, 0 rows prod.
   "OutreachEmail",
+  // Base propre (Robert, 15/11/2026) — l'ancienne app quitte la base, archive dans
+  // ~/archives/prospection-v1-20261115. Migration : prisma/migrations/0040_drop_ancienne_app/
+  "Outreach", "WorkspacePipelineStage", "Appointment", "Followup", "ClaudeActivity", "CallLog",
+  "LeadCreditEvent", "LeadOrder", "LeadConsumption", "PipelineTransition", "LeadSegment", "LeadEmail",
+  "MailOutbox", "PipelineConfig", "TenantMailConfig", "TenantMailTemplate", "TenantAiConfig",
+  "UserOpenRouterLink", "MagicLink", "MfaCode", "NotificationPreferences", "Entreprise",
 ] as const;
 
 // Champs scalaires retirés d'un modèle (mais le modèle existe toujours).
