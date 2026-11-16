@@ -62,7 +62,7 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
   Tenants existants : `POST /api/tenants/link-hub` (HMAC, `{hub_user_id, hub_tenant_id}`) ne pose que ce lien.
   Ne pas rejouer `provision` sur un vrai client : il remet le propriétaire `admin` et recrée `default`.
   `by-email` rend `workspaces[].hub_tenant_id` pour `hub reconcile`.
-- Outils : `src/atlas/outils-mcp.ts` (26), les mêmes que l'écran appelle par `/api/atlas/[outil]` avec la session.
+- Outils : `src/atlas/outils-mcp.ts` (35), les mêmes que l'écran appelle par `/api/atlas/[outil]` avec la session.
   Espace déduit de l'utilisateur, un `viewer` ne voit pas les outils d'écriture, fiche limitée à 60/min.
   Ajouter un outil = une entrée dans `OUTILS_ATLAS`, le Hub le relit seul.
 - ClickHouse (`src/atlas/source.ts`) : compte `prospection_ro`, 12 requêtes simultanées pour toute l'app, aucun
@@ -74,10 +74,13 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
   marché ») : le marché ENTIER, pas que les fiches prospectables. Sélection par LISTE de codes NAF avec
   `naf_rev2 = 1`, jamais par intervalle de chaînes ; prévoir « département inconnu » (diffusion partielle) ;
   afficher `nb_*_livrable` comme « envoyables », `nb_avec_*` comme « connus ».
-- Carte : projection exacte des chemins (`src/atlas/projection.ts`, Mercator retrouvé à 0,05 près), communes = contours de
-  l'API Géo (`src/atlas/communes.ts`, cache 24 h, route `/api/atlas/communes/[dep]`) ; outil `repartir_communes` (base
-  maître rapprochée par nom et code postal, fiches par INSEE). Le cube ne descend pas à la commune.
-- Registre : `hub mcp-app add prospection https://prospection.app.veridian.site/api/mcp --acces tous` (inscrit le 09/11).
+- Carte : projection exacte (`src/atlas/projection.ts`), communes et EPCI de l'API Géo (`communes.ts`, cache 24 h),
+  outil `repartir_communes`. Le cube ne descend pas à la commune.
+- Accès avancé (16/11, `src/atlas/acces.ts`, `sql.ts`) : par espace (`tenants.acces_avance`), accordé par un administrateur
+  Atlas (`users.atlas_admin`, outil `accorder_acces_avance` ou volet « API et accès avancé »), jamais par le plan. Donne
+  `requete_sql` (garde : SELECT sur 3 tables d'ODH, 1 000 lignes ; le compte ClickHouse refuse `url()`) et les clés API
+  (`Bearer atl_…` sur `/api/atlas/[outil]`, empreinte SHA-256 seule). `verifier_entreprises` : 50 SIREN/jour gratuit, 5 000 payant.
+- Registre : `hub mcp-app add prospection … --acces tous` (09/11).
 - Journaux : `obs search '\[mcp\] outil=' --since 6h` (Loki) ; `nomad alloc logs` ne rend rien pour ce job.
 
 ## Déploiement et promotion
@@ -124,12 +127,10 @@ Les comptes e2e n'existent qu'en base staging, exception de banc. Ne pas pousser
   puis la migration de DROP au déploiement suivant ; la CI migre avant de déployer (fait le 09/11, 0035).
 - **Pas d'invitation locale** (retirée le 09/11) : inviter crée un utilisateur, c'est le Hub (`/dashboard/workspace/members`).
 - **Un déploiement remplace toute l'allocation** du groupe `stack` : l'id d'alloc change.
-- **Après déploiement, lire l'image et la version dans le conteneur** ; `/api/status` renvoie
-  `commit: null` et ne prouve rien.
-- **Un compte de test doit avoir une adresse prouvée au Hub** pour rebondir : sinon il revient sur
-  `/dashboard`, et c'est le comportement voulu. Une invitation réellement envoyée prouve l'adresse.
-- **Jamais de test sur le compte d'un vrai client.**
-- **Conteneur Docker ad hoc** : `guard-docker-noeuds.py` le refuse s'il n'est pas déclaré.
+- **Après déploiement, lire l'image dans le conteneur** ; `/api/status` ne prouve rien.
+- **Un compte de test a une adresse prouvée au Hub**, sinon il revient sur `/dashboard` (voulu).
+- **Jamais de test sur le compte d'un vrai client.** Sur le compte de Robert, un parcours ne clique ni filtre
+  ni barre d'un marché enregistré : un clic crée une version (16/11, « Marché animalier » réécrit puis restauré).
 
 ### Veto Robert
 
@@ -141,18 +142,9 @@ Les comptes e2e n'existent qu'en base staging, exception de banc. Ne pas pousser
 
 ## Structure
 
-```
-src/atlas/            # champs, filtres, source ClickHouse, segments (Prisma), outils MCP
-src/components/atlas/ # interface (rail, vues, carte, fiche, volets), fidèle à docs/maquette
-src/app/api/          # atlas/[outil], mcp, health, contrat Hub (sso, tenants, users)
-src/lib/hub/          # contrat Hub
-e2e/core/        # BLOQUANTS, voir .claude/rules/core-tests.md
-e2e/extended/    # non bloquants
-e2e/integration/ # exigent Postgres (DATABASE_URL), échouent sans
-__tests__/       # routes et lib en Vitest
-deploy/          # jobs Nomad prod et staging
-docs/            # dont ETAT-DES-LIEUX-CHANGEMENT-DE-TETE.md
-```
+`src/atlas/` (champs, filtres, source ClickHouse, segments, outils MCP, accès), `src/components/atlas/` (interface,
+fidèle à `docs/maquette`), `src/app/api/` (atlas, mcp, health, contrat Hub), `e2e/core/` bloquants
+(`.claude/rules/core-tests.md`), `e2e/integration/` (Postgres requis), `__tests__/` (Vitest), `deploy/` (Nomad).
 
 ## Commandes
 

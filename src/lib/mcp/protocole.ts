@@ -47,7 +47,8 @@ export async function traiter(m: Message, c: ContexteOutil, journal: Journal = (
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: "prospection", title: "Prospection Veridian", version: "1.0.0" },
         instructions:
-          "Entreprises françaises de l'espace de l'utilisateur. Cherchez avec rechercher_entreprises, puis ouvrez une fiche par SIREN.",
+          "Atlas : le marché des entreprises françaises (ODH). Mesurez un marché (analyser_marche), listez-le (explorer_marche, " +
+            "lister_entreprises), vérifiez une liste de SIREN (verifier_entreprises), ouvrez une fiche par SIREN.",
       });
     }
     case "ping":

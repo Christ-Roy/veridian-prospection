@@ -16,6 +16,8 @@ import { EntreeCubeSchema, entreeDepuisFiltre } from "./cube";
 import { peutExporter } from "./export";
 import { compilerMaitre } from "./maitre";
 import { geometrieCommunes, rapprocher } from "./communes";
+import { accorderAcces, creerCle, listerAccesAvances, listerCles, RefusAcces, revoquerCle } from "./acces";
+import { LIGNES_MAX_SQL, TABLES_SQL, verifierRequete } from "./sql";
 import { FiltreInvalide } from "./filtres";
 import { sourceMarche } from "./source";
 import { liensIA } from "@/lib/hub/liens-ia-client";
@@ -35,7 +37,7 @@ function lisible<T>(f: (a: Record<string, unknown>, c: ContexteOutil) => Promise
     try {
       return await f(a, c);
     } catch (e) {
-      if (e instanceof FiltreInvalide || e instanceof seg.Introuvable || e instanceof seg.Refus) throw new ErreurOutil(e.message);
+      if (e instanceof FiltreInvalide || e instanceof seg.Introuvable || e instanceof seg.Refus || e instanceof RefusAcces) throw new ErreurOutil(e.message);
       throw e;
     }
   };
@@ -198,6 +200,138 @@ const OUTILS_BRUTS: Outil[] = [
       if (!m) throw new ErreurOutil(`Aucune entreprise avec le SIREN ${a.siren}.`);
       return avecSource({ fiche: m, base: "maitre", note: "Entreprise hors fiches prospectables : identité seulement, aucune coordonnée." });
     }),
+  },
+  {
+    name: "mes_droits",
+    title: "Droits de l'utilisateur dans Atlas",
+    description: "Plan de l'espace, accès avancé (SQL, clés API), administration Atlas, et quota du jour de verifier_entreprises.",
+    input: z.object({}),
+    annotations: LECTURE,
+    run: lisible(async (_a, c) => ({
+      plan: c.droits?.plan ?? null,
+      payant: !!c.droits?.payant,
+      acces_avance: !!c.droits?.accesAvance,
+      admin_atlas: !!c.droits?.adminAtlas,
+      peut_creer_cles: !!c.droits?.accesAvance && c.ctx.isAdmin,
+      quota_verification_jour: c.droits?.payant || c.droits?.accesAvance ? QUOTA_VERIFICATION.payant : QUOTA_VERIFICATION.gratuit,
+    })),
+  },
+  {
+    name: "verifier_entreprises",
+    title: "Vérifier une liste d'entreprises",
+    description:
+      "Pour une liste de SIREN ou SIRET (200 au plus, collés tels quels) : nom, active ou cessée, commune, NAF, site web (adresse quand " +
+      "elle est publiée, sinon a_site), email envoyable, téléphone utilisable, et si la fiche est contactable dans Atlas. Les introuvables " +
+      "et les numéros invalides sont rendus à part. 50 SIREN par jour en gratuit, 5 000 en plan payant.",
+    input: z.object({ sirens: z.array(z.string().max(40)).min(1).max(200) }),
+    annotations: LECTURE,
+    run: lisible(async (a, c) => {
+      const { sirens, invalides } = normaliserSirens(a.sirens as string[]);
+      if (!sirens.length) throw new ErreurOutil("Aucun SIREN (9 chiffres) ni SIRET (14 chiffres) reconnu.");
+      const large = !!(c.droits?.payant || c.droits?.accesAvance);
+      const reste = reserverVerification(c.ctx.tenantId, sirens.length, large ? QUOTA_VERIFICATION.payant : QUOTA_VERIFICATION.gratuit);
+      const lignes = await sourceMarche().verifier(sirens);
+      return avecSource({
+        entreprises: lignes,
+        resume: {
+          demandees: sirens.length,
+          trouvees: lignes.filter((l) => l.trouvee).length,
+          avec_site: lignes.filter((l) => l.a_site).length,
+          email_envoyable: lignes.filter((l) => l.email_envoyable).length,
+          contactables: lignes.filter((l) => l.contactable).length,
+        },
+        ...(invalides.length ? { invalides } : {}),
+        quota_restant_aujourdhui: reste,
+      });
+    }),
+  },
+  {
+    name: "schema_odh",
+    title: "Tables et colonnes d'ODH (accès avancé)",
+    description:
+      `Colonnes des tables lisibles par requete_sql : ${TABLES_SQL.join(", ")}. company_prospection_current : fiches contactables ` +
+      "(contacts, web, finances, signaux) ; company_master_current : toutes les entreprises (30 M, identité et drapeaux, filtrer d'abord " +
+      "sur naf_code et department) ; market_cube_current : comptes agrégés du marché.",
+    input: z.object({}),
+    annotations: LECTURE,
+    acces: "avance",
+    run: lisible(async () => ({ colonnes: await sourceMarche().schema() })),
+  },
+  {
+    name: "requete_sql",
+    title: "Requête SQL en lecture sur ODH (accès avancé)",
+    description:
+      `Une requête SELECT (ou WITH) ClickHouse sur ${TABLES_SQL.join(", ")}, ${LIGNES_MAX_SQL} lignes au plus. Limites du compte : ` +
+      "10 s, 15 M lignes lues. Sur company_master_current, filtrez sur naf_code puis department (ordre de tri) ou sur siren (index). " +
+      "Paramètres, réglages et FORMAT refusés. Voir schema_odh pour les colonnes.",
+    input: z.object({ requete: z.string().min(1).max(8000), limite: z.number().int().min(1).max(LIGNES_MAX_SQL).default(200) }),
+    annotations: LECTURE,
+    acces: "avance",
+    run: lisible(async (a, c) => {
+      if (isRateLimited(`atlas-sql:${c.ctx.tenantId}`, 30, 60_000)) throw new ErreurOutil("30 requêtes SQL par minute au plus.");
+      const sql = verifierRequete(a.requete as string, a.limite as number);
+      const t0 = Date.now();
+      try {
+        const r = await sourceMarche().sql(sql);
+        console.log(`[atlas] sql espace=${c.ctx.tenantId} user=${c.ctx.userId} lignes=${r.lignes.length} ms=${Date.now() - t0} q=${JSON.stringify((a.requete as string).slice(0, 300))}`);
+        return { ...r, nombre: r.lignes.length, tronque: r.lignes.length >= (a.limite as number) };
+      } catch (e) {
+        const m = e instanceof Error ? e.message : String(e);
+        // Erreur de ClickHouse : rendue lisible à l'IA (syntaxe, colonne inconnue, limite dépassée), sans la pile.
+        throw new ErreurOutil(m.replace(/^ClickHouse \d+ : /, "").replace(/\(version [^)]*\)/, "").slice(0, 400));
+      }
+    }),
+  },
+  {
+    name: "lister_cles_api",
+    title: "Clés API de l'espace (accès avancé)",
+    description: "Clés API de l'espace : nom, début de la clé, auteur, dernière utilisation, révocation. La clé elle-même n'est jamais relisible.",
+    input: z.object({}),
+    annotations: LECTURE,
+    acces: "avance",
+    run: lisible(async (_a, c) => ({ cles: await listerCles(c.ctx.tenantId) })),
+  },
+  {
+    name: "creer_cle_api",
+    title: "Créer une clé API (accès avancé)",
+    description:
+      "Crée une clé pour appeler les outils Atlas depuis un script : POST https://prospection.app.veridian.site/api/atlas/<outil> avec " +
+      "l'en-tête Authorization: Bearer <clé> et les arguments en JSON. La clé n'est affichée qu'une fois : la transmettre à l'utilisateur.",
+    input: z.object({ nom: z.string().trim().min(1).max(80) }),
+    annotations: { ...ECRITURE, idempotentHint: false },
+    acces: "avance",
+    visible: (c) => c.ctx.isAdmin,
+    run: lisible(async (a, c) => creerCle(c.ctx, a.nom as string)),
+  },
+  {
+    name: "revoquer_cle_api",
+    title: "Révoquer une clé API (accès avancé)",
+    description: "Révoque une clé de l'espace : elle cesse de marcher tout de suite.",
+    input: z.object({ cle_id: z.string().uuid() }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    acces: "avance",
+    visible: (c) => c.ctx.isAdmin,
+    run: lisible(async (a, c) => revoquerCle(c.ctx.tenantId, a.cle_id as string)),
+  },
+  {
+    name: "accorder_acces_avance",
+    title: "Accorder ou retirer l'accès avancé (administrateur Atlas)",
+    description:
+      "Donne (actif = true) ou retire (false) l'accès avancé (SQL sur ODH, clés API) à l'espace dont l'adresse est propriétaire. " +
+      "Retirer révoque aussi toutes ses clés.",
+    input: z.object({ email: z.string().email(), actif: z.boolean() }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    acces: "admin",
+    run: lisible(async (a, c) => accorderAcces(c.ctx.userId, a.email as string, a.actif as boolean)),
+  },
+  {
+    name: "lister_acces_avances",
+    title: "Espaces à accès avancé (administrateur Atlas)",
+    description: "Les espaces qui ont l'accès avancé, avec l'adresse de leur propriétaire.",
+    input: z.object({}),
+    annotations: LECTURE,
+    acces: "admin",
+    run: lisible(async (_a, c) => ({ espaces: await listerAccesAvances(c.ctx.userId) })),
   },
   {
     name: "repartir_communes",
@@ -439,6 +573,35 @@ const OUTILS_BRUTS: Outil[] = [
     run: lisible(async (a, c) => seg.supprimerSegment(c.ctx.tenantId, a.segment_id as string, a.avec_cibles as boolean)),
   },
 ];
+
+/** SIREN ou SIRET collés tels quels (espaces, points) → SIREN à 9 chiffres ; le reste est rendu à part. */
+export function normaliserSirens(entrees: readonly string[]): { sirens: string[]; invalides: string[] } {
+  const sirens: string[] = [];
+  const invalides: string[] = [];
+  for (const e of entrees) {
+    const c = String(e).replace(/[\s.\-]/g, "");
+    if (/^\d{9}$/.test(c)) sirens.push(c);
+    else if (/^\d{14}$/.test(c)) sirens.push(c.slice(0, 9));
+    else if (c) invalides.push(String(e));
+  }
+  return { sirens: [...new Set(sirens)], invalides };
+}
+
+/**
+ * Quota de verifier_entreprises par espace et par jour (heure de Paris) : 50 SIREN en gratuit, 5 000 en payant
+ * ou en accès avancé. Compté en mémoire : un redémarrage le remet à zéro, c'est un fusible, pas une facture.
+ */
+export const QUOTA_VERIFICATION = { gratuit: 50, payant: 5000 };
+const verifies = new Map<string, { jour: string; n: number }>();
+export function reserverVerification(tenantId: string, n: number, plafond: number, maintenant = new Date()): number {
+  const jour = maintenant.toLocaleDateString("fr-CA", { timeZone: "Europe/Paris" });
+  const v = verifies.get(tenantId);
+  const deja = v?.jour === jour ? v.n : 0;
+  const reste = Math.max(0, plafond - deja);
+  if (n > reste) throw new ErreurOutil(`Quota du jour atteint : ${deja} SIREN vérifiés sur ${plafond}, il en reste ${reste}.` + (plafond === QUOTA_VERIFICATION.gratuit ? " Un plan payant en vérifie 5 000 par jour." : ""));
+  verifies.set(tenantId, { jour, n: deja + n });
+  return reste - n;
+}
 
 export const OUTILS_ATLAS: Outil[] = OUTILS_BRUTS.map((o) => ({
   ...o,

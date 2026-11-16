@@ -250,6 +250,9 @@ model User {
   // 2FA email opt-in (cohérent avec Hub)
   mfaEnabled Boolean @default(false) @map("mfa_enabled")
 
+  // Administrateur Atlas (équipe Veridian) : accorde ou retire l'accès avancé des espaces.
+  atlasAdmin Boolean @default(false) @map("atlas_admin")
+
   // Legacy bridge — pour audit / debug. À terme on peut retirer cette colonne
   // (les UUIDs sont identiques à auth.users.id donc redondant) mais on garde
   // pendant la phase de migration pour traçabilité.
@@ -361,6 +364,10 @@ model Tenant {
   // Identifiant du tenant côté Hub, reçu au provisionnement (hub_tenant_id). Sert à retenir le
   // claim tenant_id du jeton MCP (CONTRAT-MCP §2). Les ids locaux restent distincts de ceux du Hub.
   hubTenantId String? @unique @map("hub_tenant_id") @db.Uuid
+
+  // Accès avancé Atlas (16/11, Robert) : requêtes SQL en lecture sur ODH et clés API. Accordé un par un
+  // par un administrateur Atlas (users.atlas_admin), jamais par le plan.
+  accesAvance Boolean @default(false) @map("acces_avance")
 
   // Intégrations Twenty CRM
   twentyWorkspaceId         String?   @map("twenty_workspace_id") @db.Uuid
@@ -589,4 +596,21 @@ model AtlasPresenceIa {
 
   @@unique([userId, clientId])
   @@map("atlas_presence_ia")
+}
+
+/// Clé API Atlas d'un espace à accès avancé : seule l'empreinte SHA-256 est gardée, la clé n'est montrée
+/// qu'une fois. Elle agit au nom de son créateur, dans son espace, avec les droits de son créateur.
+model AtlasCleApi {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId            String    @map("tenant_id") @db.Uuid
+  userId              String    @map("user_id") @db.Uuid
+  nom                 String
+  prefixe             String
+  empreinte           String    @unique
+  creeLe              DateTime  @default(now()) @map("cree_le") @db.Timestamptz
+  derniereUtilisation DateTime? @map("derniere_utilisation") @db.Timestamptz
+  revoqueeLe          DateTime? @map("revoquee_le") @db.Timestamptz
+
+  @@index([tenantId])
+  @@map("atlas_cles_api")
 }

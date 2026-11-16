@@ -23,6 +23,8 @@ const TRACES = {
   historique: "M2.5 8a5.5 5.5 0 105.5-5.5A5.6 5.6 0 004 4.3M2.5 2.5v2.5H5M8 5v3l2 1.5",
   alerte: "M8 2.5l6 10.5H2zM8 6.5v3M8 11.2v.1",
   charge: "M8 2.5a5.5 5.5 0 105.5 5.5",
+  verifier: "M2.5 4h6M2.5 8h4M2.5 12h4M9 10.5l1.8 1.8L14 9",
+  cle: "M10.5 2.5a3 3 0 11-2.6 4.5L2.5 12.4V14h2v-1.5h1.5V11h1.5l1.3-1.3a3 3 0 001.7-7.2zM11 4.8h.1",
 } as const;
 
 export type NomIcone = keyof typeof TRACES;

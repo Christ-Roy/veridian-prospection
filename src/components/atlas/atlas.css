@@ -203,6 +203,12 @@
 .atlas .tbl tbody tr:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
 .atlas .tbl .busy { opacity: 0.55; transition: opacity 0.2s; }
 .atlas .tbl tbody tr.statique { cursor: default; }
+.atlas .tbl tr.muet td { color: var(--muted); }
+.atlas .tbl td .lnk, .atlas .sheet .lnk { background: none; border: 0; padding: 0; color: var(--fg); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; font: inherit; text-align: left; }
+.atlas .saisie-liste, .atlas .inp { width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 13px; background: var(--bg); color: var(--fg); }
+.atlas .saisie-liste { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }
+.atlas .inp { flex: 1; min-width: 0; }
+.atlas .code { background: var(--soft); border: 1px solid var(--soft2); border-radius: 8px; padding: 10px 12px; font-size: 12px; overflow-x: auto; white-space: pre; margin: 0; }
 .atlas .tbl th.num, .atlas .tbl td.num { text-align: right; }
 .atlas .marche .kpis { margin-bottom: 18px; }
 .atlas .marche .hint { margin: 12px 0; max-width: 760px; }

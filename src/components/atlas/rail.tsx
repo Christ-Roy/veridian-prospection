@@ -20,6 +20,10 @@ type Props = {
   peutEcrire: boolean;
   ias: IAVue[];
   onBrancherIA: () => void;
+  /** Vérifier une liste de SIREN (tout le monde). */
+  onVerifier: () => void;
+  /** API et accès avancé : seulement pour un espace à accès avancé ou un administrateur Atlas. */
+  onAcces?: () => void;
   clignote: string | null;
   onSelection: (id: string | null) => void;
   onCreer: (type: "dossier" | "marche" | "cible", marche?: SegmentArbre) => void;
@@ -29,7 +33,7 @@ type Props = {
  * Rail de la maquette : 56 px d'icônes, 268 px au survol ou au focus, libellés en fondu. Les marchés
  * sont rangés par dossier ; le marché actif déploie ses cibles. Sous 720 px, c'est un menu.
  */
-export function Rail({ arbre, erreur, selection, ouvert, peutEcrire, ias, onBrancherIA, clignote, onSelection, onCreer }: Props) {
+export function Rail({ arbre, erreur, selection, ouvert, peutEcrire, ias, onBrancherIA, onVerifier, onAcces, clignote, onSelection, onCreer }: Props) {
   const { data: session } = useSession();
   const email = session?.user?.email ?? null;
   const marcheActif = arbre && selection ? marcheDe(arbre, selection) : null;
@@ -113,6 +117,20 @@ export function Rail({ arbre, erreur, selection, ouvert, peutEcrire, ias, onBran
             </button>
           </div>
         )}
+
+        <div className="rsec">
+          <div className="rhead lbl">Outils</div>
+          <button type="button" className="ritem" title="Vérifier une liste de SIREN : site, email, téléphone" onClick={onVerifier}>
+            <Icone nom="verifier" />
+            <span className="lbl">Vérifier une liste</span>
+          </button>
+          {onAcces && (
+            <button type="button" className="ritem" title="Clés API et requêtes SQL sur ODH" onClick={onAcces}>
+              <Icone nom="cle" />
+              <span className="lbl">API et accès avancé</span>
+            </button>
+          )}
+        </div>
 
         <div className="rsec">
           <div className="rhead lbl">Notifuse</div>

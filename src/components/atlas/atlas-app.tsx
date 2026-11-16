@@ -41,13 +41,14 @@ import { VueMarche } from "./vue-marche";
 import { HUB_IA, Rail, type IAVue } from "./rail";
 import type { AnalyseMarche, ApercuMarche, Arbre, ChampInfo, Condition, Epingle, Filtre, Historique, SegmentArbre, SegmentDetail, Vue, ZoneLocale } from "./types";
 import { VoletDossier, VoletFiche, VoletHistorique } from "./volets";
+import { VoletAcces, VoletVerifier, type DroitsAtlas } from "./volet-outils";
 import { VueBarres, VueEntonnoir, VuePriorite, VueTableau } from "./vues";
 
 const COLONNES_LIBRES = ["nom", "commune", "departement", "naf", "taille", "chiffre_affaires", "site", "email"];
 const FILTRE_VIDE: Filtre = { conditions: [] };
 const SONDE_MS = 15_000;
 
-type Volet = { type: "fiche"; siren: string; nom: string } | { type: "dossier" } | { type: "historique" } | null;
+type Volet = { type: "fiche"; siren: string; nom: string } | { type: "dossier" } | { type: "historique" } | { type: "verifier" } | { type: "acces" } | null;
 type Apercu = { version: number; filtre: Filtre } | null;
 
 const VUES: { id: Vue; libelle: string; icone: NomIcone }[] = [
@@ -110,6 +111,14 @@ export function AtlasApp() {
   const [kpisBusy, setKpisBusy] = useState(false);
   const [simulee, setSimulee] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
+
+  // ---- droits (plan, accès avancé, administration Atlas)
+  const [droits, setDroits] = useState<DroitsAtlas | null>(null);
+  useEffect(() => {
+    appeler<DroitsAtlas>("mes_droits")
+      .then(setDroits)
+      .catch(() => setDroits(null));
+  }, []);
 
   // ---- surfaces
   const [pop, setPop] = useState(false);
@@ -607,6 +616,8 @@ export function AtlasApp() {
         peutEcrire={peutEcrire}
         ias={toutesIAs}
         onBrancherIA={() => setDialogueIA(true)}
+        onVerifier={() => (setRailOuvert(false), setVolet({ type: "verifier" }))}
+        onAcces={droits?.acces_avance || droits?.admin_atlas ? () => (setRailOuvert(false), setVolet({ type: "acces" })) : undefined}
         clignote={clignote}
         onSelection={choisir}
         onCreer={(type, m) => {
@@ -915,6 +926,8 @@ export function AtlasApp() {
       {volet?.type === "fiche" && (
         <VoletFiche siren={volet.siren} nom={volet.nom} epingle={epingle(volet.siren)} peutEcrire={peutEcrire} onEpingler={epingler} onRetirer={retirer} onFermer={fermerVolet} />
       )}
+      {volet?.type === "verifier" && <VoletVerifier droits={droits} onFiche={ouvrirFiche} onFermer={fermerVolet} />}
+      {volet?.type === "acces" && droits && <VoletAcces droits={droits} onFermer={fermerVolet} />}
       {volet?.type === "dossier" && <VoletDossier epingles={epingles} erreur={erreurEpingles} peutEcrire={peutEcrire} onOuvrir={ouvrirFiche} onRetirer={retirer} onFermer={fermerVolet} />}
       {volet?.type === "historique" && detail && (
         <VoletHistorique

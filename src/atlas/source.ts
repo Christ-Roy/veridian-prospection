@@ -28,6 +28,23 @@ export type CommunesBrutes = {
   repli: boolean;
   lignes: { insee: string | null; nom: string; code_postal: string | null; mesures: Record<string, number> }[];
 };
+/** Ligne de verifier_entreprises : ce qu'on sait d'une entreprise, en un coup d'œil. */
+export type Verification = {
+  siren: string;
+  trouvee: boolean;
+  nom: string | null;
+  active: boolean | null;
+  commune: string | null;
+  departement: string | null;
+  naf: string | null;
+  /** Adresse du site quand ODH la publie, sinon null ; `a_site` dit s'il y en a un. */
+  site: string | null;
+  a_site: boolean | null;
+  email_envoyable: boolean | null;
+  telephone_utilisable: boolean | null;
+  /** Fiche contactable dans Atlas (ciblable, exportable). */
+  contactable: boolean;
+};
 export type Point = { siren: string; nom: string; commune: string; lat: number; lon: number; email: boolean; site: boolean };
 
 /** Colonnes de la fiche : thème → (clé française → colonne ODH). Liste blanche, comme le catalogue. */
@@ -48,6 +65,12 @@ export interface SourceMarche {
   readonly simulee: boolean;
   fiche(siren: string): Promise<Fiche | null>;
   points(filtre: unknown, departement: string, limite?: number): Promise<Point[]>;
+  /** Vérification par lot : une ligne par SIREN demandé (fiche contactable, sinon base complète, sinon introuvable). */
+  verifier(sirens: readonly string[]): Promise<Verification[]>;
+  /** Accès avancé : requête SQL déjà passée par verifierRequete (sql.ts). */
+  sql(requete: string): Promise<{ colonnes: string[]; lignes: Ligne[] }>;
+  /** Colonnes des tables autorisées au SQL. */
+  schema(): Promise<{ table: string; colonne: string; type: string }[]>;
   /** Comptes par commune d'un département, bruts (rapprochés des contours par communes.ts). */
   communes(filtre: unknown, departement: string, base: "marche" | "prospection"): Promise<CommunesBrutes>;
   compter(filtre: unknown): Promise<number>;
@@ -289,6 +312,60 @@ export class SourceClickHouse implements SourceMarche {
       ORDER BY priority_score_v2 DESC NULLS LAST, siren LIMIT ${Math.min(1000, Math.max(1, Math.trunc(limite)))}`;
     const r = await this.requete<Record<string, unknown>>(sql, params);
     return r.map((x) => ({ siren: String(x.siren), nom: String(x.nom), commune: String(x.commune), lat: Number(x.lat), lon: Number(x.lon), email: Number(x.email) === 1, site: Number(x.site) === 1 }));
+  }
+
+  async verifier(sirens: readonly string[]): Promise<Verification[]> {
+    const liste = [...new Set(sirens)];
+    if (!liste.length) return [];
+    const p = { s: { type: "Array(String)", valeur: liste } as SqlParam };
+    const fiches = await this.requete<Record<string, unknown>>(
+      `SELECT siren, legal_name AS nom, city AS commune, department AS departement, naf_code AS naf, primary_domain AS site,
+        email_envoyable, telephone_envoyable FROM ${TABLE} WHERE siren IN {s:Array(String)}`,
+      p,
+    );
+    const vues = new Set(fiches.map((f) => String(f.siren)));
+    const reste = liste.filter((x) => !vues.has(x));
+    // Le reste dans la base complète (index bloom sur le SIREN : quelques blocs lus, mesuré le 16/11).
+    const maitre = reste.length
+      ? await this.requete<Record<string, unknown>>(
+          `SELECT siren, legal_name AS nom, city AS commune, department AS departement, naf_code AS naf, administrative_status AS statut,
+            has_site, email_envoyable, telephone_envoyable FROM ${TABLE_MAITRE} WHERE siren IN {s:Array(String)}`,
+          { s: { type: "Array(String)", valeur: reste } },
+        )
+      : [];
+    const v = (x: unknown) => (x === "" || x === null || x === undefined ? null : String(x));
+    const parSiren = new Map<string, Verification>();
+    for (const f of fiches) {
+      const site = v(f.site);
+      parSiren.set(String(f.siren), {
+        siren: String(f.siren), trouvee: true, nom: v(f.nom), active: true, commune: v(f.commune), departement: v(f.departement), naf: v(f.naf),
+        site, a_site: !!site, email_envoyable: Number(f.email_envoyable) === 1, telephone_utilisable: Number(f.telephone_envoyable) === 1, contactable: true,
+      });
+    }
+    for (const m of maitre) {
+      if (parSiren.has(String(m.siren))) continue;
+      parSiren.set(String(m.siren), {
+        siren: String(m.siren), trouvee: true, nom: v(m.nom), active: m.statut === "A", commune: v(m.commune), departement: v(m.departement), naf: v(m.naf),
+        site: null, a_site: Number(m.has_site) === 1, email_envoyable: Number(m.email_envoyable) === 1, telephone_utilisable: Number(m.telephone_envoyable) === 1, contactable: false,
+      });
+    }
+    return liste.map(
+      (x) => parSiren.get(x) ?? { siren: x, trouvee: false, nom: null, active: null, commune: null, departement: null, naf: null, site: null, a_site: null, email_envoyable: null, telephone_utilisable: null, contactable: false },
+    );
+  }
+
+  async sql(requete: string) {
+    const lignes = await this.requete<Ligne>(requete, {});
+    return { colonnes: lignes[0] ? Object.keys(lignes[0]) : [], lignes };
+  }
+
+  async schema() {
+    const r = await this.requete<{ table: string; colonne: string; type: string }>(
+      `SELECT concat(database, '.', table) AS table, name AS colonne, type FROM system.columns
+       WHERE database = 'odh' AND table IN ('company_prospection_current', 'company_master_current', 'market_cube_current') ORDER BY table, position`,
+      {},
+    );
+    return r;
   }
 
   async communes(filtre: unknown, departement: string, base: "marche" | "prospection"): Promise<CommunesBrutes> {
@@ -540,6 +617,20 @@ export class SourceSimulee implements SourceMarche {
       .filter((l) => l.departement === departement)
       .slice(0, limite)
       .map((l, i) => ({ siren: String(l.siren), nom: String(l.nom), commune: String(l.commune), lat: 45 + (i % 20) / 40, lon: 5 + Math.floor(i / 20) / 40, email: Boolean(l.email), site: Boolean(l.site) }));
+  }
+  async verifier(sirens: readonly string[]): Promise<Verification[]> {
+    return [...new Set(sirens)].map((x) => {
+      const l = this.lignes.find((y) => y.siren === x);
+      return l
+        ? { siren: x, trouvee: true, nom: String(l.nom), active: true, commune: String(l.commune), departement: String(l.departement), naf: String(l.naf), site: l.site ? String(l.site) : null, a_site: !!l.site, email_envoyable: !!l.email_envoyable, telephone_utilisable: !!l.telephone_envoyable, contactable: true }
+        : { siren: x, trouvee: false, nom: null, active: null, commune: null, departement: null, naf: null, site: null, a_site: null, email_envoyable: null, telephone_utilisable: null, contactable: false };
+    });
+  }
+  async sql(_requete: string) {
+    return { colonnes: ["siren", "nom"], lignes: this.lignes.slice(0, 3).map((l) => ({ siren: l.siren, nom: l.nom })) };
+  }
+  async schema() {
+    return [{ table: "odh.company_prospection_current", colonne: "siren", type: "String" }];
   }
   async communes(filtre: unknown, departement: string, base: "marche" | "prospection"): Promise<CommunesBrutes> {
     if (!/^(\d{2}|2A|2B)$/.test(departement)) throw new FiltreInvalide("département invalide");

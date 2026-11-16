@@ -2,24 +2,27 @@
  * POST /api/atlas/[outil] — les écrans Atlas appellent les mêmes outils que l'IA (src/atlas/outils-mcp.ts) :
  * même validation, mêmes droits (un lecteur n'écrit pas), même espace (celui de la session, jamais un
  * argument). L'interface et l'agent ne peuvent pas diverger.
+ * Un script d'un espace à accès avancé s'y authentifie par clé API (`Authorization: Bearer atl_…`).
  */
 import { NextRequest, NextResponse } from "next/server";
 
 import { getUserContext, resolveInsertWorkspaceId } from "@/lib/auth/user-context";
 import { isRateLimited } from "@/lib/rate-limit";
 import { ErreurOutil } from "@/lib/mcp/erreur";
-import { OUTILS_ATLAS } from "@/atlas/outils-mcp";
+import { outilsVisibles } from "@/lib/mcp/outils";
+import { contexteDepuisCle, droits } from "@/atlas/acces";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ outil: string }> }) {
-  const ctx = await getUserContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const parCle = request.headers.get("authorization");
+  const ctx = parCle ? await contexteDepuisCle(parCle) : await getUserContext();
+  if (!ctx) return NextResponse.json({ error: parCle ? "Clé API invalide, révoquée, ou espace sans accès avancé" : "Unauthorized" }, { status: 401 });
   if (isRateLimited(`atlas:${ctx.userId}`, 240, 60_000)) return NextResponse.json({ error: "Trop de requêtes" }, { status: 429 });
 
   const { outil: nom } = await params;
-  const c = { ctx, workspaceId: await resolveInsertWorkspaceId(ctx), client: null };
-  const outil = OUTILS_ATLAS.find((o) => o.name === nom && (!o.visible || o.visible(c)));
+  const c = { ctx, workspaceId: await resolveInsertWorkspaceId(ctx), client: parCle ? "clé API" : null, droits: await droits(ctx.userId, ctx.tenantId) };
+  const outil = outilsVisibles(c).find((o) => o.name === nom);
   if (!outil) return NextResponse.json({ error: "outil inconnu ou non permis" }, { status: 404 });
 
   const corps = await request.json().catch(() => ({}));
