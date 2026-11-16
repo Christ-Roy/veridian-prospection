@@ -278,7 +278,7 @@ const OUTILS_BRUTS: Outil[] = [
       } catch (e) {
         const m = e instanceof Error ? e.message : String(e);
         // Erreur de ClickHouse : rendue lisible à l'IA (syntaxe, colonne inconnue, limite dépassée), sans la pile.
-        throw new ErreurOutil(m.replace(/^ClickHouse \d+ : /, "").replace(/\(version [^)]*\)/, "").slice(0, 400));
+        throw new ErreurOutil(m.replace(/^ClickHouse \d+ : /, "").replace(/\s*\(version[\s\S]*$/, "").slice(0, 400));
       }
     }),
   },
