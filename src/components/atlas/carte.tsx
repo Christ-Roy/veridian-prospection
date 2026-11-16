@@ -199,13 +199,29 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
   const etiquettes = useMemo(() => {
     if (!contours || commune) return [];
     const geo = new Map(contours.map((c) => [c.code, c]));
-    return [...(comptes?.communes ?? [])]
-      .slice(0, 6)
-      .map((c) => geo.get(c.code))
-      .filter((g): g is CommuneGeo => !!g);
-  }, [contours, comptes, commune]);
+    // Six noms au plus, en sautant ceux qui chevaucheraient un nom déjà posé (Grenoble et sa banlieue).
+    const ecart = (boite ? Math.max(boite.width, boite.height) : 100) / 9;
+    const poses: CommuneGeo[] = [];
+    for (const c of comptes?.communes ?? []) {
+      const g = geo.get(c.code);
+      if (!g) continue;
+      const cx = g.x + g.w / 2;
+      const cy = g.y + g.h / 2;
+      if (poses.some((o) => Math.abs(o.x + o.w / 2 - cx) < ecart && Math.abs(o.y + o.h / 2 - cy) < ecart / 3)) continue;
+      poses.push(g);
+      if (poses.length === 6) break;
+    }
+    return poses;
+  }, [contours, comptes, commune, boite]);
 
-  const projetes = useMemo(() => (points ? placerPoints(points) : []), [points]);
+  // Une adresse mal géolocalisée par ODH peut tomber hors du département : on ne la dessine pas.
+  const projetes = useMemo(() => {
+    const tous = points ? placerPoints(points) : [];
+    const chemin = descente ? svgRef.current?.querySelector<SVGPathElement>(`path[data-c="${descente}"]`) : null;
+    if (!chemin || typeof DOMPoint === "undefined") return tous;
+    return tous.filter((p) => chemin.isPointInFill(new DOMPoint(p.x, p.y)));
+  }, [points, descente]);
+  const horsZone = (points?.length ?? 0) - projetes.length;
   const taille = boite ? Math.max(boite.width, boite.height) : 100;
   const zone = contourCommune ? Math.max(contourCommune.w, contourCommune.h, taille / 10) : taille;
   const rayon = contourCommune ? zone / 70 : zone / 110;
@@ -310,7 +326,8 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
               {contours.map((g) => {
                 const v = valeursCommunes.get(g.code);
                 const focus = g.code === codeCommune;
-                const fill = v === undefined || !bc ? OFF : chaleur(rang(echelle(v), bc.min, bc.max));
+                // La commune regardée s'éclaircit pour laisser lire ses points, comme le département en descente.
+                const fill = focus ? "hsl(217 60% 97%)" : v === undefined || !bc ? OFF : chaleur(rang(echelle(v), bc.min, bc.max));
                 return (
                   <path
                     key={g.code}
@@ -471,6 +488,7 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
               {comptes?.repli ? "Marché trop large pour la base complète : les communes comptent les fiches contactables. " : ""}
               {nonRapprochees > 0 ? `${formaterNombre(nonRapprochees)} entreprises sans commune reconnue. ` : ""}
               Points : les fiches contactables, <span style={{ color: "var(--blue)" }}>●</span> avec email.
+              {horsZone > 0 ? ` ${formaterNombre(horsZone)} adresse${horsZone > 1 ? "s" : ""} hors du département non dessinée${horsZone > 1 ? "s" : ""}.` : ""}
             </p>
           </>
         ) : (
