@@ -9,6 +9,7 @@
 import { hasFeature, isGiftedPlan, PLANS, type AnyPlanId } from "@/lib/billing/plans";
 
 import { CHAMP } from "./champs";
+import { formaterDate, libelleValeur } from "./libelles";
 import type { Ligne } from "./source";
 
 export const LIGNES_MAX_EXPORT = 5000;
@@ -32,7 +33,15 @@ export function entete(ids: readonly string[]): string[] {
   return ids.map((id) => (id === "score" ? "Score de priorité" : (CHAMP.get(id)?.libelle ?? id)));
 }
 
-const texte = (v: unknown) => (v === null || v === undefined ? "" : typeof v === "boolean" ? (v ? "oui" : "non") : String(v));
+/** Même rendu que l'écran : Oui/Non, dates JJ/MM/AAAA, codes d'ODH en libellés. */
+export function texte(v: unknown, id?: string): string {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "boolean") return v ? "Oui" : "Non";
+  const champ = id ? CHAMP.get(id) : undefined;
+  const s = v instanceof Date ? v.toISOString().slice(0, 10) : String(v);
+  if (champ?.type === "date") return formaterDate(s);
+  return champ?.type === "liste" && s !== "" ? libelleValeur(champ.id, s) : s;
+}
 
 /**
  * Une cellule qui commence par = + - @ (ou tabulation, retour) serait lue comme une formule par Excel :
@@ -47,7 +56,7 @@ export function versCsv(ids: readonly string[], lignes: readonly Ligne[]): Buffe
     const s = neutraliser(v);
     return /[;"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
-  const rangs = [entete(ids), ...lignes.map((l) => ids.map((id) => texte(l[id])))].map((r) => r.map(cellule).join(";"));
+  const rangs = [entete(ids), ...lignes.map((l) => ids.map((id) => texte(l[id], id)))].map((r) => r.map(cellule).join(";"));
   return Buffer.from(`﻿${rangs.join("\r\n")}\r\n`, "utf8");
 }
 
@@ -72,7 +81,7 @@ function feuille(ids: readonly string[], lignes: readonly Ligne[]): string {
       .map((v, c) => {
         const ref = `${colonne(c)}${r}`;
         if (typeof v === "number" && Number.isFinite(v)) return `<c r="${ref}"><v>${v}</v></c>`;
-        const t = texte(v);
+        const t = texte(v, ids[c]);
         if (t === "") return "";
         return `<c r="${ref}" t="inlineStr"${gras ? ' s="1"' : ""}><is><t xml:space="preserve">${xml(t)}</t></is></c>`;
       })

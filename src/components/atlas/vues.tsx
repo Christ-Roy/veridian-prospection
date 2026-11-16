@@ -2,17 +2,37 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent as ClavierReact } from "react";
 
+import { libelleValeur, titreValeur } from "@/atlas/libelles";
+
 import { appeler, ErreurAtlas, estAnnulation, texteErreur } from "./api";
 import { EditeurConditions } from "./editeur-conditions";
 import { avecCondition, type EtapeEntonnoir } from "./flux";
+import { lienValeur } from "./fiche-logique";
 import { Chargement, Icone } from "./icones";
 import { DEMANDE_PRIORITE, lignesDepuis, suggestionsRestantes, validerCriteres, type LigneEditeur } from "./lignes";
-import { colonnesAffichees, formaterCellule, formaterNombre, grouperChamps, largeurBarre, libelleColonne, valeurLisible } from "./logique";
+import { colonnesAffichees, formaterCellule, formaterNombre, grouperChamps, largeurBarre, libellePoints, libelleColonne, phraseCondition, titreCellule } from "./logique";
 import type { ApercuMarche, ChampInfo, Critere, Filtre, LigneMarche, RepartitionMarche } from "./types";
 
 const PAR_PAGE = 20;
 
-function Erreur({ texte, onReessayer }: { texte: string; onReessayer?: () => void }) {
+/** Une ligne de barre qui se clique comme un bouton, sans changer la mise en page. */
+const LIGNE_CLIQUABLE = { background: "none", border: 0, padding: 0, font: "inherit", color: "inherit", textAlign: "left", cursor: "pointer", width: "100%" } as const;
+
+/** Rien à montrer : un message, et « Effacer les filtres » quand l'écran sait le faire. */
+export function Vide({ texte, onEffacer }: { texte: string; onEffacer?: () => void }) {
+  return (
+    <div className="empty">
+      <p style={{ margin: 0 }}>{texte}</p>
+      {onEffacer && (
+        <button type="button" className="btn sm" style={{ marginTop: 12 }} onClick={onEffacer}>
+          Effacer les filtres
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function Erreur({ texte, onReessayer }: { texte: string; onReessayer?: () => void }) {
   return (
     <p className="err" role="alert">
       <Icone nom="alerte" />
@@ -28,9 +48,22 @@ function Erreur({ texte, onReessayer }: { texte: string; onReessayer?: () => voi
 
 // ---------------------------------------------------------------- répartition
 
-export function VueBarres({ filtre, champs, index }: { filtre: Filtre; champs: ChampInfo[]; index: ReadonlyMap<string, ChampInfo> }) {
+export function VueBarres({
+  filtre,
+  champs,
+  index,
+  onFiltrer,
+  onEffacerFiltres,
+}: {
+  filtre: Filtre;
+  champs: ChampInfo[];
+  index: ReadonlyMap<string, ChampInfo>;
+  /** Clic sur une barre : ajoute le filtre « champ de l'axe = cette valeur » (branché par l'écran parent). */
+  onFiltrer?: (champ: string, valeur: string) => void;
+  onEffacerFiltres?: () => void;
+}) {
   const axes = champs.filter((c) => c.repartition);
-  const [champ, setChamp] = useState(() => (axes.some((c) => c.id === "taille") ? "taille" : (axes[0]?.id ?? "")));
+  const [champ, setChamp] = useState(() => (axes.some((c) => c.id === "departement") ? "departement" : (axes[0]?.id ?? "")));
   const [donnees, setDonnees] = useState<{ cle: string; total: number; site: number | null }[] | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [essai, setEssai] = useState(0);
@@ -73,25 +106,38 @@ export function VueBarres({ filtre, champs, index }: { filtre: Filtre; champs: C
       </div>
       {erreur && <Erreur texte={erreur} onReessayer={() => setEssai((n) => n + 1)} />}
       {!donnees && !erreur && <Chargement />}
-      {donnees && donnees.length === 0 && <p className="empty">Aucune valeur renseignée pour ces filtres.</p>}
+      {donnees && donnees.length === 0 && <Vide texte="Aucune valeur renseignée pour ces filtres." onEffacer={filtre.conditions.length ? onEffacerFiltres : undefined} />}
       {donnees && donnees.length > 0 && (
         <div className="hbars">
-          {donnees.map((d) => (
-            <div key={d.cle} className="hb">
-              <span title={d.cle}>{valeurLisible(champ, d.cle)}</span>
-              <span className="t" aria-hidden>
-                {d.site === null ? (
-                  <i style={{ width: `${largeurBarre(d.total, max)}%`, background: "var(--blue)" }} />
-                ) : (
-                  <>
-                    <i style={{ width: `${largeurBarre(d.site, max)}%`, background: "var(--primary)" }} />
-                    <i style={{ width: `${largeurBarre(d.total - d.site, max)}%`, background: "var(--blue)" }} />
-                  </>
-                )}
-              </span>
-              <span className="v num">{formaterNombre(d.total)}</span>
-            </div>
-          ))}
+          {donnees.map((d) => {
+            const etiquette = libelleValeur(champ, d.cle);
+            const contenu = (
+              <>
+                <span>{etiquette}</span>
+                <span className="t" aria-hidden>
+                  {d.site === null ? (
+                    <i style={{ width: `${largeurBarre(d.total, max)}%`, background: "var(--blue)" }} />
+                  ) : (
+                    <>
+                      <i style={{ width: `${largeurBarre(d.site, max)}%`, background: "var(--primary)" }} />
+                      <i style={{ width: `${largeurBarre(d.total - d.site, max)}%`, background: "var(--blue)" }} />
+                    </>
+                  )}
+                </span>
+                <span className="v num">{formaterNombre(d.total)}</span>
+              </>
+            );
+            const titre = titreValeur(champ, d.cle);
+            return onFiltrer && d.cle !== "" ? (
+              <button key={d.cle} type="button" className="hb" style={LIGNE_CLIQUABLE} title={`${titre} : filtrer sur cette valeur`} onClick={() => onFiltrer(champ, d.cle)}>
+                {contenu}
+              </button>
+            ) : (
+              <div key={d.cle} className="hb" title={titre}>
+                {contenu}
+              </div>
+            );
+          })}
           {avecSite && (
             <p className="hint">
               <span style={{ color: "var(--fg)" }}>■</span> avec site web &nbsp; <span style={{ color: "var(--blue)" }}>■</span> sans site web.
@@ -213,6 +259,7 @@ function Tableau({
     if (siren) onFiche(siren, typeof l.nom === "string" ? l.nom : siren);
   };
   const clavier = (e: ClavierReact<HTMLTableRowElement>, l: LigneMarche) => {
+    if (e.target !== e.currentTarget) return; // Entrée sur un lien de la ligne suit le lien, n'ouvre pas la fiche
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       ouvrir(l);
@@ -249,9 +296,17 @@ function Tableau({
                     </td>
                   );
                 }
+                const texte = formaterCellule(v, index.get(c), c);
+                const href = typeof v === "string" && v !== "" ? lienValeur(c, v) : undefined;
                 return (
-                  <td key={c} className={typeof v === "number" ? "r num" : undefined} title={typeof v === "string" ? v : undefined}>
-                    {formaterCellule(v, index.get(c))}
+                  <td key={c} className={typeof v === "number" ? "r num" : undefined} title={titreCellule(v, index.get(c), c)}>
+                    {href ? (
+                      <a href={href} onClick={(e) => e.stopPropagation()} {...(c === "site" ? { target: "_blank", rel: "noopener noreferrer" } : {})}>
+                        {texte}
+                      </a>
+                    ) : (
+                      texte
+                    )}
                   </td>
                 );
               })}
@@ -294,9 +349,10 @@ export function VueTableau({
   index,
   onColonnes,
   onFiche,
+  onEffacerFiltres,
   base = "prospection",
 }: {
-  /** « maitre » : toutes les entreprises (lister_entreprises) ; « prospection » : les fiches prospectables. */
+  /** « maitre » : toutes les entreprises (lister_entreprises) ; « prospection » : les entreprises contactables. */
   base?: "maitre" | "prospection";
   filtre: Filtre;
   colonnes: string[];
@@ -304,6 +360,8 @@ export function VueTableau({
   index: ReadonlyMap<string, ChampInfo>;
   onColonnes: (c: string[]) => void;
   onFiche: (siren: string, nom: string) => void;
+  /** Propose « Effacer les filtres » quand aucune entreprise ne correspond. */
+  onEffacerFiltres?: () => void;
 }) {
   const [page, setPage] = useState(1);
   const [apercu, setApercu] = useState<ApercuMarche | null>(null);
@@ -339,21 +397,21 @@ export function VueTableau({
     <div>
       <div className="tools">
         {base === "maitre" ? (
-          <span>Toutes les entreprises actives de France (base maître) : identité et lieu. Les coordonnées s&apos;ouvrent dans la fiche des entreprises prospectables.</span>
+          <span>Toutes les entreprises actives de France (base maître) : identité et lieu. Les coordonnées s&apos;ouvrent dans la fiche des entreprises contactables.</span>
         ) : (
           <>
-            <span>Entreprises du segment, par ordre du catalogue.</span>
+            <span>Entreprises contactables du marché ou de la cible, par ordre du catalogue.</span>
             <SelecteurColonnes champs={champs} colonnes={colonnes} onChange={onColonnes} />
           </>
         )}
       </div>
       {sansCritere ? (
-        <p className="empty">Choisissez une activité, un nom ou un département (Filtres, ou un métier dans « Taille du marché ») pour lister les entreprises.</p>
+        <Vide texte="Choisissez une activité, un nom ou un département (Filtres, ou un métier dans « Taille du marché ») pour lister les entreprises." />
       ) : (
         <>
       {erreur && <Erreur texte={erreur} onReessayer={() => setEssai((n) => n + 1)} />}
       {!apercu && !erreur && <Chargement />}
-      {apercu && apercu.lignes.length === 0 && <p className="empty">Aucune entreprise ne répond à ces filtres.</p>}
+      {apercu && apercu.lignes.length === 0 && <Vide texte="Aucune entreprise ne répond à ces filtres." onEffacer={filtre.conditions.length ? onEffacerFiltres : undefined} />}
       {apercu && apercu.lignes.length > 0 && (
         <>
           <Tableau apercu={apercu} index={index} onFiche={onFiche} busy={busy} montrerSiren={colonnes.includes("siren")} />
@@ -473,12 +531,12 @@ export function VuePriorite({
                 <span className="hint">Ajouter en un clic :</span>
                 {suggestions.map((r) => (
                   <button key={r.id} type="button" className="chip" onClick={() => setLignes((l) => [...l, ...lignesDepuis([{ ...r.condition, poids: r.points }])])}>
-                    + {r.libelle} · {r.points} pt{r.points > 1 ? "s" : ""}
+                    + {r.libelle} · {libellePoints(r.points)}
                   </button>
                 ))}
               </div>
             )}
-            {lignes.length > 0 && <p className="hint num">Total : {formaterNombre(Math.round(poidsTotal * 10) / 10)} points</p>}
+            {lignes.length > 0 && <p className="hint num">Total : {libellePoints(Math.round(poidsTotal * 10) / 10)}</p>}
             {erreurs.length > 0 && (
               <ul className="msg" role="alert" style={{ paddingLeft: 18, margin: 0 }}>
                 {erreurs.map((e) => (
@@ -496,7 +554,7 @@ export function VuePriorite({
           <ul className="hint" style={{ margin: 0, paddingLeft: 18 }}>
             {(scoring?.criteres ?? []).map((c, i) => (
               <li key={i}>
-                {libelleColonne(c.champ, index)} · +{formaterNombre(c.poids)} points
+                {phraseCondition(c, index)} · +{libellePoints(c.poids)}
               </li>
             ))}
             {!scoring && <li>Aucune priorité définie. Lecture seule sur cet espace.</li>}
@@ -508,10 +566,10 @@ export function VuePriorite({
         <h3 id="atlas-classement-titre" className="hint" style={{ margin: "0 0 10px", fontWeight: 500 }}>
           Classement{versionComparee ? ` selon la v${versionComparee} (comparaison)` : ""}
         </h3>
-        {!scoring && <p className="empty">Ajoutez des règles pour classer la cible.</p>}
+        {!scoring && <Vide texte="Ajoutez des règles pour classer la cible." />}
         {scoring && erreur && <Erreur texte={erreur} />}
         {scoring && !apercu && !erreur && <Chargement />}
-        {scoring && apercu && apercu.lignes.length === 0 && <p className="empty">Aucune entreprise dans cette cible.</p>}
+        {scoring && apercu && apercu.lignes.length === 0 && <Vide texte="Aucune entreprise dans cette cible." />}
         {scoring && apercu && apercu.lignes.length > 0 && (
           <>
             <Tableau apercu={apercu} index={index} rang={(page - 1) * PAR_PAGE + 1} onFiche={onFiche} busy={busy} />

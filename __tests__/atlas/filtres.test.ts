@@ -167,8 +167,8 @@ describe("source ClickHouse : 4 requêtes simultanées au plus pour toute l'app"
   test("fiche : forme juridique en libellé, codes inconnus lisibles", async () => {
     const { formeJuridique } = await import("@/atlas/source");
     expect(formeJuridique("5499")).toBe("SARL");
-    expect(formeJuridique(1000)).toBe("EI");
-    expect(formeJuridique("7389")).toBe("catégorie 7389");
+    expect(formeJuridique(1000)).toBe("Entrepreneur individuel");
+    expect(formeJuridique("0042")).toBe("0042");
     expect(formeJuridique("")).toBeNull();
   });
 });

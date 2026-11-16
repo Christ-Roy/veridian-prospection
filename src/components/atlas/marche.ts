@@ -1,3 +1,5 @@
+import { libelleValeur } from "@/atlas/libelles";
+
 import type { AxeMarche, MesuresMarche } from "./types";
 
 /** Axes de la vue « Taille du marché », dans l'ordre du sélecteur. */
@@ -6,7 +8,7 @@ export const AXES_MARCHE: { id: AxeMarche; libelle: string }[] = [
   { id: "departement", libelle: "Département" },
   { id: "effectif", libelle: "Tranche d'effectif" },
   { id: "forme", libelle: "Type de structure" },
-  { id: "forme_juridique", libelle: "Forme juridique (code)" },
+  { id: "forme_juridique", libelle: "Forme juridique" },
   { id: "annee_creation", libelle: "Année de création" },
   { id: "diffusion", libelle: "Diffusion SIRENE" },
 ];
@@ -23,13 +25,13 @@ export const STATUTS_MARCHE: { id: StatutMarche; libelle: string }[] = [
  * promettre à un client (règle d'ODH). Les deux sont montrés, jamais confondus.
  */
 export const COLONNES_MARCHE: { id: keyof MesuresMarche; libelle: string; aide: string }[] = [
-  { id: "entreprises", libelle: "Entreprises", aide: "Toutes les entreprises de la case, prospectables ou non" },
+  { id: "entreprises", libelle: "Entreprises", aide: "Toutes les entreprises de la case, contactables ou non" },
   { id: "email_connu", libelle: "Email connu", aide: "Un email a été trouvé, même s'il a été écarté ensuite" },
   { id: "email_envoyable", libelle: "Email envoyable", aide: "Email qu'on peut utiliser pour un envoi" },
-  { id: "telephone_connu", libelle: "Tél. connu", aide: "Un téléphone a été trouvé" },
-  { id: "telephone_envoyable", libelle: "Tél. utilisable", aide: "Téléphone qu'on peut utiliser" },
+  { id: "telephone_connu", libelle: "Téléphone connu", aide: "Un téléphone a été trouvé" },
+  { id: "telephone_envoyable", libelle: "Téléphone utilisable", aide: "Téléphone qu'on peut utiliser" },
   { id: "site_connu", libelle: "Site connu", aide: "Un site web a été trouvé" },
-  { id: "prospectables", libelle: "Prospectables", aide: "Fiches qu'Atlas peut explorer (non bloquées par ODH)" },
+  { id: "prospectables", libelle: "Contactables", aide: "Entreprises qu'Atlas peut contacter : non exclues du ciblage (cessées, sans contact…)" },
 ];
 
 /** Part en pour cent, arrondie ; « – » quand le total est nul, « < 1 % » plutôt qu'un 0 trompeur. */
@@ -40,8 +42,20 @@ export function part(n: number, total: number): string {
   return `${Math.round(p)} %`;
 }
 
-/** Étiquette d'une ligne : code et libellé quand ils diffèrent (NAF), sinon le libellé seul. */
-export function etiquetteLigne(cle: string, libelle: string): string {
+/** Axe du marché → champ du catalogue dont il porte les valeurs (le clic d'une ligne ajoute ce filtre). */
+export const CHAMP_DE_AXE: Partial<Record<AxeMarche, string>> = { naf: "naf", departement: "departement", effectif: "effectif", forme_juridique: "forme_juridique" };
+
+/**
+ * Étiquette d'une ligne : le libellé du dictionnaire commun quand l'axe est un champ du catalogue
+ * (même texte que les filtres), sinon celui de la source, avec son code quand ils diffèrent.
+ */
+export function etiquetteLigne(cle: string, libelle: string, axe?: AxeMarche): string {
+  const champ = axe ? CHAMP_DE_AXE[axe] ?? (axe === "forme" ? "forme" : undefined) : undefined;
+  if (champ) {
+    if (cle === "" && libelle) return libelle;
+    const l = libelleValeur(champ, cle);
+    if (l !== cle || !libelle) return l;
+  }
   return libelle && libelle !== cle && cle ? `${cle} · ${libelle}` : libelle || cle || "Inconnu";
 }
 

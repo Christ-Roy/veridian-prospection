@@ -2,11 +2,20 @@
 
 import { useEffect, useState } from "react";
 
+import { titreValeur } from "@/atlas/libelles";
+
 import { appeler, estAnnulation, texteErreur } from "./api";
-import { Chargement, Icone } from "./icones";
+import { Chargement } from "./icones";
 import { formaterNombre, phraseCondition } from "./logique";
-import { AXES_MARCHE, COLONNES_MARCHE, STATUTS_MARCHE, codesPreselectionnes, etiquetteLigne, evolution, parClasseEffectif, part, serieCreations, type StatutMarche } from "./marche";
+import { AXES_MARCHE, CHAMP_DE_AXE, COLONNES_MARCHE, STATUTS_MARCHE, codesPreselectionnes, etiquetteLigne, evolution, parClasseEffectif, part, serieCreations, type StatutMarche } from "./marche";
 import type { AnalyseMarche, AxeMarche, ChampInfo, Filtre } from "./types";
+import { Erreur, Vide } from "./vues";
+
+/** Ajoute le filtre « champ parmi valeur » (branché par l'écran parent). */
+export type SurFiltrer = (champ: string, valeur: string) => void;
+
+/** Une ligne qui se clique comme un bouton, sans changer la mise en page de la barre. */
+const LIGNE_CLIQUABLE = { background: "none", border: 0, padding: 0, font: "inherit", color: "inherit", textAlign: "left", cursor: "pointer", width: "100%" } as const;
 
 /** Lignes du tableau montrées d'abord : au-delà, le dossier disparaît sous 100 départements. */
 const LIGNES_VISIBLES = 20;
@@ -20,6 +29,7 @@ function RechercheMetier({ onCodes }: { onCodes: (codes: string[]) => void }) {
   const [choisis, setChoisis] = useState<Set<string>>(new Set());
   const [erreur, setErreur] = useState<string | null>(null);
   const [envoi, setEnvoi] = useState(false);
+  const court = mots.trim().length > 0 && mots.trim().length < 3;
   const chercher = async () => {
     setEnvoi(true);
     setErreur(null);
@@ -43,12 +53,15 @@ function RechercheMetier({ onCodes }: { onCodes: (codes: string[]) => void }) {
         }}
       >
         <label htmlFor="atlas-metier">Un métier</label>
-        <input id="atlas-metier" className="sel" type="search" placeholder="ex. chasse, toilettage chien" value={mots} onChange={(e) => setMots(e.target.value)} />
+        <input id="atlas-metier" className="sel" type="search" placeholder="ex. chasse, toilettage chien" aria-describedby="atlas-metier-aide" value={mots} onChange={(e) => setMots(e.target.value)} />
         <button type="submit" className="btn" disabled={envoi || mots.trim().length < 3}>
           {envoi ? "Recherche…" : "Trouver les codes"}
         </button>
       </form>
-      {erreur && <p className="err">{erreur}</p>}
+      <p id="atlas-metier-aide" className="hint">
+        {court ? "Tapez au moins 3 lettres pour lancer la recherche." : "Au moins 3 lettres. Plusieurs mots : tous doivent correspondre."}
+      </p>
+      {erreur && <Erreur texte={erreur} onReessayer={() => void chercher()} />}
       {codes && codes.length === 0 && <p className="hint">Aucun code trouvé : essayez un autre mot.</p>}
       {codes && codes.length > 0 && (
         <>
@@ -87,22 +100,26 @@ function RechercheMetier({ onCodes }: { onCodes: (codes: string[]) => void }) {
  * Dossier du marché, sur toutes les entreprises (cube d'ODH) : la dynamique (créations sur quinze ans), la
  * structure (taille, forme) ; la partie financière s'ajoutera avec le cube v4.
  */
-function Dossier({ filtre }: { filtre: Filtre }) {
+function Dossier({ filtre, onFiltrer }: { filtre: Filtre; onFiltrer?: SurFiltrer }) {
   const [d, setD] = useState<{ creations: AnalyseMarche; effectif: AnalyseMarche; forme: AnalyseMarche } | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const [essai, setEssai] = useState(0);
   const cle = JSON.stringify(filtre);
   useEffect(() => {
     const ctl = new AbortController();
     const f = JSON.parse(cle) as Filtre;
     setD(null);
+    setErreur(null);
     Promise.all([
       appeler<AnalyseMarche>("analyser_marche", { filtre: f, axe: "annee_creation", statut: "tous", limite: 200 }, ctl.signal),
       appeler<AnalyseMarche>("analyser_marche", { filtre: f, axe: "effectif", limite: 30 }, ctl.signal),
-      appeler<AnalyseMarche>("analyser_marche", { filtre: f, axe: "forme", limite: 10 }, ctl.signal),
+      appeler<AnalyseMarche>("analyser_marche", { filtre: f, axe: "forme_juridique", limite: 10 }, ctl.signal),
     ])
       .then(([creations, effectif, forme]) => setD({ creations, effectif, forme }))
-      .catch(() => {}); // le dossier est un complément : le tableau dessous dit l'erreur
+      .catch((e) => !estAnnulation(e) && setErreur(texteErreur(e)));
     return () => ctl.abort();
-  }, [cle]);
+  }, [cle, essai]);
+  if (erreur) return <Erreur texte={`Dossier du marché indisponible : ${erreur}`} onReessayer={() => setEssai((n) => n + 1)} />;
   if (!d) return <Chargement />;
   const fin = new Date().getFullYear();
   const serie = serieCreations(d.creations.lignes, fin);
@@ -129,7 +146,7 @@ function Dossier({ filtre }: { filtre: Filtre }) {
         <p className="hint">Toutes les entreprises créées chaque année, actives ou fermées depuis. L&apos;année en cours est partielle.</p>
       </section>
       <section aria-labelledby="dossier-taille">
-        <h4 id="dossier-taille">Taille (salariés)</h4>
+        <h4 id="dossier-taille">Tranche d&apos;effectif</h4>
         {classes.map((c) => (
           <div key={c.libelle} className="hb">
             <span>{c.libelle}</span>
@@ -141,16 +158,28 @@ function Dossier({ filtre }: { filtre: Filtre }) {
         ))}
       </section>
       <section aria-labelledby="dossier-forme">
-        <h4 id="dossier-forme">Forme</h4>
-        {formes.map((l) => (
-          <div key={l.cle} className="hb">
-            <span>{l.libelle}</span>
-            <span className="t" aria-hidden>
-              <i style={{ width: `${(l.entreprises / maxF) * 100}%`, background: "var(--blue)" }} />
-            </span>
-            <span className="v num">{formaterNombre(l.entreprises)}</span>
-          </div>
-        ))}
+        <h4 id="dossier-forme">Forme juridique</h4>
+        {formes.map((l) => {
+          const etiquette = etiquetteLigne(l.cle, l.libelle, "forme_juridique");
+          const contenu = (
+            <>
+              <span>{etiquette}</span>
+              <span className="t" aria-hidden>
+                <i style={{ width: `${(l.entreprises / maxF) * 100}%`, background: "var(--blue)" }} />
+              </span>
+              <span className="v num">{formaterNombre(l.entreprises)}</span>
+            </>
+          );
+          return onFiltrer && l.cle !== "" ? (
+            <button key={l.cle} type="button" className="hb" style={LIGNE_CLIQUABLE} title={`${titreValeur("forme_juridique", l.cle)} : filtrer sur cette forme`} onClick={() => onFiltrer("forme_juridique", l.cle)}>
+              {contenu}
+            </button>
+          ) : (
+            <div key={l.cle} className="hb" title={titreValeur("forme_juridique", l.cle)}>
+              {contenu}
+            </div>
+          );
+        })}
       </section>
     </div>
   );
@@ -160,7 +189,21 @@ function Dossier({ filtre }: { filtre: Filtre }) {
  * Taille du marché entier (cube d'ODH) pour le filtre courant : l'étape « analyse du marché ».
  * Les autres vues ne montrent que les fiches prospectables ; celle-ci compte toutes les entreprises.
  */
-export function VueMarche({ filtre, index, onCodes }: { filtre: Filtre; index: ReadonlyMap<string, ChampInfo>; onCodes: (codes: string[]) => void }) {
+export function VueMarche({
+  filtre,
+  index,
+  onCodes,
+  onFiltrer,
+  onEffacerFiltres,
+}: {
+  filtre: Filtre;
+  index: ReadonlyMap<string, ChampInfo>;
+  onCodes: (codes: string[]) => void;
+  /** Clic sur une ligne (NAF, département, forme juridique, tranche d'effectif) : ajoute ce filtre. */
+  onFiltrer?: SurFiltrer;
+  /** Propose « Effacer les filtres » quand rien ne correspond. */
+  onEffacerFiltres?: () => void;
+}) {
   const [axe, setAxe] = useState<AxeMarche>(() => (filtre.conditions.some((c) => c.champ === "naf" && c.op === "dans") ? "naf" : "departement"));
   const [statut, setStatut] = useState<StatutMarche>("actif");
   const [donnees, setDonnees] = useState<AnalyseMarche | null>(null);
@@ -183,7 +226,7 @@ export function VueMarche({ filtre, index, onCodes }: { filtre: Filtre; index: R
   const max = Math.max(1, ...(donnees?.lignes ?? []).map((l) => l.entreprises));
   return (
     <div className="marche">
-      <Dossier filtre={filtre} />
+      <Dossier filtre={filtre} onFiltrer={onFiltrer} />
       <RechercheMetier onCodes={onCodes} />
       <div className="tools">
         <label htmlFor="atlas-axe-marche">Répartir par</label>
@@ -203,15 +246,7 @@ export function VueMarche({ filtre, index, onCodes }: { filtre: Filtre; index: R
         </span>
       </div>
 
-      {erreur && (
-        <p className="err" role="alert">
-          <Icone nom="alerte" />
-          <span>{erreur}</span>
-          <button type="button" onClick={() => setEssai((n) => n + 1)}>
-            Réessayer
-          </button>
-        </p>
-      )}
+      {erreur && <Erreur texte={erreur} onReessayer={() => setEssai((n) => n + 1)} />}
       {!donnees && !erreur && <Chargement />}
 
       {donnees && t && (
@@ -235,7 +270,7 @@ export function VueMarche({ filtre, index, onCodes }: { filtre: Filtre; index: R
             </div>
             <div className="kpi">
               <b className="num">{formaterNombre(t.prospectables)}</b>
-              <span>prospectables dans Atlas</span>
+              <span>contactables dans Atlas</span>
             </div>
           </div>
 
@@ -247,7 +282,7 @@ export function VueMarche({ filtre, index, onCodes }: { filtre: Filtre; index: R
           )}
 
           {donnees.lignes.length === 0 ? (
-            <p className="empty">Aucune entreprise pour ces critères.</p>
+            <Vide texte="Aucune entreprise pour ces critères." onEffacer={filtre.conditions.length ? onEffacerFiltres : undefined} />
           ) : (
             <div className="tbl">
               <table>
@@ -262,20 +297,32 @@ export function VueMarche({ filtre, index, onCodes }: { filtre: Filtre; index: R
                   </tr>
                 </thead>
                 <tbody>
-                  {(toutVoir ? donnees.lignes : donnees.lignes.slice(0, LIGNES_VISIBLES)).map((l) => (
-                    <tr key={l.cle} className="statique">
-                      <td title={etiquetteLigne(l.cle, l.libelle)}>
-                        <span className="barre" aria-hidden style={{ width: `${Math.max(2, (l.entreprises / max) * 100)}%` }} />
-                        <span className="barre-p" aria-hidden style={{ width: `${(l.prospectables / max) * 100}%` }} />
-                        {etiquetteLigne(l.cle, l.libelle)}
-                      </td>
-                      {COLONNES_MARCHE.map((c) => (
-                        <td key={c.id} className="num">
-                          {formaterNombre(l[c.id])}
+                  {(toutVoir ? donnees.lignes : donnees.lignes.slice(0, LIGNES_VISIBLES)).map((l) => {
+                    const etiquette = etiquetteLigne(l.cle, l.libelle, donnees.axe ?? undefined);
+                    const champ = donnees.axe ? CHAMP_DE_AXE[donnees.axe] : undefined;
+                    const filtrer = onFiltrer && champ && l.cle !== "" ? () => onFiltrer(champ, l.cle) : null;
+                    return (
+                      <tr
+                        key={l.cle}
+                        className={filtrer ? undefined : "statique"}
+                        tabIndex={filtrer ? 0 : undefined}
+                        onClick={filtrer ?? undefined}
+                        onKeyDown={filtrer ? (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), filtrer()) : undefined}
+                        aria-label={filtrer ? `Filtrer sur ${etiquette}` : undefined}
+                      >
+                        <td title={champ ? `${titreValeur(champ, l.cle)}${filtrer ? " : cliquer pour filtrer" : ""}` : etiquette}>
+                          <span className="barre" aria-hidden style={{ width: `${Math.max(2, (l.entreprises / max) * 100)}%` }} />
+                          <span className="barre-p" aria-hidden style={{ width: `${(l.prospectables / max) * 100}%` }} />
+                          {etiquette}
                         </td>
-                      ))}
-                    </tr>
-                  ))}
+                        {COLONNES_MARCHE.map((c) => (
+                          <td key={c.id} className="num">
+                            {formaterNombre(l[c.id])}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -286,6 +333,7 @@ export function VueMarche({ filtre, index, onCodes }: { filtre: Filtre; index: R
             </button>
           )}
 
+          {onFiltrer && CHAMP_DE_AXE[donnees.axe ?? axe] && <p className="hint">Cliquez une ligne pour filtrer le marché sur cette valeur.</p>}
           <p className="hint">
             Source : cube de marché ODH (INSEE SIRENE et contacts trouvés par ODH)
             {donnees.provenance ? `, calculé le ${donnees.provenance.calcule_le.slice(0, 10).split("-").reverse().join("/")}` : ""}. « Connu » : contact trouvé,

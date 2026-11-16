@@ -87,6 +87,18 @@ export type AnalyseMarche = {
   conditions_ignorees: Condition[];
 };
 
+/** Contour d'une commune (route /api/atlas/communes/[dep]), dans les coordonnées de la carte. */
+export type CommuneGeo = { code: string; nom: string; d: string; x: number; y: number; w: number; h: number };
+/** Une commune comptée (outil repartir_communes). */
+export type CommuneComptee = { code: string; nom: string; mesures: Record<string, number> };
+export type CommunesMarche = {
+  base: "marche" | "prospection";
+  repli: boolean;
+  communes: CommuneComptee[];
+  non_rapprochees: Record<string, number>;
+  donnees_simulees?: boolean;
+};
+
 /** Point d'une entreprise sur la carte d'un département (outil points_carte). */
 export type PointCarte = { siren: string; nom: string; commune: string; lat: number; lon: number; email: boolean; site: boolean };
 

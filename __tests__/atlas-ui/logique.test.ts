@@ -21,9 +21,9 @@ import {
   phraseFiltre,
   saisieVide,
   sansConditionsDans,
-  valeurLisible,
   libelleColonne as libelleCol,
 } from "@/components/atlas/logique";
+import { libelleValeur } from "@/atlas/libelles";
 import type { ChampInfo } from "@/components/atlas/types";
 
 const champ = (id: string, type: ChampInfo["type"], operateurs: string[], groupe = "Lieu", libelle = id): ChampInfo => ({ id, libelle, type, groupe, operateurs, repartition: false });
@@ -39,7 +39,7 @@ const C = (id: string) => IDX.get(id)!;
 
 describe("phrases", () => {
   test("une condition par type", () => {
-    expect(phraseCondition({ champ: "departement", op: "dans", valeur: ["69", "01"] }, IDX)).toBe("Département parmi 69, 01");
+    expect(phraseCondition({ champ: "departement", op: "dans", valeur: ["69", "01"] }, IDX)).toBe("Département parmi Rhône (69), Ain (01)");
     expect(phraseCondition({ champ: "chiffre_affaires", op: "entre", valeur: [1000, 5000] }, IDX)).toBe("Chiffre d'affaires (€) entre 1 000 et 5 000");
     expect(phraseCondition({ champ: "date_creation", op: "apres", valeur: "2024-01-31" }, IDX)).toBe("Date de création à partir du 31/01/2024");
     expect(phraseCondition({ champ: "ecommerce", op: "est", valeur: false }, IDX)).toBe("Vente en ligne : non");
@@ -47,13 +47,13 @@ describe("phrases", () => {
     expect(phraseCondition({ champ: "nom", op: "contient", valeur: "bois" }, IDX)).toBe("Nom contient « bois »");
   });
   test("liste longue tronquée", () => {
-    expect(phraseCondition({ champ: "departement", op: "dans", valeur: ["1", "2", "3", "4", "5", "6"] }, IDX)).toBe("Département parmi 1, 2, 3, 4 et 2 autres");
+    expect(phraseCondition({ champ: "departement", op: "dans", valeur: ["01", "02", "03", "04", "05", "06"] }, IDX)).toBe("Département parmi Ain (01), Aisne (02), Allier (03), Alpes-de-Haute-Provence (04) et 2 autres");
   });
   test("filtre en une phrase", () => {
     expect(phraseFiltre({ conditions: [] }, IDX)).toBe("Toutes les entreprises");
     expect(
       phraseFiltre({ conditions: [{ champ: "departement", op: "dans", valeur: ["69"] }, { champ: "ecommerce", op: "est", valeur: true }], inclure_bloques: true }, IDX),
-    ).toBe("Département parmi 69 et Vente en ligne : oui et bloquées incluses");
+    ).toBe("Département parmi Rhône (69) et Vente en ligne : oui et entreprises exclues du ciblage incluses");
   });
   test("champ inconnu : l'id est affiché tel quel", () => {
     expect(phraseCondition({ champ: "zzz", op: "egal", valeur: "a" }, IDX)).toBe("zzz est égal à « a »");
@@ -176,14 +176,13 @@ describe("formats", () => {
 
 describe("valeurs codées en clair", () => {
   test("motif de non-envoi lisible, valeur inconnue rendue telle quelle, autres champs intacts", () => {
-    expect(valeurLisible("motif_email", "domaine_mort")).toBe("Domaine mort");
-    expect(valeurLisible("motif_email", "nouveau_motif")).toBe("nouveau_motif");
-    expect(valeurLisible("departement", "domaine_mort")).toBe("domaine_mort");
+    expect(libelleValeur("motif_email", "domaine_mort")).toBe("Domaine mort");
+    expect(libelleValeur("motif_email", "nouveau_motif")).toBe("nouveau_motif");
+    expect(libelleValeur("departement", "domaine_mort")).toBe("domaine_mort");
   });
-  test("chaque motif annoncé par ODH (ODH-0239) a un libellé", async () => {
-    const { VALEURS_LISIBLES } = await import("@/components/atlas/logique");
+  test("chaque motif annoncé par ODH (ODH-0239) a un libellé", () => {
     for (const m of ["boite_inexistante", "domaine_mort", "mx_injoignable", "email_disparu_du_site", "email_placeholder", "email_role_non_commercial", "contact_de_prestataire", "email_invalide"]) {
-      expect(VALEURS_LISIBLES.motif_email[m], m).toBeDefined();
+      expect(libelleValeur("motif_email", m), m).not.toBe(m);
     }
   });
 });
@@ -191,9 +190,10 @@ describe("valeurs codées en clair", () => {
 describe("colonnes de la base maître", () => {
   test("libellés hors catalogue et valeurs codées lisibles (forme, tranche d'effectif)", () => {
     expect(libelleCol("a_email", new Map())).toBe("Email connu");
-    expect(libelleCol("prospectable", new Map())).toBe("Prospectable");
-    expect(valeurLisible("forme", "entreprise_individuelle")).toBe("Entreprise individuelle");
-    expect(valeurLisible("effectif", "12")).toBe("20 à 49");
-    expect(valeurLisible("effectif", "")).toBe("Inconnue");
+    expect(libelleCol("prospectable", new Map())).toBe("Contactable");
+    expect(libelleValeur("forme", "entreprise_individuelle")).toBe("Entreprise individuelle");
+    expect(formaterCellule("entreprise_individuelle", undefined, "forme")).toBe("Entreprise individuelle");
+    expect(libelleValeur("effectif", "12")).toBe("20 à 49 salariés");
+    expect(libelleValeur("effectif", "")).toBe("Non renseignée");
   });
 });

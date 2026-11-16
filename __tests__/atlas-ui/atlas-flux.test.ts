@@ -1,15 +1,13 @@
-/** Logique pure de l'interface Atlas : carte (zone, projection, cadrage), fiche, flux marché → cible, présence de l'IA. */
+/** Logique pure de l'interface Atlas : carte (zone, cadrage ; la projection est dans projection-communes.test.ts), fiche, flux marché → cible, présence de l'IA. */
 import { describe, expect, test } from "vitest";
 
 import {
   bornes,
   cadrageDescente,
   chaleur,
-  COS_LAT,
   departementsFiltre,
   interpolerCadre,
   normaliserDepartement,
-  projeterPoints,
   rang,
   titreZone,
   valeursCarte,
@@ -37,7 +35,7 @@ import { COLONNES_MARCHE, codesPreselectionnes, etiquetteLigne, evolution, parCl
 import { PREMIERE_DEMANDE, boutonsIA, montrerAccueil } from "@/components/atlas/ia";
 import { REGLES_SUGGEREES, lignesDepuis, suggestionsRestantes } from "@/components/atlas/lignes";
 import { messageExport } from "@/components/atlas/api";
-import type { Arbre, ChampInfo, PointCarte, SegmentArbre } from "@/components/atlas/types";
+import type { Arbre, ChampInfo, SegmentArbre } from "@/components/atlas/types";
 
 const NOMS = { "69": "Rhône", "38": "Isère", "01": "Ain", "75": "Paris", "13": "Bouches-du-Rhône" };
 const champ = (id: string, type: ChampInfo["type"], operateurs: string[], libelle = id): ChampInfo => ({ id, libelle, type, groupe: "G", operateurs, repartition: false });
@@ -95,43 +93,6 @@ describe("carte", () => {
     expect(valeursCarte(total, [{ cle: "69", nombre: 50 }]).get("01")).toBe(0);
     expect(bornes([3, 1, 2])).toEqual({ min: 1, max: 3 });
     expect(bornes([])).toBeNull();
-  });
-});
-
-describe("projection des points dans le chemin du département", () => {
-  const p = (siren: string, lon: number, lat: number): PointCarte => ({ siren, nom: siren, commune: "", lon, lat, email: false, site: false });
-  const boite = { x: 100, y: 100, width: 200, height: 200 };
-
-  test("la boîte des points remplit la boîte du chemin sans déformation (cos 46°)", () => {
-    const r = projeterPoints([p("a", 4, 45), p("b", 5, 46)], boite);
-    // largeur corrigée = cos 46° (< 1 degré de latitude) : la hauteur fixe l'échelle
-    expect(r[1].y).toBeCloseTo(100); // nord en haut
-    expect(r[0].y).toBeCloseTo(300);
-    const largeur = r[1].x - r[0].x;
-    expect(largeur).toBeCloseTo(200 * COS_LAT);
-    expect((r[0].x + r[1].x) / 2).toBeCloseTo(200); // centré
-  });
-  test("la latitude seule bouge le y, la longitude seule le x", () => {
-    const r = projeterPoints([p("a", 4, 45), p("b", 4, 46), p("c", 5, 45)], boite);
-    expect(r[0].x).toBeCloseTo(r[1].x);
-    expect(r[0].y).toBeCloseTo(r[2].y);
-    expect(r[2].x).toBeGreaterThan(r[0].x);
-    expect(r[1].y).toBeLessThan(r[0].y);
-  });
-  test("un seul point au centre ; coordonnées invalides retirées", () => {
-    expect(projeterPoints([p("a", 4, 45)], boite)).toMatchObject([{ x: 200, y: 200 }]);
-    expect(projeterPoints([p("a", Number.NaN, 45)], boite)).toEqual([]);
-  });
-  test("au-delà de 20 points, une adresse aberrante n'écrase pas les autres et reste affichée", () => {
-    const pts = Array.from({ length: 199 }, (_, i) => p(String(i), 4 + (i % 10) / 10, 45 + Math.floor(i / 10) / 20));
-    pts.push(p("loin", 20, 60));
-    const r = projeterPoints(pts, boite);
-    expect(r).toHaveLength(200);
-    const dedans = r.filter((x) => x.siren !== "loin");
-    const xs = dedans.map((x) => x.x);
-    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(100);
-    const loin = r.find((x) => x.siren === "loin")!;
-    expect(loin.x).toBeGreaterThan(300);
   });
 });
 
@@ -244,7 +205,7 @@ describe("versions et présence de l'IA", () => {
     const a = { conditions: [{ champ: "departement", op: "dans", valeur: ["69"] }] };
     const b = { conditions: [{ champ: "site", op: "renseigne", valeur: false }], inclure_bloques: true };
     expect(diffFiltres(null, b, IDX)).toEqual(["création"]);
-    expect(diffFiltres(a, b, IDX)).toEqual(["+ Site web non renseigné", "− Département parmi 69", "+ bloquées incluses"]);
+    expect(diffFiltres(a, b, IDX)).toEqual(["+ Site web non renseigné", "− Département parmi Rhône (69)", "+ entreprises exclues du ciblage incluses"]);
     expect(diffFiltres(a, a, IDX)).toEqual(["sans changement de filtre"]);
   });
   test("nom de l'auteur", () => {

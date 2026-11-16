@@ -15,6 +15,7 @@ import { EntreeActivitesSchema, codesParLibelle, validerActivites } from "./acti
 import { EntreeCubeSchema, entreeDepuisFiltre } from "./cube";
 import { peutExporter } from "./export";
 import { compilerMaitre } from "./maitre";
+import { geometrieCommunes, rapprocher } from "./communes";
 import { FiltreInvalide } from "./filtres";
 import { sourceMarche } from "./source";
 import { liensIA } from "@/lib/hub/liens-ia-client";
@@ -196,6 +197,25 @@ const OUTILS_BRUTS: Outil[] = [
       const m = await sourceMarche().ficheMaitre(a.siren as string);
       if (!m) throw new ErreurOutil(`Aucune entreprise avec le SIREN ${a.siren}.`);
       return avecSource({ fiche: m, base: "maitre", note: "Entreprise hors fiches prospectables : identité seulement, aucune coordonnée." });
+    }),
+  },
+  {
+    name: "repartir_communes",
+    title: "Marché par commune d'un département",
+    description:
+      "Compte le marché commune par commune dans un département (code INSEE, nom). base « marche » : toutes les entreprises actives " +
+      "(entreprises, contactables, email_envoyable, telephone_envoyable) ; base « prospection » : les fiches prospectables du filtre " +
+      "(avec en plus sans_site et avec_email). `repli` : marché trop large pour la base complète, comptes pris sur les fiches prospectables.",
+    input: z.object({ filtre: FILTRE, departement: z.string().regex(/^(\d{2}|2A|2B)$/), base: z.enum(["marche", "prospection"]).default("marche") }),
+    annotations: LECTURE,
+    run: lisible(async (a) => {
+      const dep = a.departement as string;
+      const brutes = await sourceMarche().communes(a.filtre, dep, a.base as "marche" | "prospection");
+      const geo = await geometrieCommunes(dep).catch(() => null);
+      const r = geo
+        ? rapprocher(geo, brutes)
+        : { communes: brutes.lignes.map((l) => ({ code: l.insee ?? l.nom, nom: l.nom, mesures: l.mesures })), non_rapprochees: {} };
+      return avecSource({ base: brutes.base, repli: brutes.repli, departement: dep, ...r });
     }),
   },
   {

@@ -115,7 +115,7 @@ export function Rail({ arbre, erreur, selection, ouvert, peutEcrire, ias, onBran
         )}
 
         <div className="rsec">
-          <div className="rhead lbl">Segments Notifuse</div>
+          <div className="rhead lbl">Notifuse</div>
           <div className="ritem later" title="Envoi des cibles classées vers Notifuse : bientôt">
             <Icone nom="segment" />
             <span className="lbl">Envoi des cibles · bientôt</span>

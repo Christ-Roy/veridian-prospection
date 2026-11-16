@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+import { libelleAvecCode } from "@/atlas/libelles";
+
 import { nouvelleLigne, type LigneEditeur } from "./lignes";
 import { ajouterValeurs, grouperChamps, libelleOperateur, operateurParDefaut, saisieVide, type Saisie } from "./logique";
 import type { ChampInfo } from "./types";
@@ -141,7 +143,7 @@ function ChampValeur({ champ, op, saisie, onChange }: { champ: ChampInfo; op: st
   }
   if (champ.type === "liste") {
     const valider = () => {
-      if (brut.trim()) onChange({ ...saisie, liste: ajouterValeurs(saisie.liste, brut) });
+      if (brut.trim()) onChange({ ...saisie, liste: ajouterValeurs(saisie.liste, brut, champ.id) });
       setBrut("");
     };
     return (
@@ -149,8 +151,8 @@ function ChampValeur({ champ, op, saisie, onChange }: { champ: ChampInfo; op: st
         <div className="flex flex-wrap gap-1">
           {saisie.liste.map((v) => (
             <span key={v} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs">
-              {v}
-              <button type="button" aria-label={`Retirer ${v}`} className="rounded-full hover:text-foreground focus-visible:ring-2" onClick={() => set({ liste: saisie.liste.filter((x) => x !== v) })}>
+              {libelleAvecCode(champ.id, v)}
+              <button type="button" aria-label={`Retirer ${libelleAvecCode(champ.id, v)}`} className="rounded-full hover:text-foreground focus-visible:ring-2" onClick={() => set({ liste: saisie.liste.filter((x) => x !== v) })}>
                 <X className="size-3" />
               </button>
             </span>
@@ -161,7 +163,7 @@ function ChampValeur({ champ, op, saisie, onChange }: { champ: ChampInfo; op: st
           placeholder="Valeur, puis Entrée (ou virgule)"
           aria-label={`Valeurs pour ${champ.libelle}`}
           value={brut}
-          onChange={(e) => (/[,;]$/.test(e.target.value) ? (onChange({ ...saisie, liste: ajouterValeurs(saisie.liste, e.target.value) }), setBrut("")) : setBrut(e.target.value))}
+          onChange={(e) => (/[,;]$/.test(e.target.value) ? (onChange({ ...saisie, liste: ajouterValeurs(saisie.liste, e.target.value, champ.id) }), setBrut("")) : setBrut(e.target.value))}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();

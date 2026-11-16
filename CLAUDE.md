@@ -10,8 +10,8 @@
 
 Atlas, servi sur « / » : explorer le marché français (ClickHouse ODH, vue
 `odh.company_prospection_current`, 1,3 M d'entreprises non bloquées), le découper en segments versionnés,
-les prioriser, les envoyer vers Notifuse. L'ancienne app (base `entreprises`, pipeline, mail, softphone) est
-retirée le 09/11 ; archive : tag `archive/prospection-v1-20261109`. Le pipeline commercial vit dans Twenty.
+les prioriser, les envoyer vers Notifuse. L'ancienne app est retirée du code et de la base (15-16/11, migration 0040) ;
+archives : tag `archive/prospection-v1-20261109`, dump `~/archives/prospection-v1-20261115/`. Le pipeline commercial vit dans Twenty.
 
 ## Stack
 
@@ -62,7 +62,7 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
   Tenants existants : `POST /api/tenants/link-hub` (HMAC, `{hub_user_id, hub_tenant_id}`) ne pose que ce lien.
   Ne pas rejouer `provision` sur un vrai client : il remet le propriétaire `admin` et recrée `default`.
   `by-email` rend `workspaces[].hub_tenant_id` pour `hub reconcile`.
-- Outils : `src/atlas/outils-mcp.ts` (25), les mêmes que l'écran appelle par `/api/atlas/[outil]` avec la session.
+- Outils : `src/atlas/outils-mcp.ts` (26), les mêmes que l'écran appelle par `/api/atlas/[outil]` avec la session.
   Espace déduit de l'utilisateur, un `viewer` ne voit pas les outils d'écriture, fiche limitée à 60/min.
   Ajouter un outil = une entrée dans `OUTILS_ATLAS`, le Hub le relit seul.
 - ClickHouse (`src/atlas/source.ts`) : compte `prospection_ro`, 12 requêtes simultanées pour toute l'app, aucun
@@ -74,6 +74,9 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
   marché ») : le marché ENTIER, pas que les fiches prospectables. Sélection par LISTE de codes NAF avec
   `naf_rev2 = 1`, jamais par intervalle de chaînes ; prévoir « département inconnu » (diffusion partielle) ;
   afficher `nb_*_livrable` comme « envoyables », `nb_avec_*` comme « connus ».
+- Carte : projection exacte des chemins (`src/atlas/projection.ts`, Mercator retrouvé à 0,05 près), communes = contours de
+  l'API Géo (`src/atlas/communes.ts`, cache 24 h, route `/api/atlas/communes/[dep]`) ; outil `repartir_communes` (base
+  maître rapprochée par nom et code postal, fiches par INSEE). Le cube ne descend pas à la commune.
 - Registre : `hub mcp-app add prospection https://prospection.app.veridian.site/api/mcp --acces tous` (inscrit le 09/11).
 - Journaux : `obs search '\[mcp\] outil=' --since 6h` (Loki) ; `nomad alloc logs` ne rend rien pour ce job.
 
@@ -93,10 +96,8 @@ par le verbe `veridian-ci-deploy prospection` (put-job, plan, deploy canari, smo
   là où tourne l'allocation.
 - Vérifier après déploiement : `nomad job inspect prospection` (image) puis `docker ps` sur `prod-pub`.
 
-Staging (branche `staging`, job `prospection-staging`) : le job servi est à `count 0` ou `dead` selon
-le moment, et un conteneur `staging-2ad7ecc` tourne sur `dev-pub` en parallèle (09/11). Le
-`prospection-deploy-staging.yml` de cette branche pousse encore en Compose sur `ovh-dev` (chemin
-retiré, clé `ubuntu` en mode deny). Ne pas pousser sur `staging` avant d'avoir tranché la source.
+Staging (branche `staging`) : divergé et à l'arrêt ; ses workflows (Compose sur ovh-dev) sont retirés de `main` le 16/11.
+Les comptes e2e n'existent qu'en base staging, exception de banc. Ne pas pousser sur `staging` avant d'avoir tranché.
 
 | Tier | Exemples | Action agent |
 |---|---|---|
@@ -110,7 +111,7 @@ retiré, clé `ubuntu` en mode deny). Ne pas pousser sur `staging` avant d'avoir
 - **Migrations Prisma par la CI** : `deploy-prod` envoie `prisma/` au verbe (`put-migrations prod`)
   puis `migrate prod` joue `prisma migrate deploy` sur pg-saas, avant le déploiement. Une migration
   destructive (DROP, renommage) reste 💀 : en deux temps, compatible avec le code encore servi.
-- **L'ancienne base `prospection-db` est purgée (09/11)** : job, données, dépôts pgBackRest et R2 supprimés, dump froid vérifié sur le stockage Contabo. Aucun nom `prospection-db` ni `prospection-saas-db` ne doit revenir dans la CI ni dans les skills.
+- **`prospection-db` est purgée (09/11)** : aucun nom `prospection-db` ni `prospection-saas-db` ne revient dans la CI ni les skills.
 - **Bascule pg-saas (base muette)** : `src/lib/db-bornes.ts` borne l'ouverture des connexions (posé au
   démarrage par `src/instrumentation.ts`). Une requête en cours sur une connexion muette attend sans fin
   dans Prisma 6, `socket_timeout` compris (mesuré) : le filet est `/api/health` (503 en 2 s) + `check_restart`.
@@ -118,11 +119,10 @@ retiré, clé `ubuntu` en mode deny). Ne pas pousser sur `staging` avant d'avoir
 - **Un seul client Prisma** (`src/lib/prisma.ts`), pool de 8 (pg-saas : 100 connexions pour cinq apps).
   Jamais de `new PrismaClient` ailleurs : un test le refuse.
 - **Rôle `prospection` : `statement_timeout` et `idle_in_transaction_session_timeout` à 60 s** (09/11).
-  Une migration longue (index sur `entreprises`) commence par `SET statement_timeout = 0;`.
+  Une migration longue commence par `SET statement_timeout = 0;`.
 - **Suppression de colonne en deux temps** : d'abord le code sans la colonne (Prisma lit tout le modèle),
   puis la migration de DROP au déploiement suivant ; la CI migre avant de déployer (fait le 09/11, 0035).
 - **Pas d'invitation locale** (retirée le 09/11) : inviter crée un utilisateur, c'est le Hub (`/dashboard/workspace/members`).
-  La table `invitations` reste (21 lignes, plus lue) ; `notifuse_api_key` est vidée puis supprimée.
 - **Un déploiement remplace toute l'allocation** du groupe `stack` : l'id d'alloc change.
 - **Après déploiement, lire l'image et la version dans le conteneur** ; `/api/status` renvoie
   `commit: null` et ne prouve rien.
@@ -168,7 +168,7 @@ Tests et builds : `lourd <commande>` (rise), jamais en local.
 
 ## Multi-tenant
 
-- Tables Atlas (`atlas_*`) bornées au tenant. Les tables de l'ancienne app (`entreprises`…) restent en base, plus lues.
+- Tables Atlas (`atlas_*`) bornées au tenant ; la base ne garde que l'identité, le contrat Hub et Atlas (18 tables).
 - Résolution : session → `tenants.user_id`, sinon `workspace_members` → tenant (cache 60 s).
 
 ## Règles

@@ -2,7 +2,9 @@
  * Fiche entreprise : thèmes ordonnés, libellés, valeurs mises en forme, valeurs vides masquées.
  * Logique pure (testée dans __tests__/atlas-ui).
  */
-import { formaterDate, formaterNombre, valeurLisible } from "./logique";
+import { libelleValeur } from "@/atlas/libelles";
+
+import { formaterDate, formaterNombre } from "./logique";
 import type { Fiche, ValeurFiche } from "./types";
 
 export const THEMES: readonly { id: string; titre: string }[] = [
@@ -23,7 +25,7 @@ const LIBELLES: Record<string, string> = {
   nom: "Nom",
   forme_juridique: "Forme juridique",
   categorie: "Catégorie",
-  date_creation: "Création",
+  date_creation: "Date de création",
   capital: "Capital",
   statut: "Statut",
   procedure: "Procédure",
@@ -37,26 +39,26 @@ const LIBELLES: Record<string, string> = {
   commune: "Commune",
   code_postal: "Code postal",
   departement: "Département",
-  commune_insee: "Code INSEE",
+  commune_insee: "Commune (INSEE)",
   role: "Rôle",
   email: "Email",
   email_verifie: "Email vérifié",
   type_email: "Type d'email",
-  verification: "Vérification",
-  preuve: "Preuve de la vérification",
+  verification: "Vérification de l'email",
+  preuve: "Preuve de l'email",
   email_envoyable: "Email envoyable",
   motif_email: "Pourquoi l'email n'est pas envoyable",
   telephone_envoyable: "Téléphone utilisable",
   messagerie: "Messagerie",
   telephone: "Téléphone",
-  delivrable: "Délivrable",
-  site: "Adresse",
+  delivrable: "Joignable par un canal",
+  site: "Site web",
   domaines: "Domaines",
   niveau: "Niveau du site",
   obsolete: "Site obsolète",
   https: "HTTPS",
   responsive: "Adapté au mobile",
-  outil: "Outil",
+  outil: "Outil du site",
   ecommerce: "Vente en ligne",
   plateforme_ecommerce: "Plateforme de vente",
   chiffre_affaires: "Chiffre d'affaires",
@@ -66,7 +68,7 @@ const LIBELLES: Record<string, string> = {
   annee: "Exercice",
   croissance_pct: "Croissance",
   tendance: "Tendance",
-  effectif: "Effectif",
+  effectif: "Effectif (salariés)",
   taille: "Taille",
   maison_mere: "Maison mère",
   filiales: "Filiales",
@@ -76,11 +78,11 @@ const LIBELLES: Record<string, string> = {
   qualiopi: "Qualiopi",
   bio: "Label bio",
   ess: "ESS",
-  marches_publics: "Marchés publics",
+  marches_publics: "Marchés publics remportés",
   montant_marches: "Montant des marchés",
   permis_3_ans: "Permis (3 ans)",
   aides_minimis: "Aides de minimis",
-  score_odh: "Score ODH",
+  score_odh: "Score",
   grade: "Grade",
   confiance: "Confiance",
   blocages: "Blocages",
@@ -115,7 +117,8 @@ export function estVide(v: ValeurFiche | undefined, theme = ""): boolean {
   return false;
 }
 
-function lien(cle: string, texte: string): string | undefined {
+/** Lien d'une valeur de contact : site (https), email (mailto:), téléphone (tel:) ; undefined pour le reste. */
+export function lienValeur(cle: string, texte: string): string | undefined {
   if (cle === "site") return /^https?:\/\//i.test(texte) ? texte : `https://${texte}`;
   if (cle === "email" && texte.includes("@")) return `mailto:${texte}`;
   if (cle === "telephone") return `tel:${texte.replace(/[^\d+]/g, "")}`;
@@ -133,7 +136,7 @@ export function formaterValeur(cle: string, v: Exclude<ValeurFiche, null>): stri
   }
   if (DATES.has(cle)) return formaterDate(v);
   if (cle === "siren") return formaterSiren(v);
-  return valeurLisible(cle, v);
+  return libelleValeur(cle, v);
 }
 
 /** Thèmes dans l'ordre de la maquette ; valeurs vides et thèmes vides retirés ; thèmes inconnus à la fin. */
@@ -147,7 +150,7 @@ export function themesFiche(f: Fiche): ThemeFiche[] {
       for (const [cle, v] of Object.entries(brut)) {
         if (MASQUES.has(`${id}.${cle}`) || v === null || estVide(v, id)) continue;
         const texte = formaterValeur(cle, v);
-        lignes.push({ cle, libelle: LIBELLES[cle] ?? cle, texte, lien: lien(cle, texte), mono: ["siren", "email", "telephone", "site", "naf", "code_postal", "commune_insee"].includes(cle) });
+        lignes.push({ cle, libelle: LIBELLES[cle] ?? cle, texte, lien: lienValeur(cle, texte), mono: ["siren", "email", "telephone", "site", "naf", "code_postal", "commune_insee"].includes(cle) });
       }
       return { id, titre, lignes };
     })
@@ -160,7 +163,8 @@ const texte = (v: ValeurFiche | undefined) => (typeof v === "string" ? v.trim() 
 export function enteteFiche(f: Fiche, nomDeRepli = "Entreprise"): { titre: string; sous: string } {
   const id = f.identite ?? {};
   const nom = texte(id.nom) || nomDeRepli;
-  const forme = texte(id.forme_juridique);
+  const brute = texte(id.forme_juridique);
+  const forme = brute ? libelleValeur("forme_juridique", brute) : "";
   const activite = texte(f.activite?.activite) || texte(f.activite?.secteur);
   const commune = texte(f.lieu?.commune);
   const dep = texte(f.lieu?.departement);

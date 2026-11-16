@@ -7,6 +7,7 @@ import { CHAMP, CHAMPS, type Champ } from "./champs";
 import { motifMot, type CodeActivite } from "./activites";
 import { COLONNES_MAITRE, TABLE_MAITRE, compilerMaitre, conditionNom } from "./maitre";
 import { compilerCube, libelleCube, mesures, TABLE_CUBE, type ResultatCube } from "./cube";
+import { libelleValeur } from "./libelles";
 import { NAF_LIBELLES } from "./naf";
 import { FiltreInvalide, FiltreSchema, ScoringSchema, colonnesSql, compilerFiltre, type Condition, type SqlParam } from "./filtres";
 
@@ -17,6 +18,16 @@ export type OptionsApercu = { colonnes: string[]; page: number; parPage: number;
 
 /** Fiche complète d'une entreprise : colonnes ODH renommées en français, regroupées par thème. */
 export type Fiche = Record<string, Record<string, string | number | boolean | null | string[]>>;
+/**
+ * Comptes par commune. Base « marche » : la base maître, sans code INSEE, regroupée par nom et code postal.
+ * Base « prospection » : les fiches prospectables, par code INSEE. `repli` : le marché était trop large pour la
+ * base maître, les comptes viennent des fiches prospectables.
+ */
+export type CommunesBrutes = {
+  base: "marche" | "prospection";
+  repli: boolean;
+  lignes: { insee: string | null; nom: string; code_postal: string | null; mesures: Record<string, number> }[];
+};
 export type Point = { siren: string; nom: string; commune: string; lat: number; lon: number; email: boolean; site: boolean };
 
 /** Colonnes de la fiche : thème → (clé française → colonne ODH). Liste blanche, comme le catalogue. */
@@ -37,6 +48,8 @@ export interface SourceMarche {
   readonly simulee: boolean;
   fiche(siren: string): Promise<Fiche | null>;
   points(filtre: unknown, departement: string, limite?: number): Promise<Point[]>;
+  /** Comptes par commune d'un département, bruts (rapprochés des contours par communes.ts). */
+  communes(filtre: unknown, departement: string, base: "marche" | "prospection"): Promise<CommunesBrutes>;
   compter(filtre: unknown): Promise<number>;
   apercu(filtre: unknown, o: OptionsApercu): Promise<Apercu>;
   repartition(filtre: unknown, champ: string, limite?: number): Promise<{ cle: string; nombre: number }[]>;
@@ -278,6 +291,49 @@ export class SourceClickHouse implements SourceMarche {
     return r.map((x) => ({ siren: String(x.siren), nom: String(x.nom), commune: String(x.commune), lat: Number(x.lat), lon: Number(x.lon), email: Number(x.email) === 1, site: Number(x.site) === 1 }));
   }
 
+  async communes(filtre: unknown, departement: string, base: "marche" | "prospection"): Promise<CommunesBrutes> {
+    if (!/^(\d{2}|2A|2B)$/.test(departement)) throw new FiltreInvalide("département invalide");
+    if (base === "marche") {
+      const c = compilerMaitre(filtre);
+      c.params.dep = { type: "String", valeur: departement };
+      const sql = `SELECT city AS nom, postal_code AS cp, count() AS entreprises, countIf(prospectable = 1) AS contactables,
+        countIf(email_envoyable = 1) AS email_envoyable, countIf(telephone_envoyable = 1) AS telephone_envoyable
+        FROM ${TABLE_MAITRE} WHERE ${c.where} AND department = {dep:String} GROUP BY nom, cp`;
+      try {
+        const r = await this.requete<Record<string, string>>(sql, c.params);
+        return {
+          base,
+          repli: false,
+          lignes: r.map((x) => ({
+            insee: null, nom: x.nom, code_postal: x.cp || null,
+            mesures: { entreprises: Number(x.entreprises), contactables: Number(x.contactables), email_envoyable: Number(x.email_envoyable), telephone_envoyable: Number(x.telephone_envoyable) },
+          })),
+        };
+      } catch (e) {
+        // Marché sans activité (département seul) : au-delà des 15 M lignes du compte, repli sur les fiches prospectables.
+        if (!(e instanceof Error && LIMITE_DEPASSEE.test(e.message))) throw e;
+        return { ...(await this.communes(filtre, departement, "prospection")), base: "marche", repli: true };
+      }
+    }
+    const { where, params } = compilerFiltre(filtre);
+    params.dep = { type: "String", valeur: departement };
+    const sql = `SELECT commune_insee AS insee, any(city) AS nom, count() AS entreprises, countIf(email_envoyable = 1) AS email_envoyable,
+      countIf(telephone_envoyable = 1) AS telephone_envoyable, countIf(primary_domain = '') AS sans_site, countIf(email != '') AS avec_email
+      FROM ${TABLE} WHERE ${where} AND department = {dep:String} GROUP BY insee`;
+    const r = await this.requete<Record<string, string>>(sql, params);
+    return {
+      base,
+      repli: false,
+      lignes: r.map((x) => ({
+        insee: x.insee || null, nom: x.nom, code_postal: null,
+        mesures: {
+          entreprises: Number(x.entreprises), contactables: Number(x.entreprises), email_envoyable: Number(x.email_envoyable),
+          telephone_envoyable: Number(x.telephone_envoyable), sans_site: Number(x.sans_site), avec_email: Number(x.avec_email),
+        },
+      })),
+    };
+  }
+
   async apercu(filtre: unknown, o: OptionsApercu) {
     const { where, params, score } = compilerFiltre(filtre, o.scoring);
     const { sql: select, champs } = colonnesSql(o.colonnes);
@@ -304,16 +360,10 @@ export class SourceClickHouse implements SourceMarche {
 /** Colonnes UInt8 de la fiche : 0/1 rendus en oui/non. */
 const OUI_NON = new Set(["dirigeant__email_verifie", "contact__delivrable", "contact__email_envoyable", "contact__telephone_envoyable", "web__obsolete", "web__https", "web__responsive", "web__ecommerce", "signaux__rge", "signaux__qualiopi", "signaux__bio", "signaux__ess"]);
 
-/** Catégories juridiques INSEE les plus courantes, en libellé court ; sinon le code reste lisible. */
-const FORMES: Record<string, string> = {
-  "1000": "EI", "5499": "SARL", "5498": "EURL", "5410": "SARL", "5710": "SAS", "5720": "SASU", "5599": "SA", "5505": "SA",
-  "5202": "SNC", "5306": "SCS", "6540": "SCI", "6599": "Société civile", "6533": "GAEC", "6598": "EARL", "6597": "Société civile agricole",
-  "6316": "CUMA", "9220": "Association", "9210": "Association", "5458": "SELARL", "5785": "SELAS", "6585": "Société civile de moyens",
-};
+/** Forme juridique lisible (même dictionnaire que l'écran et l'export, src/atlas/libelles.ts). */
 export function formeJuridique(code: unknown): string | null {
   if (code === null || code === undefined || code === "") return null;
-  const c = String(code);
-  return FORMES[c] ?? `catégorie ${c}`;
+  return libelleValeur("forme_juridique", String(code));
 }
 
 /** Remet les colonnes `theme__cle` en { theme: { cle: valeur } } : vides en null, 0/1 en oui/non, forme juridique en libellé. */
@@ -490,6 +540,22 @@ export class SourceSimulee implements SourceMarche {
       .filter((l) => l.departement === departement)
       .slice(0, limite)
       .map((l, i) => ({ siren: String(l.siren), nom: String(l.nom), commune: String(l.commune), lat: 45 + (i % 20) / 40, lon: 5 + Math.floor(i / 20) / 40, email: Boolean(l.email), site: Boolean(l.site) }));
+  }
+  async communes(filtre: unknown, departement: string, base: "marche" | "prospection"): Promise<CommunesBrutes> {
+    if (!/^(\d{2}|2A|2B)$/.test(departement)) throw new FiltreInvalide("département invalide");
+    const m = new Map<string, CommunesBrutes["lignes"][number]>();
+    for (const l of this.filtrer(filtre).filter((x) => x.departement === departement)) {
+      const k = String(l.commune_insee);
+      const c = m.get(k) ?? { insee: k, nom: String(l.commune), code_postal: String(l.code_postal), mesures: { entreprises: 0, contactables: 0, email_envoyable: 0, telephone_envoyable: 0, sans_site: 0, avec_email: 0 } };
+      c.mesures.entreprises++;
+      c.mesures.contactables++;
+      if (l.email_envoyable) c.mesures.email_envoyable++;
+      if (l.telephone_envoyable) c.mesures.telephone_envoyable++;
+      if (!l.site) c.mesures.sans_site++;
+      if (l.email) c.mesures.avec_email++;
+      m.set(k, c);
+    }
+    return { base, repli: false, lignes: [...m.values()] };
   }
   async apercu(filtre: unknown, o: OptionsApercu) {
     compilerFiltre(filtre, o.scoring); // même validation qu'en prod

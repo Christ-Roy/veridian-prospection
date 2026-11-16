@@ -1,8 +1,10 @@
 /**
  * Logique pure de la carte Atlas : géographie (régions, titre), couleurs, cadrage de la descente
- * dans un département et projection des entreprises (lon/lat) dans le chemin SVG du département.
+ * dans un département ou une commune, placement des entreprises (lon/lat) par la projection de la carte.
  * Sans DOM : testée dans __tests__/atlas-ui.
  */
+import { projeter } from "@/atlas/projection";
+
 import type { Boite, Filtre, PointCarte } from "./types";
 
 export const CARTE_L = 800;
@@ -89,41 +91,31 @@ export function interpolerCadre(de: readonly number[], vers: readonly number[], 
   return de.map((a, i) => a + ((vers[i] ?? a) - a) * e);
 }
 
-/** Correction de la longitude à la latitude moyenne de la France métropolitaine (cos 46°). */
-export const COS_LAT = Math.cos((46 * Math.PI) / 180);
-
-function quantile(triees: readonly number[], q: number): number {
-  const i = Math.min(triees.length - 1, Math.max(0, Math.round(q * (triees.length - 1))));
-  return triees[i];
-}
-
 export type PointProjete = PointCarte & { x: number; y: number };
 
-/**
- * Projette les entreprises dans le chemin du département : la boîte englobante des points
- * (longitude × cos 46°, latitude) est mise à l'échelle, sans déformation, dans la boîte du chemin
- * (getBBox) et centrée. Au-delà de 20 points, la boîte est prise entre les 1er et 99e centiles pour
- * qu'une adresse mal géocodée n'écrase pas les autres. Un point qui tombe hors du chemin reste affiché.
- */
-export function projeterPoints(points: readonly PointCarte[], b: Boite): PointProjete[] {
-  const valides = points.filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon));
-  if (!valides.length) return [];
-  const xs = valides.map((p) => p.lon * COS_LAT).sort((a, c) => a - c);
-  const ys = valides.map((p) => p.lat).sort((a, c) => a - c);
-  const q = valides.length > 20 ? 0.01 : 0;
-  const minX = quantile(xs, q);
-  const maxX = quantile(xs, 1 - q);
-  const minY = quantile(ys, q);
-  const maxY = quantile(ys, 1 - q);
-  const ex = maxX - minX;
-  const ey = maxY - minY;
-  const cx = b.x + b.width / 2;
-  const cy = b.y + b.height / 2;
-  if (ex <= 0 && ey <= 0) return valides.map((p) => ({ ...p, x: cx, y: cy }));
-  const echelle = Math.min(ex > 0 ? b.width / ex : Infinity, ey > 0 ? b.height / ey : Infinity);
-  const ox = cx - (ex * echelle) / 2;
-  const oy = cy - (ey * echelle) / 2;
-  return valides.map((p) => ({ ...p, x: ox + (p.lon * COS_LAT - minX) * echelle, y: oy + (maxY - p.lat) * echelle }));
+/** Place les entreprises à leur position exacte sur la carte (même projection que les départements). */
+export function placerPoints(points: readonly PointCarte[]): PointProjete[] {
+  return points
+    .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon))
+    .map((p) => {
+      const [x, y] = projeter(p.lon, p.lat);
+      return { ...p, x, y };
+    });
+}
+
+/** Cadrage d'une commune : sa boîte, jamais plus petite que `min` unités (un village resterait illisible). */
+export function cadrageCommune(b: Boite, min: number): [number, number, number, number] {
+  const w = Math.max(b.width, min);
+  const h = Math.max(b.height, min);
+  return cadrageDescente({ x: b.x + b.width / 2 - w / 2, y: b.y + b.height / 2 - h / 2, width: w, height: h });
+}
+
+/** Mesure de la carte → valeur d'une commune : un nombre, ou une part (%) des entreprises de la commune. */
+export function valeurCommune(m: Mesure, mesures: Readonly<Record<string, number>>): number {
+  const total = mesures.entreprises ?? 0;
+  if (m === "nombre") return total;
+  const k = m === "contactable" ? "contactables" : m;
+  return total > 0 ? ((mesures[k] ?? 0) / total) * 100 : 0;
 }
 
 export type Mesure = "nombre" | "sans_site" | "avec_email" | "contactable" | "email_envoyable";

@@ -6,7 +6,7 @@ import { appeler, ErreurAtlas, estAnnulation, texteErreur } from "./api";
 import { enteteFiche, themesFiche } from "./fiche-logique";
 import { diffFiltres, estAuteurIA, formaterHorodatage, nomAuteur } from "./flux";
 import { Chargement, Icone } from "./icones";
-import { formaterNombre, libelleColonne } from "./logique";
+import { formaterNombre, libellePoints, phraseCondition } from "./logique";
 import type { ChampInfo, Epingle, Fiche, Filtre, Historique } from "./types";
 
 // ---------------------------------------------------------------- cadre commun
@@ -277,11 +277,11 @@ export function VoletHistorique({
           <span>Aperçu de la v{apercu.version}</span>
           <span style={{ display: "flex", gap: 6 }}>
             <button type="button" className="btn" onClick={() => onApercu(null)}>
-              Revenir
+              Fermer l&apos;aperçu
             </button>
             {peutEcrire && (
               <button type="button" className="btn pri" onClick={restaurer} disabled={envoi}>
-                {envoi ? "…" : "Restaurer"}
+                {envoi ? "…" : "Restaurer cette version"}
               </button>
             )}
           </span>
@@ -347,7 +347,7 @@ export function VoletHistorique({
                   <ul>
                     {v.criteres.map((c, j) => (
                       <li key={j}>
-                        {libelleColonne(c.champ, index)} · {c.poids}
+                        {phraseCondition(c, index)} · +{libellePoints(c.poids)}
                       </li>
                     ))}
                   </ul>

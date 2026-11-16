@@ -94,3 +94,11 @@ describe("règles d'export", () => {
     expect(nomFichier("«»", "csv", new Date("2026-11-10T08:00:00Z"))).toBe("atlas-segment-2026-11-10.csv");
   });
 });
+
+describe("même rendu que l'écran", () => {
+  test("codes en libellés, dates JJ/MM/AAAA, Oui/Non", () => {
+    const ids = ["nom", "forme_juridique", "departement", "date_creation", "ecommerce"];
+    const t = versCsv(ids, [{ nom: "A", forme_juridique: "5710", departement: "69", date_creation: "2018-05-14", ecommerce: true }]).toString("utf8");
+    expect(t.slice(1).split("\r\n")[1]).toBe("A;SAS;Rhône (69);14/05/2018;Oui");
+  });
+});

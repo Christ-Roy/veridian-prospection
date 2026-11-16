@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent as ClavierReact } from "react";
 
+import { libelleAvecCode, titreValeur, valeurCorrespond } from "@/atlas/libelles";
+
 import { appeler, estAnnulation } from "./api";
 import { ajouterValeurs, construireCondition, grouperChamps, libelleOperateur, operateurParDefaut, phraseCondition, saisieDepuis, saisieVide, type Saisie } from "./logique";
 import type { ChampInfo, Condition, Filtre, RepartitionMarche } from "./types";
@@ -121,7 +123,7 @@ export function PopoverFiltres({ champs, index, propres, heritees, inclureBloque
         );
       })}
       <div className="prow">
-        <span>Bloquées</span>
+        <span>Exclues</span>
         <label className="ck">
           <input
             type="checkbox"
@@ -129,7 +131,7 @@ export function PopoverFiltres({ champs, index, propres, heritees, inclureBloque
             disabled={lectureSeule}
             onChange={(e) => onChange({ conditions: propres, inclure_bloques: e.target.checked })}
           />
-          Inclure les entreprises écartées par ODH (cessées, sans contact…)
+          Inclure les entreprises exclues du ciblage (cessées, sans contact…)
         </label>
       </div>
 
@@ -231,26 +233,27 @@ function ValeurCondition({
   if (champ.type === "liste") {
     const bascule = (v: string) => set({ liste: saisie.liste.includes(v) ? saisie.liste.filter((x) => x !== v) : [...saisie.liste, v] });
     const proposes = new Set((suggestions ?? []).map((s) => s.cle));
+    const visibles = (suggestions ?? []).filter((s) => valeurCorrespond(champ.id, s.cle, brut));
     return (
       <>
         <div className="opts" aria-label="Valeurs choisies">
           {saisie.liste
             .filter((v) => !proposes.has(v))
             .map((v) => (
-              <button key={v} type="button" className="opt on" onClick={() => bascule(v)} aria-label={`Retirer ${v}`}>
-                {v} ×
+              <button key={v} type="button" className="opt on" title={titreValeur(champ.id, v)} onClick={() => bascule(v)} aria-label={`Retirer ${libelleAvecCode(champ.id, v)}`}>
+                {libelleAvecCode(champ.id, v)} ×
               </button>
             ))}
-          {(suggestions ?? []).map((s) => (
-            <button key={s.cle} type="button" className={saisie.liste.includes(s.cle) ? "opt on" : "opt"} aria-pressed={saisie.liste.includes(s.cle)} onClick={() => bascule(s.cle)}>
-              {s.cle} <span className="num" style={{ opacity: 0.6 }}>{s.nombre.toLocaleString("fr-FR")}</span>
+          {visibles.map((s) => (
+            <button key={s.cle} type="button" className={saisie.liste.includes(s.cle) ? "opt on" : "opt"} aria-pressed={saisie.liste.includes(s.cle)} title={titreValeur(champ.id, s.cle)} onClick={() => bascule(s.cle)}>
+              {libelleAvecCode(champ.id, s.cle)} <span className="num" style={{ opacity: 0.6 }}>{s.nombre.toLocaleString("fr-FR")}</span>
             </button>
           ))}
           {suggere && suggestions === null && <span className="hint">Valeurs en cours de chargement…</span>}
         </div>
         <input
           className="fld"
-          placeholder="Autre valeur, puis Entrée (virgules acceptées)"
+          placeholder="Un code ou un nom, puis Entrée (virgules acceptées)"
           aria-label={`Valeurs pour ${champ.libelle}`}
           value={brut}
           onChange={(e) => setBrut(e.target.value)}
@@ -258,14 +261,14 @@ function ValeurCondition({
             if (e.key === "Enter") {
               e.preventDefault();
               if (brut.trim()) {
-                set({ liste: ajouterValeurs(saisie.liste, brut) });
+                set({ liste: ajouterValeurs(saisie.liste, brut, champ.id) });
                 setBrut("");
               } else onValider();
             }
           }}
           onBlur={() => {
             if (brut.trim()) {
-              set({ liste: ajouterValeurs(saisie.liste, brut) });
+              set({ liste: ajouterValeurs(saisie.liste, brut, champ.id) });
               setBrut("");
             }
           }}

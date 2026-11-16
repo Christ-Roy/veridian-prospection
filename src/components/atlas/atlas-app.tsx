@@ -39,7 +39,7 @@ import { part } from "./marche";
 import { PopoverFiltres } from "./popover-filtres";
 import { VueMarche } from "./vue-marche";
 import { HUB_IA, Rail, type IAVue } from "./rail";
-import type { AnalyseMarche, ApercuMarche, Arbre, ChampInfo, Condition, Epingle, Filtre, Historique, SegmentArbre, SegmentDetail, Vue } from "./types";
+import type { AnalyseMarche, ApercuMarche, Arbre, ChampInfo, CommuneComptee, Condition, Epingle, Filtre, Historique, SegmentArbre, SegmentDetail, Vue } from "./types";
 import { VoletDossier, VoletFiche, VoletHistorique } from "./volets";
 import { VueBarres, VueEntonnoir, VuePriorite, VueTableau } from "./vues";
 
@@ -85,7 +85,13 @@ export function AtlasApp() {
   const [colonnesLibres, setColonnesLibres] = useState<string[]>(COLONNES_LIBRES);
   const [apercu, setApercu] = useState<Apercu>(null);
   const [vue, setVue] = useState<Vue>("carte");
-  const [descente, setDescente] = useState<string | null>(null);
+  const [descente, setDescenteBrute] = useState<string | null>(null);
+  // Commune regardée sur la carte : un zoom de la carte, remis à zéro hors de la carte et à chaque département.
+  const [commune, setCommune] = useState<CommuneComptee | null>(null);
+  const setDescente = useCallback((d: string | null) => {
+    setDescenteBrute(d);
+    setCommune(null);
+  }, []);
   const [versionComparee, setVersionComparee] = useState<number | null>(null);
   const [rafraichir, setRafraichir] = useState(0);
 
@@ -250,12 +256,18 @@ export function AtlasApp() {
   const propres = apercu ? apercu.filtre : travail;
   const filtreVue = useMemo(() => combiner(propres, heritees), [propres, heritees]);
   const cleVue = JSON.stringify(filtreVue);
-  const filtreChiffres = useMemo(() => avecDepartement(filtreVue, descente), [filtreVue, descente]);
+  const baseMarche = etapeCourante(arbre, selection, false) === "marche";
+  const codeCommune = vue === "carte" ? (commune?.code ?? null) : null;
+  const filtreChiffres = useMemo(() => {
+    const f = avecDepartement(filtreVue, descente);
+    // Fiches prospectables : la commune est un filtre (code INSEE). Marché : ses chiffres viennent de la carte.
+    return codeCommune && !baseMarche ? avecCondition(f, { champ: "commune_insee", op: "dans", valeur: [codeCommune] }) : f;
+  }, [filtreVue, descente, codeCommune, baseMarche]);
   const cleChiffres = JSON.stringify(filtreChiffres);
+  const communeKpis = codeCommune && commune ? JSON.stringify(commune.mesures) : null;
   const colonnes = detail?.colonnes.length ? detail.colonnes : colonnesLibres;
   // Étape marché (rien de choisi, ou un marché) : toutes les entreprises, d'après le cube. Étape cible : les
   // fiches prospectables, avec tous les filtres.
-  const baseMarche = etapeCourante(arbre, selection, false) === "marche";
   const listeKpis = useMemo(() => (baseMarche ? KPIS_MARCHE : kpisDisponibles(index)), [baseMarche, index]);
   const champsVisibles = useMemo(() => (baseMarche ? (champs ?? []).filter((c) => c.marche) : (champs ?? [])), [baseMarche, champs]);
   const [ignoreesMarche, setIgnoreesMarche] = useState<Condition[]>([]);
@@ -265,6 +277,13 @@ export function AtlasApp() {
     if (attente || !champs) return;
     const ctl = new AbortController();
     const f = JSON.parse(cleChiffres) as Filtre;
+    if (baseMarche && communeKpis) {
+      // Le cube ne descend pas à la commune : ses chiffres viennent de la base complète, par la carte.
+      const m = JSON.parse(communeKpis) as Record<string, number>;
+      setKpis({ entreprises: m.entreprises ?? 0, prospectables: m.contactables ?? 0, email_envoyable: m.email_envoyable ?? 0, telephone_envoyable: m.telephone_envoyable ?? 0 });
+      setKpisBusy(false);
+      return;
+    }
     setKpisBusy(true);
     if (baseMarche) {
       appeler<AnalyseMarche>("analyser_marche", { filtre: f }, ctl.signal)
@@ -298,13 +317,30 @@ export function AtlasApp() {
       .catch((e) => !estAnnulation(e) && setErreur(texteErreur(e)))
       .finally(() => !ctl.signal.aborted && setKpisBusy(false));
     return () => ctl.abort();
-  }, [attente, champs, cleChiffres, listeKpis, rafraichir, baseMarche, heritees]);
+  }, [attente, champs, cleChiffres, listeKpis, rafraichir, baseMarche, heritees, communeKpis]);
 
   // ---------------------------------------------------------------- écriture
   const ecritureRefusee = useCallback(() => {
     setPeutEcrire(false);
     notifier("Écriture refusée : votre rôle sur cet espace est en lecture seule.", true);
   }, [notifier]);
+
+  // Un clic sur une ligne (barre, marché) ajoute sa valeur au filtre du même champ, sans doublon.
+  const ajouterFiltre = (champ: string, valeur: string) => {
+    const info = index.get(champ);
+    const liste = !info || info.type === "liste";
+    const conditions = [...travail.conditions];
+    const i = conditions.findIndex((c) => c.champ === champ && (liste ? c.op === "dans" : c.op === "egal"));
+    if (liste && i >= 0) {
+      const v = conditions[i].valeur;
+      const deja = Array.isArray(v) ? v.map(String) : typeof v === "string" ? [v] : [];
+      if (deja.includes(valeur)) return;
+      conditions[i] = { ...conditions[i], valeur: [...deja, valeur] };
+    } else if (i >= 0) conditions[i] = { ...conditions[i], valeur };
+    else conditions.push({ champ, op: liste ? "dans" : "egal", valeur: liste ? [valeur] : valeur });
+    void changerFiltre({ ...travail, conditions });
+  };
+  const effacerFiltres = () => void changerFiltre({ ...travail, conditions: [] });
 
   const changerFiltre = async (f: Filtre) => {
     setApercu(null);
@@ -707,7 +743,17 @@ export function AtlasApp() {
                       {zone}
                     </button>
                     <span className="sep">/</span>
-                    <span>{DEPARTMENT_NAMES[descente] ?? descente}</span>
+                    {codeCommune && commune ? (
+                      <>
+                        <button type="button" onClick={() => setCommune(null)} aria-label={`Remonter à ${DEPARTMENT_NAMES[descente] ?? descente}`}>
+                          {DEPARTMENT_NAMES[descente] ?? descente}
+                        </button>
+                        <span className="sep">/</span>
+                        <span>{commune.nom}</span>
+                      </>
+                    ) : (
+                      <span>{DEPARTMENT_NAMES[descente] ?? descente}</span>
+                    )}
                   </>
                 ) : (
                   <span>{zone}</span>
@@ -793,21 +839,23 @@ export function AtlasApp() {
             {attente ? (
               <Chargement />
             ) : vue === "carte" ? (
-              <Carte base={baseMarche ? "marche" : "prospection"} filtre={filtreVue} index={index} descente={descente} onDescente={setDescente} onFiche={ouvrirFiche} />
+              <Carte base={baseMarche ? "marche" : "prospection"} filtre={filtreVue} index={index} descente={descente} onDescente={setDescente} commune={commune} onCommune={setCommune} onFiche={ouvrirFiche} />
             ) : vue === "marche" ? (
               <VueMarche
                 filtre={filtreChiffres}
                 index={index}
+                onFiltrer={ajouterFiltre}
+                onEffacerFiltres={effacerFiltres}
                 onCodes={(codes) =>
                   void changerFiltre({ ...travail, conditions: [...travail.conditions.filter((c) => c.champ !== "naf"), { champ: "naf", op: "dans", valeur: codes }] })
                 }
               />
             ) : vue === "barres" ? (
-              <VueBarres filtre={filtreChiffres} champs={champs} index={index} />
+              <VueBarres filtre={filtreChiffres} champs={champs} index={index} onFiltrer={ajouterFiltre} onEffacerFiltres={effacerFiltres} />
             ) : vue === "entonnoir" ? (
               <VueEntonnoir etapes={etapesEntonnoir(propres.conditions, descente ? [...heritees, { champ: "departement", op: "dans", valeur: [descente] }] : heritees, !!propres.inclure_bloques, index)} />
             ) : vue === "tableau" ? (
-              <VueTableau base={baseMarche ? "maitre" : "prospection"} filtre={filtreChiffres} colonnes={colonnes} champs={champs} index={index} onColonnes={(c) => void changerColonnes(c)} onFiche={ouvrirFiche} />
+              <VueTableau base={baseMarche ? "maitre" : "prospection"} filtre={filtreChiffres} colonnes={colonnes} champs={champs} index={index} onColonnes={(c) => void changerColonnes(c)} onFiche={ouvrirFiche} onEffacerFiltres={effacerFiltres} />
             ) : vue === "priorite" && detail && estCible ? (
               <VuePriorite
                 segmentId={detail.id}

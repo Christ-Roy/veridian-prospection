@@ -193,6 +193,25 @@ describe("Atlas par le MCP", () => {
     }
   });
 
+  test("marché par commune : contours rapprochés, et sans l'API Géo la liste reste servie", async () => {
+    const vrai = globalThis.fetch;
+    try {
+      globalThis.fetch = vi.fn(async () => new Response("indisponible", { status: 503 })) as typeof fetch;
+      const sans = await appel(A, "repartir_communes", { filtre: {}, departement: "38", base: "prospection" });
+      expect(sans.communes[0]).toMatchObject({ code: "69381", nom: "Commune simulée" });
+      expect(sans.communes[0].mesures.entreprises).toBeGreaterThan(0);
+      const geo = { features: [{ properties: { code: "69381", nom: "Commune simulée" }, geometry: { type: "Polygon", coordinates: [[[5, 45], [5.1, 45], [5.1, 45.1], [5, 45]]] } }] };
+      globalThis.fetch = vi.fn(async () => Response.json(geo)) as typeof fetch;
+      const avec = await appel(A, "repartir_communes", { filtre: {}, departement: "69", base: "marche" });
+      expect(avec).toMatchObject({ base: "marche", repli: false, departement: "69" });
+      expect(avec.communes).toHaveLength(1);
+      expect(avec.non_rapprochees).toEqual({});
+      expect((await appel(A, "repartir_communes", { filtre: {}, departement: "6" })).erreur).toBeTruthy();
+    } finally {
+      globalThis.fetch = vrai;
+    }
+  });
+
   test("fiche d'une entreprise, points d'un département, SIREN invalide refusé", async () => {
     const pts = await appel(A, "points_carte", { filtre: {}, departement: "69", limite: 5 });
     expect(pts.points).toHaveLength(5);

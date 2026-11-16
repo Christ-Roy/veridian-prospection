@@ -3,7 +3,7 @@
  * (segments enfants) → Priorité (scoring) → Envoi. Plus la lecture des versions (diff, auteur IA) et
  * la détection de l'activité d'une IA entre deux relevés. Logique pure, testée dans __tests__/atlas-ui.
  */
-import { cheminDossier, phraseCondition } from "./logique";
+import { cheminDossier, phraseCondition, TEXTE_EXCLUES_INCLUSES } from "./logique";
 import type { Arbre, ChampInfo, Condition, Filtre, SegmentArbre } from "./types";
 
 // ---------------------------------------------------------------- marchés et cibles
@@ -69,7 +69,7 @@ export function etapeCourante(a: Arbre | null, id: string | null, vuePriorite: b
 
 // ---------------------------------------------------------------- versions
 
-/** Les différences entre deux filtres, en phrases : « + Département parmi 69 », « − Site renseigné ». */
+/** Les différences entre deux filtres, en phrases : « + Département parmi Rhône (69) », « − Site web renseigné ». */
 export function diffFiltres(avant: Filtre | null, apres: Filtre, champs: ReadonlyMap<string, ChampInfo>): string[] {
   if (!avant) return ["création"];
   const cle = (c: Condition) => JSON.stringify([c.champ, c.op, c.valeur]);
@@ -79,7 +79,7 @@ export function diffFiltres(avant: Filtre | null, apres: Filtre, champs: Readonl
     ...[...b].filter(([k]) => !a.has(k)).map(([, c]) => `+ ${phraseCondition(c, champs)}`),
     ...[...a].filter(([k]) => !b.has(k)).map(([, c]) => `− ${phraseCondition(c, champs)}`),
   ];
-  if (!!avant.inclure_bloques !== !!apres.inclure_bloques) out.push(apres.inclure_bloques ? "+ bloquées incluses" : "− bloquées incluses");
+  if (!!avant.inclure_bloques !== !!apres.inclure_bloques) out.push(`${apres.inclure_bloques ? "+" : "−"} ${TEXTE_EXCLUES_INCLUSES}`);
   return out.length ? out : ["sans changement de filtre"];
 }
 
@@ -184,7 +184,7 @@ export const KPIS_MARCHE: Kpi[] = [
 export function kpisDisponibles(champs: ReadonlyMap<string, ChampInfo>): Kpi[] {
   const kpis: Kpi[] = [{ id: "total", libelle: "entreprises", condition: null }];
   if (champs.has("email")) kpis.push({ id: "email", libelle: "avec email", condition: { champ: "email", op: "renseigne", valeur: true } });
-  if (champs.has("email_envoyable")) kpis.push({ id: "envoyable", libelle: "emails envoyables", condition: { champ: "email_envoyable", op: "est", valeur: true } });
+  if (champs.has("email_envoyable")) kpis.push({ id: "envoyable", libelle: "email envoyable", condition: { champ: "email_envoyable", op: "est", valeur: true } });
   if (champs.has("dirigeant")) kpis.push({ id: "dirigeant", libelle: "dirigeants identifiés", condition: { champ: "dirigeant", op: "renseigne", valeur: true } });
   return kpis;
 }

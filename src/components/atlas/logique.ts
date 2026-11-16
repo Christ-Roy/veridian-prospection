@@ -2,7 +2,7 @@
  * Logique pure des écrans Atlas (sans React, sans réseau) : phrases de filtres, construction d'une
  * condition selon le type du champ, arbre des dossiers, filtre de la carte. Testée dans __tests__/atlas-ui.
  */
-import { MOTS, TRANCHES } from "@/atlas/cube";
+import { cleDepuisSaisie, formaterDate, libelleValeur, titreValeur } from "@/atlas/libelles";
 import type { Arbre, Cellule, ChampInfo, Condition, DossierArbre, Filtre, SegmentArbre, TypeChamp } from "./types";
 
 export const CHAMP_DEPARTEMENT = "departement";
@@ -43,20 +43,24 @@ export function formaterNombre(n: number): string {
   return new Intl.NumberFormat("fr-FR").format(n);
 }
 
-/** AAAA-MM-JJ → JJ/MM/AAAA (autre texte rendu tel quel). */
-export function formaterDate(iso: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
-  return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
+export { formaterDate };
+
+/** Mention du filtre « inclure les entreprises exclues du ciblage » dans les phrases (un seul texte pour l'écran et l'historique). */
+export const TEXTE_EXCLUES_INCLUSES = "entreprises exclues du ciblage incluses";
+
+/** « 1 point », « 3 points » (le français garde le singulier sous 2). */
+export function libellePoints(n: number): string {
+  return `${formaterNombre(n)} point${Math.abs(n) >= 2 ? "s" : ""}`;
 }
 
 const TRONQUE = 4;
 
-function listeCourte(valeurs: (string | number)[]): string {
-  const l = valeurs.map(String);
+function listeCourte(valeurs: (string | number)[], champ: string): string {
+  const l = valeurs.map((v) => libelleValeur(champ, v));
   return l.length <= TRONQUE ? l.join(", ") : `${l.slice(0, TRONQUE).join(", ")} et ${l.length - TRONQUE} autre${l.length - TRONQUE > 1 ? "s" : ""}`;
 }
 
-/** Une condition en phrase courte : « Département parmi 69, 01 ». */
+/** Une condition en phrase courte : « Département parmi Rhône (69), Ain (01) ». */
 export function phraseCondition(c: Condition, champs: ReadonlyMap<string, ChampInfo>): string {
   const champ = champs.get(c.champ);
   const nom = champ?.libelle ?? c.champ;
@@ -65,15 +69,16 @@ export function phraseCondition(c: Condition, champs: ReadonlyMap<string, ChampI
   if (c.op === "est") return `${nom} : ${v === false ? "non" : "oui"}`;
   if (c.op === "entre" && Array.isArray(v)) return `${nom} entre ${formaterNombre(Number(v[0]))} et ${formaterNombre(Number(v[1]))}`;
   if ((c.op === "apres" || c.op === "avant") && typeof v === "string") return `${nom} ${LIBELLES_OPERATEURS[c.op]} ${formaterDate(v)}`;
-  if (Array.isArray(v)) return `${nom} ${LIBELLES_OPERATEURS[c.op] ?? c.op} ${listeCourte(v)}`;
+  if (Array.isArray(v)) return `${nom} ${LIBELLES_OPERATEURS[c.op] ?? c.op} ${listeCourte(v, c.champ)}`;
   if (typeof v === "number") return `${nom} ${LIBELLES_OPERATEURS[c.op] ?? c.op} ${formaterNombre(v)}`;
-  return `${nom} ${LIBELLES_OPERATEURS[c.op] ?? c.op} ${v === undefined ? "" : `« ${String(v)} »`}`.trim();
+  const lisible = typeof v === "string" && champ?.type === "liste" ? libelleValeur(c.champ, v) : String(v);
+  return `${nom} ${LIBELLES_OPERATEURS[c.op] ?? c.op} ${v === undefined ? "" : `« ${lisible} »`}`.trim();
 }
 
 /** Le filtre en une phrase : conditions jointes par « et ». */
 export function phraseFiltre(f: Filtre, champs: ReadonlyMap<string, ChampInfo>): string {
   const parties = f.conditions.map((c) => phraseCondition(c, champs));
-  if (f.inclure_bloques) parties.push("bloquées incluses");
+  if (f.inclure_bloques) parties.push(TEXTE_EXCLUES_INCLUSES);
   return parties.length ? parties.join(" et ") : "Toutes les entreprises";
 }
 
@@ -167,9 +172,12 @@ export function saisieDepuis(c: Condition): Saisie {
   return s;
 }
 
-/** Ajoute une ou plusieurs valeurs saisies (virgule, point-virgule, retour) à une liste, sans doublon. */
-export function ajouterValeurs(liste: readonly string[], brut: string): string[] {
-  const nouvelles = brut.split(/[,;\n]/).map((x) => x.trim()).filter(Boolean);
+/**
+ * Ajoute une ou plusieurs valeurs saisies (virgule, point-virgule, retour) à une liste, sans doublon.
+ * Avec le champ, un libellé tapé devient sa clé : « SAS » → 5710, « Rhône » → 69.
+ */
+export function ajouterValeurs(liste: readonly string[], brut: string, champ?: string): string[] {
+  const nouvelles = brut.split(/[,;\n]/).map((x) => x.trim()).filter(Boolean).map((x) => (champ ? cleDepuisSaisie(champ, x) : x));
   return [...new Set([...liste, ...nouvelles])];
 }
 
@@ -255,41 +263,34 @@ export function cheminDossier(a: Arbre, dossierId: string | null): string[] {
 
 // ---------------------------------------------------------------- cellules
 
-/** Valeurs codées d'ODH lues en clair : motif de non-envoi d'un email. Une valeur inconnue reste telle quelle. */
-export const VALEURS_LISIBLES: Record<string, Record<string, string>> = {
-  forme: MOTS,
-  effectif: { ...TRANCHES, "": "Inconnue" },
-  motif_email: {
-    domaine_mort: "Domaine mort",
-    mx_injoignable: "Serveur mail injoignable",
-    boite_inexistante: "Boîte inexistante",
-    email_disparu_du_site: "Email retiré du site",
-    email_placeholder: "Adresse fictive",
-    email_role_non_commercial: "Adresse générique non commerciale",
-    contact_de_prestataire: "Contact d'un prestataire",
-    email_invalide: "Adresse invalide",
-  },
-};
-export function valeurLisible(champ: string, v: string): string {
-  return VALEURS_LISIBLES[champ]?.[v] ?? v;
-}
+/** Champ dont la valeur est un code d'ODH à lire en clair (le type « liste » du catalogue, plus les colonnes de la base maître). */
+const estCode = (id: string, champ?: ChampInfo) => (champ ? champ.type === "liste" : id === "forme" || id === "effectif" || id === "naf" || id === "departement");
 
-export function formaterCellule(v: Cellule | undefined, champ?: ChampInfo): string {
+/** `colonne` sert aux colonnes de la base maître, absentes du catalogue (`forme`, `effectif`…). */
+export function formaterCellule(v: Cellule | undefined, champ?: ChampInfo, colonne?: string): string {
   if (v === null || v === undefined || v === "") return "—";
   if (typeof v === "boolean") return v ? "Oui" : "Non";
   if (typeof v === "number") return formaterNombre(v);
   if (champ?.type === "date") return formaterDate(v);
-  return champ ? valeurLisible(champ.id, v) : v;
+  const id = champ?.id ?? colonne ?? "";
+  return estCode(id, champ) ? libelleValeur(id, v) : v;
+}
+
+/** Infobulle d'une cellule : le libellé complet et le code brut quand la valeur est un code. */
+export function titreCellule(v: Cellule | undefined, champ?: ChampInfo, colonne?: string): string | undefined {
+  if (typeof v !== "string" || v === "") return undefined;
+  const id = champ?.id ?? colonne ?? "";
+  return estCode(id, champ) ? titreValeur(id, v) : v;
 }
 
 /** Colonnes de la base maître qui n'ont pas d'équivalent dans le catalogue. */
 const LIBELLES_HORS_CATALOGUE: Record<string, string> = {
   enseigne: "Enseigne",
-  forme: "Forme",
+  forme: "Type de structure",
   a_email: "Email connu",
-  a_telephone: "Tél. connu",
+  a_telephone: "Téléphone connu",
   a_site: "Site connu",
-  prospectable: "Prospectable",
+  prospectable: "Contactable",
 };
 
 export function libelleColonne(id: string, champs: ReadonlyMap<string, ChampInfo>): string {
