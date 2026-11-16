@@ -39,7 +39,7 @@ import { part } from "./marche";
 import { PopoverFiltres } from "./popover-filtres";
 import { VueMarche } from "./vue-marche";
 import { HUB_IA, Rail, type IAVue } from "./rail";
-import type { AnalyseMarche, ApercuMarche, Arbre, ChampInfo, CommuneComptee, Condition, Epingle, Filtre, Historique, SegmentArbre, SegmentDetail, Vue } from "./types";
+import type { AnalyseMarche, ApercuMarche, Arbre, ChampInfo, Condition, Epingle, Filtre, Historique, SegmentArbre, SegmentDetail, Vue, ZoneLocale } from "./types";
 import { VoletDossier, VoletFiche, VoletHistorique } from "./volets";
 import { VueBarres, VueEntonnoir, VuePriorite, VueTableau } from "./vues";
 
@@ -86,10 +86,20 @@ export function AtlasApp() {
   const [apercu, setApercu] = useState<Apercu>(null);
   const [vue, setVue] = useState<Vue>("carte");
   const [descente, setDescenteBrute] = useState<string | null>(null);
-  // Commune regardée sur la carte : un zoom de la carte, remis à zéro hors de la carte et à chaque département.
-  const [commune, setCommune] = useState<CommuneComptee | null>(null);
+  // Intercommunalité puis commune regardées sur la carte : des zooms de la carte, remis à zéro à chaque département.
+  const [epci, setEpciBrut] = useState<ZoneLocale | null>(null);
+  const [commune, setCommune] = useState<ZoneLocale | null>(null);
+  // Changer d'intercommunalité oublie la commune ; rafraîchir ses chiffres (même code) la garde.
+  const epciCourant = useRef<string | null>(null);
+  const setEpci = useCallback((e: ZoneLocale | null) => {
+    if (!e || e.code !== epciCourant.current) setCommune(null);
+    epciCourant.current = e?.code ?? null;
+    setEpciBrut(e);
+  }, []);
   const setDescente = useCallback((d: string | null) => {
     setDescenteBrute(d);
+    epciCourant.current = null;
+    setEpciBrut(null);
     setCommune(null);
   }, []);
   const [versionComparee, setVersionComparee] = useState<number | null>(null);
@@ -257,14 +267,16 @@ export function AtlasApp() {
   const filtreVue = useMemo(() => combiner(propres, heritees), [propres, heritees]);
   const cleVue = JSON.stringify(filtreVue);
   const baseMarche = etapeCourante(arbre, selection, false) === "marche";
-  const codeCommune = vue === "carte" ? (commune?.code ?? null) : null;
+  // Zone locale de la carte (commune, sinon intercommunalité), seulement sur la carte.
+  const zoneLocale = vue === "carte" ? (commune ?? epci) : null;
+  const codesZone = zoneLocale ? (commune ? [commune.code] : (epci?.communes ?? [])).join(",") : "";
   const filtreChiffres = useMemo(() => {
     const f = avecDepartement(filtreVue, descente);
-    // Fiches prospectables : la commune est un filtre (code INSEE). Marché : ses chiffres viennent de la carte.
-    return codeCommune && !baseMarche ? avecCondition(f, { champ: "commune_insee", op: "dans", valeur: [codeCommune] }) : f;
-  }, [filtreVue, descente, codeCommune, baseMarche]);
+    // Fiches prospectables : la zone est un filtre (codes INSEE). Marché : ses chiffres viennent de la carte.
+    return codesZone && !baseMarche ? avecCondition(f, { champ: "commune_insee", op: "dans", valeur: codesZone.split(",") }) : f;
+  }, [filtreVue, descente, codesZone, baseMarche]);
   const cleChiffres = JSON.stringify(filtreChiffres);
-  const communeKpis = codeCommune && commune ? JSON.stringify(commune.mesures) : null;
+  const communeKpis = zoneLocale ? JSON.stringify(zoneLocale.mesures) : null;
   const colonnes = detail?.colonnes.length ? detail.colonnes : colonnesLibres;
   // Étape marché (rien de choisi, ou un marché) : toutes les entreprises, d'après le cube. Étape cible : les
   // fiches prospectables, avec tous les filtres.
@@ -743,16 +755,30 @@ export function AtlasApp() {
                       {zone}
                     </button>
                     <span className="sep">/</span>
-                    {codeCommune && commune ? (
+                    {zoneLocale ? (
+                      <button type="button" onClick={() => setEpci(null)} aria-label={`Remonter à ${DEPARTMENT_NAMES[descente] ?? descente}`}>
+                        {DEPARTMENT_NAMES[descente] ?? descente}
+                      </button>
+                    ) : (
+                      <span>{DEPARTMENT_NAMES[descente] ?? descente}</span>
+                    )}
+                    {zoneLocale && epci && (
                       <>
-                        <button type="button" onClick={() => setCommune(null)} aria-label={`Remonter à ${DEPARTMENT_NAMES[descente] ?? descente}`}>
-                          {DEPARTMENT_NAMES[descente] ?? descente}
-                        </button>
+                        <span className="sep">/</span>
+                        {commune ? (
+                          <button type="button" onClick={() => setCommune(null)} aria-label={`Remonter à ${epci.nom}`}>
+                            {epci.nom}
+                          </button>
+                        ) : (
+                          <span>{epci.nom}</span>
+                        )}
+                      </>
+                    )}
+                    {zoneLocale && commune && (
+                      <>
                         <span className="sep">/</span>
                         <span>{commune.nom}</span>
                       </>
-                    ) : (
-                      <span>{DEPARTMENT_NAMES[descente] ?? descente}</span>
                     )}
                   </>
                 ) : (
@@ -839,7 +865,7 @@ export function AtlasApp() {
             {attente ? (
               <Chargement />
             ) : vue === "carte" ? (
-              <Carte base={baseMarche ? "marche" : "prospection"} filtre={filtreVue} index={index} descente={descente} onDescente={setDescente} commune={commune} onCommune={setCommune} onFiche={ouvrirFiche} />
+              <Carte base={baseMarche ? "marche" : "prospection"} filtre={filtreVue} index={index} descente={descente} onDescente={setDescente} epci={epci} onEpci={setEpci} commune={commune} onCommune={setCommune} onFiche={ouvrirFiche} />
             ) : vue === "marche" ? (
               <VueMarche
                 filtre={filtreChiffres}

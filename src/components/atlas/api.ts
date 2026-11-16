@@ -1,4 +1,4 @@
-import type { CommuneGeo, Filtre } from "./types";
+import type { CommuneGeo, EpciGeo, Filtre } from "./types";
 
 /** Erreur d'appel à l'API Atlas ; `status` 0 = réseau. */
 export class ErreurAtlas extends Error {
@@ -39,8 +39,8 @@ export async function appeler<T>(outil: string, corps: object = {}, signal?: Abo
   return json as T;
 }
 
-/** Contours des communes d'un département (route GET, en cache navigateur 24 h). */
-export async function contoursCommunes(dep: string, signal?: AbortSignal): Promise<CommuneGeo[]> {
+/** Contours des communes et intercommunalités d'un département (route GET, en cache navigateur 24 h). */
+export async function contoursCommunes(dep: string, signal?: AbortSignal): Promise<{ communes: CommuneGeo[]; epcis: EpciGeo[] }> {
   let res: Response;
   try {
     res = await fetch(`/api/atlas/communes/${encodeURIComponent(dep)}`, { credentials: "same-origin", signal });
@@ -48,9 +48,9 @@ export async function contoursCommunes(dep: string, signal?: AbortSignal): Promi
     if (e instanceof DOMException && e.name === "AbortError") throw e;
     throw new ErreurAtlas("Réseau indisponible.", 0);
   }
-  const json = (await res.json().catch(() => null)) as { communes?: CommuneGeo[] } | null;
+  const json = (await res.json().catch(() => null)) as { communes?: CommuneGeo[]; epcis?: EpciGeo[] } | null;
   if (!res.ok) throw new ErreurAtlas(messageErreur(res.status, json), res.status);
-  return json?.communes ?? [];
+  return { communes: json?.communes ?? [], epcis: json?.epcis ?? [] };
 }
 
 export const estAnnulation = (e: unknown) => e instanceof DOMException && e.name === "AbortError";

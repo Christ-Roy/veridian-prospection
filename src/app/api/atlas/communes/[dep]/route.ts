@@ -1,5 +1,5 @@
 /**
- * GET /api/atlas/communes/[dep] — contours des communes d'un département pour la carte (API Géo de l'État,
+ * GET /api/atlas/communes/[dep] — contours des communes et intercommunalités d'un département pour la carte (API Géo de l'État,
  * projetés et simplifiés, voir src/atlas/communes.ts). Données publiques, mais servies aux seules sessions :
  * la route ne doit pas devenir un relais ouvert vers geo.api.gouv.fr.
  */
@@ -19,8 +19,8 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   const code = dep.toUpperCase();
   if (!departementValide(code)) return NextResponse.json({ error: "département invalide" }, { status: 400 });
   try {
-    const communes = await geometrieCommunes(code);
-    return NextResponse.json({ departement: code, communes }, { headers: { "Cache-Control": "private, max-age=86400" } });
+    const { communes, epcis } = await geometrieCommunes(code);
+    return NextResponse.json({ departement: code, communes, epcis }, { headers: { "Cache-Control": "private, max-age=86400" } });
   } catch (e) {
     console.error(`[atlas] communes ${code} :`, e);
     return NextResponse.json({ error: "Contours des communes indisponibles" }, { status: 502 });

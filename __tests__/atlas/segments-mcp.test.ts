@@ -206,6 +206,7 @@ describe("Atlas par le MCP", () => {
       expect(avec).toMatchObject({ base: "marche", repli: false, departement: "69" });
       expect(avec.communes).toHaveLength(1);
       expect(avec.non_rapprochees).toEqual({});
+      expect(avec.intercommunalites).toEqual([]); // commune simulée hors EPCI
       expect((await appel(A, "repartir_communes", { filtre: {}, departement: "6" })).erreur).toBeTruthy();
     } finally {
       globalThis.fetch = vrai;

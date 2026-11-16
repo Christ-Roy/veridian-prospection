@@ -201,9 +201,10 @@ const OUTILS_BRUTS: Outil[] = [
   },
   {
     name: "repartir_communes",
-    title: "Marché par commune d'un département",
+    title: "Marché par commune et intercommunalité d'un département",
     description:
-      "Compte le marché commune par commune dans un département (code INSEE, nom). base « marche » : toutes les entreprises actives " +
+      "Compte le marché commune par commune dans un département (code INSEE, nom), et par intercommunalité (métropole, " +
+      "communauté de communes ou d'agglomération : code SIREN, nom, communes). base « marche » : toutes les entreprises actives " +
       "(entreprises, contactables, email_envoyable, telephone_envoyable) ; base « prospection » : les fiches prospectables du filtre " +
       "(avec en plus sans_site et avec_email). `repli` : marché trop large pour la base complète, comptes pris sur les fiches prospectables.",
     input: z.object({ filtre: FILTRE, departement: z.string().regex(/^(\d{2}|2A|2B)$/), base: z.enum(["marche", "prospection"]).default("marche") }),
@@ -213,8 +214,8 @@ const OUTILS_BRUTS: Outil[] = [
       const brutes = await sourceMarche().communes(a.filtre, dep, a.base as "marche" | "prospection");
       const geo = await geometrieCommunes(dep).catch(() => null);
       const r = geo
-        ? rapprocher(geo, brutes)
-        : { communes: brutes.lignes.map((l) => ({ code: l.insee ?? l.nom, nom: l.nom, mesures: l.mesures })), non_rapprochees: {} };
+        ? rapprocher(geo.communes, brutes, geo.epcis)
+        : { communes: brutes.lignes.map((l) => ({ code: l.insee ?? l.nom, nom: l.nom, mesures: l.mesures })), intercommunalites: [], non_rapprochees: {} };
       return avecSource({ base: brutes.base, repli: brutes.repli, departement: dep, ...r });
     }),
   },

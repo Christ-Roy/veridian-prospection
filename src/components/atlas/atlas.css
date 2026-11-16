@@ -156,6 +156,12 @@
 .atlas .dept:focus-visible { outline: none; stroke: var(--blue); stroke-width: 1.4; }
 .atlas .dot { cursor: pointer; }
 .atlas .side .lnk { background: none; border: 0; padding: 0; color: var(--fg2); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; font: inherit; }
+.atlas .zoom { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; border: 1px solid var(--soft2); border-radius: 8px; overflow: hidden; background: var(--bg, #fff); box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08); }
+.atlas .zoom button { width: 32px; height: 32px; display: grid; place-items: center; font-size: 17px; line-height: 1; color: var(--fg); background: transparent; border: 0; cursor: pointer; }
+.atlas .zoom button + button { border-top: 1px solid var(--soft2); }
+.atlas .zoom button:hover { background: var(--soft2); }
+.atlas .mapwrap svg { cursor: grab; }
+.atlas .mapwrap svg:active { cursor: grabbing; }
 .atlas .commune { cursor: pointer; transition: fill 0.2s, opacity 0.3s; }
 .atlas .commune:hover { stroke: var(--fg); stroke-width: 1.4; }
 .atlas .etiq { pointer-events: none; fill: #0f172a; font-weight: 600; paint-order: stroke; stroke: rgba(255, 255, 255, 0.85); stroke-width: 3px; vector-effect: non-scaling-stroke; }

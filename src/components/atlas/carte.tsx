@@ -1,21 +1,35 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent } from "react";
 
 import { DEPARTMENT_NAMES, DEPARTMENT_PATHS } from "@/components/dashboard/france-map-data";
 
 import { appeler, contoursCommunes, estAnnulation, texteErreur } from "./api";
-import { bornes, cadrageCommune, cadrageDescente, chaleur, interpolerCadre, placerPoints, rang, valeurCommune, valeursCarte, VUE_FRANCE, type Mesure } from "./carte-logique";
+import {
+  bornes,
+  cadrageCommune,
+  cadrageDescente,
+  chaleur,
+  deplacerCadre,
+  interpolerCadre,
+  placerPoints,
+  rang,
+  valeurCommune,
+  valeursCarte,
+  VUE_FRANCE,
+  zoomerCadre,
+  type Mesure,
+} from "./carte-logique";
 import { avecCondition } from "./flux";
 import { Chargement } from "./icones";
 import { formaterNombre } from "./logique";
-import type { AnalyseMarche, Boite, ChampInfo, CommuneComptee, CommuneGeo, CommunesMarche, Filtre, PointCarte, RepartitionMarche } from "./types";
+import type { AnalyseMarche, Boite, ChampInfo, CommuneGeo, CommunesMarche, EpciGeo, Filtre, PointCarte, RepartitionMarche, ZoneLocale } from "./types";
 
 const CODES = Object.keys(DEPARTMENT_PATHS);
 const OFF = "#f1f5f9";
 const OFF_LINE = "#d5dde7";
-/** Communes listées avant « Voir toutes ». */
-const COMMUNES_VISIBLES = 12;
+/** Lignes listées avant « Voir toutes ». */
+const LIGNES_VISIBLES = 12;
 
 type Props = {
   /** « marche » : toutes les entreprises (cube d'ODH) ; « prospection » : les fiches prospectables. */
@@ -24,9 +38,12 @@ type Props = {
   index: ReadonlyMap<string, ChampInfo>;
   descente: string | null;
   onDescente: (code: string | null) => void;
-  /** Commune regardée dans le département (null : tout le département). */
-  commune: CommuneComptee | null;
-  onCommune: (c: CommuneComptee | null) => void;
+  /** Intercommunalité regardée dans le département (null : tout le département). */
+  epci: ZoneLocale | null;
+  onEpci: (e: ZoneLocale | null) => void;
+  /** Commune regardée (null : tout le département ou toute l'intercommunalité). */
+  commune: ZoneLocale | null;
+  onCommune: (c: ZoneLocale | null) => void;
   onFiche: (siren: string, nom: string) => void;
 };
 
@@ -49,18 +66,22 @@ function partieDe(m: Mesure, f: Filtre): Filtre | null {
   return null;
 }
 
-export function Carte({ base: source = "prospection", filtre, index, descente, onDescente, commune, onCommune, onFiche }: Props) {
+const boiteDe = (g: { x: number; y: number; w: number; h: number }): Boite => ({ x: g.x, y: g.y, width: g.w, height: g.h });
+
+export function Carte({ base: source = "prospection", filtre, index, descente, onDescente, epci, onEpci, commune, onCommune, onFiche }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const cadre = useRef<number[]>([...VUE_FRANCE]);
   const anim = useRef(0);
+  const glisse = useRef<{ x: number; y: number; bouge: boolean } | null>(null);
+  const [largeur, setLargeur] = useState<number>(VUE_FRANCE[2]);
   const [mesure, setMesure] = useState<Mesure>("nombre");
   const [base, setBase] = useState<RepartitionMarche["valeurs"] | null>(null);
   const [partie, setPartie] = useState<RepartitionMarche["valeurs"] | null>(null);
   const [points, setPoints] = useState<PointCarte[] | null>(null);
-  const [contours, setContours] = useState<CommuneGeo[] | null>(null);
+  const [geo, setGeo] = useState<{ communes: CommuneGeo[]; epcis: EpciGeo[] } | null>(null);
   const [comptes, setComptes] = useState<CommunesMarche | null>(null);
+  const [decoupage, setDecoupage] = useState<"epci" | "commune">("epci");
   const [toutes, setToutes] = useState(false);
-  const [boite, setBoite] = useState<Boite | null>(null);
   const [chargement, setChargement] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [bulle, setBulle] = useState<{ x: number; y: number; texte: string } | null>(null);
@@ -103,18 +124,22 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
     return () => ctl.abort();
   }, [cle, mesure, source]);
 
-  // Descente : contours et comptes des communes du département.
+  // Descente : contours (communes, intercommunalités) et comptes du département.
   useEffect(() => {
-    setContours(null);
+    setGeo(null);
     setComptes(null);
     setToutes(false);
     if (!descente) return;
     const ctl = new AbortController();
     contoursCommunes(descente, ctl.signal)
-      .then(setContours)
+      .then((g) => {
+        setGeo(g);
+        setDecoupage(g.epcis.length > 1 ? "epci" : "commune");
+      })
       .catch((e) => {
         if (estAnnulation(e)) return;
-        setContours([]); // la carte reste utilisable sans contours : liste et points
+        setGeo({ communes: [], epcis: [] }); // la carte reste utilisable sans contours : listes et points
+        setDecoupage("commune");
         setErreur(texteErreur(e));
       });
     appeler<CommunesMarche>("repartir_communes", { filtre: JSON.parse(cle) as Filtre, departement: descente, base: source }, ctl.signal)
@@ -123,60 +148,141 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
     return () => ctl.abort();
   }, [cle, descente, source]);
 
-  // Points : les fiches prospectables du département, ou de la commune regardée.
-  const codeCommune = commune?.code ?? null;
+  // Points : les fiches prospectables du département, de l'intercommunalité ou de la commune.
+  const codesZone = commune ? commune.code : (epci?.communes ?? []).join(",");
   useEffect(() => {
     setPoints(null);
     if (!descente) return;
     const ctl = new AbortController();
     const f = JSON.parse(cle) as Filtre;
-    const ici = codeCommune && /^\d[\dAB]\d{3}$/.test(codeCommune) ? avecCondition(f, { champ: "commune_insee", op: "dans", valeur: [codeCommune] }) : f;
-    appeler<{ points: PointCarte[] }>("points_carte", { filtre: ici, departement: descente, limite: codeCommune ? 200 : 400 }, ctl.signal)
+    const codes = codesZone ? codesZone.split(",").filter((c) => /^\d[\dAB]\d{3}$/.test(c)) : [];
+    const ici = codes.length ? avecCondition(f, { champ: "commune_insee", op: "dans", valeur: codes }) : f;
+    appeler<{ points: PointCarte[] }>("points_carte", { filtre: ici, departement: descente, limite: 400 }, ctl.signal)
       .then((p) => setPoints(p.points))
       .catch((e) => !estAnnulation(e) && setErreur(texteErreur(e)));
     return () => ctl.abort();
-  }, [cle, descente, codeCommune]);
+  }, [cle, descente, codesZone]);
 
-  // Les chiffres de la commune regardée suivent le filtre (le parent en tire ses chiffres clés).
+  // Les chiffres des zones regardées suivent le filtre (le parent en tire ses chiffres clés).
   useEffect(() => {
-    if (!commune || !comptes) return;
-    const frais = comptes.communes.find((c) => c.code === commune.code) ?? { ...commune, mesures: { entreprises: 0 } };
-    if (JSON.stringify(frais.mesures) !== JSON.stringify(commune.mesures)) onCommune(frais);
+    if (!comptes) return;
+    if (epci) {
+      const e = comptes.intercommunalites.find((x) => x.code === epci.code);
+      const frais = e ? { code: e.code, nom: e.nom, communes: e.communes, mesures: e.mesures } : { ...epci, mesures: { entreprises: 0 } };
+      if (JSON.stringify(frais.mesures) !== JSON.stringify(epci.mesures)) onEpci(frais);
+    }
+  }, [comptes, epci, onEpci]);
+  useEffect(() => {
+    if (!comptes || !commune) return;
+    const c = comptes.communes.find((x) => x.code === commune.code);
+    const mesuresFraiches = c?.mesures ?? { entreprises: 0 };
+    if (JSON.stringify(mesuresFraiches) !== JSON.stringify(commune.mesures)) onCommune({ code: commune.code, nom: commune.nom, mesures: mesuresFraiches });
   }, [comptes, commune, onCommune]);
 
-  const contourCommune = useMemo(() => (codeCommune && contours ? (contours.find((c) => c.code === codeCommune) ?? null) : null), [codeCommune, contours]);
+  const geoCommune = useMemo(() => new Map((geo?.communes ?? []).map((c) => [c.code, c])), [geo]);
+  const geoEpci = useMemo(() => new Map((geo?.epcis ?? []).map((e) => [e.code, e])), [geo]);
+  const contourCommune = commune ? (geoCommune.get(commune.code) ?? null) : null;
+  const contourEpci = epci ? (geoEpci.get(epci.code) ?? null) : null;
+  const niveau: "france" | "dep" | "epci" | "commune" = commune ? "commune" : epci ? "epci" : descente ? "dep" : "france";
 
-  // Zoom animé : France, département, ou commune.
-  useEffect(() => {
+  // ---------------------------------------------------------------- cadrage et zoom
+  const allerA = useCallback((vers: readonly number[], duree: number) => {
     const svg = svgRef.current;
     if (!svg) return;
-    let vers: number[] = [...VUE_FRANCE];
-    let b: Boite | null = null;
-    if (descente) {
-      const chemin = svg.querySelector<SVGPathElement>(`path[data-c="${descente}"]`);
-      if (chemin) {
-        const bb = chemin.getBBox();
-        b = { x: bb.x, y: bb.y, width: bb.width, height: bb.height };
-        vers = contourCommune
-          ? cadrageCommune({ x: contourCommune.x, y: contourCommune.y, width: contourCommune.w, height: contourCommune.h }, Math.max(b.width, b.height) / 10)
-          : cadrageDescente(b);
-      }
-    }
-    setBoite(b);
     cancelAnimationFrame(anim.current);
     const de = [...cadre.current];
     const t0 = performance.now();
-    const duree = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 520;
+    const d = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : duree;
     const pas = (t: number) => {
-      const k = duree ? Math.min(1, (t - t0) / duree) : 1;
+      const k = d ? Math.min(1, (t - t0) / d) : 1;
       cadre.current = interpolerCadre(de, vers, k);
       svg.setAttribute("viewBox", cadre.current.join(" "));
       if (k < 1) anim.current = requestAnimationFrame(pas);
+      else setLargeur(cadre.current[2]);
     };
     anim.current = requestAnimationFrame(pas);
-    return () => cancelAnimationFrame(anim.current);
-  }, [descente, contourCommune]);
+  }, []);
 
+  /** Cadre du niveau regardé : France, département, intercommunalité ou commune. */
+  const cadreNiveau = useCallback((): number[] => {
+    const svg = svgRef.current;
+    if (!svg || !descente) return [...VUE_FRANCE];
+    const chemin = svg.querySelector<SVGPathElement>(`path[data-c="${descente}"]`);
+    if (!chemin) return [...VUE_FRANCE];
+    const bb = chemin.getBBox();
+    const dep = Math.max(bb.width, bb.height);
+    if (contourCommune) return cadrageCommune(boiteDe(contourCommune), dep / 10);
+    if (contourEpci) return cadrageCommune(boiteDe(contourEpci), dep / 6);
+    return cadrageDescente({ x: bb.x, y: bb.y, width: bb.width, height: bb.height });
+  }, [descente, contourCommune, contourEpci]);
+
+  useEffect(() => {
+    allerA(cadreNiveau(), 520);
+    return () => cancelAnimationFrame(anim.current);
+  }, [cadreNiveau, allerA]);
+
+  /** Coordonnées de la carte sous un point de l'écran. */
+  const versCarte = (cx: number, cy: number): [number, number] => {
+    const svg = svgRef.current;
+    const m = svg?.getScreenCTM();
+    if (!svg || !m) return [cadre.current[0] + cadre.current[2] / 2, cadre.current[1] + cadre.current[3] / 2];
+    const p = new DOMPoint(cx, cy).matrixTransform(m.inverse());
+    return [p.x, p.y];
+  };
+  const zoomer = (facteur: number, cx?: number, cy?: number) => {
+    const c = cadre.current;
+    const [x, y] = cx === undefined || cy === undefined ? [c[0] + c[2] / 2, c[1] + c[3] / 2] : versCarte(cx, cy);
+    allerA(zoomerCadre(c, facteur, x, y), 160);
+  };
+
+  // Molette : zoom autour du curseur (écouteur non passif pour ne pas faire défiler la page en même temps).
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const roue = (e: WheelEvent) => {
+      e.preventDefault();
+      const c = cadre.current;
+      const m = svg.getScreenCTM();
+      if (!m) return;
+      const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(m.inverse());
+      cancelAnimationFrame(anim.current);
+      cadre.current = zoomerCadre(c, Math.exp(-e.deltaY * 0.0022), p.x, p.y);
+      svg.setAttribute("viewBox", cadre.current.join(" "));
+      setLargeur(cadre.current[2]);
+    };
+    svg.addEventListener("wheel", roue, { passive: false });
+    return () => svg.removeEventListener("wheel", roue);
+  }, []);
+
+  // Glisser pour se déplacer ; un glisser n'est pas un clic.
+  const appui = (e: PointerEvent<SVGSVGElement>) => {
+    if (e.button !== 0) return;
+    glisse.current = { x: e.clientX, y: e.clientY, bouge: false };
+  };
+  const deplacement = (e: PointerEvent<SVGSVGElement>) => {
+    const g = glisse.current;
+    const svg = svgRef.current;
+    if (!g || !svg) return;
+    const dxp = e.clientX - g.x;
+    const dyp = e.clientY - g.y;
+    if (!g.bouge && Math.hypot(dxp, dyp) < 4) return;
+    if (!g.bouge) svg.setPointerCapture(e.pointerId);
+    g.bouge = true;
+    const echelle = cadre.current[2] / svg.getBoundingClientRect().width;
+    cancelAnimationFrame(anim.current);
+    cadre.current = deplacerCadre(cadre.current, dxp * echelle, dyp * echelle);
+    svg.setAttribute("viewBox", cadre.current.join(" "));
+    g.x = e.clientX;
+    g.y = e.clientY;
+    setBulle(null);
+  };
+  const relache = (e: PointerEvent<SVGSVGElement>) => {
+    if (glisse.current?.bouge) svgRef.current?.releasePointerCapture(e.pointerId);
+    // Le clic qui suit un glisser est ignoré (voir clic).
+    setTimeout(() => (glisse.current = null), 0);
+  };
+
+  // ---------------------------------------------------------------- valeurs
   const valeurs = useMemo(() => (base ? valeursCarte(base, mesure === "nombre" ? null : (partie ?? [])) : new Map<string, number>()), [base, partie, mesure]);
   const effectifs = useMemo(() => (base ? valeursCarte(base, null) : new Map<string, number>()), [base]);
   const b = bornes(valeurs.values());
@@ -185,26 +291,32 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
   const unite =
     mesure === "nombre" ? "entreprises" : mesure === "sans_site" ? "sans site web" : mesure === "contactable" ? "contactables" : mesure === "email_envoyable" ? "email envoyable" : "avec email";
   const nom = (c: string) => DEPARTMENT_NAMES[c] ?? c;
-
-  // Communes : valeur de la mesure, échelle logarithmique pour les nombres (la préfecture écraserait tout).
-  const parCode = useMemo(() => new Map((comptes?.communes ?? []).map((c) => [c.code, c])), [comptes]);
-  const valeursCommunes = useMemo(() => new Map((comptes?.communes ?? []).map((c) => [c.code, valeurCommune(mesure, c.mesures)])), [comptes, mesure]);
+  // Échelle logarithmique pour les nombres : la préfecture écraserait tout.
   const echelle = (v: number) => (enPct ? v : Math.log1p(v));
-  const bc = bornes([...valeursCommunes.values()].map(echelle));
-  const classees = useMemo(
-    () => [...(comptes?.communes ?? [])].sort((x, y) => (valeursCommunes.get(y.code) ?? 0) - (valeursCommunes.get(x.code) ?? 0) || (y.mesures.entreprises ?? 0) - (x.mesures.entreprises ?? 0)),
-    [comptes, valeursCommunes],
-  );
-  // Les six communes les plus fournies ont leur nom sur la carte du département.
+
+  const comptesCommune = useMemo(() => new Map((comptes?.communes ?? []).map((c) => [c.code, c])), [comptes]);
+  const comptesEpci = useMemo(() => new Map((comptes?.intercommunalites ?? []).map((e) => [e.code, e])), [comptes]);
+  const valeursCommunes = useMemo(() => new Map((comptes?.communes ?? []).map((c) => [c.code, valeurCommune(mesure, c.mesures)])), [comptes, mesure]);
+  const valeursEpcis = useMemo(() => new Map((comptes?.intercommunalites ?? []).map((e) => [e.code, valeurCommune(mesure, e.mesures)])), [comptes, mesure]);
+  // Communes de la zone : celles de l'intercommunalité regardée, sinon tout le département.
+  const dansZone = useCallback((code: string) => !epci || (epci.communes ?? []).includes(code), [epci]);
+  const bc = bornes([...valeursCommunes].filter(([c]) => dansZone(c)).map(([, v]) => echelle(v)));
+  const be = bornes([...valeursEpcis.values()].map(echelle));
+  const parValeur = <T extends { code: string; mesures: Record<string, number> }>(l: readonly T[], v: ReadonlyMap<string, number>) =>
+    [...l].sort((x, y) => (v.get(y.code) ?? 0) - (v.get(x.code) ?? 0) || (y.mesures.entreprises ?? 0) - (x.mesures.entreprises ?? 0));
+  const communesZone = useMemo(() => parValeur((comptes?.communes ?? []).filter((c) => dansZone(c.code)), valeursCommunes), [comptes, valeursCommunes, dansZone]);
+  const epcisClasses = useMemo(() => parValeur(comptes?.intercommunalites ?? [], valeursEpcis), [comptes, valeursEpcis]);
+  const voirEpcis = niveau === "dep" && decoupage === "epci" && (geo?.epcis.length ?? 0) > 1;
+
+  // Noms posés sur la carte, sans chevauchement : intercommunalités ou communes les plus fournies.
   const etiquettes = useMemo(() => {
-    if (!contours || commune) return [];
-    const geo = new Map(contours.map((c) => [c.code, c]));
-    // Six noms au plus, en sautant ceux qui chevaucheraient un nom déjà posé (Grenoble et sa banlieue).
-    const ecart = (boite ? Math.max(boite.width, boite.height) : 100) / 9;
-    const poses: CommuneGeo[] = [];
-    for (const c of comptes?.communes ?? []) {
-      const g = geo.get(c.code);
-      if (!g) continue;
+    if (!geo || niveau === "commune") return [];
+    const sources: { x: number; y: number; w: number; h: number; nom: string; code: string }[] = voirEpcis
+      ? epcisClasses.map((e) => geoEpci.get(e.code)).filter((g): g is EpciGeo => !!g)
+      : communesZone.map((c) => geoCommune.get(c.code)).filter((g): g is CommuneGeo => !!g);
+    const ecart = largeur / 9;
+    const poses: typeof sources = [];
+    for (const g of sources) {
       const cx = g.x + g.w / 2;
       const cy = g.y + g.h / 2;
       if (poses.some((o) => Math.abs(o.x + o.w / 2 - cx) < ecart && Math.abs(o.y + o.h / 2 - cy) < ecart / 3)) continue;
@@ -212,7 +324,7 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
       if (poses.length === 6) break;
     }
     return poses;
-  }, [contours, comptes, commune, boite]);
+  }, [geo, niveau, voirEpcis, epcisClasses, communesZone, geoEpci, geoCommune, largeur]);
 
   // Une adresse mal géolocalisée par ODH peut tomber hors du département : on ne la dessine pas.
   const projetes = useMemo(() => {
@@ -222,11 +334,26 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
     return tous.filter((p) => chemin.isPointInFill(new DOMPoint(p.x, p.y)));
   }, [points, descente]);
   const horsZone = (points?.length ?? 0) - projetes.length;
-  const taille = boite ? Math.max(boite.width, boite.height) : 100;
-  const zone = contourCommune ? Math.max(contourCommune.w, contourCommune.h, taille / 10) : taille;
-  const rayon = contourCommune ? zone / 70 : zone / 110;
+  // Taille constante à l'écran : zoomer sépare les points qui se chevauchent.
+  const rayon = largeur / 150;
+
+  // ---------------------------------------------------------------- navigation
+  const ouvrirEpci = (code: string) => {
+    const e = comptesEpci.get(code);
+    const g = geoEpci.get(code);
+    onEpci({ code, nom: e?.nom ?? g?.nom ?? code, communes: e?.communes ?? g?.communes ?? [], mesures: e?.mesures ?? { entreprises: 0 } });
+  };
+  const ouvrirCommune = (code: string) => {
+    const g = geoCommune.get(code);
+    const c = comptesCommune.get(code);
+    // Une commune hors de l'intercommunalité regardée fait changer d'intercommunalité.
+    if (epci && !dansZone(code) && g?.epci) ouvrirEpci(g.epci);
+    onCommune({ code, nom: c?.nom ?? g?.nom ?? code, mesures: c?.mesures ?? { entreprises: 0 } });
+  };
+  const remonter = () => (commune ? onCommune(null) : epci ? onEpci(null) : descente ? onDescente(null) : undefined);
 
   const survol = (e: MouseEvent<SVGSVGElement>) => {
+    if (glisse.current?.bouge) return;
     const el = e.target as Element;
     const wrap = svgRef.current?.parentElement?.getBoundingClientRect();
     if (!wrap) return;
@@ -236,11 +363,17 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
       const p = projetes.find((x) => x.siren === dot.dataset.s);
       if (p) return setBulle({ ...pos, texte: `${p.nom} · ${p.commune}` });
     }
+    const ep = el.closest<SVGPathElement>("path[data-e]");
+    if (ep) {
+      const g = geoEpci.get(ep.dataset.e ?? "");
+      const v = valeursEpcis.get(ep.dataset.e ?? "");
+      if (g) return setBulle({ ...pos, texte: `${g.nom} · ${v === undefined ? "aucune entreprise" : `${fv(v)} ${unite}`}` });
+    }
     const com = el.closest<SVGPathElement>("path[data-m]");
     if (com) {
-      const g = contours?.find((x) => x.code === com.dataset.m);
+      const g = geoCommune.get(com.dataset.m ?? "");
       const v = valeursCommunes.get(com.dataset.m ?? "");
-      if (g) return setBulle({ ...pos, texte: `${g.nom} · ${v === undefined ? `aucune entreprise` : `${fv(v)} ${unite}`}` });
+      if (g) return setBulle({ ...pos, texte: `${g.nom} · ${v === undefined ? "aucune entreprise" : `${fv(v)} ${unite}`}` });
     }
     const chemin = el.closest<SVGPathElement>("path[data-c]");
     if (chemin && chemin.dataset.c !== descente) {
@@ -251,13 +384,8 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
     setBulle(null);
   };
 
-  const ouvrirCommune = (code: string) => {
-    const c = parCode.get(code);
-    const g = contours?.find((x) => x.code === code);
-    onCommune(c ?? { code, nom: g?.nom ?? code, mesures: { entreprises: 0 } });
-  };
-
   const clic = (e: MouseEvent<SVGSVGElement>) => {
+    if (glisse.current?.bouge) return;
     const el = e.target as Element;
     const dot = el.closest<SVGCircleElement>("circle[data-s]");
     if (dot) {
@@ -265,20 +393,84 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
       if (p) onFiche(p.siren, p.nom);
       return;
     }
+    const ep = el.closest<SVGPathElement>("path[data-e]")?.dataset.e;
+    if (ep) return ouvrirEpci(ep);
     const m = el.closest<SVGPathElement>("path[data-m]")?.dataset.m;
-    if (m) return m === codeCommune ? onCommune(null) : ouvrirCommune(m);
+    if (m) return m === commune?.code ? onCommune(null) : ouvrirCommune(m);
     const c = el.closest<SVGPathElement>("path[data-c]")?.dataset.c;
-    if (c === descente && commune) return onCommune(null);
+    if (c === descente) return remonter();
     if (c && c !== descente && effectifs.has(c)) onDescente(c);
   };
 
+  // ---------------------------------------------------------------- rendu
   const top = [...valeurs].sort((x, y) => y[1] - x[1]).slice(0, 7);
   const nonRapprochees = comptes?.non_rapprochees.entreprises ?? 0;
-  const ligneCommune = (c: CommuneComptee) => (
-    <button key={c.code} type="button" onClick={() => ouvrirCommune(c.code)} aria-current={c.code === codeCommune ? "true" : undefined}>
-      <span>{c.nom}</span>
-      <span className="num">{fv(valeursCommunes.get(c.code) ?? 0)}</span>
+  const ligne = (z: { code: string; nom: string }, v: number | undefined, ouvrir: (code: string) => void, courant: boolean) => (
+    <button key={z.code} type="button" onClick={() => ouvrir(z.code)} aria-current={courant ? "true" : undefined}>
+      <span>{z.nom}</span>
+      <span className="num">{fv(v ?? 0)}</span>
     </button>
+  );
+  const liste = <T extends { code: string; nom: string }>(l: readonly T[], v: ReadonlyMap<string, number>, ouvrir: (code: string) => void, quoi: string) => (
+    <>
+      <div className={toutes ? "rows liste-longue" : "rows"}>{(toutes ? l : l.slice(0, LIGNES_VISIBLES)).map((z) => ligne(z, v.get(z.code), ouvrir, z.code === commune?.code))}</div>
+      {l.length > LIGNES_VISIBLES && (
+        <button type="button" className="lnk" onClick={() => setToutes((t) => !t)}>
+          {toutes ? "Réduire" : `Voir les ${formaterNombre(l.length)} ${quoi}`}
+        </button>
+      )}
+    </>
+  );
+  const chiffres = (z: ZoneLocale) => (
+    <div className="rows">
+      <div>
+        <span>{source === "marche" ? "Entreprises du marché" : "Entreprises de la cible"}</span>
+        <span className="num">{formaterNombre(z.mesures.entreprises ?? 0)}</span>
+      </div>
+      {source === "marche" && z.mesures.contactables !== undefined && (
+        <div>
+          <span>Contactables</span>
+          <span className="num">{formaterNombre(z.mesures.contactables)}</span>
+        </div>
+      )}
+      {z.mesures.email_envoyable !== undefined && (
+        <div>
+          <span>Email envoyable</span>
+          <span className="num">{formaterNombre(z.mesures.email_envoyable)}</span>
+        </div>
+      )}
+      {z.mesures.telephone_envoyable !== undefined && (
+        <div>
+          <span>Téléphone utilisable</span>
+          <span className="num">{formaterNombre(z.mesures.telephone_envoyable)}</span>
+        </div>
+      )}
+    </div>
+  );
+  const legendePoints = (
+    <>
+      <span style={{ color: "var(--blue)" }}>●</span> avec email, <span style={{ color: "#64748b" }}>●</span> sans. Molette ou boutons pour zoomer, glisser pour se déplacer.
+      {horsZone > 0 ? ` ${formaterNombre(horsZone)} adresse${horsZone > 1 ? "s" : ""} hors du département non dessinée${horsZone > 1 ? "s" : ""}.` : ""}
+    </>
+  );
+  const mieuxNotees = (titre: string) => (
+    <div>
+      <h4>{titre}</h4>
+      {points === null ? (
+        <Chargement />
+      ) : points.length === 0 ? (
+        <p className="hint">Aucune fiche contactable géolocalisée ici.</p>
+      ) : (
+        <div className="rows liste-longue">
+          {points.slice(0, niveau === "commune" ? 200 : 8).map((p) => (
+            <button key={p.siren} type="button" onClick={() => onFiche(p.siren, p.nom)}>
+              <span>{p.nom}</span>
+              <span>{niveau === "commune" ? (p.email ? "email" : "") : p.commune}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 
   return (
@@ -291,13 +483,20 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
           aria-label={
             commune
               ? `Carte de la commune ${commune.nom} et de ses entreprises`
-              : descente
-                ? `Carte du département ${nom(descente)}, communes colorées selon la mesure choisie`
-                : "Carte des départements, colorée selon la mesure choisie"
+              : epci
+                ? `Carte de ${epci.nom}, communes colorées selon la mesure choisie`
+                : descente
+                  ? `Carte du département ${nom(descente)}, colorée selon la mesure choisie`
+                  : "Carte des départements, colorée selon la mesure choisie"
           }
           onMouseMove={survol}
           onMouseLeave={() => setBulle(null)}
           onClick={clic}
+          onPointerDown={appui}
+          onPointerMove={deplacement}
+          onPointerUp={relache}
+          onPointerCancel={relache}
+          style={{ touchAction: "none" }}
         >
           <g>
             {CODES.map((c) => {
@@ -315,19 +514,33 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
                   fill={fill}
                   stroke={stroke}
                   strokeWidth={descente ? (focus ? 1.6 : 0.6) : on ? 0.6 : 0.4}
-                  vectorEffect={descente ? "non-scaling-stroke" : undefined}
+                  vectorEffect="non-scaling-stroke"
                   opacity={descente && !focus ? 0.35 : 1}
                 />
               );
             })}
           </g>
-          {descente && contours && (
+          {descente && geo && voirEpcis && (
             <g>
-              {contours.map((g) => {
+              {geo.epcis.map((g) => {
+                const v = valeursEpcis.get(g.code);
+                const fill = v === undefined || !be ? OFF : chaleur(rang(echelle(v), be.min, be.max));
+                return (
+                  <path key={g.code} data-e={g.code} className="commune" d={g.d} fill={fill} stroke="#fff" strokeWidth={1.2} vectorEffect="non-scaling-stroke">
+                    <title>{g.nom}</title>
+                  </path>
+                );
+              })}
+            </g>
+          )}
+          {descente && geo && !voirEpcis && (
+            <g>
+              {geo.communes.map((g) => {
                 const v = valeursCommunes.get(g.code);
-                const focus = g.code === codeCommune;
+                const focus = g.code === commune?.code;
+                const dedans = dansZone(g.code);
                 // La commune regardée s'éclaircit pour laisser lire ses points, comme le département en descente.
-                const fill = focus ? "hsl(217 60% 97%)" : v === undefined || !bc ? OFF : chaleur(rang(echelle(v), bc.min, bc.max));
+                const fill = focus ? "hsl(217 60% 97%)" : v === undefined || !bc || !dedans ? OFF : chaleur(rang(echelle(v), bc.min, bc.max));
                 return (
                   <path
                     key={g.code}
@@ -338,31 +551,32 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
                     stroke={focus ? "hsl(217 90% 45%)" : "#fff"}
                     strokeWidth={focus ? 2 : 0.6}
                     vectorEffect="non-scaling-stroke"
-                    opacity={codeCommune && !focus ? 0.45 : 1}
+                    opacity={(commune && !focus) || !dedans ? 0.45 : 1}
                   >
                     <title>{g.nom}</title>
                   </path>
                 );
               })}
-              {contourCommune && (
-                <path d={contourCommune.d} fill="none" stroke="hsl(217 90% 45%)" strokeWidth={2} vectorEffect="non-scaling-stroke" pointerEvents="none" />
-              )}
-              {etiquettes.map((g) => (
-                <text key={g.code} className="etiq" x={g.x + g.w / 2} y={g.y + g.h / 2} fontSize={taille / 45} textAnchor="middle" dominantBaseline="middle">
-                  {g.nom}
-                </text>
-              ))}
+              {contourEpci && <path d={contourEpci.d} fill="none" stroke="hsl(217 90% 45%)" strokeWidth={commune ? 1.2 : 2} vectorEffect="non-scaling-stroke" pointerEvents="none" />}
+              {contourCommune && <path d={contourCommune.d} fill="none" stroke="hsl(217 90% 45%)" strokeWidth={2} vectorEffect="non-scaling-stroke" pointerEvents="none" />}
             </g>
           )}
+          <g>
+            {etiquettes.map((g) => (
+              <text key={g.code} className="etiq" x={g.x + g.w / 2} y={g.y + g.h / 2} fontSize={largeur / 50} textAnchor="middle" dominantBaseline="middle">
+                {g.nom}
+              </text>
+            ))}
+          </g>
           <g>
             {projetes.map((p) => (
               <circle
                 key={p.siren}
                 className="dot"
                 data-s={p.siren}
-                cx={p.x.toFixed(3)}
-                cy={p.y.toFixed(3)}
-                r={rayon.toFixed(3)}
+                cx={p.x.toFixed(4)}
+                cy={p.y.toFixed(4)}
+                r={rayon.toFixed(4)}
                 fill={p.email ? "hsl(217 90% 55%)" : "#64748b"}
                 fillOpacity={0.85}
                 stroke="#fff"
@@ -372,6 +586,17 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
             ))}
           </g>
         </svg>
+        <div className="zoom" role="group" aria-label="Zoom de la carte">
+          <button type="button" onClick={() => zoomer(1.6)} aria-label="Zoomer" title="Zoomer">
+            +
+          </button>
+          <button type="button" onClick={() => zoomer(1 / 1.6)} aria-label="Dézoomer" title="Dézoomer">
+            −
+          </button>
+          <button type="button" onClick={() => allerA(cadreNiveau(), 400)} aria-label="Recadrer" title="Recadrer sur la zone">
+            ⤢
+          </button>
+        </div>
         {bulle && (
           <div className="tip" style={{ left: bulle.x, top: bulle.y }}>
             {bulle.texte}
@@ -393,102 +618,75 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
             </div>
           </div>
         )}
-        {commune ? (
+        {niveau === "commune" && commune ? (
           <>
             <div>
               <h4>{commune.nom}</h4>
-              <div className="rows">
-                <div>
-                  <span>{source === "marche" ? "Entreprises du marché" : "Entreprises de la cible"}</span>
-                  <span className="num">{formaterNombre(commune.mesures.entreprises ?? 0)}</span>
-                </div>
-                {commune.mesures.contactables !== undefined && source === "marche" && (
-                  <div>
-                    <span>Contactables</span>
-                    <span className="num">{formaterNombre(commune.mesures.contactables)}</span>
-                  </div>
-                )}
-                {commune.mesures.email_envoyable !== undefined && (
-                  <div>
-                    <span>Email envoyable</span>
-                    <span className="num">{formaterNombre(commune.mesures.email_envoyable)}</span>
-                  </div>
-                )}
-                {commune.mesures.telephone_envoyable !== undefined && (
-                  <div>
-                    <span>Téléphone utilisable</span>
-                    <span className="num">{formaterNombre(commune.mesures.telephone_envoyable)}</span>
-                  </div>
-                )}
-              </div>
+              {chiffres(commune)}
             </div>
-            <div>
-              <h4>Entreprises contactables</h4>
-              {points === null ? (
-                <Chargement />
-              ) : points.length === 0 ? (
-                <p className="hint">Aucune fiche contactable géolocalisée dans cette commune.</p>
-              ) : (
-                <div className="rows liste-longue">
-                  {points.map((p) => (
-                    <button key={p.siren} type="button" onClick={() => onFiche(p.siren, p.nom)}>
-                      <span>{p.nom}</span>
-                      <span>{p.email ? "email" : ""}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            {mieuxNotees("Entreprises contactables")}
             <p className="hint">
               <button type="button" className="lnk" onClick={() => onCommune(null)}>
-                Revenir à {nom(descente ?? "")}
-              </button>
-              {" · "}
-              <span style={{ color: "var(--blue)" }}>●</span> avec email, <span style={{ color: "#64748b" }}>●</span> sans. Cliquez un point pour ouvrir la fiche.
+                Revenir à {epci?.nom ?? nom(descente ?? "")}
+              </button>{" "}
+              · {legendePoints}
             </p>
           </>
-        ) : descente ? (
+        ) : niveau === "epci" && epci ? (
           <>
             <div>
-              <h4>Communes</h4>
-              {comptes === null ? (
-                <Chargement />
-              ) : classees.length === 0 ? (
-                <p className="hint">Aucune entreprise dans ce département.</p>
-              ) : (
-                <>
-                  <div className={toutes ? "rows liste-longue" : "rows"}>{(toutes ? classees : classees.slice(0, COMMUNES_VISIBLES)).map(ligneCommune)}</div>
-                  {classees.length > COMMUNES_VISIBLES && (
-                    <button type="button" className="lnk" onClick={() => setToutes((t) => !t)}>
-                      {toutes ? "Réduire" : `Voir les ${formaterNombre(classees.length)} communes`}
-                    </button>
-                  )}
-                </>
-              )}
+              <h4>{epci.nom}</h4>
+              {chiffres(epci)}
             </div>
             <div>
-              <h4>Les mieux notées</h4>
-              {points === null ? (
-                <Chargement />
-              ) : points.length === 0 ? (
-                <p className="hint">Aucune fiche contactable géolocalisée.</p>
-              ) : (
-                <div className="rows">
-                  {points.slice(0, 6).map((p) => (
-                    <button key={p.siren} type="button" onClick={() => onFiche(p.siren, p.nom)}>
-                      <span>{p.nom}</span>
-                      <span>{p.commune}</span>
+              <h4>Communes</h4>
+              {comptes === null ? <Chargement /> : communesZone.length === 0 ? <p className="hint">Aucune entreprise ici.</p> : liste(communesZone, valeursCommunes, ouvrirCommune, "communes")}
+            </div>
+            {mieuxNotees("Les mieux notées")}
+            <p className="hint">
+              <button type="button" className="lnk" onClick={() => onEpci(null)}>
+                Revenir à {nom(descente ?? "")}
+              </button>{" "}
+              · Cliquez une commune pour y descendre. {legendePoints}
+            </p>
+          </>
+        ) : niveau === "dep" ? (
+          <>
+            {(geo?.epcis.length ?? 0) > 1 && (
+              <div>
+                <h4>Découpage</h4>
+                <div className="seg3" role="group" aria-label="Découpage du département">
+                  {(
+                    [
+                      ["epci", "Intercommunalités"],
+                      ["commune", "Communes"],
+                    ] as const
+                  ).map(([id, libelle]) => (
+                    <button key={id} type="button" className={decoupage === id ? "on" : undefined} aria-pressed={decoupage === id} onClick={() => (setDecoupage(id), setToutes(false))}>
+                      {libelle}
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+            <div>
+              <h4>{voirEpcis ? "Intercommunalités" : "Communes"}</h4>
+              {comptes === null || geo === null ? (
+                <Chargement />
+              ) : voirEpcis ? (
+                epcisClasses.length === 0 ? <p className="hint">Aucune entreprise dans ce département.</p> : liste(epcisClasses, valeursEpcis, ouvrirEpci, "intercommunalités")
+              ) : communesZone.length === 0 ? (
+                <p className="hint">Aucune entreprise dans ce département.</p>
+              ) : (
+                liste(communesZone, valeursCommunes, ouvrirCommune, "communes")
               )}
             </div>
+            {mieuxNotees("Les mieux notées")}
             <p className="hint">
-              Cliquez une commune pour y descendre.{" "}
-              {comptes?.repli ? "Marché trop large pour la base complète : les communes comptent les fiches contactables. " : ""}
+              {voirEpcis ? "Métropoles, communautés d'agglomération et de communes : cliquez-en une pour y descendre. " : "Cliquez une commune pour y descendre. "}
+              {comptes?.repli ? "Marché trop large pour la base complète : les zones comptent les fiches contactables. " : ""}
               {nonRapprochees > 0 ? `${formaterNombre(nonRapprochees)} entreprises sans commune reconnue. ` : ""}
-              Points : les fiches contactables, <span style={{ color: "var(--blue)" }}>●</span> avec email.
-              {horsZone > 0 ? ` ${formaterNombre(horsZone)} adresse${horsZone > 1 ? "s" : ""} hors du département non dessinée${horsZone > 1 ? "s" : ""}.` : ""}
+              Points : les fiches contactables. {legendePoints}
             </p>
           </>
         ) : (
@@ -517,7 +715,7 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
                 </div>
               )}
             </div>
-            <p className="hint">Cliquez un département pour y descendre.</p>
+            <p className="hint">Cliquez un département pour y descendre. Molette ou boutons pour zoomer.</p>
           </>
         )}
       </div>

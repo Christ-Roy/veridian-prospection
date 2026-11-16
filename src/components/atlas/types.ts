@@ -88,13 +88,18 @@ export type AnalyseMarche = {
 };
 
 /** Contour d'une commune (route /api/atlas/communes/[dep]), dans les coordonnées de la carte. */
-export type CommuneGeo = { code: string; nom: string; d: string; x: number; y: number; w: number; h: number };
+export type CommuneGeo = { code: string; nom: string; epci: string | null; d: string; x: number; y: number; w: number; h: number };
+/** Intercommunalité (métropole, communauté de communes…) : contour et communes du département qui en sont. */
+export type EpciGeo = { code: string; nom: string; communes: string[]; d: string; x: number; y: number; w: number; h: number };
+/** Zone regardée sous le département : une intercommunalité (avec ses communes) ou une commune. */
+export type ZoneLocale = { code: string; nom: string; mesures: Record<string, number>; communes?: string[] };
 /** Une commune comptée (outil repartir_communes). */
 export type CommuneComptee = { code: string; nom: string; mesures: Record<string, number> };
 export type CommunesMarche = {
   base: "marche" | "prospection";
   repli: boolean;
   communes: CommuneComptee[];
+  intercommunalites: (CommuneComptee & { communes: string[] })[];
   non_rapprochees: Record<string, number>;
   donnees_simulees?: boolean;
 };

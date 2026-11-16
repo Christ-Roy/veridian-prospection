@@ -6,8 +6,8 @@ import { describe, expect, test } from "vitest";
 
 import { DEPARTMENT_PATHS } from "@/components/dashboard/france-map-data";
 import { cheminSvg, cleCommune, projeter, simplifier } from "@/atlas/projection";
-import { rapprocher, versCommunes, type CommuneGeo } from "@/atlas/communes";
-import { cadrageCommune, placerPoints, valeurCommune } from "@/components/atlas/carte-logique";
+import { rapprocher, unionContours, versCommunes, versEpcis, type CommuneGeo } from "@/atlas/communes";
+import { cadrageCommune, LARGEUR_MIN, placerPoints, valeurCommune, VUE_FRANCE, zoomerCadre } from "@/components/atlas/carte-logique";
 
 /** Point dans le chemin d'un département (règle pair-impair sur chaque sous-chemin M…). */
 const dedans = (code: string, [x, y]: [number, number]) => {
@@ -82,7 +82,7 @@ describe("rapprochement des comptes", () => {
     expect(cleCommune("Paris 1er Arrondissement")).toBe("PARIS 1");
   });
 
-  const geo = (code: string, nom: string, cp: string[] = []): CommuneGeo => ({ code, nom, cle: cleCommune(nom), cp, d: "M0 0z", x: 0, y: 0, w: 1, h: 1 });
+  const geo = (code: string, nom: string, cp: string[] = []): CommuneGeo => ({ code, nom, cle: cleCommune(nom), cp, epci: null, d: "M0 0z", x: 0, y: 0, w: 1, h: 1 });
   const communes = [
     geo("38185", "Grenoble", ["38000", "38100"]),
     geo("38544", "Vienne", ["38200"]),
@@ -130,5 +130,69 @@ describe("carte d'une commune", () => {
     expect(w).toBeGreaterThanOrEqual(5);
     expect(x + w / 2).toBeCloseTo(10.05);
     expect(y + h / 2).toBeCloseTo(20.05);
+  });
+});
+
+describe("intercommunalités", () => {
+  const carre = (x: number, y: number) => [[[x, y], [x + 1, y], [x + 1, y + 1], [x, y + 1], [x, y]]] as [number, number][][];
+
+  test("deux communes jointives : l'arête commune disparaît, un seul anneau de 6 côtés", () => {
+    const r = unionContours([carre(5, 45), carre(6, 45)]);
+    expect(r).toHaveLength(1);
+    expect(r[0]).toHaveLength(7); // 6 sommets + retour au départ
+    expect(r[0][0]).toEqual(r[0][6]);
+  });
+
+  test("deux communes séparées : deux anneaux", () => {
+    expect(unionContours([carre(5, 45), carre(8, 45)])).toHaveLength(2);
+  });
+
+  test("EPCI reconstitué, arrondissements rattachés à l'EPCI de leur ville, noms lus à part", () => {
+    // Carrés de 0,01° posés côte à côte : le n° i touche le n° i + 1.
+    const poly = (i: number) => {
+      const x = 4.8 + i * 0.01;
+      return { type: "Polygon" as const, coordinates: [[[x, 45.7], [x + 0.01, 45.7], [x + 0.01, 45.71], [x, 45.71], [x, 45.7]]] };
+    };
+    const features = [
+      { properties: { code: "69123", nom: "Lyon", codeEpci: "200046977" }, geometry: poly(0) },
+      { properties: { code: "69381", nom: "Lyon 1er Arrondissement" }, geometry: poly(1) },
+      { properties: { code: "69382", nom: "Lyon 2e Arrondissement" }, geometry: poly(2) },
+      { properties: { code: "69290", nom: "Saint-Priest", codeEpci: "200046977" }, geometry: poly(3) },
+      { properties: { code: "69001", nom: "Affoux", codeEpci: "246900575" }, geometry: poly(9) },
+    ];
+    const communes = versCommunes(features);
+    expect(communes.find((c) => c.code === "69381")?.epci).toBe("200046977");
+    const e = versEpcis(features, communes, new Map([["200046977", "Métropole de Lyon"]]));
+    const lyon = e.find((x) => x.code === "200046977")!;
+    expect(lyon.nom).toBe("Métropole de Lyon");
+    expect(lyon.communes.sort()).toEqual(["69290", "69381", "69382"]);
+    expect(lyon.d.match(/M/g)).toHaveLength(1); // trois carrés jointifs : un seul contour
+    expect(e.find((x) => x.code === "246900575")?.nom).toBe("Intercommunalité");
+  });
+
+  test("comptes par intercommunalité : somme de ses communes", () => {
+    const g = (code: string, nom: string): CommuneGeo => ({ code, nom, cle: cleCommune(nom), cp: [], epci: "E", d: "", x: 0, y: 0, w: 1, h: 1 });
+    const r = rapprocher(
+      [g("38185", "Grenoble"), g("38421", "Saint-Martin-d'Hères")],
+      { base: "prospection", repli: false, lignes: [{ insee: "38185", nom: "Grenoble", code_postal: null, mesures: { entreprises: 20 } }, { insee: "38421", nom: "x", code_postal: null, mesures: { entreprises: 4 } }] },
+      [{ code: "E", nom: "Grenoble-Alpes-Métropole", communes: ["38185", "38421", "38999"], d: "", x: 0, y: 0, w: 1, h: 1 }],
+    );
+    expect(r.intercommunalites).toEqual([{ code: "E", nom: "Grenoble-Alpes-Métropole", communes: ["38185", "38421", "38999"], mesures: { entreprises: 24 } }]);
+  });
+});
+
+describe("zoom libre", () => {
+  test("zoomer autour d'un point le garde fixe à l'écran", () => {
+    const c = [100, 100, 200, 212.5];
+    const z = zoomerCadre(c, 2, 150, 150);
+    expect(z[2]).toBe(100);
+    // le point (150,150) reste à la même position relative dans la vue
+    expect((150 - z[0]) / z[2]).toBeCloseTo((150 - c[0]) / c[2]);
+    expect((150 - z[1]) / z[3]).toBeCloseTo((150 - c[1]) / c[3]);
+  });
+
+  test("bornes : jamais plus près que quelques rues, jamais plus loin que la France", () => {
+    expect(zoomerCadre([0, 0, 0.3, 0.32], 10, 0, 0)[2]).toBe(LARGEUR_MIN);
+    expect(zoomerCadre([...VUE_FRANCE], 0.1, 400, 425)[2]).toBe(VUE_FRANCE[2]);
   });
 });

@@ -110,6 +110,25 @@ export function cadrageCommune(b: Boite, min: number): [number, number, number, 
   return cadrageDescente({ x: b.x + b.width / 2 - w / 2, y: b.y + b.height / 2 - h / 2, width: w, height: h });
 }
 
+/** Largeur de vue la plus fine : quelques rues (une unité de la carte vaut environ 1,4 km). */
+export const LARGEUR_MIN = 0.25;
+
+/**
+ * Zoom libre autour d'un point (x, y) de la carte : facteur > 1 rapproche. La vue garde le ratio de la carte,
+ * ne va ni plus près que LARGEUR_MIN ni plus loin que la France entière.
+ */
+export function zoomerCadre(c: readonly number[], facteur: number, x: number, y: number): [number, number, number, number] {
+  const w = Math.min(CARTE_L, Math.max(LARGEUR_MIN, c[2] / facteur));
+  const k = w / c[2];
+  const h = c[3] * k;
+  return [x - (x - c[0]) * k, y - (y - c[1]) * k, w, h];
+}
+
+/** Déplacement de la vue de (dx, dy) unités de la carte. */
+export function deplacerCadre(c: readonly number[], dx: number, dy: number): [number, number, number, number] {
+  return [c[0] - dx, c[1] - dy, c[2], c[3]];
+}
+
 /** Mesure de la carte → valeur d'une commune : un nombre, ou une part (%) des entreprises de la commune. */
 export function valeurCommune(m: Mesure, mesures: Readonly<Record<string, number>>): number {
   const total = mesures.entreprises ?? 0;
