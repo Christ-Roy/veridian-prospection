@@ -56,11 +56,11 @@ export const CHAMPS: readonly Champ[] = [
   { id: "email", libelle: "Email", type: "texte", sql: "email", groupe: "Contact" },
   { id: "email_verification", libelle: "Vérification de l'email", type: "liste", sql: "email_verification", groupe: "Contact", repartition: true },
   { id: "email_preuve", libelle: "Preuve de l'email", type: "liste", sql: "email_verification_basis", groupe: "Contact", repartition: true },
-  // Colonnes d'ODH (ODH-0239, release 20261109021), même règle que leur export Notifuse. `deliverable` veut dire
-  // « joignable par un canal », pas « email envoyable » : on filtre l'email et le téléphone sur ces colonnes.
-  { id: "email_envoyable", libelle: "Email envoyable", type: "oui_non", sql: "email_envoyable", groupe: "Contact" },
+  // Colonnes d'ODH (ODH-0239). `email_envoyable` juge l'ADRESSE, `deliverable` la FICHE (cessée, procédure, piège à
+  // spam…) : 180 632 fiches avaient l'une sans l'autre le 17/11 (ODH). Envoyable = les deux, partout, même si ODH corrige.
+  { id: "email_envoyable", libelle: "Email envoyable", type: "oui_non", sql: "(email_envoyable = 1 AND deliverable = 1)", groupe: "Contact" },
   { id: "motif_email", libelle: "Pourquoi l'email n'est pas envoyable", type: "liste", sql: "motif_email_non_envoyable", groupe: "Contact", repartition: true },
-  { id: "telephone_envoyable", libelle: "Téléphone utilisable", type: "oui_non", sql: "telephone_envoyable", groupe: "Contact" },
+  { id: "telephone_envoyable", libelle: "Téléphone utilisable", type: "oui_non", sql: "(telephone_envoyable = 1 AND deliverable = 1)", groupe: "Contact" },
   { id: "messagerie", libelle: "Messagerie", type: "liste", sql: "mail_provider_group", groupe: "Contact", repartition: true },
   { id: "telephone", libelle: "Téléphone", type: "texte", sql: "phone", groupe: "Contact" },
   { id: "rge", libelle: "Label RGE", type: "oui_non", sql: "label_rge", groupe: "Signaux" },

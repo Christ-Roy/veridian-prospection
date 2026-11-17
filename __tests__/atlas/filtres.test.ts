@@ -57,8 +57,9 @@ describe("compilerFiltre", () => {
 
   test("le catalogue ne contient que des expressions SQL simples et des opérateurs connus", () => {
     // Une colonne, ou une conjonction de comparaisons à des constantes (champ dérivé) : jamais de fonction ni de sous-requête.
+    // (Les champs `ensemble` nomment une colonne tableau de leur vue ; la sous-requête est écrite par filtres.ts, pas ici.)
     for (const c of CHAMPS) {
-      expect(c.sql).toMatch(/^([a-z_0-9]+|\([a-z_0-9]+ !?= '[a-z_]*'( AND [a-z_0-9]+ !?= '[a-z_]*')*\))$/);
+      expect(c.sql).toMatch(/^([a-z_0-9]+|\([a-z_0-9]+ !?= ('[a-z_]*'|\d+)( AND [a-z_0-9]+ !?= ('[a-z_]*'|\d+))*\))$/);
       expect(c.id).toMatch(/^[a-z_0-9]+$/);
       expect(OPERATEURS[c.type].length).toBeGreaterThan(0);
     }

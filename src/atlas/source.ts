@@ -15,7 +15,7 @@ import { FiltreInvalide, FiltreSchema, ScoringSchema, colonnesSql, compilerFiltr
 export type Ligne = Record<string, string | number | boolean | null>;
 export type Apercu = { colonnes: string[]; page: number; parPage: number; tri: string; lignes: Ligne[] };
 /** Options d'aperçu ; avec `scoring`, chaque ligne a une colonne `score` (0-100) et le tri se fait dessus. */
-export type OptionsApercu = { colonnes: string[]; page: number; parPage: number; tri?: string; sens?: "asc" | "desc"; scoring?: unknown; /** lignes par page au plus (100 pour l'écran, l'export en demande plus) */ plafond?: number };
+export type OptionsApercu = { colonnes: string[]; page: number; parPage: number; tri?: string; sens?: "asc" | "desc"; scoring?: unknown; /** lignes par page au plus (100 pour l'écran, l'export en demande plus) */ plafond?: number; /** export : jamais une fiche non livrable */ livrablesSeuls?: boolean };
 
 /** Fiche complète d'une entreprise : colonnes ODH renommées en français, regroupées par thème. */
 export type Fiche = Record<string, Record<string, string | number | boolean | null | string[]>>;
@@ -56,6 +56,14 @@ export type Verification = {
 export type Point = { siren: string; nom: string; commune: string; lat: number; lon: number; email: boolean; site: boolean };
 
 /** Colonnes de la fiche : thème → (clé française → colonne ODH). Liste blanche, comme le catalogue. */
+/**
+ * Envoyable = adresse valable (email_envoyable) ET fiche livrable (deliverable) : ODH, 17/11, 180 632 fiches cessées,
+ * en procédure ou pièges à spam avaient la première sans la seconde. Le motif dit alors pourquoi la fiche est bloquée.
+ */
+const ENVOYABLE_EMAIL = "(email_envoyable = 1 AND deliverable = 1)";
+const ENVOYABLE_TELEPHONE = "(telephone_envoyable = 1 AND deliverable = 1)";
+const MOTIF_EMAIL = "if(deliverable = 0 AND motif_email_non_envoyable = '', blocking_reasons[1], motif_email_non_envoyable)";
+
 /** Vue d'ODH de la pile logicielle (ODH-0263) : une ligne par SIREN. */
 export const TABLE_LOGICIELS = "odh.company_tech_stack_current";
 
@@ -64,7 +72,7 @@ export const FICHE: Record<string, Record<string, string>> = {
   activite: { naf: "naf_code", secteur: "activity_sector", activite: "activity_label", services: "activity_services", idcc: "idcc_label", opco: "opco_name" },
   lieu: { commune: "city", code_postal: "postal_code", departement: "department", commune_insee: "commune_insee", latitude: "latitude", longitude: "longitude" },
   dirigeant: { nom: "director_name", role: "director_role", email: "director_email", email_verifie: "director_email_verified" },
-  contact: { email: "email", type_email: "email_type", verification: "email_verification", preuve: "email_verification_basis", email_envoyable: "email_envoyable", motif_email: "motif_email_non_envoyable", telephone_envoyable: "telephone_envoyable", messagerie: "mail_provider_group", telephone: "phone", delivrable: "deliverable" },
+  contact: { email: "email", type_email: "email_type", verification: "email_verification", preuve: "email_verification_basis", email_envoyable: ENVOYABLE_EMAIL, motif_email: MOTIF_EMAIL, telephone_envoyable: ENVOYABLE_TELEPHONE, messagerie: "mail_provider_group", telephone: "phone", delivrable: "deliverable" },
   web: { site: "primary_domain", domaines: "domains", niveau: "web_tier", obsolete: "website_obsolete", https: "has_https", responsive: "has_responsive", outil: "cms", ecommerce: "is_ecommerce", plateforme_ecommerce: "ecom_platform" },
   finances: { chiffre_affaires: "revenue", resultat_net: "net_income", ebe: "ebe", tresorerie_nette: "net_cash", annee: "financials_year", croissance_pct: "revenue_growth_pct", tendance: "revenue_trend", effectif: "headcount_value", taille: "size_band" },
   groupe: { maison_mere: "parent_name", filiales: "subsidiaries_count", tete_de_groupe: "group_root_name", taille_groupe: "group_size" },
@@ -342,7 +350,7 @@ export class SourceClickHouse implements SourceMarche {
     const p = { s: { type: "Array(String)", valeur: liste } as SqlParam };
     const fiches = await this.requete<Record<string, unknown>>(
       `SELECT siren, legal_name AS nom, city AS commune, department AS departement, naf_code AS naf, primary_domain AS site,
-        email_envoyable, telephone_envoyable, size_band FROM ${TABLE} WHERE siren IN {s:Array(String)}`,
+        ${ENVOYABLE_EMAIL} AS email_envoyable, ${ENVOYABLE_TELEPHONE} AS telephone_envoyable, size_band, deliverable FROM ${TABLE} WHERE siren IN {s:Array(String)}`,
       p,
     );
     const vues = new Set(fiches.map((f) => String(f.siren)));
@@ -351,7 +359,8 @@ export class SourceClickHouse implements SourceMarche {
     const maitre = reste.length
       ? await this.requete<Record<string, unknown>>(
           `SELECT siren, legal_name AS nom, city AS commune, department AS departement, naf_code AS naf, administrative_status AS statut,
-            has_site, email_envoyable, telephone_envoyable FROM ${TABLE_MAITRE} WHERE siren IN {s:Array(String)}`,
+            has_site, email_envoyable = 1 AND prospectable = 1 AS email_envoyable, telephone_envoyable = 1 AND prospectable = 1 AS telephone_envoyable
+            FROM ${TABLE_MAITRE} WHERE siren IN {s:Array(String)}`,
           { s: { type: "Array(String)", valeur: reste } },
         )
       : [];
@@ -363,7 +372,7 @@ export class SourceClickHouse implements SourceMarche {
       const site = v(f.site);
       parSiren.set(String(f.siren), {
         siren: String(f.siren), trouvee: true, nom: v(f.nom), active: true, commune: v(f.commune), departement: v(f.departement), naf: v(f.naf),
-        site, a_site: !!site, email_envoyable: Number(f.email_envoyable) === 1, telephone_utilisable: Number(f.telephone_envoyable) === 1, contactable: true,
+        site, a_site: !!site, email_envoyable: Number(f.email_envoyable) === 1, telephone_utilisable: Number(f.telephone_envoyable) === 1, contactable: Number(f.deliverable) === 1,
         logiciels: logiciels.get(String(f.siren)) ?? [],
         ...(site && f.size_band === "grande" ? { site_incertain: true } : {}),
       });
@@ -401,7 +410,7 @@ export class SourceClickHouse implements SourceMarche {
       const c = compilerMaitre(filtre);
       c.params.dep = { type: "String", valeur: departement };
       const sql = `SELECT city AS nom, postal_code AS cp, count() AS entreprises, countIf(prospectable = 1) AS contactables,
-        countIf(email_envoyable = 1) AS email_envoyable, countIf(telephone_envoyable = 1) AS telephone_envoyable
+        countIf(email_envoyable = 1 AND prospectable = 1) AS email_envoyable, countIf(telephone_envoyable = 1 AND prospectable = 1) AS telephone_envoyable
         FROM ${TABLE_MAITRE} WHERE ${c.where} AND department = {dep:String} GROUP BY nom, cp`;
       try {
         const r = await this.requete<Record<string, string>>(sql, c.params);
@@ -421,8 +430,8 @@ export class SourceClickHouse implements SourceMarche {
     }
     const { where, params } = compilerFiltre(filtre);
     params.dep = { type: "String", valeur: departement };
-    const sql = `SELECT commune_insee AS insee, any(city) AS nom, count() AS entreprises, countIf(email_envoyable = 1) AS email_envoyable,
-      countIf(telephone_envoyable = 1) AS telephone_envoyable, countIf(primary_domain = '') AS sans_site, countIf(email != '') AS avec_email
+    const sql = `SELECT commune_insee AS insee, any(city) AS nom, count() AS entreprises, countIf(${ENVOYABLE_EMAIL}) AS email_envoyable,
+      countIf(${ENVOYABLE_TELEPHONE}) AS telephone_envoyable, countIf(primary_domain = '') AS sans_site, countIf(email != '') AS avec_email
       FROM ${TABLE} WHERE ${where} AND department = {dep:String} GROUP BY insee`;
     const r = await this.requete<Record<string, string>>(sql, params);
     return {
@@ -446,7 +455,7 @@ export class SourceClickHouse implements SourceMarche {
     const sens = o.sens === "asc" ? "ASC" : "DESC";
     const tri = score ? null : champTri(o.tri);
     const ordre = score ? `score ${sens}` : `${tri!.sql} ${sens} NULLS LAST`;
-    const sql = `SELECT ${select}${score ? `, ${score} AS score` : ""} FROM ${TABLE} ${jointures} WHERE ${where} ORDER BY ${ordre}, siren LIMIT ${parPage} OFFSET ${(page - 1) * parPage}`;
+    const sql = `SELECT ${select}${score ? `, ${score} AS score` : ""} FROM ${TABLE} ${jointures} WHERE ${where}${o.livrablesSeuls ? " AND deliverable = 1" : ""} ORDER BY ${ordre}, siren LIMIT ${parPage} OFFSET ${(page - 1) * parPage}`;
     const brut = await this.requete<Ligne>(sql, params);
     const lignes = brut.map((l) => ({ ...normaliser(l, champs), ...(score ? { score: Number(l.score) } : {}) }));
     return { colonnes: [...champs.map((c) => c.id), ...(score ? ["score"] : [])], page, parPage, tri: score ? "score" : tri!.id, lignes };

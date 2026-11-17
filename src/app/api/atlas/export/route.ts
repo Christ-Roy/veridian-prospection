@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
     const s = await seg.lireSegment(ctx.tenantId, segmentId);
     const [filtre, scoring] = await Promise.all([seg.filtreEffectif(ctx.tenantId, s.id), seg.scoringCourant(ctx.tenantId, s.id)]);
     const colonnes = colonnesExport(s.colonnes);
-    const r = await sourceMarche().apercu(filtre, { colonnes, page: 1, parPage: LIGNES_MAX_EXPORT, plafond: LIGNES_MAX_EXPORT, ...(scoring ? { scoring } : {}) });
+    const r = await sourceMarche().apercu(filtre, { colonnes, page: 1, parPage: LIGNES_MAX_EXPORT, plafond: LIGNES_MAX_EXPORT, livrablesSeuls: true, ...(scoring ? { scoring } : {}) });
     const corps = format === "csv" ? versCsv(r.colonnes, r.lignes) : versXlsx(r.colonnes, r.lignes, s.nom);
     console.info(`[atlas] export user=${ctx.userId} tenant=${ctx.tenantId} segment=${s.id} format=${format} lignes=${r.lignes.length}`);
     return new NextResponse(new Uint8Array(corps), {

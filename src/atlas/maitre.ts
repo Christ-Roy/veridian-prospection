@@ -25,8 +25,9 @@ const DRAPEAUX: Record<string, string> = {
   email: "has_email",
   telephone: "has_phone",
   site: "has_site",
-  email_envoyable: "email_envoyable",
-  telephone_envoyable: "telephone_envoyable",
+  // Adresse valable ET fiche prospectable (ODH, 17/11 : l'une sans l'autre sur 16 % du marché animalier).
+  email_envoyable: "(email_envoyable = 1 AND prospectable = 1)",
+  telephone_envoyable: "(telephone_envoyable = 1 AND prospectable = 1)",
 };
 
 /** Colonnes rendues par une liste : identité, lieu, drapeaux. Ids alignés sur le catalogue quand il y a un équivalent. */

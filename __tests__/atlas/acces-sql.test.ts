@@ -161,3 +161,21 @@ describe("pile logicielle d'ODH", () => {
     expect(libelleValeur("type_logiciel", "emailing")).toBe("Emailing");
   });
 });
+
+describe("envoyable = adresse valable ET fiche livrable (ODH, 17/11)", () => {
+  test("filtre, colonne et base maître exigent les deux", async () => {
+    const { compilerFiltre, colonnesSql } = await import("@/atlas/filtres");
+    expect(compilerFiltre({ conditions: [{ champ: "email_envoyable", op: "est", valeur: true }] }).where).toContain("(email_envoyable = 1 AND deliverable = 1) = 1");
+    expect(compilerFiltre({ conditions: [{ champ: "telephone_envoyable", op: "est", valeur: true }] }).where).toContain("(telephone_envoyable = 1 AND deliverable = 1) = 1");
+    expect(colonnesSql(["email_envoyable"]).sql).toContain("(email_envoyable = 1 AND deliverable = 1) AS email_envoyable");
+    const { compilerMaitre } = await import("@/atlas/maitre");
+    expect(compilerMaitre({ conditions: [{ champ: "email_envoyable", op: "est", valeur: true }] }).where).toContain("(email_envoyable = 1 AND prospectable = 1) = 1");
+  });
+
+  test("l'export ne sort jamais une fiche non livrable", async () => {
+    const { readFileSync } = await import("node:fs");
+    expect(readFileSync("src/app/api/atlas/export/route.ts", "utf8")).toMatch(/livrablesSeuls: true/);
+    const { libelleValeur } = await import("@/atlas/libelles");
+    expect(libelleValeur("motif_email", "block_honeypot")).toBe("Piège à spam");
+  });
+});

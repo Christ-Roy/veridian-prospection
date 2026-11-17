@@ -190,6 +190,15 @@ const DIVISIONS_NAF: Table = {
 };
 
 const MOTIFS_EMAIL: Table = {
+  // Fiche non livrable (blocking_reasons d'ODH) : le motif dit pourquoi on n'écrit pas, même à une adresse valable.
+  block_honeypot: "Piège à spam",
+  block_ceased: "Entreprise cessée",
+  block_insolvency: "Procédure collective",
+  block_ambiguous: "Rattachement du contact ambigu",
+  block_non_decision_maker: "Contact non décideur",
+  block_postal_unusable: "Adresse inutilisable",
+  block_provider_siren: "Contact d'un prestataire",
+  block_not_diffusible: "Entreprise non diffusible",
   domaine_mort: "Domaine mort",
   mx_injoignable: "Serveur mail injoignable",
   boite_inexistante: "Boîte inexistante",
