@@ -317,7 +317,7 @@ export function VueMarche({
                         </td>
                         {COLONNES_MARCHE.map((c) => (
                           <td key={c.id} className="num">
-                            {formaterNombre(l[c.id])}
+                            {formaterNombre(l[c.id] ?? 0)}
                           </td>
                         ))}
                       </tr>

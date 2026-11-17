@@ -23,6 +23,8 @@ export type Champ = {
    * `siren IN (sous-requête)`, affichée par jointure. `sql` est alors la colonne tableau de cette vue.
    */
   ensemble?: { table: string };
+  /** Colonne tableau de la même vue (ex. sig_types_90d) : filtrée par hasAny, affichée jointe par des virgules. */
+  tableau?: boolean;
 };
 
 export const CHAMPS: readonly Champ[] = [
@@ -63,6 +65,12 @@ export const CHAMPS: readonly Champ[] = [
   { id: "telephone_envoyable", libelle: "Téléphone utilisable", type: "oui_non", sql: "(telephone_envoyable = 1 AND deliverable = 1)", groupe: "Contact" },
   { id: "messagerie", libelle: "Messagerie", type: "liste", sql: "mail_provider_group", groupe: "Contact", repartition: true },
   { id: "telephone", libelle: "Téléphone", type: "texte", sql: "phone", groupe: "Contact" },
+  // Signaux d'évolution d'ODH (ODH-0272, 17/11) : ce qui a changé dans l'entreprise, daté. Un motif d'appel, jamais
+  // un critère d'exclusion ; [] = rien d'observé. dirigeant_change ne dit pas nomination ou départ (RNE).
+  { id: "signal_90j", libelle: "Signal récent (90 jours)", type: "liste", sql: "sig_types_90d", groupe: "Signaux", repartition: true, tableau: true },
+  { id: "signal_12_mois", libelle: "Signal sur 12 mois", type: "liste", sql: "sig_types_365d", groupe: "Signaux", repartition: true, tableau: true },
+  { id: "signal_date", libelle: "Date du dernier signal", type: "date", sql: "sig_last_on", groupe: "Signaux" },
+  { id: "signaux_12_mois", libelle: "Nombre de signaux sur 12 mois", type: "nombre", sql: "sig_count_365d", groupe: "Signaux" },
   { id: "rge", libelle: "Label RGE", type: "oui_non", sql: "label_rge", groupe: "Signaux" },
   { id: "qualiopi", libelle: "Qualiopi", type: "oui_non", sql: "label_qualiopi", groupe: "Signaux" },
   { id: "marches_publics", libelle: "Marchés publics remportés", type: "nombre", sql: "public_contracts_count", groupe: "Signaux" },

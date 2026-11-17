@@ -833,7 +833,7 @@ export function AtlasApp() {
 
           <div className={kpisBusy ? "kpis busy" : "kpis"} hidden={vue === "marche"} ref={kpisRef} aria-busy={kpisBusy} aria-live="polite">
             {/* Un chiffre égal au total ne dit rien de plus (cible déjà filtrée sur l'email envoyable). */}
-            {listeKpis.filter((k) => k.id === "total" || k.id === "entreprises" || !kpis || kpis[k.id] !== kpis.total).map((k) => (
+            {listeKpis.filter((k) => k.id === "total" || k.id === "entreprises" || !kpis || (kpis[k.id] !== undefined && kpis[k.id] !== kpis.total)).map((k) => (
               <div className="kpi" key={k.id}>
                 <b className="num">{kpis && kpis[k.id] !== undefined ? formaterNombre(kpis[k.id]) : "–"}</b>
                 <span>

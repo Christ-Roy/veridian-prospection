@@ -179,3 +179,25 @@ describe("envoyable = adresse valable ET fiche livrable (ODH, 17/11)", () => {
     expect(libelleValeur("motif_email", "block_honeypot")).toBe("Piège à spam");
   });
 });
+
+describe("signaux d'évolution d'ODH (ODH-0272)", () => {
+  test("filtre hasAny, colonne jointe, tri par date du dernier signal", async () => {
+    const { compilerFiltre, colonnesSql } = await import("@/atlas/filtres");
+    expect(compilerFiltre({ conditions: [{ champ: "signal_90j", op: "dans", valeur: ["dirigeant_change"] }] }).where).toContain("hasAny(sig_types_90d, {p0:Array(String)})");
+    expect(compilerFiltre({ conditions: [{ champ: "signal_12_mois", op: "hors", valeur: ["radiation"] }] }).where).toContain("NOT hasAny(sig_types_365d,");
+    expect(compilerFiltre({ conditions: [{ champ: "signal_90j", op: "renseigne", valeur: true }] }).where).toContain("notEmpty(sig_types_90d)");
+    expect(colonnesSql(["signal_90j"]).sql).toContain("arrayStringConcat(sig_types_90d, ', ') AS signal_90j");
+  });
+
+  test("événements de la fiche lisibles, entrée abîmée ignorée", async () => {
+    const { evenementsLisibles } = await import("@/atlas/source");
+    expect(evenementsLisibles('[{"date":"2026-09-14","type":"dirigeant_change","before":"","after":""},{"date":"2026-03-01","type":"naf_change","before":"4778C","after":"4776Z"}]')).toEqual([
+      "14/09/2026 · Changement de dirigeant",
+      "01/03/2026 · Changement d'activité (NAF) (4778C → 4776Z)",
+    ]);
+    expect(evenementsLisibles("pas du json")).toBeNull();
+    expect(evenementsLisibles("[]")).toBeNull();
+    const { libelleValeur } = await import("@/atlas/libelles");
+    expect(libelleValeur("signal_90j", "acquisition_fonds, siege_transfert")).toBe("Rachat d'un fonds de commerce, Transfert du siège");
+  });
+});

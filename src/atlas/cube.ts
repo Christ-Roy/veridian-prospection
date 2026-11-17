@@ -50,8 +50,16 @@ export type EntreeCube = z.input<typeof EntreeCubeSchema>;
 const MESURES = `sum(nb_entreprises) AS entreprises,
   sum(nb_avec_email) AS email_connu, sum(nb_avec_telephone) AS telephone_connu, sum(nb_avec_site) AS site_connu,
   sum(nb_avec_un_canal) AS un_canal_connu, sum(nb_prospectables) AS prospectables,
-  sum(nb_email_livrable) AS email_envoyable, sum(nb_telephone_livrable) AS telephone_envoyable`;
-export const COLONNES_MESURES = ["entreprises", "email_connu", "telephone_connu", "site_connu", "un_canal_connu", "prospectables", "email_envoyable", "telephone_envoyable"] as const;
+  sum(nb_email_livrable) AS email_envoyable, sum(nb_telephone_livrable) AS telephone_envoyable,
+  sum(nb_sig_90j) AS signal_90j, sum(nb_sig_365j) AS signal_365j, sum(nb_sig_dirigeant_90j) AS signal_dirigeant_90j,
+  sum(nb_sig_etablissement_90j) AS signal_etablissement_90j, sum(nb_sig_siege_90j) AS signal_siege_90j,
+  sum(nb_sig_capital_90j) AS signal_capital_90j, sum(nb_sig_ca_hausse_365j) AS signal_ca_hausse_365j`;
+// Signaux d'évolution (ODH-0272, cube v5, 17/11) : entreprises qui ont « bougé », comptées une fois par mesure, sur
+// toutes les entreprises de l'instantané. Un signal est un motif d'appel, jamais un critère d'exclusion.
+export const COLONNES_MESURES = [
+  "entreprises", "email_connu", "telephone_connu", "site_connu", "un_canal_connu", "prospectables", "email_envoyable", "telephone_envoyable",
+  "signal_90j", "signal_365j", "signal_dirigeant_90j", "signal_etablissement_90j", "signal_siege_90j", "signal_capital_90j", "signal_ca_hausse_365j",
+] as const;
 export type Mesures = Record<(typeof COLONNES_MESURES)[number], number>;
 
 /** Requêtes paramétrées du cube : total (avec provenance) et, si un axe est demandé, la répartition. */

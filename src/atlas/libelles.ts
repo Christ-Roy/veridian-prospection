@@ -236,6 +236,16 @@ const LOGICIELS: Table = {
   activecampaign: "ActiveCampaign", sendgrid: "SendGrid", tidio: "Tidio", intercom: "Intercom", crisp: "Crisp", zendesk: "Zendesk",
   stripe: "Stripe", paypal: "PayPal", doctolib: "Doctolib", calendly: "Calendly",
 };
+/** Signaux d'évolution d'ODH (ODH-0272). */
+const SIGNAUX: Table = {
+  naf_change: "Changement d'activité (NAF)", forme_juridique_change: "Changement de forme juridique", denomination_change: "Changement de nom",
+  siege_change: "Nouveau siège", siege_transfert: "Transfert du siège", cessation: "Cessation", reprise: "Reprise d'activité",
+  nouvel_etablissement: "Nouvel établissement", etablissement_ferme: "Établissement fermé", ca_hausse: "Chiffre d'affaires en hausse",
+  ca_baisse: "Chiffre d'affaires en baisse", resultat_bascule_positif: "Résultat redevenu positif", resultat_bascule_negatif: "Résultat passé négatif",
+  dirigeant_change: "Changement de dirigeant", capital_change: "Changement de capital", procedure_collective: "Procédure collective",
+  procedure_plan: "Plan de redressement ou de sauvegarde", radiation: "Radiation", vente_fonds: "Vente de fonds de commerce",
+  acquisition_fonds: "Rachat d'un fonds de commerce", site_refait: "Site web refait",
+};
 const TYPES_LOGICIEL: Table = {
   erp: "ERP (gestion)", crm: "CRM", emailing: "Emailing", compta: "Comptabilité", support: "Support client", paiement: "Paiement", rdv: "Prise de rendez-vous",
 };
@@ -256,6 +266,11 @@ const TABLES: Record<string, Table> = {
   messagerie: MESSAGERIES,
   grade: GRADES,
   logiciel: LOGICIELS,
+  signal: SIGNAUX,
+  signal_90j: SIGNAUX,
+  signal_12_mois: SIGNAUX,
+  dernier: SIGNAUX,
+  types_12_mois: SIGNAUX,
   type_logiciel: TYPES_LOGICIEL,
   cms: OUTILS,
   forme: MOTS,
@@ -294,7 +309,7 @@ export function libelleValeur(champ: string, cle: string | number): string {
   }
   if (c === "forme") return MOTS[k] ?? FORMES_JURIDIQUES[k] ?? k;
   // Colonne du tableau ou de l'export : plusieurs logiciels joints par des virgules.
-  if ((c === "logiciel" || c === "type_logiciel") && k.includes(",")) return k.split(/,\s*/).map((x) => libelleValeur(c, x)).join(", ");
+  if ((c === "logiciel" || c === "type_logiciel" || c === "signal_90j" || c === "signal_12_mois") && k.includes(",")) return k.split(/,\s*/).map((x) => libelleValeur(c, x)).join(", ");
   if (c === "logiciel" && !LOGICIELS[k]) {
     const interne = k.match(/^interne:(.+)$/);
     if (interne) return `Outil interne (${TYPES_LOGICIEL[interne[1]] ?? interne[1]})`;

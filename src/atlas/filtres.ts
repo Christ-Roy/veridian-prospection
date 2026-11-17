@@ -84,6 +84,16 @@ function compilerCondition(c: Condition, i: number, p: (type: string, v: unknown
   const err = (attendu: string) => new FiltreInvalide(`conditions.${i} : ${champ.libelle} « ${c.op} » attend ${attendu}`);
   const v = c.valeur;
 
+  if (champ.tableau) {
+    // Colonne tableau de la vue : une valeur parmi celles de la fiche.
+    if (c.op === "renseigne") {
+      if (typeof v !== "boolean") throw err("oui ou non (true/false)");
+      return v ? `notEmpty(${col})` : `empty(${col})`;
+    }
+    const l = Array.isArray(v) ? v.map(String) : typeof v === "string" ? [v] : null;
+    if (!l?.length) throw err("une ou plusieurs valeurs");
+    return `${c.op === "hors" ? "NOT " : ""}hasAny(${col}, ${p("Array(String)", l)})`;
+  }
   if (champ.ensemble) {
     // Valeurs rangées dans une autre vue (une ligne par SIREN) : appartenance par sous-requête.
     const sous = (cond: string, dedans: boolean) => `siren ${dedans ? "IN" : "NOT IN"} (SELECT siren FROM ${champ.ensemble!.table} WHERE ${cond})`;
@@ -141,6 +151,7 @@ export function colonnesSql(ids: readonly string[]): { sql: string; champs: Cham
     return { table, alias: `j${k}`, sql: `LEFT JOIN (SELECT siren, ${cols.map((c) => `${c.sql} AS __${c.id}`).join(", ")} FROM ${table}) AS j${k} USING (siren)` };
   });
   const select = champs.map((c) => {
+    if (c.tableau) return `arrayStringConcat(${c.sql}, ', ') AS ${c.id}`;
     if (!c.ensemble) return `${c.sql} AS ${c.id}`;
     const j = jointures.find((x) => x.table === c.ensemble!.table)!;
     return `arrayStringConcat(${j.alias}.__${c.id}, ', ') AS ${c.id}`;

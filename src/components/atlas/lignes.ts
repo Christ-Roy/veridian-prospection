@@ -24,6 +24,7 @@ export const REGLES_SUGGEREES: { id: string; libelle: string; condition: Conditi
   { id: "telephone_envoyable", libelle: "Téléphone utilisable", condition: { champ: "telephone_envoyable", op: "est", valeur: true }, points: 2 },
   { id: "dirigeant", libelle: "Dirigeant identifié", condition: { champ: "dirigeant", op: "renseigne", valeur: true }, points: 1 },
   { id: "site", libelle: "Site web connu", condition: { champ: "site", op: "renseigne", valeur: true }, points: 1 },
+  { id: "signal_90j", libelle: "A bougé ces 90 jours (dirigeant, siège, établissement…)", condition: { champ: "signal_90j", op: "renseigne", valeur: true }, points: 2 },
   { id: "chiffre_affaires", libelle: "Chiffre d'affaires publié", condition: { champ: "chiffre_affaires", op: "renseigne", valeur: true }, points: 1 },
 ];
 

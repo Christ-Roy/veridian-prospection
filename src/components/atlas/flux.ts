@@ -178,6 +178,8 @@ export const KPIS_MARCHE: Kpi[] = [
   { id: "prospectables", libelle: "contactables", condition: null, part: true },
   { id: "email_envoyable", libelle: "email envoyable", condition: null, part: true },
   { id: "telephone_envoyable", libelle: "téléphone utilisable", condition: null, part: true },
+  // Signaux d'ODH (cube v5) : les entreprises qui ont bougé, motif d'appel tout trouvé.
+  { id: "signal_90j", libelle: "ont bougé ces 90 jours", condition: null, part: true },
 ];
 
 /** Chiffres clés : toujours le total, puis ceux dont le champ existe au catalogue. */

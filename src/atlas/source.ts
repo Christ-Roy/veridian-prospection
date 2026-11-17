@@ -76,6 +76,7 @@ export const FICHE: Record<string, Record<string, string>> = {
   web: { site: "primary_domain", domaines: "domains", niveau: "web_tier", obsolete: "website_obsolete", https: "has_https", responsive: "has_responsive", outil: "cms", ecommerce: "is_ecommerce", plateforme_ecommerce: "ecom_platform" },
   finances: { chiffre_affaires: "revenue", resultat_net: "net_income", ebe: "ebe", tresorerie_nette: "net_cash", annee: "financials_year", croissance_pct: "revenue_growth_pct", tendance: "revenue_trend", effectif: "headcount_value", taille: "size_band" },
   groupe: { maison_mere: "parent_name", filiales: "subsidiaries_count", tete_de_groupe: "group_root_name", taille_groupe: "group_size" },
+  evolutions: { dernier: "sig_last_type", date_dernier: "sig_last_on", types_12_mois: "sig_types_365d", nombre_12_mois: "sig_count_365d", recents: "JSONExtractRaw(attributes_json, 'signals', 'events')" },
   signaux: { rge: "label_rge", qualiopi: "label_qualiopi", bio: "label_bio", ess: "label_ess", marches_publics: "public_contracts_count", montant_marches: "public_contracts_amount", permis_3_ans: "pub_permits_3y_count", aides_minimis: "pub_minimis_count" },
   qualite: { score_odh: "priority_score_v2", grade: "lead_grade", confiance: "confidence_tier", blocages: "blocking_reasons" },
 };
@@ -472,7 +473,9 @@ export class SourceClickHouse implements SourceMarche {
     const n = Math.min(200, Math.max(1, Math.trunc(limite)));
     const sql = c.ensemble
       ? `SELECT arrayJoin(${c.sql}) AS cle, count() AS nombre FROM ${c.ensemble.table} WHERE siren IN (SELECT siren FROM ${TABLE} WHERE ${where}) GROUP BY cle ORDER BY nombre DESC LIMIT ${n}`
-      : `SELECT ${c.sql} AS cle, count() AS nombre FROM ${TABLE} WHERE ${where} AND ${c.sql} != '' GROUP BY cle ORDER BY nombre DESC LIMIT ${n}`;
+      : c.tableau
+        ? `SELECT arrayJoin(${c.sql}) AS cle, count() AS nombre FROM ${TABLE} WHERE ${where} GROUP BY cle ORDER BY nombre DESC LIMIT ${n}`
+        : `SELECT ${c.sql} AS cle, count() AS nombre FROM ${TABLE} WHERE ${where} AND ${c.sql} != '' GROUP BY cle ORDER BY nombre DESC LIMIT ${n}`;
     const r = await this.requete<{ cle: string; nombre: string }>(sql, params);
     return r.map((x) => ({ cle: x.cle, nombre: Number(x.nombre) }));
   }
@@ -488,6 +491,31 @@ export function formeJuridique(code: unknown): string | null {
 }
 
 /** Remet les colonnes `theme__cle` en { theme: { cle: valeur } } : vides en null, 0/1 en oui/non, forme juridique en libellé. */
+/**
+ * Les cinq derniers signaux d'ODH (attributes_json.signals.events) en lignes lisibles :
+ * « 14/09/2026 · Changement de dirigeant », avec « avant → après » quand ODH les donne.
+ */
+export function evenementsLisibles(brut: unknown): string[] | null {
+  if (typeof brut !== "string" || !brut.trim()) return null;
+  let l: unknown;
+  try {
+    l = JSON.parse(brut);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(l)) return null;
+  const lignes = l
+    .filter((e): e is { date?: string; type?: string; before?: string; after?: string } => !!e && typeof e === "object")
+    .map((e) => {
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(e.date ?? "") ? e.date!.split("-").reverse().join("/") : "";
+      const avant = (e.before ?? "").trim();
+      const apres = (e.after ?? "").trim();
+      const detail = avant || apres ? ` (${avant || "?"} → ${apres || "?"})` : "";
+      return [date, `${libelleValeur("signal", e.type ?? "")}${detail}`].filter(Boolean).join(" · ");
+    });
+  return lignes.length ? lignes : null;
+}
+
 function regrouper(l: Record<string, unknown>): Fiche {
   const out: Fiche = {};
   for (const [k, v] of Object.entries(l)) {
@@ -496,6 +524,7 @@ function regrouper(l: Record<string, unknown>): Fiche {
     let val: string | number | boolean | null | string[] = v === "" || v === undefined ? null : (v as string | number | null | string[]);
     if (OUI_NON.has(k) && val !== null) val = Number(val) === 1;
     if (k === "identite__forme_juridique") val = formeJuridique(val);
+    if (k === "evolutions__recents") val = evenementsLisibles(val);
     if (Array.isArray(val) && val.length === 0) val = null;
     out[t][c] = val;
   }

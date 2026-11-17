@@ -17,6 +17,7 @@ export const THEMES: readonly { id: string; titre: string }[] = [
   { id: "logiciels", titre: "Logiciels" },
   { id: "finances", titre: "Finances" },
   { id: "groupe", titre: "Groupe" },
+  { id: "evolutions", titre: "Évolutions récentes" },
   { id: "signaux", titre: "Signaux" },
   { id: "qualite", titre: "Qualité" },
 ];
@@ -55,6 +56,11 @@ const LIBELLES: Record<string, string> = {
   delivrable: "Joignable par un canal",
   site: "Site web",
   utilises: "Utilisés",
+  dernier: "Dernier signal",
+  date_dernier: "Le",
+  types_12_mois: "Sur 12 mois",
+  nombre_12_mois: "Nombre sur 12 mois",
+  recents: "Derniers événements",
   types: "Types",
   cites: "Cités sur le site, sans preuve d'usage",
   domaines: "Domaines",
@@ -93,7 +99,7 @@ const LIBELLES: Record<string, string> = {
 };
 
 const EUROS = new Set(["capital", "chiffre_affaires", "resultat_net", "ebe", "tresorerie_nette", "montant_marches"]);
-const DATES = new Set(["date_creation", "date_procedure"]);
+const DATES = new Set(["date_creation", "date_procedure", "date_dernier"]);
 /** Coordonnées : utiles à la carte, pas à la lecture. */
 const MASQUES = new Set(["lieu.latitude", "lieu.longitude"]);
 /** Dans ces thèmes, « non » est l'absence d'un signal : on le masque. */
@@ -133,8 +139,8 @@ export function formaterValeur(cle: string, v: Exclude<ValeurFiche, null>): stri
   if (typeof v === "boolean") return v ? "Oui" : "Non";
   if (Array.isArray(v)) {
     // Pile logicielle : noms commerciaux plutôt qu'identifiants (odoo → Odoo, erp → ERP (gestion)).
-    const champ = cle === "types" ? "type_logiciel" : cle === "utilises" || cle === "cites" ? "logiciel" : null;
-    return v.filter((x) => x.trim() !== "").map((x) => (champ ? libelleValeur(champ, x) : x)).join(", ");
+    const champ = cle === "types" ? "type_logiciel" : cle === "utilises" || cle === "cites" ? "logiciel" : cle === "types_12_mois" ? "signal" : null;
+    return v.filter((x) => x.trim() !== "").map((x) => (champ ? libelleValeur(champ, x) : x)).join(cle === "recents" ? " ; " : ", ");
   }
   if (typeof v === "number") {
     if (EUROS.has(cle)) return formaterEuros(v);

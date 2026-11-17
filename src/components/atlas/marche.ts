@@ -32,6 +32,7 @@ export const COLONNES_MARCHE: { id: keyof MesuresMarche; libelle: string; aide: 
   { id: "telephone_envoyable", libelle: "Téléphone utilisable", aide: "Téléphone qu'on peut utiliser" },
   { id: "site_connu", libelle: "Site connu", aide: "Un site web a été trouvé" },
   { id: "prospectables", libelle: "Contactables", aide: "Entreprises qu'Atlas peut contacter : non exclues du ciblage (cessées, sans contact…)" },
+  { id: "signal_90j", libelle: "Ont bougé (90 j)", aide: "Changement de dirigeant, de siège, nouvel établissement, rachat… ces 90 derniers jours : un motif d'appel" },
 ];
 
 /** Part en pour cent, arrondie ; « – » quand le total est nul, « < 1 % » plutôt qu'un 0 trompeur. */

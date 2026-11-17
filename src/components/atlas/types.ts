@@ -77,6 +77,9 @@ export type Vue = "carte" | "marche" | "barres" | "entonnoir" | "tableau" | "pri
 export type MesuresMarche = {
   entreprises: number; email_connu: number; telephone_connu: number; site_connu: number; un_canal_connu: number;
   prospectables: number; email_envoyable: number; telephone_envoyable: number;
+  /** Signaux d'évolution (cube v5) : entreprises qui ont bougé sur 90 jours / 12 mois, par type. */
+  signal_90j?: number; signal_365j?: number; signal_dirigeant_90j?: number; signal_etablissement_90j?: number;
+  signal_siege_90j?: number; signal_capital_90j?: number; signal_ca_hausse_365j?: number;
 };
 export type AxeMarche = "naf" | "departement" | "forme" | "forme_juridique" | "effectif" | "annee_creation" | "statut" | "diffusion";
 export type AnalyseMarche = {
