@@ -219,6 +219,17 @@ const MESSAGERIES: Table = {
   apple: "Apple", laposte: "La Poste", planethoster: "PlanetHoster", proton: "Proton", zoho: "Zoho", cloudflare: "Cloudflare", bouygues: "Bouygues", aol: "AOL",
 };
 const GRADES: Table = { or: "Or", a_requalifier: "À requalifier", rebut: "Rebut" };
+/** Pile logicielle d'ODH (ODH-0263) : identifiants d'outils → nom commercial ; un inconnu prend une majuscule. */
+const LOGICIELS: Table = {
+  odoo: "Odoo", dolibarr: "Dolibarr", sage: "Sage", ebp: "EBP", cegid: "Cegid", axonaut: "Axonaut", sellsy: "Sellsy", pennylane: "Pennylane",
+  quickbooks: "QuickBooks", glpi: "GLPI", zoho: "Zoho", hubspot: "HubSpot", salesforce: "Salesforce", pipedrive: "Pipedrive",
+  brevo: "Brevo", sendinblue: "Brevo (Sendinblue)", mailchimp: "Mailchimp", mailjet: "Mailjet", mailerlite: "MailerLite", klaviyo: "Klaviyo",
+  activecampaign: "ActiveCampaign", sendgrid: "SendGrid", tidio: "Tidio", intercom: "Intercom", crisp: "Crisp", zendesk: "Zendesk",
+  stripe: "Stripe", paypal: "PayPal", doctolib: "Doctolib", calendly: "Calendly",
+};
+const TYPES_LOGICIEL: Table = {
+  erp: "ERP (gestion)", crm: "CRM", emailing: "Emailing", compta: "Comptabilité", support: "Support client", paiement: "Paiement", rdv: "Prise de rendez-vous",
+};
 const OUTILS: Table = { wordpress: "WordPress", joomla: "Joomla", prestashop: "PrestaShop", drupal: "Drupal", spip: "SPIP", typo3: "TYPO3" };
 
 /** Champs du catalogue (et clés de la fiche) → table de leurs valeurs. */
@@ -235,6 +246,8 @@ const TABLES: Record<string, Table> = {
   email_preuve: PREUVES,
   messagerie: MESSAGERIES,
   grade: GRADES,
+  logiciel: LOGICIELS,
+  type_logiciel: TYPES_LOGICIEL,
   cms: OUTILS,
   forme: MOTS,
   statut: MOTS,
@@ -271,6 +284,13 @@ export function libelleValeur(champ: string, cle: string | number): string {
     return DIVISIONS_NAF[k] ? `${k} · ${DIVISIONS_NAF[k]}` : String(cle);
   }
   if (c === "forme") return MOTS[k] ?? FORMES_JURIDIQUES[k] ?? k;
+  // Colonne du tableau ou de l'export : plusieurs logiciels joints par des virgules.
+  if ((c === "logiciel" || c === "type_logiciel") && k.includes(",")) return k.split(/,\s*/).map((x) => libelleValeur(c, x)).join(", ");
+  if (c === "logiciel" && !LOGICIELS[k]) {
+    const interne = k.match(/^interne:(.+)$/);
+    if (interne) return `Outil interne (${TYPES_LOGICIEL[interne[1]] ?? interne[1]})`;
+    return k ? k.charAt(0).toUpperCase() + k.slice(1) : k;
+  }
   return TABLES[c]?.[k] ?? String(cle);
 }
 

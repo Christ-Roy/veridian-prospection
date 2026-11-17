@@ -9,6 +9,7 @@ import { COLONNES_MAITRE, TABLE_MAITRE, compilerMaitre, conditionNom } from "./m
 import { compilerCube, libelleCube, mesures, TABLE_CUBE, type ResultatCube } from "./cube";
 import { libelleValeur } from "./libelles";
 import { NAF_LIBELLES } from "./naf";
+import { TABLES_SQL } from "./sql";
 import { FiltreInvalide, FiltreSchema, ScoringSchema, colonnesSql, compilerFiltre, type Condition, type SqlParam } from "./filtres";
 
 export type Ligne = Record<string, string | number | boolean | null>;
@@ -44,10 +45,15 @@ export type Verification = {
   telephone_utilisable: boolean | null;
   /** Fiche contactable dans Atlas (ciblable, exportable). */
   contactable: boolean;
+  /** Logiciels qui servent, d'après ODH (pile logicielle) ; vide si rien de vu, ce qui ne prouve pas l'absence. */
+  logiciels: string[];
 };
 export type Point = { siren: string; nom: string; commune: string; lat: number; lon: number; email: boolean; site: boolean };
 
 /** Colonnes de la fiche : thème → (clé française → colonne ODH). Liste blanche, comme le catalogue. */
+/** Vue d'ODH de la pile logicielle (ODH-0263) : une ligne par SIREN. */
+export const TABLE_LOGICIELS = "odh.company_tech_stack_current";
+
 export const FICHE: Record<string, Record<string, string>> = {
   identite: { siren: "siren", nom: "legal_name", forme_juridique: "legal_form", categorie: "company_category", date_creation: "creation_date", capital: "share_capital", statut: "administrative_status", procedure: "procedure_status", date_procedure: "procedure_date" },
   activite: { naf: "naf_code", secteur: "activity_sector", activite: "activity_label", services: "activity_services", idcc: "idcc_label", opco: "opco_name" },
@@ -299,8 +305,19 @@ export class SourceClickHouse implements SourceMarche {
   async fiche(siren: string) {
     if (!/^\d{9}$/.test(siren)) throw new FiltreInvalide("SIREN à 9 chiffres");
     const cols = Object.entries(FICHE).flatMap(([t, m]) => Object.entries(m).map(([k, c]) => `${c} AS ${t}__${k}`));
-    const r = await this.requete<Record<string, unknown>>(`SELECT ${cols.join(", ")} FROM ${TABLE} WHERE siren = {s:String} AND is_deleted = 0 LIMIT 1`, { s: { type: "String", valeur: siren } });
-    return r[0] ? regrouper(r[0]) : null;
+    const s = { s: { type: "String", valeur: siren } as SqlParam };
+    const [r, t] = await Promise.all([
+      this.requete<Record<string, unknown>>(`SELECT ${cols.join(", ")} FROM ${TABLE} WHERE siren = {s:String} AND is_deleted = 0 LIMIT 1`, s),
+      // Pile logicielle : une vue à part, son absence ne doit pas casser la fiche.
+      this.requete<{ tools_fort: string[]; tools_cite: string[]; families_fort: string[] }>(`SELECT tools_fort, tools_cite, families_fort FROM ${TABLE_LOGICIELS} WHERE siren = {s:String} LIMIT 1`, s).catch(() => []),
+    ]);
+    if (!r[0]) return null;
+    const fiche = regrouper(r[0]);
+    const pile = t[0];
+    if (pile && (pile.tools_fort?.length || pile.tools_cite?.length)) {
+      fiche.logiciels = { utilises: pile.tools_fort ?? [], types: pile.families_fort ?? [], cites: pile.tools_cite ?? [] };
+    }
+    return fiche;
   }
 
   async points(filtre: unknown, departement: string, limite = 400) {
@@ -333,6 +350,8 @@ export class SourceClickHouse implements SourceMarche {
           { s: { type: "Array(String)", valeur: reste } },
         )
       : [];
+    const outils = await this.requete<{ siren: string; tools_fort: string[] }>(`SELECT siren, tools_fort FROM ${TABLE_LOGICIELS} WHERE siren IN {s:Array(String)}`, p).catch(() => []);
+    const logiciels = new Map(outils.map((o) => [String(o.siren), o.tools_fort ?? []]));
     const v = (x: unknown) => (x === "" || x === null || x === undefined ? null : String(x));
     const parSiren = new Map<string, Verification>();
     for (const f of fiches) {
@@ -340,6 +359,7 @@ export class SourceClickHouse implements SourceMarche {
       parSiren.set(String(f.siren), {
         siren: String(f.siren), trouvee: true, nom: v(f.nom), active: true, commune: v(f.commune), departement: v(f.departement), naf: v(f.naf),
         site, a_site: !!site, email_envoyable: Number(f.email_envoyable) === 1, telephone_utilisable: Number(f.telephone_envoyable) === 1, contactable: true,
+        logiciels: logiciels.get(String(f.siren)) ?? [],
       });
     }
     for (const m of maitre) {
@@ -347,10 +367,11 @@ export class SourceClickHouse implements SourceMarche {
       parSiren.set(String(m.siren), {
         siren: String(m.siren), trouvee: true, nom: v(m.nom), active: m.statut === "A", commune: v(m.commune), departement: v(m.departement), naf: v(m.naf),
         site: null, a_site: Number(m.has_site) === 1, email_envoyable: Number(m.email_envoyable) === 1, telephone_utilisable: Number(m.telephone_envoyable) === 1, contactable: false,
+        logiciels: logiciels.get(String(m.siren)) ?? [],
       });
     }
     return liste.map(
-      (x) => parSiren.get(x) ?? { siren: x, trouvee: false, nom: null, active: null, commune: null, departement: null, naf: null, site: null, a_site: null, email_envoyable: null, telephone_utilisable: null, contactable: false },
+      (x) => parSiren.get(x) ?? { siren: x, trouvee: false, nom: null, active: null, commune: null, departement: null, naf: null, site: null, a_site: null, email_envoyable: null, telephone_utilisable: null, contactable: false, logiciels: [] },
     );
   }
 
@@ -362,8 +383,8 @@ export class SourceClickHouse implements SourceMarche {
   async schema() {
     const r = await this.requete<{ table: string; colonne: string; type: string }>(
       `SELECT concat(database, '.', table) AS table, name AS colonne, type FROM system.columns
-       WHERE database = 'odh' AND table IN ('company_prospection_current', 'company_master_current', 'market_cube_current') ORDER BY table, position`,
-      {},
+       WHERE database = 'odh' AND table IN {t:Array(String)} ORDER BY table, position`,
+      { t: { type: "Array(String)", valeur: TABLES_SQL.map((x) => x.replace("odh.", "")) } },
     );
     return r;
   }
@@ -413,13 +434,13 @@ export class SourceClickHouse implements SourceMarche {
 
   async apercu(filtre: unknown, o: OptionsApercu) {
     const { where, params, score } = compilerFiltre(filtre, o.scoring);
-    const { sql: select, champs } = colonnesSql(o.colonnes);
+    const { sql: select, champs, jointures } = colonnesSql(o.colonnes);
     const parPage = Math.min(o.plafond ?? 100, Math.max(1, Math.trunc(o.parPage)));
     const page = Math.max(1, Math.trunc(o.page));
     const sens = o.sens === "asc" ? "ASC" : "DESC";
     const tri = score ? null : champTri(o.tri);
     const ordre = score ? `score ${sens}` : `${tri!.sql} ${sens} NULLS LAST`;
-    const sql = `SELECT ${select}${score ? `, ${score} AS score` : ""} FROM ${TABLE} WHERE ${where} ORDER BY ${ordre}, siren LIMIT ${parPage} OFFSET ${(page - 1) * parPage}`;
+    const sql = `SELECT ${select}${score ? `, ${score} AS score` : ""} FROM ${TABLE} ${jointures} WHERE ${where} ORDER BY ${ordre}, siren LIMIT ${parPage} OFFSET ${(page - 1) * parPage}`;
     const brut = await this.requete<Ligne>(sql, params);
     const lignes = brut.map((l) => ({ ...normaliser(l, champs), ...(score ? { score: Number(l.score) } : {}) }));
     return { colonnes: [...champs.map((c) => c.id), ...(score ? ["score"] : [])], page, parPage, tri: score ? "score" : tri!.id, lignes };
@@ -428,7 +449,10 @@ export class SourceClickHouse implements SourceMarche {
   async repartition(filtre: unknown, champ: string, limite = 120) {
     const { where, params } = compilerFiltre(filtre);
     const c = champRepartition(champ);
-    const sql = `SELECT ${c.sql} AS cle, count() AS nombre FROM ${TABLE} WHERE ${where} AND ${c.sql} != '' GROUP BY cle ORDER BY nombre DESC LIMIT ${Math.min(200, Math.max(1, Math.trunc(limite)))}`;
+    const n = Math.min(200, Math.max(1, Math.trunc(limite)));
+    const sql = c.ensemble
+      ? `SELECT arrayJoin(${c.sql}) AS cle, count() AS nombre FROM ${c.ensemble.table} WHERE siren IN (SELECT siren FROM ${TABLE} WHERE ${where}) GROUP BY cle ORDER BY nombre DESC LIMIT ${n}`
+      : `SELECT ${c.sql} AS cle, count() AS nombre FROM ${TABLE} WHERE ${where} AND ${c.sql} != '' GROUP BY cle ORDER BY nombre DESC LIMIT ${n}`;
     const r = await this.requete<{ cle: string; nombre: string }>(sql, params);
     return r.map((x) => ({ cle: x.cle, nombre: Number(x.nombre) }));
   }
@@ -622,8 +646,8 @@ export class SourceSimulee implements SourceMarche {
     return [...new Set(sirens)].map((x) => {
       const l = this.lignes.find((y) => y.siren === x);
       return l
-        ? { siren: x, trouvee: true, nom: String(l.nom), active: true, commune: String(l.commune), departement: String(l.departement), naf: String(l.naf), site: l.site ? String(l.site) : null, a_site: !!l.site, email_envoyable: !!l.email_envoyable, telephone_utilisable: !!l.telephone_envoyable, contactable: true }
-        : { siren: x, trouvee: false, nom: null, active: null, commune: null, departement: null, naf: null, site: null, a_site: null, email_envoyable: null, telephone_utilisable: null, contactable: false };
+        ? { siren: x, trouvee: true, nom: String(l.nom), active: true, commune: String(l.commune), departement: String(l.departement), naf: String(l.naf), site: l.site ? String(l.site) : null, a_site: !!l.site, email_envoyable: !!l.email_envoyable, telephone_utilisable: !!l.telephone_envoyable, contactable: true, logiciels: [] }
+        : { siren: x, trouvee: false, nom: null, active: null, commune: null, departement: null, naf: null, site: null, a_site: null, email_envoyable: null, telephone_utilisable: null, contactable: false, logiciels: [] };
     });
   }
   async sql(_requete: string) {

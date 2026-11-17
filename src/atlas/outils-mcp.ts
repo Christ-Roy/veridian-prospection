@@ -221,7 +221,8 @@ const OUTILS_BRUTS: Outil[] = [
     title: "Vérifier une liste d'entreprises",
     description:
       "Pour une liste de SIREN ou SIRET (200 au plus, collés tels quels) : nom, active ou cessée, commune, NAF, site web (adresse quand " +
-      "elle est publiée, sinon a_site), email envoyable, téléphone utilisable, et si la fiche est contactable dans Atlas. Les introuvables " +
+      "elle est publiée, sinon a_site), email envoyable, téléphone utilisable, logiciels utilisés (ERP, CRM, emailing, quand ODH les a " +
+      "vus), et si la fiche est contactable dans Atlas. Les introuvables " +
       "et les numéros invalides sont rendus à part. 50 SIREN par jour en gratuit, 5 000 en plan payant.",
     input: z.object({ sirens: z.array(z.string().max(40)).min(1).max(200) }),
     annotations: LECTURE,
@@ -251,7 +252,10 @@ const OUTILS_BRUTS: Outil[] = [
     description:
       `Colonnes des tables lisibles par requete_sql : ${TABLES_SQL.join(", ")}. company_prospection_current : fiches contactables ` +
       "(contacts, web, finances, signaux) ; company_master_current : toutes les entreprises (30 M, identité et drapeaux, filtrer d'abord " +
-      "sur naf_code et department) ; market_cube_current : comptes agrégés du marché.",
+      "sur naf_code et department) ; market_cube_current : comptes agrégés du marché ; company_tech_stack_current : logiciels par " +
+      "SIREN (tools_fort = outils qui servent, tools_cite = seulement cités ; un outil nommé n'est pas un client, une agence publie aussi " +
+      "odoo) ; web_tech_stack_current : preuve par domaine ; web_tech_stack_checked : domaines examinés (une absence n'est une preuve " +
+      "que si le domaine l'a été) ; market_cube_tech_current : entreprises par outil, NAF et département.",
     input: z.object({}),
     annotations: LECTURE,
     acces: "avance",

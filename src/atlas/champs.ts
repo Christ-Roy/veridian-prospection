@@ -18,6 +18,11 @@ export type Champ = {
   repartition?: boolean;
   /** Axe du cube d'ODH : définit un marché sur TOUTES les entreprises de France (voir cube.ts). */
   marche?: boolean;
+  /**
+   * Valeurs multiples rangées dans une autre vue d'ODH, une ligne par SIREN (ex. pile logicielle) : filtrée par
+   * `siren IN (sous-requête)`, affichée par jointure. `sql` est alors la colonne tableau de cette vue.
+   */
+  ensemble?: { table: string };
 };
 
 export const CHAMPS: readonly Champ[] = [
@@ -44,6 +49,10 @@ export const CHAMPS: readonly Champ[] = [
   { id: "cms", libelle: "Outil du site", type: "liste", sql: "cms", groupe: "Web", repartition: true },
   { id: "ecommerce", libelle: "Vente en ligne", type: "oui_non", sql: "is_ecommerce", groupe: "Web" },
   { id: "https", libelle: "HTTPS", type: "oui_non", sql: "has_https", groupe: "Web" },
+  // Pile logicielle d'ODH (ODH-0263, 17/11) : outils qui SERVENT (confiance >= 0,8), pas ceux seulement cités.
+  // Un outil nommé n'est pas un client : une agence ou un intégrateur publie aussi « odoo » ou « dolibarr ».
+  { id: "logiciel", libelle: "Logiciel utilisé (ERP, CRM, emailing…)", type: "liste", sql: "tools_fort", groupe: "Web", repartition: true, ensemble: { table: "odh.company_tech_stack_current" } },
+  { id: "type_logiciel", libelle: "Type de logiciel utilisé", type: "liste", sql: "families_fort", groupe: "Web", repartition: true, ensemble: { table: "odh.company_tech_stack_current" } },
   { id: "email", libelle: "Email", type: "texte", sql: "email", groupe: "Contact" },
   { id: "email_verification", libelle: "Vérification de l'email", type: "liste", sql: "email_verification", groupe: "Contact", repartition: true },
   { id: "email_preuve", libelle: "Preuve de l'email", type: "liste", sql: "email_verification_basis", groupe: "Contact", repartition: true },

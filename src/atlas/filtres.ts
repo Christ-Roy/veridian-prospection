@@ -84,6 +84,18 @@ function compilerCondition(c: Condition, i: number, p: (type: string, v: unknown
   const err = (attendu: string) => new FiltreInvalide(`conditions.${i} : ${champ.libelle} « ${c.op} » attend ${attendu}`);
   const v = c.valeur;
 
+  if (champ.ensemble) {
+    // Valeurs rangées dans une autre vue (une ligne par SIREN) : appartenance par sous-requête.
+    const sous = (cond: string, dedans: boolean) => `siren ${dedans ? "IN" : "NOT IN"} (SELECT siren FROM ${champ.ensemble!.table} WHERE ${cond})`;
+    if (c.op === "renseigne") {
+      if (typeof v !== "boolean") throw err("oui ou non (true/false)");
+      return sous(`notEmpty(${col})`, v);
+    }
+    const l = Array.isArray(v) ? v.map(String) : typeof v === "string" ? [v] : null;
+    if (!l?.length) throw err("une ou plusieurs valeurs");
+    return sous(`hasAny(${col}, ${p("Array(String)", l)})`, c.op !== "hors");
+  }
+
   if (c.op === "renseigne") {
     if (typeof v !== "boolean") throw err("oui ou non (true/false)");
     if (champ.type === "nombre") return v ? `${col} IS NOT NULL` : `${col} IS NULL`;
@@ -116,12 +128,22 @@ function compilerCondition(c: Condition, i: number, p: (type: string, v: unknown
 }
 
 /** Expressions SELECT pour les colonnes choisies (ids du catalogue), alias = id. */
-export function colonnesSql(ids: readonly string[]): { sql: string; champs: Champ[] } {
+export function colonnesSql(ids: readonly string[]): { sql: string; champs: Champ[]; jointures: string } {
   const champs = [...new Set(["siren", ...ids])].map((id) => {
     const c = CHAMP.get(id);
     if (!c) throw new FiltreInvalide(`colonne inconnue « ${id} »`);
     return c;
   });
   if (champs.length > 25) throw new FiltreInvalide("25 colonnes au plus");
-  return { sql: champs.map((c) => `${c.sql} AS ${c.id}`).join(", "), champs };
+  // Colonnes rangées dans une autre vue : une jointure par vue, sur le SIREN, colonne renommée pour ne rien masquer.
+  const jointures = [...new Set(champs.filter((c) => c.ensemble).map((c) => c.ensemble!.table))].map((table, k) => {
+    const cols = champs.filter((c) => c.ensemble?.table === table);
+    return { table, alias: `j${k}`, sql: `LEFT JOIN (SELECT siren, ${cols.map((c) => `${c.sql} AS __${c.id}`).join(", ")} FROM ${table}) AS j${k} USING (siren)` };
+  });
+  const select = champs.map((c) => {
+    if (!c.ensemble) return `${c.sql} AS ${c.id}`;
+    const j = jointures.find((x) => x.table === c.ensemble!.table)!;
+    return `arrayStringConcat(${j.alias}.__${c.id}, ', ') AS ${c.id}`;
+  });
+  return { sql: select.join(", "), champs, jointures: jointures.map((j) => j.sql).join(" ") };
 }

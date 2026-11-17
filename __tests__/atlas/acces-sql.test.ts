@@ -136,3 +136,28 @@ describe("clés API", () => {
     await expect(creerCle({ userId: "u1", tenantId: "t1" }, "autre")).rejects.toThrow(/accès avancé/);
   });
 });
+
+describe("pile logicielle d'ODH", () => {
+  test("filtre par sous-requête, colonne par jointure, répartition sur la vue", async () => {
+    const { compilerFiltre, colonnesSql } = await import("@/atlas/filtres");
+    const f = compilerFiltre({ conditions: [{ champ: "logiciel", op: "dans", valeur: ["odoo", "brevo"] }, { champ: "type_logiciel", op: "hors", valeur: ["erp"] }] });
+    expect(f.where).toContain("siren IN (SELECT siren FROM odh.company_tech_stack_current WHERE hasAny(tools_fort, {p0:Array(String)}))");
+    expect(f.where).toContain("siren NOT IN (SELECT siren FROM odh.company_tech_stack_current WHERE hasAny(families_fort, {p1:Array(String)}))");
+    expect(compilerFiltre({ conditions: [{ champ: "logiciel", op: "renseigne", valeur: true }] }).where).toContain("WHERE notEmpty(tools_fort))");
+    const c = colonnesSql(["nom", "logiciel", "type_logiciel"]);
+    expect(c.sql).toContain("arrayStringConcat(j0.__logiciel, ', ') AS logiciel");
+    expect(c.jointures).toBe("LEFT JOIN (SELECT siren, tools_fort AS __logiciel, families_fort AS __type_logiciel FROM odh.company_tech_stack_current) AS j0 USING (siren)");
+    expect(colonnesSql(["nom"]).jointures).toBe("");
+  });
+
+  test("vues ouvertes au SQL avancé, noms commerciaux à l'écran", async () => {
+    expect(() => verifierRequete("SELECT naf_code, nb_entreprises FROM odh.market_cube_tech_current WHERE tool = 'odoo'")).not.toThrow();
+    expect(() => verifierRequete("SELECT siren FROM odh.company_tech_stack_current WHERE has(tools_fort, 'dolibarr')")).not.toThrow();
+    const { libelleValeur } = await import("@/atlas/libelles");
+    expect(libelleValeur("logiciel", "hubspot")).toBe("HubSpot");
+    expect(libelleValeur("logiciel", "odoo, brevo")).toBe("Odoo, Brevo");
+    expect(libelleValeur("logiciel", "nouveau")).toBe("Nouveau");
+    expect(libelleValeur("logiciel", "interne:erp")).toBe("Outil interne (ERP (gestion))");
+    expect(libelleValeur("type_logiciel", "emailing")).toBe("Emailing");
+  });
+});

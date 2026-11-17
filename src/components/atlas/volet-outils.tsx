@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 
+import { libelleValeur } from "@/atlas/libelles";
+
 import { appeler, estAnnulation, texteErreur } from "./api";
 import { Chargement, Icone } from "./icones";
 import { formaterHorodatage } from "./flux";
@@ -29,6 +31,7 @@ type Verification = {
   email_envoyable: boolean | null;
   telephone_utilisable: boolean | null;
   contactable: boolean;
+  logiciels: string[];
 };
 type Resultat = {
   entreprises: Verification[];
@@ -103,6 +106,7 @@ export function VoletVerifier({ droits, onFiche, onFermer }: { droits: DroitsAtl
                   <th>Site web</th>
                   <th>Email envoyable</th>
                   <th>Téléphone utilisable</th>
+                  <th title="Outils qui servent, vus par ODH (ERP, CRM, emailing). Vide : rien de vu, ce qui ne prouve pas l'absence.">Logiciels</th>
                   <th>Contactable</th>
                 </tr>
               </thead>
@@ -137,6 +141,7 @@ export function VoletVerifier({ droits, onFiche, onFermer }: { droits: DroitsAtl
                     </td>
                     <td>{oui(e.email_envoyable)}</td>
                     <td>{oui(e.telephone_utilisable)}</td>
+                    <td>{e.logiciels?.length ? e.logiciels.map((x) => libelleValeur("logiciel", x)).join(", ") : "–"}</td>
                     <td>{e.trouvee ? oui(e.contactable) : "–"}</td>
                   </tr>
                 ))}

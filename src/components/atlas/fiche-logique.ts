@@ -14,6 +14,7 @@ export const THEMES: readonly { id: string; titre: string }[] = [
   { id: "dirigeant", titre: "Dirigeant" },
   { id: "contact", titre: "Contact" },
   { id: "web", titre: "Site web" },
+  { id: "logiciels", titre: "Logiciels" },
   { id: "finances", titre: "Finances" },
   { id: "groupe", titre: "Groupe" },
   { id: "signaux", titre: "Signaux" },
@@ -53,6 +54,9 @@ const LIBELLES: Record<string, string> = {
   telephone: "Téléphone",
   delivrable: "Joignable par un canal",
   site: "Site web",
+  utilises: "Utilisés",
+  types: "Types",
+  cites: "Cités sur le site, sans preuve d'usage",
   domaines: "Domaines",
   niveau: "Niveau du site",
   obsolete: "Site obsolète",
@@ -127,7 +131,11 @@ export function lienValeur(cle: string, texte: string): string | undefined {
 
 export function formaterValeur(cle: string, v: Exclude<ValeurFiche, null>): string {
   if (typeof v === "boolean") return v ? "Oui" : "Non";
-  if (Array.isArray(v)) return v.filter((x) => x.trim() !== "").join(", ");
+  if (Array.isArray(v)) {
+    // Pile logicielle : noms commerciaux plutôt qu'identifiants (odoo → Odoo, erp → ERP (gestion)).
+    const champ = cle === "types" ? "type_logiciel" : cle === "utilises" || cle === "cites" ? "logiciel" : null;
+    return v.filter((x) => x.trim() !== "").map((x) => (champ ? libelleValeur(champ, x) : x)).join(", ");
+  }
   if (typeof v === "number") {
     if (EUROS.has(cle)) return formaterEuros(v);
     if (cle === "croissance_pct") return `${v > 0 ? "+" : ""}${v.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} %`;

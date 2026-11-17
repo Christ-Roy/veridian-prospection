@@ -1,12 +1,21 @@
 /**
  * Requêtes SQL libres de l'accès avancé (16/11, Robert : « des accès pour les clients très proches »).
- * Deux barrières : ce garde (une seule lecture SELECT/WITH, sur les trois tables d'ODH autorisées, résultat
+ * Deux barrières : ce garde (une seule lecture SELECT/WITH, sur les vues d'ODH autorisées, résultat
  * borné), puis le compte ClickHouse prospection_ro lui-même (lecture seule, 10 s, 15 M lignes lues, ni URL
  * ni fichier : vu refuser `url()` le 16/11). Le garde n'a pas à être parfait, il doit refuser tôt et lisiblement.
  */
 import { FiltreInvalide } from "./filtres";
 
-export const TABLES_SQL = ["odh.company_prospection_current", "odh.company_master_current", "odh.market_cube_current"] as const;
+export const TABLES_SQL = [
+  "odh.company_prospection_current",
+  "odh.company_master_current",
+  "odh.market_cube_current",
+  // Pile logicielle (ODH-0263, 17/11) : par SIREN, par domaine avec la preuve, ce qui a été examiné, et le cube par outil.
+  "odh.company_tech_stack_current",
+  "odh.web_tech_stack_current",
+  "odh.web_tech_stack_checked",
+  "odh.market_cube_tech_current",
+] as const;
 export const LIGNES_MAX_SQL = 1000;
 
 const INTERDITS = /\b(settings|format|outfile|insert|alter|drop|create|attach|detach|kill|system|optimize|truncate|grant|revoke|rename|exchange|undrop|set|use|delete|update)\b/i;
