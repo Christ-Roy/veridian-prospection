@@ -32,6 +32,7 @@ type Verification = {
   telephone_utilisable: boolean | null;
   contactable: boolean;
   logiciels: string[];
+  site_incertain?: boolean;
 };
 type Resultat = {
   entreprises: Verification[];
@@ -130,9 +131,12 @@ export function VoletVerifier({ droits, onFiche, onFermer }: { droits: DroitsAtl
                     </td>
                     <td>
                       {e.site ? (
-                        <a href={/^https?:/.test(e.site) ? e.site : `https://${e.site}`} target="_blank" rel="noopener noreferrer">
-                          {e.site}
-                        </a>
+                        <>
+                          <a href={/^https?:/.test(e.site) ? e.site : `https://${e.site}`} target="_blank" rel="noopener noreferrer">
+                            {e.site}
+                          </a>
+                          {e.site_incertain && <small style={{ display: "block", color: "var(--muted)" }}>site lié, pas forcément l&apos;officiel</small>}
+                        </>
                       ) : e.a_site ? (
                         "Oui (adresse non publiée)"
                       ) : (

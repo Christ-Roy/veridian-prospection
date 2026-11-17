@@ -384,3 +384,11 @@ describe("chiffres et entonnoir", () => {
     expect(c[3].filtre.inclure_bloques).toBe(true);
   });
 });
+
+describe("site d'une grande entreprise", () => {
+  test("présenté comme site lié, pas comme le site officiel ; inchangé pour une PME", () => {
+    const f = (taille: string) => themesFiche({ identite: { siren: "552032534", nom: "DANONE" }, web: { site: "eveprogramme.com" }, finances: { taille } });
+    expect(f("grande").find((t) => t.id === "web")?.lignes[0].libelle).toMatch(/Site lié.*pas forcément l'officiel/);
+    expect(f("petite").find((t) => t.id === "web")?.lignes[0].libelle).toBe("Site web");
+  });
+});

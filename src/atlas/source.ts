@@ -47,6 +47,11 @@ export type Verification = {
   contactable: boolean;
   /** Logiciels qui servent, d'après ODH (pile logicielle) ; vide si rien de vu, ce qui ne prouve pas l'absence. */
   logiciels: string[];
+  /**
+   * Grande entreprise : `site` est un site lié qui publie le SIREN, pas forcément le site officiel (un groupe en a
+   * plusieurs, ODH choisit mal le principal : Danone → eveprogramme.com, 17/11). Retiré quand ODH aura corrigé.
+   */
+  site_incertain?: boolean;
 };
 export type Point = { siren: string; nom: string; commune: string; lat: number; lon: number; email: boolean; site: boolean };
 
@@ -337,7 +342,7 @@ export class SourceClickHouse implements SourceMarche {
     const p = { s: { type: "Array(String)", valeur: liste } as SqlParam };
     const fiches = await this.requete<Record<string, unknown>>(
       `SELECT siren, legal_name AS nom, city AS commune, department AS departement, naf_code AS naf, primary_domain AS site,
-        email_envoyable, telephone_envoyable FROM ${TABLE} WHERE siren IN {s:Array(String)}`,
+        email_envoyable, telephone_envoyable, size_band FROM ${TABLE} WHERE siren IN {s:Array(String)}`,
       p,
     );
     const vues = new Set(fiches.map((f) => String(f.siren)));
@@ -360,6 +365,7 @@ export class SourceClickHouse implements SourceMarche {
         siren: String(f.siren), trouvee: true, nom: v(f.nom), active: true, commune: v(f.commune), departement: v(f.departement), naf: v(f.naf),
         site, a_site: !!site, email_envoyable: Number(f.email_envoyable) === 1, telephone_utilisable: Number(f.telephone_envoyable) === 1, contactable: true,
         logiciels: logiciels.get(String(f.siren)) ?? [],
+        ...(site && f.size_band === "grande" ? { site_incertain: true } : {}),
       });
     }
     for (const m of maitre) {

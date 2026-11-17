@@ -158,7 +158,9 @@ export function themesFiche(f: Fiche): ThemeFiche[] {
       for (const [cle, v] of Object.entries(brut)) {
         if (MASQUES.has(`${id}.${cle}`) || v === null || estVide(v, id)) continue;
         const texte = formaterValeur(cle, v);
-        lignes.push({ cle, libelle: LIBELLES[cle] ?? cle, texte, lien: lienValeur(cle, texte), mono: ["siren", "email", "telephone", "site", "naf", "code_postal", "commune_insee"].includes(cle) });
+        // Grande entreprise : ODH rattache un site qui publie le SIREN, pas forcément l'officiel (17/11, en correction chez ODH).
+        const libelle = id === "web" && cle === "site" && f.finances?.taille === "grande" ? "Site lié (publie le SIREN, pas forcément l'officiel)" : (LIBELLES[cle] ?? cle);
+        lignes.push({ cle, libelle, texte, lien: lienValeur(cle, texte), mono: ["siren", "email", "telephone", "site", "naf", "code_postal", "commune_insee"].includes(cle) });
       }
       return { id, titre, lignes };
     })
