@@ -45,8 +45,8 @@ export type Verification = {
   telephone_utilisable: boolean | null;
   /** Fiche contactable dans Atlas (ciblable, exportable). */
   contactable: boolean;
-  /** Logiciels qui servent, d'après ODH (pile logicielle) ; vide si rien de vu, ce qui ne prouve pas l'absence. */
-  logiciels: string[];
+  /** Logiciels qui servent, d'après ODH (pile logicielle) ; vide si rien de vu (ce qui ne prouve pas l'absence), null si la pile est illisible. */
+  logiciels: string[] | null;
   /**
    * Grande entreprise : `site` est un site lié qui publie le SIREN, pas forcément le site officiel (un groupe en a
    * plusieurs, ODH choisit mal le principal : Danone → eveprogramme.com, 17/11). Retiré quand ODH aura corrigé.
@@ -364,8 +364,13 @@ export class SourceClickHouse implements SourceMarche {
           { s: { type: "Array(String)", valeur: reste } },
         )
       : [];
-    const outils = await this.requete<{ siren: string; tools_fort: string[] }>(`SELECT siren, tools_fort FROM ${TABLE_LOGICIELS} WHERE siren IN {s:Array(String)}`, p).catch(() => []);
-    const logiciels = new Map(outils.map((o) => [String(o.siren), o.tools_fort ?? []]));
+    // Pile illisible (droits, vue absente) : « inconnu » plutôt qu'une liste vide qui ferait croire « aucun outil ».
+    const outils = await this.requete<{ siren: string; tools_fort: string[] }>(`SELECT siren, tools_fort FROM ${TABLE_LOGICIELS} WHERE siren IN {s:Array(String)}`, p).catch((e: unknown) => {
+      console.error("[atlas] pile logicielle illisible :", e instanceof Error ? e.message.slice(0, 160) : e);
+      return null;
+    });
+    const logiciels = new Map((outils ?? []).map((o) => [String(o.siren), o.tools_fort ?? []]));
+    const pile = (siren: string) => (outils === null ? null : (logiciels.get(siren) ?? []));
     const v = (x: unknown) => (x === "" || x === null || x === undefined ? null : String(x));
     const parSiren = new Map<string, Verification>();
     for (const f of fiches) {
@@ -373,7 +378,7 @@ export class SourceClickHouse implements SourceMarche {
       parSiren.set(String(f.siren), {
         siren: String(f.siren), trouvee: true, nom: v(f.nom), active: true, commune: v(f.commune), departement: v(f.departement), naf: v(f.naf),
         site, a_site: !!site, email_envoyable: Number(f.email_envoyable) === 1, telephone_utilisable: Number(f.telephone_envoyable) === 1, contactable: Number(f.deliverable) === 1,
-        logiciels: logiciels.get(String(f.siren)) ?? [],
+        logiciels: pile(String(f.siren)),
         ...(site && f.size_band === "grande" ? { site_incertain: true } : {}),
       });
     }
@@ -382,7 +387,7 @@ export class SourceClickHouse implements SourceMarche {
       parSiren.set(String(m.siren), {
         siren: String(m.siren), trouvee: true, nom: v(m.nom), active: m.statut === "A", commune: v(m.commune), departement: v(m.departement), naf: v(m.naf),
         site: null, a_site: Number(m.has_site) === 1, email_envoyable: Number(m.email_envoyable) === 1, telephone_utilisable: Number(m.telephone_envoyable) === 1, contactable: false,
-        logiciels: logiciels.get(String(m.siren)) ?? [],
+        logiciels: pile(String(m.siren)),
       });
     }
     return liste.map(

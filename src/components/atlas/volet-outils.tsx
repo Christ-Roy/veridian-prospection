@@ -31,7 +31,7 @@ type Verification = {
   email_envoyable: boolean | null;
   telephone_utilisable: boolean | null;
   contactable: boolean;
-  logiciels: string[];
+  logiciels: string[] | null;
   site_incertain?: boolean;
 };
 type Resultat = {
@@ -145,7 +145,7 @@ export function VoletVerifier({ droits, onFiche, onFermer }: { droits: DroitsAtl
                     </td>
                     <td>{oui(e.email_envoyable)}</td>
                     <td>{oui(e.telephone_utilisable)}</td>
-                    <td>{e.logiciels?.length ? e.logiciels.map((x) => libelleValeur("logiciel", x)).join(", ") : "–"}</td>
+                    <td>{e.logiciels === null ? "Indisponible" : e.logiciels.length ? e.logiciels.map((x) => libelleValeur("logiciel", x)).join(", ") : "–"}</td>
                     <td>{e.trouvee ? oui(e.contactable) : "–"}</td>
                   </tr>
                 ))}
