@@ -510,7 +510,8 @@ export function evenementsLisibles(brut: unknown): string[] | null {
       const date = /^\d{4}-\d{2}-\d{2}$/.test(e.date ?? "") ? e.date!.split("-").reverse().join("/") : "";
       const avant = (e.before ?? "").trim();
       const apres = (e.after ?? "").trim();
-      const detail = avant || apres ? ` (${avant || "?"} → ${apres || "?"})` : "";
+      // « avant → après » seulement quand ODH donne les deux (un rachat n'a que « après » = le type d'en face).
+      const detail = avant && apres ? ` (${avant} → ${apres})` : "";
       return [date, `${libelleValeur("signal", e.type ?? "")}${detail}`].filter(Boolean).join(" · ");
     });
   return lignes.length ? lignes : null;

@@ -191,9 +191,10 @@ describe("signaux d'évolution d'ODH (ODH-0272)", () => {
 
   test("événements de la fiche lisibles, entrée abîmée ignorée", async () => {
     const { evenementsLisibles } = await import("@/atlas/source");
-    expect(evenementsLisibles('[{"date":"2026-09-14","type":"dirigeant_change","before":"","after":""},{"date":"2026-03-01","type":"naf_change","before":"4778C","after":"4776Z"}]')).toEqual([
+    expect(evenementsLisibles('[{"date":"2026-09-14","type":"dirigeant_change","before":"","after":""},{"date":"2026-03-01","type":"naf_change","before":"4778C","after":"4776Z"},{"date":"2026-10-09","type":"acquisition_fonds","before":"","after":"vente_fonds"}]')).toEqual([
       "14/09/2026 · Changement de dirigeant",
       "01/03/2026 · Changement d'activité (NAF) (4778C → 4776Z)",
+      "09/10/2026 · Rachat d'un fonds de commerce",
     ]);
     expect(evenementsLisibles("pas du json")).toBeNull();
     expect(evenementsLisibles("[]")).toBeNull();
