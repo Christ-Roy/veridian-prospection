@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
+import { emettreJetonConnexion } from "@/lib/auth/jeton-connexion";
 import { verifyHubHmac } from "@/lib/hub/hmac";
 import { lierTenantHub, UUID_RE } from "@/lib/hub/link-tenant";
 import { generateApiKey, hashApiKey } from "@/lib/hub/apiKey";
@@ -204,9 +205,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error }, { status: 401 });
   }
 
-  // Token autologin one-shot (mécanisme distinct de l'api_key §6.2). Persisté
-  // sur Tenant pour /api/auth/token?t=<token>.
-  const loginToken = randomBytes(32).toString("hex");
+  // Lien de connexion à usage unique (distinct de l'api_key §6.2) : jeton lié au propriétaire et haché
+  // (sso_login_tokens), plus en clair sur le tenant (audit 11/07, M6). Sans tenant, il n'est pas persisté.
+  let loginToken = randomBytes(32).toString("hex");
   const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_SITE_URL || "";
 
   console.log(`[provision] Generated token for ${email}, plan=${plan || "freemium"}`);
@@ -251,14 +252,7 @@ export async function POST(request: NextRequest) {
         select: { id: true, hubTenantId: true },
       });
       if (tenant) {
-        await prisma.tenant.update({
-          where: { id: tenant.id },
-          data: {
-            prospectionLoginToken: loginToken,
-            prospectionLoginTokenCreatedAt: new Date(),
-            prospectionLoginTokenUsedAt: null,
-          },
-        });
+        loginToken = (await emettreJetonConnexion(lookupUserId, 24 * 3600 * 1000)).jeton;
         if (hubTenantId) await lierTenantHub(tenant, hubTenantId);
       } else {
         console.warn(

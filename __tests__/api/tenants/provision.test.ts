@@ -45,6 +45,7 @@ vi.mock("@/lib/prisma", () => {
       update: vi.fn().mockResolvedValue({ id: "ws-id" }),
     };
     workspaceMember = { upsert: vi.fn() };
+    ssoLoginToken = { deleteMany: vi.fn().mockResolvedValue({ count: 0 }), create: vi.fn().mockResolvedValue({}) };
     constructor() {
       prismaCtorMock();
     }
@@ -280,7 +281,7 @@ describe("POST /api/tenants/provision", () => {
     expect(res.status).toBe(401);
   });
 
-  test("persiste prospectionLoginToken sur Tenant local quand hub_user_id fourni (2026-05-20 fix autologin)", async () => {
+  test("persiste le lien de connexion du propriétaire (haché, sso_login_tokens) quand hub_user_id fourni", async () => {
     // Le token retourné dans login_url doit être stocké côté Prisma local
     // pour que GET /api/auth/token?t=... puisse le valider. Avant ce fix,
     // le token n'était jamais persisté → autologin Hub→Prosp cassé.
@@ -307,9 +308,11 @@ describe("POST /api/tenants/provision", () => {
     expect(res.status).toBe(200);
     const body = (await readJson(res)) as { login_url: string };
     expect(body.login_url).toMatch(/\/api\/auth\/token\?t=[a-f0-9]{64}$/);
-    // L'assertion sur tenant.update est implicite : si le mock ne supportait
-    // pas .update, le code aurait planté. Le mock résout {id:"tenant-id"}
-    // donc le flow continue sans erreur même si findFirst retourne null.
+    // Audit 11/07 (M6) : jeton haché, lié au propriétaire, jamais posé en clair sur le tenant.
+    const sso = (inst as unknown as { ssoLoginToken: { create: ReturnType<typeof vi.fn> } }).ssoLoginToken;
+    expect(sso.create).toHaveBeenCalledWith({ data: expect.objectContaining({ userId: uid, tokenHash: expect.stringMatching(/^[a-f0-9]{64}$/) }) });
+    expect(JSON.stringify(sso.create.mock.calls)).not.toContain(body.login_url.split("t=")[1]);
+    expect(JSON.stringify(inst.tenant.update.mock.calls)).not.toContain("prospectionLoginToken");
   });
 
   test("mint api_key §6.2 sur workspace default au premier provision", async () => {
