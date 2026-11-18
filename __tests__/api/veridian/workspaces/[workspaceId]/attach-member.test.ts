@@ -26,6 +26,8 @@ vi.hoisted(() => {
 });
 
 const mocks = vi.hoisted(() => ({
+  ssoDeleteMany: vi.fn(async () => ({ count: 0 })),
+  ssoCreate: vi.fn(async () => ({})),
   workspaceFindFirst: vi.fn(),
   tenantFindUnique: vi.fn(),
   tenantUpdate: vi.fn().mockResolvedValue({}),
@@ -48,6 +50,7 @@ vi.mock("@/lib/prisma", () => ({
       create: mocks.memberCreate,
       update: mocks.memberUpdate,
     },
+    ssoLoginToken: { deleteMany: mocks.ssoDeleteMany, create: mocks.ssoCreate },
   },
 }));
 
@@ -249,7 +252,11 @@ describe("POST /api/veridian/workspaces/[workspaceId]/attach-member", () => {
 
     expect(mocks.memberCreate).toHaveBeenCalledOnce();
     expect(mocks.memberUpdate).not.toHaveBeenCalled();
-    expect(mocks.tenantUpdate).toHaveBeenCalledOnce();
+    // C1 (audit 11/07) : le lien est celui du MEMBRE, jamais un jeton posé sur le tenant (qui ouvrait la session du propriétaire).
+    expect(mocks.tenantUpdate).not.toHaveBeenCalled();
+    expect(mocks.ssoCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ userId: LOCAL_USER_ID, tokenHash: expect.stringMatching(/^[a-f0-9]{64}$/) }) });
+    const jeton = body.login_url.split("t=")[1];
+    expect(JSON.stringify(mocks.ssoCreate.mock.calls)).not.toContain(jeton); // stocké haché, jamais en clair
     expect(mocks.logAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         actorType: "hub",

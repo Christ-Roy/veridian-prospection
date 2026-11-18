@@ -18,6 +18,8 @@ const mocks = vi.hoisted(() => ({
   userFindFirst: vi.fn(),
   memberFindFirst: vi.fn(),
   tenantUpdate: vi.fn(),
+  ssoDeleteMany: vi.fn(async () => ({ count: 0 })),
+  ssoCreate: vi.fn(async () => ({})),
 }));
 
 vi.mock("@/lib/prisma", () => ({
@@ -26,6 +28,7 @@ vi.mock("@/lib/prisma", () => ({
     user: { findFirst: mocks.userFindFirst },
     workspaceMember: { findFirst: mocks.memberFindFirst },
     tenant: { update: mocks.tenantUpdate },
+    ssoLoginToken: { deleteMany: mocks.ssoDeleteMany, create: mocks.ssoCreate },
   },
 }));
 
@@ -189,14 +192,10 @@ describe("POST /api/workspaces.generateMagicLink", () => {
     expect(body.auto_login_url).toBe(body.magic_link);
     expect(new Date(body.expires_at).getTime()).toBeGreaterThan(Date.now());
 
-    // Persistance token côté tenant vérifié
-    expect(mocks.tenantUpdate).toHaveBeenCalledWith({
-      where: { id: "t1" },
-      data: expect.objectContaining({
-        prospectionLoginToken: expect.stringMatching(/^[0-9a-f]{64}$/),
-        prospectionLoginTokenUsedAt: null,
-      }),
-    });
+    // C1 (audit 11/07) : le lien est celui de bob (u1), haché, jamais un jeton du tenant qui ouvrait la session du propriétaire.
+    expect(mocks.tenantUpdate).not.toHaveBeenCalled();
+    expect(mocks.ssoCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ userId: "u1", tokenHash: expect.stringMatching(/^[0-9a-f]{64}$/) }) });
+    expect(JSON.stringify(mocks.ssoCreate.mock.calls)).not.toContain(body.magic_link.split("t=")[1]);
   });
 
   test("email normalisé en lowercase + trim avant lookup", async () => {

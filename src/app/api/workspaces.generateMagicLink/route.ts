@@ -23,8 +23,9 @@
  * workspaces.api_key_hash → jamais retourné en pratique.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { randomBytes, timingSafeEqual } from "crypto";
+import { timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/prisma";
+import { emettreJetonConnexion } from "@/lib/auth/jeton-connexion";
 import { extractBearerApiKey } from "@/lib/hub/hmac";
 import { hashApiKey } from "@/lib/hub/apiKey";
 
@@ -92,27 +93,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "user_not_member" }, { status: 404 });
   }
 
-  // ─── Génère + persiste token one-shot sur Tenant ──────────────────────────
-  // Réutilise le mécanisme existant /api/auth/token (cf migration 0008). Le
-  // token est lié au Tenant (1 tenant = 1 user owner pour l'instant, donc le
-  // user qui consomme le magic link est forcément le owner du tenant — OK
-  // pour MVP, à revisiter quand multi-membre cross-app v1.3 livré).
-  const loginToken = randomBytes(32).toString("hex");
-  await prisma.tenant.update({
-    where: { id: workspace.tenantId },
-    data: {
-      prospectionLoginToken: loginToken,
-      prospectionLoginTokenCreatedAt: new Date(),
-      prospectionLoginTokenUsedAt: null,
-    },
-  });
+  // ─── Lien de connexion de CET utilisateur ─────────────────────────────────
+  // Jeton lié à son userId : l'ancien jeton du tenant ouvrait la session du propriétaire (audit 11/07, C1).
+  const { jeton: loginToken, expire } = await emettreJetonConnexion(user.id, TOKEN_TTL_MS);
 
   const appUrl =
     process.env.APP_URL ||
     process.env.NEXT_PUBLIC_SITE_URL ||
     "https://prospection.app.veridian.site";
   const autoLoginUrl = `${appUrl}/api/auth/token?t=${loginToken}`;
-  const expiresAt = new Date(Date.now() + TOKEN_TTL_MS).toISOString();
+  const expiresAt = expire.toISOString();
 
   return NextResponse.json({
     magic_link: autoLoginUrl,

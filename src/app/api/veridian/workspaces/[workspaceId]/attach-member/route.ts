@@ -12,9 +12,9 @@
  * caller côté Hub.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { randomBytes } from "crypto";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { emettreJetonConnexion } from "@/lib/auth/jeton-connexion";
 import { requireHubHmac } from "@/lib/hub/auth";
 import { resolveOrCreateUserFromHub } from "@/lib/hub/identity";
 import { logAudit } from "@/lib/audit";
@@ -158,19 +158,11 @@ export async function POST(
     },
   });
 
-  // Magic link auto-login Prospection — réutilise le mécanisme tenant.
-  // prospectionLoginToken / generateMagicLink (cf §5.6).
-  const loginToken = randomBytes(32).toString("hex");
-  await prisma.tenant.update({
-    where: { id: workspace.tenantId },
-    data: {
-      prospectionLoginToken: loginToken,
-      prospectionLoginTokenCreatedAt: new Date(),
-      prospectionLoginTokenUsedAt: null,
-    },
-  });
+  // Lien de connexion du MEMBRE (jeton lié à son userId) : jamais le jeton du tenant, qui ouvrait la session du
+  // propriétaire (audit 11/07, C1).
+  const { jeton: loginToken, expire } = await emettreJetonConnexion(localUserId, TOKEN_TTL_MS);
   const loginUrl = `${appUrl()}/api/auth/token?t=${loginToken}`;
-  const expiresAt = new Date(Date.now() + TOKEN_TTL_MS).toISOString();
+  const expiresAt = expire.toISOString();
 
   // Log structuré sans body sensible (pas hub_user_email en clair).
   console.log(
