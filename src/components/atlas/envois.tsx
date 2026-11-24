@@ -350,7 +350,7 @@ export function DialogueMail({ objet, onFermer }: { objet: ObjetMail; onFermer: 
   return (
     <Cadre titre="Envoyer vers Mail" occupe={occupe} onFermer={onFermer}>
       <p>
-        « {objet.nom} » s&apos;ajoute à une liste de Mail. <b>Aucun mail ne part</b> : les désinscrits, plaintes et adresses en erreur restent exclus, et 5 000 contacts au plus sortent par jour.
+        « {objet.nom} » s&apos;ajoute à une liste de Mail. <b>Aucun mail ne part</b> : Mail garde un seul contact par domaine d&apos;entreprise, les désinscrits, plaintes et adresses en erreur restent exclus, et 5 000 contacts au plus sortent par jour.
       </p>
       {payant && !listes && !erreur && <p role="status">Lecture de vos listes…</p>}
       {listes && (

@@ -139,7 +139,7 @@ beforeAll(async () => {
       }
     }
     if (mail.ment === "http") return { status: 500, corps: { resultat: { dry_run: a.dry_run, received: 1, created: 1 } } };
-    return fait({ dry_run: mail.ment === "dry_run" ? !a.dry_run : a.dry_run, received: contacts.length, created: crees, updated: 0, existing: existants, subscribed: a.dry_run ? 0 : crees, skipped: exclus ? { unsubscribed: exclus } : {}, ...(mail.sequence.has(liste) ? { triggers: [{ id: "s", name: "Séquence" }] } : {}) });
+    return fait({ dry_run: mail.ment === "dry_run" ? !a.dry_run : a.dry_run, received: contacts.length, created: crees, updated: 0, existing: existants, subscribed: a.dry_run ? 0 : crees, skipped: exclus ? { desinscrit: exclus } : {}, ...(mail.sequence.has(liste) ? { triggers: [{ id: "s", name: "Séquence" }] } : {}) });
   });
   process.env.HUB_API_URL = await servir((req, corps) => {
     const h = req.headers;
@@ -492,7 +492,7 @@ describe("vers Mail", () => {
     const sim = await simuler(a, geste, s);
     expect(sim.map((p) => p.recus)).toEqual([1000, 1000, 300]);
     expect(mail.contacts.size).toBe(0);
-    expect(sim[0]).toMatchObject({ crees: 999, ecartes: { unsubscribed: 1 } });
+    expect(sim[0]).toMatchObject({ crees: 999, ecartes: { desinscrit: 1 } });
     expect(await lignesTracees()).toBe(2300);
     for (const p of sim) await li.segmentVersMail(a, { geste, segmentId: s, listeId: "reserve", curseur: p.curseur_page, simulation: false });
     expect(mail.contacts.size).toBe(2299);

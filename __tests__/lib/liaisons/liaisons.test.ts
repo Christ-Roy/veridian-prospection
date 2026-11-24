@@ -9,14 +9,14 @@ vi.mock("@/atlas/liaisons", async (o) => ({ ...(await o<typeof import("@/atlas/l
 
 import { NextRequest } from "next/server";
 
-import { contactMail, DELAI_LOT_MS, envoiCrm, personne } from "@/atlas/liaisons";
+import { contactMail, DELAI_LOT_MS, envoiCrm, PAGE_MAIL as PAGE_SERVEUR, personne } from "@/atlas/liaisons";
 import { EN_COURS_MAX_MS } from "@/lib/liaisons/envois";
 import { GET, POST } from "@/app/api/liaisons/[action]/route";
 import { RefusLiaison } from "@/lib/liaisons/erreurs";
 import { liaisonOuverte } from "@/lib/liaisons/drapeau";
 import { adresseSure, demanderJeton } from "@/lib/liaisons/hub";
 import { appelerCrm, appelerMail } from "@/lib/liaisons/action";
-import { adresseRebond, BILAN_MAIL_VIDE, cumulerMail, envoisPossibles, lireReprise, phraseEteintes, phrasesMail, preparerRebond } from "@/components/atlas/liaisons-logique";
+import { adresseRebond, BILAN_MAIL_VIDE, cumulerMail, envoisPossibles, lireReprise, MOTIFS, PAGE_MAIL, phraseEteintes, phrasesMail, preparerRebond } from "@/components/atlas/liaisons-logique";
 
 const prod = { NODE_ENV: "production" } as NodeJS.ProcessEnv;
 const T = "0891ed5a-4ce1-49ff-be3c-91628b357f4f";
@@ -169,12 +169,29 @@ describe("rebond", () => {
   });
 });
 
-test("bilan Mail : les motifs s'additionnent d'une page à l'autre et se lisent", () => {
-  const page = { recus: 10, crees: 7, existants: 1, inscrits: 7, ecartes: { unsubscribed: 2, motif_neuf: 1 }, declenche: false, total: 20, retirees: 1, curseur_suivant: null };
+test("bilan Mail : les motifs réels de Mail se lisent dès la simulation, un seul contact par domaine compris", () => {
+  const page = { recus: 10, crees: 7, existants: 1, inscrits: 7, ecartes: { desinscrit: 1, doublon_domaine_dans_le_lot: 2, domaine_deja_present: 1, motif_neuf: 1 }, declenche: false, total: 20, retirees: 1, curseur_suivant: null };
   const b = cumulerMail(cumulerMail(BILAN_MAIL_VIDE, page), { ...page, declenche: true });
-  expect(b).toMatchObject({ recus: 20, crees: 14, ecartes: { unsubscribed: 4, motif_neuf: 2 }, declenche: true });
-  expect(phrasesMail(b, true).join(" | ")).toBe("14 nouveaux contacts à créer | 2 contacts déjà dans Mail, fiche laissée intacte | Écartés par Mail (désinscrits : 4, motif neuf : 2) | 2 entreprises retirées, plus contactables");
+  expect(b).toMatchObject({ recus: 20, crees: 14, ecartes: { desinscrit: 2, doublon_domaine_dans_le_lot: 4 }, declenche: true });
+  expect(phrasesMail(b, true)).toEqual([
+    "14 nouveaux contacts à créer", "2 contacts déjà dans Mail, fiche laissée intacte", "10 contacts écartés par Mail", "– un seul contact par domaine d'entreprise : 4",
+    "– désinscrits : 2", "– domaine d'entreprise déjà dans Mail (un seul contact par domaine) : 2", "– motif neuf : 2", "2 entreprises retirées, plus contactables",
+  ]);
   expect(phrasesMail({ ...b, crees: 1 }, false)[0]).toBe("1 nouveau contact créé");
+});
+
+test("plusieurs pages : la simulation s'annonce comme un maximum ; l'import, non", () => {
+  const b = { ...BILAN_MAIL_VIDE, recus: 2300, crees: 2200 };
+  expect(phrasesMail(b, true)[0]).toMatch(/à créer au plus$/);
+  expect(phrasesMail(b, true).at(-1)).toMatch(/Compte exact à l'ajout/);
+  expect(phrasesMail(b, false)).toEqual(["2 200 nouveaux contacts créés"].map((x) => expect.stringMatching(/^2.200 nouveaux contacts créés$/)));
+  expect(phrasesMail({ ...b, recus: 1000 }, true).join()).not.toMatch(/au plus|Compte exact/);
+  expect(PAGE_MAIL).toBe(PAGE_SERVEUR);
+});
+
+test("tous les motifs que Mail rend ont un libellé", () => {
+  // Codes de notifuse-veridian internal/veridian/reservoir/plan.go, relus le 25/11.
+  for (const c of ["email_invalide", "contact_invalide", "doublon_email_dans_le_lot", "doublon_siren_dans_le_lot", "doublon_domaine_dans_le_lot", "siren_deja_present", "domaine_deja_present", "desinscrit", "rebond", "plainte", "ecriture_refusee"]) expect(MOTIFS[c], c).toBeTruthy();
 });
 
 test("fiche : seuls les envois qui peuvent aboutir se montrent", () => {

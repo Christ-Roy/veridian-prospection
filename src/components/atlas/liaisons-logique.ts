@@ -79,9 +79,19 @@ export function phrasesCrm(b: BilanCrm): string[] {
   ].filter((x): x is string => !!x);
 }
 
-const MOTIFS: Record<string, string> = {
-  unsubscribed: "désinscrits", complained: "plaintes", bounced: "adresses en erreur", duplicate: "doublons", duplicate_email: "même adresse",
-  duplicate_siren: "même entreprise", duplicate_domain: "même site", invalid_email: "adresses invalides", existing: "déjà présents",
+/** Motifs de Mail (`internal/veridian/reservoir/plan.go`), tels qu'il les rend. Un code inconnu s'affiche tel quel. */
+export const MOTIFS: Record<string, string> = {
+  doublon_domaine_dans_le_lot: "un seul contact par domaine d'entreprise",
+  domaine_deja_present: "domaine d'entreprise déjà dans Mail (un seul contact par domaine)",
+  doublon_siren_dans_le_lot: "entreprise en double",
+  siren_deja_present: "entreprise déjà dans Mail",
+  doublon_email_dans_le_lot: "adresse en double",
+  desinscrit: "désinscrits",
+  plainte: "plaintes",
+  rebond: "adresses en erreur",
+  email_invalide: "adresses invalides",
+  contact_invalide: "contacts illisibles",
+  ecriture_refusee: "refusés à l'écriture",
 };
 export const motif = (code: string) => MOTIFS[code] ?? code.replace(/_/g, " ");
 
@@ -93,14 +103,21 @@ export function cumulerMail(b: BilanMail, p: PageMail): BilanMail {
   return { recus: b.recus + p.recus, crees: b.crees + p.crees, existants: b.existants + p.existants, inscrits: b.inscrits + p.inscrits, retirees: b.retirees + p.retirees, ecartes, declenche: b.declenche || p.declenche, total: p.total };
 }
 export function phrasesMail(b: BilanMail, simulation: boolean): string[] {
-  const ecartes = Object.entries(b.ecartes).map(([k, v]) => `${motif(k)} : ${formaterNombre(v)}`);
+  const ecartes = Object.entries(b.ecartes).sort((x, y) => y[1] - x[1]);
+  const total = ecartes.reduce((t, [, v]) => t + v, 0);
   return [
-    `${n(b.crees, "nouveau contact", "nouveaux contacts")}${simulation ? " à créer" : b.crees > 1 ? " créés" : " créé"}`,
+    `${n(b.crees, "nouveau contact", "nouveaux contacts")}${simulation ? (b.recus > PAGE_MAIL ? " à créer au plus" : " à créer") : b.crees > 1 ? " créés" : " créé"}`,
     b.existants && `${n(b.existants, "contact")} déjà dans Mail, fiche laissée intacte`,
-    ecartes.length && `Écartés par Mail (${ecartes.join(", ")})`,
+    total && `${n(total, "contact écarté", "contacts écartés")} par Mail`,
+    ...ecartes.map(([k, v]) => `– ${motif(k)} : ${formaterNombre(v)}`),
     b.retirees && `${n(b.retirees, "entreprise")} retirée${b.retirees > 1 ? "s" : ""}, plus contactable${b.retirees > 1 ? "s" : ""}`,
+    // Chaque page simulée ignore les domaines des autres : seul l'ajout les voit.
+    simulation && b.recus > PAGE_MAIL && "Compte exact à l'ajout : la règle d'un seul contact par domaine s'applique aussi d'une page de 1 000 à l'autre.",
   ].filter((x): x is string => !!x);
 }
+
+/** Taille d'une page d'import, celle de Mail (src/atlas/liaisons.ts). */
+export const PAGE_MAIL = 1000;
 
 // ---------------------------------------------------------------- rebond silencieux par le Hub
 
