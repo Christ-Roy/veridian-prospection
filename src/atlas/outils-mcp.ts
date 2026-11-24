@@ -9,6 +9,7 @@ import { z } from "zod";
 import type { ContexteOutil, Outil } from "@/lib/mcp/outils";
 import { ErreurOutil } from "@/lib/mcp/erreur";
 import { prisma } from "@/lib/prisma";
+import { consommer, minuitParis, rendre } from "@/lib/compteurs";
 import { isRateLimited } from "@/lib/rate-limit";
 
 import { CHAMPS, OPERATEURS } from "./champs";
@@ -46,7 +47,14 @@ function lisible<T>(f: (a: Record<string, unknown>, c: ContexteOutil) => Promise
 }
 const avecSource = <T extends object>(r: T) => ({ ...r, ...(sourceMarche().simulee ? { donnees_simulees: true } : {}) });
 
-const FILTRE = z.object({}).passthrough().describe("Filtre : { conditions: [{ champ, op, valeur }], inclure_bloques? } (voir lister_champs)");
+const EXEMPLE_FILTRE = '{"conditions":[{"champ":"naf","op":"dans","valeur":["7500Z"]},{"champ":"departement","op":"dans","valeur":["69"]}]}';
+const FILTRE = z
+  .object({}, { error: `un filtre est attendu, par exemple ${EXEMPLE_FILTRE} (champs et opérateurs : lister_champs)` })
+  .passthrough()
+  .describe(`Conditions cumulées, par exemple ${EXEMPLE_FILTRE}. Champs, opérateurs : lister_champs. Codes NAF d'un métier : chercher_activites.`);
+const AIDE_SEGMENT = "l'identifiant d'un segment est attendu : lister_segments_atlas donne ceux de l'espace, creer_segment en crée un et rend son id";
+/** Segment sur lequel on agit : l'erreur dit où trouver son identifiant. */
+const SEGMENT = z.string({ error: AIDE_SEGMENT }).regex(/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i, AIDE_SEGMENT).describe("Identifiant rendu par lister_segments_atlas ou creer_segment");
 const SCORING = z.object({}).passthrough().describe("Scoring : { criteres: [{ champ, op, valeur, poids }] } ; score = somme des poids vrais, sur 100");
 
 /**
@@ -76,9 +84,8 @@ const OUTILS_BRUTS: Outil[] = [
     name: "explorer_marche",
     title: "Explorer le marché",
     description:
-      "Liste et compte les FICHES PROSPECTABLES (environ 1,3 M d'entreprises contactables, non bloquées) qui répondent à un filtre ; paginé, rien n'est enregistré. " +
-      "Ce n'est pas le marché : pour lister TOUTES les entreprises de France, utilisez lister_entreprises ; pour les compter par axe, analyser_marche. " +
-      "Pour trouver les codes NAF d'un métier, appeler d'abord chercher_activites.",
+      "Compte et liste les entreprises CONTACTABLES (1,3 M de fiches non bloquées) d'un filtre, sans rien enregistrer ; total, puis page par page. " +
+      "Codes NAF d'un métier : chercher_activites. Toutes les entreprises de France : lister_entreprises. Garder le filtre : creer_segment.",
     input: z.object({
       filtre: FILTRE,
       colonnes: z.array(z.string()).max(25).optional(),
@@ -114,11 +121,8 @@ const OUTILS_BRUTS: Outil[] = [
     name: "analyser_marche",
     title: "Analyser la taille d'un marché",
     description:
-      "Taille du marché ENTIER (toutes les entreprises de France, pas seulement les prospectables), d'après le cube d'ODH : " +
-      "nombre d'entreprises, contacts connus (email, téléphone, site) et envoyables (ce qu'on peut promettre à un client), " +
-      "au total et réparti par axe (naf, departement, forme, forme_juridique, effectif, annee_creation, statut, diffusion). " +
-      "Codes NAF en LISTE (0149Z), jamais par intervalle. Passer `filtre` (celui d'un segment) le traduit sur le cube : " +
-      "les conditions que le cube ne couvre pas sont rendues dans `conditions_ignorees`.",
+      "Taille du marché ENTIER (toutes les entreprises, pas que les contactables), au total et par axe : naf, departement, forme, effectif, " +
+      "annee_creation… Emails connus et envoyables, signaux récents. Accepte le filtre d'un segment ; rend conditions_ignorees.",
     input: EntreeCubeSchema.extend({ filtre: FILTRE.optional() }),
     annotations: LECTURE,
     run: lisible(async (a) => {
@@ -137,11 +141,8 @@ const OUTILS_BRUTS: Outil[] = [
     name: "lister_entreprises",
     title: "Lister toutes les entreprises",
     description:
-      "Liste et compte TOUTES les entreprises actives de France (base maître d'ODH, 30 M de SIREN), pas seulement les prospectables. " +
-      "Filtrez par naf, naf_division, departement, forme_juridique, effectif, code_postal, commune (egal), date_creation, nom (contient, mots entiers " +
-      "de la même famille) et par les drapeaux email, telephone, site, email_envoyable, telephone_envoyable. Aucune coordonnée n'est rendue : " +
-      "seulement a_email, a_telephone, a_site et prospectable (les coordonnées d'une fiche prospectable passent par fiche_entreprise_atlas). " +
-      "Les autres champs ne s'appliquent pas ici et sont rendus dans conditions_ignorees. Toujours filtrer par NAF, nom ou département + NAF.",
+      "Liste TOUTES les entreprises actives de France (30 M), sans coordonnées : identité, lieu, drapeaux a_email, a_telephone, a_site, prospectable. " +
+      "Toujours filtrer par NAF, nom, ou département + NAF. Les autres champs sont rendus dans conditions_ignorees.",
     input: z.object({ filtre: FILTRE, page: z.number().int().min(1).max(200).default(1), par_page: z.number().int().min(1).max(50).default(20) }),
     annotations: LECTURE,
     run: lisible(async (a) => {
@@ -163,10 +164,8 @@ const OUTILS_BRUTS: Outil[] = [
     name: "chercher_activites",
     title: "Trouver les codes NAF d'un métier",
     description:
-      "À appeler AVANT de définir un marché par activité. Donne, pour des mots (« chasse », « toilettage chien »), les codes NAF dont le libellé " +
-      "correspond (signal libelle) ET ceux réellement portés par les entreprises dont le nom ou l'activité contient ces mots (signal usage, " +
-      "par_nom), avec la taille du marché entier de chaque code. Un métier tient rarement dans un seul code : regroupez ceux qui ont du sens, " +
-      "puis combinez avec une condition sur le nom si besoin. Aucune liste n'est figée : c'est à vous de juger.",
+      "Codes NAF d'un métier décrit en quelques mots (« chasse », « toilettage chien ») : par le libellé et par le nom réel des entreprises, avec la " +
+      "taille de chaque code. Un métier tient rarement dans un seul code : regroupez, et ajoutez une condition sur le nom si besoin.",
     input: EntreeActivitesSchema,
     annotations: LECTURE,
     run: lisible(async (a) => {
@@ -222,18 +221,21 @@ const OUTILS_BRUTS: Outil[] = [
     name: "verifier_entreprises",
     title: "Vérifier une liste d'entreprises",
     description:
-      "Pour une liste de SIREN ou SIRET (200 au plus, collés tels quels) : nom, active ou cessée, commune, NAF, site web (adresse quand " +
-      "elle est publiée, sinon a_site), email envoyable, téléphone utilisable, logiciels utilisés (ERP, CRM, emailing, quand ODH les a " +
-      "vus), et si la fiche est contactable dans Atlas. Les introuvables " +
-      "et les numéros invalides sont rendus à part. 50 SIREN par jour en gratuit, 5 000 en plan payant.",
+      "Vérifie une liste de SIREN ou SIRET (200 au plus) : nom, active ou cessée, lieu, NAF, site web, email envoyable, téléphone, logiciels vus, " +
+      "contactable ou non. Introuvables et numéros invalides rendus à part. 50 par jour en gratuit, 5 000 en plan payant.",
     input: z.object({ sirens: z.array(z.string().max(40)).min(1).max(200) }),
     annotations: LECTURE,
     run: lisible(async (a, c) => {
       const { sirens, invalides } = normaliserSirens(a.sirens as string[]);
       if (!sirens.length) throw new ErreurOutil("Aucun SIREN (9 chiffres) ni SIRET (14 chiffres) reconnu.");
       const large = !!(c.droits?.payant || c.droits?.accesAvance);
-      const reste = reserverVerification(c.ctx.tenantId, sirens.length, large ? QUOTA_VERIFICATION.payant : QUOTA_VERIFICATION.gratuit);
-      const lignes = await sourceMarche().verifier(sirens);
+      const { reste, jour } = await reserverVerification(c.ctx.tenantId, sirens.length, large ? QUOTA_VERIFICATION.payant : QUOTA_VERIFICATION.gratuit);
+      const lignes = await sourceMarche()
+        .verifier(sirens)
+        .catch(async (e: unknown) => {
+          await rendre(cleVerification(c.ctx.tenantId), jour, sirens.length); // rien vérifié, rien compté
+          throw e;
+        });
       return avecSource({
         entreprises: lignes,
         resume: {
@@ -252,24 +254,29 @@ const OUTILS_BRUTS: Outil[] = [
     name: "schema_odh",
     title: "Tables et colonnes d'ODH (accès avancé)",
     description:
-      `Colonnes des tables lisibles par requete_sql : ${TABLES_SQL.join(", ")}. company_prospection_current : fiches contactables ` +
-      "(contacts, web, finances, signaux) ; company_master_current : toutes les entreprises (30 M, identité et drapeaux, filtrer d'abord " +
-      "sur naf_code et department) ; market_cube_current : comptes agrégés du marché ; company_tech_stack_current : logiciels par " +
-      "SIREN (tools_fort = outils qui servent, tools_cite = seulement cités ; un outil nommé n'est pas un client, une agence publie aussi " +
-      "odoo) ; web_tech_stack_current : preuve par domaine ; web_tech_stack_checked : domaines examinés (une absence n'est une preuve " +
-      "que si le domaine l'a été) ; market_cube_tech_current : entreprises par outil, NAF et département.",
+      "Colonnes des tables lisibles par requete_sql, et comment les lire (fiches contactables, base complète, cube du marché, pile logicielle).",
     input: z.object({}),
     annotations: LECTURE,
     acces: "avance",
-    run: lisible(async () => ({ colonnes: await sourceMarche().schema() })),
+    run: lisible(async () => ({
+      lecture: {
+        "odh.company_prospection_current": "fiches contactables : contacts, web, finances, signaux. Pour un envoi : deliverable = 1 AND email_envoyable = 1",
+        "odh.company_master_current": "toutes les entreprises (30 M), identité et drapeaux ; filtrer d'abord sur naf_code puis department, ou sur siren",
+        "odh.market_cube_current": "comptes agrégés du marché",
+        "odh.company_tech_stack_current": "logiciels par SIREN : tools_fort = outils qui servent, tools_cite = seulement cités. Un outil nommé n'est pas un client (une agence publie aussi odoo)",
+        "odh.web_tech_stack_current": "la preuve, par domaine",
+        "odh.web_tech_stack_checked": "domaines examinés : une absence n'est une preuve que si le domaine l'a été",
+        "odh.market_cube_tech_current": "entreprises par outil, NAF et département",
+      },
+      colonnes: await sourceMarche().schema(),
+    })),
   },
   {
     name: "requete_sql",
     title: "Requête SQL en lecture sur ODH (accès avancé)",
     description:
-      `Une requête SELECT (ou WITH) ClickHouse sur ${TABLES_SQL.join(", ")}, ${LIGNES_MAX_SQL} lignes au plus. Limites du compte : ` +
-      "10 s, 15 M lignes lues. Sur company_master_current, filtrez sur naf_code puis department (ordre de tri) ou sur siren (index). " +
-      "Paramètres, réglages et FORMAT refusés. Voir schema_odh pour les colonnes.",
+      "Une requête SELECT (ou WITH) ClickHouse sur les tables d'ODH (voir schema_odh), 1 000 lignes au plus, 10 s, 15 M lignes lues. " +
+      "Sur company_master_current, filtrer sur naf_code puis department, ou sur siren. Réglages et FORMAT refusés.",
     input: z.object({ requete: z.string().min(1).max(8000), limite: z.number().int().min(1).max(LIGNES_MAX_SQL).default(200) }),
     annotations: LECTURE,
     acces: "avance",
@@ -343,10 +350,8 @@ const OUTILS_BRUTS: Outil[] = [
     name: "repartir_communes",
     title: "Marché par commune et intercommunalité d'un département",
     description:
-      "Compte le marché commune par commune dans un département (code INSEE, nom), et par intercommunalité (métropole, " +
-      "communauté de communes ou d'agglomération : code SIREN, nom, communes). base « marche » : toutes les entreprises actives " +
-      "(entreprises, contactables, email_envoyable, telephone_envoyable) ; base « prospection » : les fiches prospectables du filtre " +
-      "(avec en plus sans_site et avec_email). `repli` : marché trop large pour la base complète, comptes pris sur les fiches prospectables.",
+      "Compte le marché par commune et par intercommunalité d'un département. base « marche » : toutes les entreprises ; « prospection » : les " +
+      "contactables du filtre. `repli` : marché trop large, comptes pris sur les contactables.",
     input: z.object({ filtre: FILTRE, departement: z.string().regex(/^(\d{2}|2A|2B)$/), base: z.enum(["marche", "prospection"]).default("marche") }),
     annotations: LECTURE,
     run: lisible(async (a) => {
@@ -408,13 +413,20 @@ const OUTILS_BRUTS: Outil[] = [
     description: "Arbre des dossiers et segments de l'espace, avec le numéro de version courant et le droit d'écriture.",
     input: z.object({}),
     annotations: LECTURE,
-    run: lisible(async (_a, c) => ({ ...(await seg.listerArbre(c.ctx.tenantId)), peut_ecrire: peutEcrire(c) })),
+    run: lisible(async (_a, c) => {
+      const arbre = await seg.listerArbre(c.ctx.tenantId);
+      return {
+        ...arbre,
+        peut_ecrire: peutEcrire(c),
+        ...(arbre.segments.length ? {} : { aide: "Aucun segment dans cet espace. Trouver un métier : chercher_activites ; compter : explorer_marche ; puis creer_segment, qui rend l'id à passer à extraire_segment." }),
+      };
+    }),
   },
   {
     name: "lire_segment",
     title: "Lire un segment",
     description: "Filtre, colonnes, scoring et nombre d'entreprises d'un segment (avec les conditions héritées de ses parents).",
-    input: z.object({ segment_id: UUID }),
+    input: z.object({ segment_id: SEGMENT }),
     annotations: LECTURE,
     run: lisible(async (a, c) => {
       const s = await seg.lireSegment(c.ctx.tenantId, a.segment_id as string);
@@ -434,7 +446,7 @@ const OUTILS_BRUTS: Outil[] = [
   {
     name: "creer_segment",
     title: "Créer un segment",
-    description: "Crée un segment nommé (ex. « Éleveurs canins ») : filtre, colonnes affichées, dossier et segment parent facultatifs.",
+    description: "Crée un segment nommé (ex. « Éleveurs canins ») d'après un filtre, et rend son id et son nombre d'entreprises. Comptez d'abord avec explorer_marche. Ensuite : extraire_segment pour en lire les contacts, definir_scoring pour les classer.",
     input: z.object({
       nom: z.string().trim().min(1).max(120),
       filtre: FILTRE,
@@ -451,7 +463,14 @@ const OUTILS_BRUTS: Outil[] = [
         { nom: a.nom as string, filtre: a.filtre, colonnes: a.colonnes, dossierId: a.dossier_id as string, parentId: a.parent_id as string, note: a.note as string },
         auteur(c),
       );
-      return avecSource({ ...r, total: await sourceMarche().compter(await seg.filtreEffectif(c.ctx.tenantId, r.id)) });
+      const total = await sourceMarche().compter(await seg.filtreEffectif(c.ctx.tenantId, r.id));
+      return avecSource({
+        ...r,
+        total,
+        ...(total
+          ? { suite: "extraire_segment rend ses contacts envoyables (plans payants) ; classer_segment en donne un aperçu." }
+          : { avertissement: "Aucune entreprise ne répond à ce filtre : vérifiez les valeurs (repartir_marche liste celles d'un champ), puis modifier_segment." }),
+      });
     }),
   },
   {
@@ -459,7 +478,7 @@ const OUTILS_BRUTS: Outil[] = [
     title: "Modifier un segment",
     description: "Nouveau filtre (crée une version), nouveau nom ou nouvelles colonnes affichées.",
     input: z.object({
-      segment_id: UUID,
+      segment_id: SEGMENT,
       filtre: FILTRE.optional(),
       nom: z.string().trim().min(1).max(120).optional(),
       colonnes: z.array(z.string()).max(25).optional(),
@@ -477,7 +496,7 @@ const OUTILS_BRUTS: Outil[] = [
     name: "definir_scoring",
     title: "Définir le scoring d'un segment",
     description: "Nouvelle version du scoring : critères du catalogue pondérés ; renvoie le classement obtenu (top 10).",
-    input: z.object({ segment_id: UUID, scoring: SCORING, note: z.string().max(300).optional() }),
+    input: z.object({ segment_id: SEGMENT, scoring: SCORING, note: z.string().max(300).optional() }),
     annotations: ECRITURE,
     visible: peutEcrire,
     run: lisible(async (a, c) => {
@@ -492,7 +511,7 @@ const OUTILS_BRUTS: Outil[] = [
     title: "Classer un segment",
     description: "Entreprises du segment triées par son scoring (ou par un champ), page par page, avec les colonnes du segment.",
     input: z.object({
-      segment_id: UUID,
+      segment_id: SEGMENT,
       page: z.number().int().min(1).max(500).default(1),
       par_page: z.number().int().min(1).max(50).default(20),
       scoring_version: z.number().int().min(1).optional().describe("Comparer une ancienne version du scoring"),
@@ -516,7 +535,7 @@ const OUTILS_BRUTS: Outil[] = [
     name: "historique_segment",
     title: "Historique d'un segment",
     description: "Versions du filtre et du scoring : auteur (humain ou IA), date, note.",
-    input: z.object({ segment_id: UUID }),
+    input: z.object({ segment_id: SEGMENT }),
     annotations: LECTURE,
     run: lisible(async (a, c) => seg.historique(c.ctx.tenantId, a.segment_id as string)),
   },
@@ -524,7 +543,7 @@ const OUTILS_BRUTS: Outil[] = [
     name: "restaurer_version_segment",
     title: "Restaurer une version",
     description: "Remet une ancienne version du filtre en créant une nouvelle version identique (rien n'est effacé).",
-    input: z.object({ segment_id: UUID, version: z.number().int().min(1) }),
+    input: z.object({ segment_id: SEGMENT, version: z.number().int().min(1) }),
     annotations: ECRITURE,
     visible: peutEcrire,
     run: lisible(async (a, c) => seg.restaurerVersion(c.ctx.tenantId, a.segment_id as string, a.version as number, auteur(c))),
@@ -551,12 +570,19 @@ const OUTILS_BRUTS: Outil[] = [
     name: "extraire_segment",
     title: "Extraire un segment, page par page",
     description:
-      "Entreprises envoyables par email d'un segment (siren, email, domaine, raison_sociale, dirigeant, activité, lieu, téléphone), dans l'ordre " +
-      "de sa priorité. Premier appel sans curseur, puis curseur_suivant jusqu'à null. La liste est figée au premier appel : ni doublon ni " +
-      "trou. retires : SIREN de la page devenus non envoyables, à ne pas contacter. limite : 30 en appel direct (au-delà la réponse est coupée ; " +
-      "rappeler alors le même curseur avec une limite plus petite, rien n'est recompté), jusqu'à 1000 dans un programme. Plans payants, 5 000 " +
-      "lignes par jour et par espace, tracé.",
-    input: z.object({ segment_id: UUID, curseur: z.string().max(200).nullish(), limite: z.number().int().min(1).max(PAGE_MAX).default(PAGE_DEFAUT) }),
+      "Extrait ou exporte les contacts envoyables d'un segment (email, entreprise, dirigeant, lieu), pour Notifuse, un CRM ou un tableur. Sans curseur, puis " +
+      "curseur_suivant jusqu'à null. Plans payants, 5 000 lignes par jour. Segment à créer d'abord : creer_segment.",
+    input: z.object({
+      segment_id: SEGMENT,
+      curseur: z.string().max(200).nullish().describe("curseur_suivant de la page précédente, tel quel. Absent : première page (liste figée, ni doublon ni trou ensuite)."),
+      limite: z
+        .number({ error: "un nombre entier de 1 à 1000 est attendu" })
+        .int()
+        .min(1, "au moins 1 ligne")
+        .max(PAGE_MAX, `${PAGE_MAX} lignes au plus par page : prenez la suite avec curseur_suivant`)
+        .default(PAGE_DEFAUT)
+        .describe("30 en appel direct (au-delà la réponse est coupée : rappeler le même curseur avec une limite plus petite, rien n'est recompté) ; jusqu'à 1000 dans un programme."),
+    }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: lisible(async (a, c) => {
       if (isRateLimited(`atlas-extraction:${c.ctx.tenantId}`, 60, 60_000)) throw new ErreurOutil("60 pages par minute au plus.");
@@ -574,7 +600,7 @@ const OUTILS_BRUTS: Outil[] = [
     description:
       "Donne les liens de téléchargement Excel et CSV d'un segment (5 000 entreprises au plus, classées par sa priorité), à cliquer par " +
       "l'utilisateur connecté : aucune donnée n'est rendue ici (pour les lire toi-même : extraire_segment). Indique si le plan de l'espace le permet.",
-    input: z.object({ segment_id: UUID }),
+    input: z.object({ segment_id: SEGMENT }),
     annotations: LECTURE,
     run: lisible(async (a, c) => {
       const s = await seg.lireSegment(c.ctx.tenantId, a.segment_id as string);
@@ -594,7 +620,7 @@ const OUTILS_BRUTS: Outil[] = [
     title: "Supprimer un segment",
     description:
       "Supprime un marché ou une cible de l'espace (récupérable en base). Un marché qui a des cibles n'est supprimé avec elles que si avec_cibles = true : demandez d'abord à l'utilisateur.",
-    input: z.object({ segment_id: UUID, avec_cibles: z.boolean().default(false) }),
+    input: z.object({ segment_id: SEGMENT, avec_cibles: z.boolean().default(false) }),
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     visible: peutEcrire,
     run: lisible(async (a, c) => seg.supprimerSegment(c.ctx.tenantId, a.segment_id as string, a.avec_cibles as boolean)),
@@ -615,19 +641,22 @@ export function normaliserSirens(entrees: readonly string[]): { sirens: string[]
 }
 
 /**
- * Quota de verifier_entreprises par espace et par jour (heure de Paris) : 50 SIREN en gratuit, 5 000 en payant
- * ou en accès avancé. Compté en mémoire : un redémarrage le remet à zéro, c'est un fusible, pas une facture.
+ * Quota de verifier_entreprises par espace et par jour (heure de Paris) : 50 SIREN en gratuit, 5 000 en payant ou en
+ * accès avancé. Compté en base : il survit à un redémarrage et vaut pour toutes les instances (24/11 : en mémoire, 100
+ * SIREN passaient pour un quota de 50).
  */
 export const QUOTA_VERIFICATION = { gratuit: 50, payant: 5000 };
-const verifies = new Map<string, { jour: string; n: number }>();
-export function reserverVerification(tenantId: string, n: number, plafond: number, maintenant = new Date()): number {
-  const jour = maintenant.toLocaleDateString("fr-CA", { timeZone: "Europe/Paris" });
-  const v = verifies.get(tenantId);
-  const deja = v?.jour === jour ? v.n : 0;
-  const reste = Math.max(0, plafond - deja);
-  if (n > reste) throw new ErreurOutil(`Quota du jour atteint : ${deja} SIREN vérifiés sur ${plafond}, il en reste ${reste}.` + (plafond === QUOTA_VERIFICATION.gratuit ? " Un plan payant en vérifie 5 000 par jour." : ""));
-  verifies.set(tenantId, { jour, n: deja + n });
-  return reste - n;
+const cleVerification = (tenantId: string) => `verification:${tenantId}`;
+export async function reserverVerification(tenantId: string, n: number, plafond: number): Promise<{ reste: number; jour: Date }> {
+  const jour = await minuitParis();
+  const r = await consommer(cleVerification(tenantId), jour, n, plafond);
+  if (!r.accepte) {
+    throw new ErreurOutil(
+      `Quota du jour atteint : ${r.total} SIREN vérifiés sur ${plafond}, il en reste ${Math.max(0, plafond - r.total)}.` +
+        (plafond === QUOTA_VERIFICATION.gratuit ? " Un plan payant en vérifie 5 000 par jour." : ""),
+    );
+  }
+  return { reste: plafond - r.total, jour };
 }
 
 export const OUTILS_ATLAS: Outil[] = OUTILS_BRUTS.map((o) => ({

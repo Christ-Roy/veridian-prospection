@@ -40,7 +40,7 @@ vi.mock("@/lib/auth/user-context", () => ({
 
 import { verifierRequete } from "@/atlas/sql";
 import { contexteDepuisCle, creerCle, empreinte, oublierDroits, revoquerCle } from "@/atlas/acces";
-import { normaliserSirens, QUOTA_VERIFICATION, reserverVerification } from "@/atlas/outils-mcp";
+import { normaliserSirens } from "@/atlas/outils-mcp";
 import { outilsVisibles } from "@/lib/mcp/outils";
 
 describe("garde SQL", () => {
@@ -75,14 +75,6 @@ describe("garde SQL", () => {
 describe("vérification par lot", () => {
   test("SIREN et SIRET collés tels quels, doublons fusionnés, reste rendu", () => {
     expect(normaliserSirens(["552 032 534", "54206547900065", "552032534", "abc", "12"])).toEqual({ sirens: ["552032534", "542065479"], invalides: ["abc", "12"] });
-  });
-
-  test("quota par espace et par jour, remis à zéro le lendemain", () => {
-    const j1 = new Date("2026-11-16T10:00:00Z");
-    expect(reserverVerification("t-quota", 30, QUOTA_VERIFICATION.gratuit, j1)).toBe(20);
-    expect(() => reserverVerification("t-quota", 21, QUOTA_VERIFICATION.gratuit, j1)).toThrow(/il en reste 20.*plan payant/);
-    expect(reserverVerification("t-quota", 20, QUOTA_VERIFICATION.gratuit, j1)).toBe(0);
-    expect(reserverVerification("t-quota", 50, QUOTA_VERIFICATION.gratuit, new Date("2026-11-17T10:00:00Z"))).toBe(0);
   });
 });
 

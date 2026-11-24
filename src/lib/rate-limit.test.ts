@@ -74,3 +74,17 @@ describe("isRateLimited", () => {
     expect(isRateLimited(key, 0, 60_000)).toBe(true);
   });
 });
+
+describe("ménage", () => {
+  it("une limite horaire tient l'heure : le ménage ne l'oublie pas (exports, 24/11)", async () => {
+    vi.useFakeTimers();
+    vi.resetModules();
+    const { isRateLimited: f } = await import("./rate-limit");
+    for (let i = 0; i < 20; i++) expect(f("export:u", 20, 3_600_000)).toBe(false);
+    vi.advanceTimersByTime(40 * 60_000); // plusieurs passages du ménage
+    expect(f("export:u", 20, 3_600_000)).toBe(true);
+    vi.advanceTimersByTime(21 * 60_000);
+    expect(f("export:u", 20, 3_600_000)).toBe(false);
+    vi.useRealTimers();
+  });
+});

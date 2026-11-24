@@ -42,6 +42,15 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
+// Compteur en base, éprouvé sur PostgreSQL (e2e/integration/compteurs.test.ts) ; ici, le même en mémoire.
+const compte = vi.hoisted(() => new Map<string, number>());
+vi.mock("@/lib/compteurs", () => ({
+  tropDeRequetes: async (cle: string, plafond: number) => {
+    compte.set(cle, (compte.get(cle) ?? 0) + 1);
+    return compte.get(cle)! > plafond;
+  },
+}));
+
 import { POST } from "@/app/api/sso/issue-magic-link/route";
 import { makeRequest, readJson } from "../_helpers";
 

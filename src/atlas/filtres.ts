@@ -44,7 +44,17 @@ export type Scoring = z.infer<typeof ScoringSchema>;
 
 function lire<T>(schema: z.ZodType<T>, brut: unknown): T {
   const r = schema.safeParse(brut ?? {});
-  if (!r.success) throw new FiltreInvalide(r.error.issues.map((i) => `${i.path.join(".")} : ${i.message}`).join(" ; "));
+  if (!r.success) {
+    throw new FiltreInvalide(
+      r.error.issues
+        .map((i) =>
+          i.code === "unrecognized_keys"
+            ? `clé inconnue « ${i.keys.join("», «")} »${i.path.length ? ` dans ${i.path.join(".")}` : ""} : un filtre s'écrit { "conditions": [{ "champ": "naf", "op": "dans", "valeur": ["7500Z"] }] }`
+            : `${i.path.join(".") || "filtre"} : ${i.message}`,
+        )
+        .join(" ; "),
+    );
+  }
   return r.data;
 }
 
@@ -76,7 +86,12 @@ export function compilerFiltre(brut: unknown, scoringBrut?: unknown): Compile & 
 
 function compilerCondition(c: Condition, i: number, p: (type: string, v: unknown) => string): string {
   const champ = CHAMP.get(c.champ);
-  if (!champ) throw new FiltreInvalide(`conditions.${i} : champ inconnu « ${c.champ} »`);
+  if (!champ) {
+    // « code_naf » → naf, « ville » n'a pas de voisin : on renvoie au catalogue.
+    const n = c.champ.toLowerCase();
+    const proches = [...CHAMP.keys()].filter((k) => n.includes(k) || k.includes(n)).slice(0, 4);
+    throw new FiltreInvalide(`conditions.${i} : champ inconnu « ${c.champ} »${proches.length ? `, peut-être ${proches.join(" ou ")}` : ""} (lister_champs donne les champs)`);
+  }
   if (!OPERATEURS[champ.type].includes(c.op)) {
     throw new FiltreInvalide(`conditions.${i} : opérateur « ${c.op} » impossible sur ${champ.libelle} (${OPERATEURS[champ.type].join(", ")})`);
   }
@@ -118,7 +133,9 @@ function compilerCondition(c: Condition, i: number, p: (type: string, v: unknown
     case "liste": {
       const l = Array.isArray(v) ? v.map(String) : typeof v === "string" ? [v] : null;
       if (!l?.length) throw err("une ou plusieurs valeurs");
-      return `${col} ${c.op === "hors" ? "NOT IN" : "IN"} ${p("Array(String)", l)}`;
+      // « 78.10Z » s'écrit 7810Z dans ODH : sans cela, le segment se créait vide, en silence (24/11).
+      const valeurs = champ.id === "naf" ? l.map((x) => x.replace(/[.\s]/g, "").toUpperCase()) : l;
+      return `${col} ${c.op === "hors" ? "NOT IN" : "IN"} ${p("Array(String)", valeurs)}`;
     }
     case "nombre": {
       if (c.op === "entre") {

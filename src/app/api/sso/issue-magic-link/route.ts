@@ -32,7 +32,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHash, randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { verifyHubHmac } from "@/lib/hub/hmac";
-import { isRateLimited } from "@/lib/rate-limit";
+import { tropDeRequetes } from "@/lib/compteurs";
 import { safeReturnPath } from "@/lib/auth/auto-bounce";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -82,7 +82,8 @@ export async function POST(request: NextRequest) {
   }
 
   // ─── Rate limit 10/min/user ───────────────────────────────────────────────
-  if (isRateLimited(`sso:issue-magic-link:${hubUserId}`, 10, 60_000)) {
+  // En base : vaut pour toutes les instances et survit à un redémarrage.
+  if (await tropDeRequetes(`sso:issue-magic-link:${hubUserId}`, 10, 60_000)) {
     return NextResponse.json({ error: "rate_limited" }, { status: 429 });
   }
 

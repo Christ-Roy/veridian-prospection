@@ -126,14 +126,14 @@ async function reserverPage(a: Appelant, e: { id: string; segmentId: string; seg
 export async function extraireSegment(a: Appelant, p: { segmentId: string; curseur?: string | null; limite: number }): Promise<PageExtraite> {
   // Relu en base à chaque page : un espace qui perd son plan payant s'arrête là.
   const t = await prisma.tenant.findUnique({ where: { id: a.tenantId }, select: { plan: true } });
-  if (!peutExporter(t?.plan)) throw new RefusExtraction("L'extraction est réservée aux plans payants Veridian, comme l'export.");
+  if (!peutExporter(t?.plan)) throw new RefusExtraction("L'extraction est réservée aux plans payants Veridian, comme l'export. mes_droits donne le plan de l'espace ; explorer_marche compte sans plan payant.");
 
   let debut = 0;
   let e;
   if (p.curseur) {
     const c = decoderCurseur(p.curseur);
     e = c && (await prisma.atlasExtraction.findFirst({ where: { id: c.extractionId, tenantId: a.tenantId, segmentId: p.segmentId } }));
-    if (!c || !e) throw new RefusExtraction("Curseur invalide pour ce segment.");
+    if (!c || !e) throw new RefusExtraction("Curseur invalide pour ce segment : passez le curseur_suivant de la page précédente tel quel, ou aucun curseur pour reprendre du début.");
     if (e.expireLe < new Date()) throw new RefusExtraction("Curseur expiré (7 jours) : relancez l'extraction sans curseur.");
     await seg.lireSegment(a.tenantId, p.segmentId); // un segment supprimé ne s'extrait plus
     debut = c.debut;

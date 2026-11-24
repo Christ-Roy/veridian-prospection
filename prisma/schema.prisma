@@ -598,6 +598,16 @@ model AtlasPresenceIa {
   @@map("atlas_presence_ia")
 }
 
+/// Compteur durable par clé et par fenêtre (src/lib/compteurs.ts) : quota de vérification, limite de connexion.
+model Compteur {
+  cle     String
+  fenetre DateTime @db.Timestamptz
+  n       Int
+
+  @@id([cle, fenetre])
+  @@map("compteurs")
+}
+
 /// Extraction paginée d'un segment par le MCP (VER-242) : la liste ordonnée des SIREN est figée à la première
 /// page. Aucune coordonnée n'est copiée : chaque page relit ODH, et retire ce qui n'est plus envoyable.
 model AtlasExtraction {

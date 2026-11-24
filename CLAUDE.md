@@ -77,11 +77,12 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
   outil `repartir_communes`. Le cube ne descend pas à la commune.
 - Accès avancé (16/11, `src/atlas/acces.ts`, `sql.ts`) : par espace (`tenants.acces_avance`), accordé par un administrateur
   Atlas (`users.atlas_admin`, outil `accorder_acces_avance` ou volet « API et accès avancé »), jamais par le plan. Donne
-  `requete_sql` (garde : SELECT sur 3 tables d'ODH, 1 000 lignes ; le compte ClickHouse refuse `url()`) et les clés API
-  (`Bearer atl_…` sur `/api/atlas/[outil]`, empreinte SHA-256 seule). `verifier_entreprises` : 50 SIREN/jour gratuit, 5 000 payant.
+  `requete_sql` (garde SELECT, 1 000 lignes) et les clés API
+  (`Bearer atl_…` sur `/api/atlas/[outil]`, empreinte SHA-256 seule). `verifier_entreprises` : 50/jour gratuit, 5 000 payant.
 - `extraire_segment` (VER-242, `src/atlas/extraction.ts`) : liste de SIREN figée en base (curseur stable 7 jours), coordonnées
   relues à chaque page, quota 5 000 lignes/jour/espace compté dans `atlas_exports` sous verrou. La porte du Hub coupe une réponse
-  directe à ~15 000 caractères : 30 lignes, 1 000 en programme. Autres quotas (`verifier_entreprises`, `isRateLimited`) en mémoire.
+  directe à ~15 000 caractères : 30 lignes, 1 000 en programme. Elle ne garde que 300 caractères de la 1re ligne des descriptions.
+- Quota ou porte de connexion : `src/lib/compteurs.ts` (en base). `isRateLimited` = confort, par instance.
 - Registre : `hub mcp-app add prospection … --acces tous` (09/11).
 - Journaux : `obs search '\[mcp\] outil=' --since 6h` (Loki), pas `nomad alloc logs`.
 
@@ -160,7 +161,7 @@ Tests et builds : `lourd <commande>` (rise), jamais en local.
 
 ## Multi-tenant
 
-- Tables Atlas (`atlas_*`) bornées au tenant ; la base ne garde que l'identité, le contrat Hub et Atlas (21 tables).
+- Tables Atlas (`atlas_*`) bornées au tenant ; la base ne garde que l'identité, le contrat Hub et Atlas (22 tables).
 - Résolution : session → `tenants.user_id`, sinon `workspace_members` → tenant (cache 60 s).
 
 ## Règles

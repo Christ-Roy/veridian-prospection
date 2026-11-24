@@ -13,7 +13,7 @@ import { FiltreInvalide } from "./filtres";
 import { NAF_LIBELLES } from "./naf";
 
 export const EntreeActivitesSchema = z.object({
-  mots: z.string().trim().min(3).max(60).describe("Le métier en quelques mots, ex. « chasse », « toilettage chien »"),
+  mots: z.string({ error: "le métier en quelques mots est attendu, ex. « toilettage chien »" }).trim().min(3, "3 lettres au moins").max(60).describe("Le métier en quelques mots, ex. « chasse », « toilettage chien »"),
   limite: z.number().int().min(1).max(40).default(20),
 });
 

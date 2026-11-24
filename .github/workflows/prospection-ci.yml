@@ -130,7 +130,7 @@ jobs:
       - name: Run integration tests (isolation entre espaces, extraction et quota)
         env:
           DATABASE_URL: postgresql://postgres:testpass@localhost:5432/prospection_test
-        run: npx vitest run e2e/integration/atlas-isolation.test.ts e2e/integration/atlas-extraction.test.ts
+        run: npx vitest run e2e/integration/atlas-isolation.test.ts e2e/integration/atlas-extraction.test.ts e2e/integration/compteurs.test.ts
 
   # ── Build + push image GHCR (sur push main uniquement) ──────────────────
   docker:

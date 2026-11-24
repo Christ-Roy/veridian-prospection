@@ -32,7 +32,7 @@ function validerColonnes(colonnes: unknown): string[] {
 
 async function segmentDuTenant(tenantId: string, segmentId: string) {
   const s = await prisma.atlasSegment.findFirst({ where: { id: segmentId, tenantId, deletedAt: null } });
-  if (!s) throw new Introuvable(`segment introuvable : ${segmentId}`);
+  if (!s) throw new Introuvable(`segment introuvable dans cet espace : ${segmentId}. lister_segments_atlas donne les siens, creer_segment en crée un.`);
   return s;
 }
 
