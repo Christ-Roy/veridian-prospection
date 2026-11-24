@@ -1,6 +1,6 @@
 /**
- * Poignée de délégation (INTEGRATIONS-NATIVES §2.1, VER-246) : jeton opaque que le Hub joint au rebond, lié à
- * (utilisateur, app, tenant). Elle permet de demander au Hub un jeton d'action de 120 s, jamais plus.
+ * Poignées de délégation (INTEGRATIONS-NATIVES §2.1, VER-246) : jetons opaques que le Hub joint au rebond
+ * (`delegations`), un par organisation, chacun lié à (utilisateur, app, tenant). Elle permet de demander au Hub un jeton d'action de 120 s, jamais plus.
  *
  * Gardée chiffrée (AES-256-GCM, clé dérivée d'AUTH_SECRET) : d'abord sur le lien de connexion à usage unique, puis
  * liée à l'identifiant de la session ouverte (`sid` du JWT). Elle ne va jamais au navigateur. Une copie de la base
@@ -14,7 +14,10 @@ const DUREE_MAX_MS = 90 * 24 * 3600 * 1000; // celle de la session
 const POIGNEE = /^[A-Za-z0-9._~-]{32,512}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export type Delegation = { poignee: string; hubTenantId: string | null; expireLe: Date };
+/** Au-delà, ce n'est plus une personne. */
+const ORGANISATIONS_MAX = 50;
+
+export type Delegation = { poignee: string; hubTenantId: string; expireLe: Date };
 
 function cle(): Buffer {
   const secret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
@@ -41,44 +44,50 @@ export function dechiffrer(chiffre: string, contexte: string): string | null {
   }
 }
 
-/** Lit la délégation du corps signé du rebond. Absente ou mal formée : null, et la connexion se fait comme avant. */
-export function lireDelegation(corps: Record<string, unknown>, maintenant = Date.now()): Delegation | null {
-  const { delegation_grant: g, delegation_tenant_id: t, delegation_expires_at: x } = corps;
-  if (typeof g !== "string" || !POIGNEE.test(g)) return null;
-  // Un tenant ou une date illisibles ne s'ignorent pas : sans eux la poignée serait plus large que voulu.
-  if (t !== undefined && t !== null && (typeof t !== "string" || !UUID.test(t))) return null;
-  let fin = maintenant + DUREE_MAX_MS;
-  if (x !== undefined && x !== null) {
-    const d = typeof x === "string" ? Date.parse(x) : NaN;
-    if (!Number.isFinite(d) || d <= maintenant) return null;
-    fin = Math.min(fin, d);
+/** Lit `delegations` du corps signé du rebond. Une entrée mal formée est écartée, jamais élargie ; les autres restent. */
+export function lireDelegations(brut: unknown, maintenant = Date.now()): Delegation[] {
+  if (!Array.isArray(brut)) return [];
+  const par = new Map<string, Delegation>();
+  for (const e of brut.slice(0, ORGANISATIONS_MAX)) {
+    const { grant: g, hub_tenant_id: t, expire_le: x } = (e ?? {}) as Record<string, unknown>;
+    if (typeof g !== "string" || !POIGNEE.test(g) || typeof t !== "string" || !UUID.test(t)) continue;
+    const fin = typeof x === "string" ? Date.parse(x) : NaN;
+    if (!Number.isFinite(fin) || fin <= maintenant) continue;
+    par.set(t.toLowerCase(), { poignee: g, hubTenantId: t.toLowerCase(), expireLe: new Date(Math.min(fin, maintenant + DUREE_MAX_MS)) });
   }
-  return { poignee: g, hubTenantId: typeof t === "string" ? t.toLowerCase() : null, expireLe: new Date(fin) };
+  return [...par.values()];
 }
 
 /** Pour `sso_login_tokens.delegation`. */
-export function emballer(d: Delegation, empreinteLien: string): string {
-  return chiffrer(JSON.stringify({ p: d.poignee, t: d.hubTenantId, x: d.expireLe.toISOString() }), `lien:${empreinteLien}`);
+export function emballer(d: readonly Delegation[], empreinteLien: string): string {
+  return chiffrer(JSON.stringify(d.map((x) => ({ p: x.poignee, t: x.hubTenantId, x: x.expireLe.toISOString() }))), `lien:${empreinteLien}`);
 }
 
-/** À l'ouverture de la session : la poignée passe du lien à la session. Ne doit jamais faire échouer une connexion. */
+/** À l'ouverture de la session : les poignées passent du lien à la session. Ne doit jamais faire échouer une connexion. */
 export async function attacher(emballee: string, empreinteLien: string, sessionId: string, userId: string): Promise<boolean> {
   const brut = dechiffrer(emballee, `lien:${empreinteLien}`);
   if (!brut) return false;
-  const { p, t, x } = JSON.parse(brut) as { p: string; t: string | null; x: string };
-  const expireLe = new Date(x);
-  if (expireLe.getTime() <= Date.now()) return false;
+  const vivantes = (JSON.parse(brut) as { p: string; t: string; x: string }[]).filter((d) => Date.parse(d.x) > Date.now());
   await prisma.sessionDelegation.deleteMany({ where: { userId, expireLe: { lt: new Date() } } });
-  await prisma.sessionDelegation.create({ data: { sessionId, userId, hubTenantId: t, poignee: chiffrer(p, `session:${sessionId}`), expireLe } });
-  return true;
+  const r = await prisma.sessionDelegation.createMany({
+    data: vivantes.map((d) => ({ sessionId, userId, hubTenantId: d.t, poignee: chiffrer(d.p, contexte(sessionId, d.t)), expireLe: new Date(d.x) })),
+  });
+  return r.count > 0;
 }
 
-/** Poignée vivante de CETTE session pour CET utilisateur et CE tenant Hub. Une autre session ou un autre espace : null. */
+const contexte = (sessionId: string, hubTenantId: string) => `session:${sessionId}:${hubTenantId}`;
+
+/** Poignée vivante de CETTE session, pour CET utilisateur et CE tenant Hub. Une autre session ou un autre espace : null. */
 export async function poigneeDe(sessionId: string | null, userId: string, hubTenantId: string): Promise<string | null> {
-  if (!sessionId || !UUID.test(sessionId)) return null;
-  const l = await prisma.sessionDelegation.findFirst({ where: { sessionId, userId, expireLe: { gt: new Date() } } });
-  if (!l || (l.hubTenantId && l.hubTenantId.toLowerCase() !== hubTenantId.toLowerCase())) return null;
-  return dechiffrer(l.poignee, `session:${sessionId}`);
+  if (!sessionId || !UUID.test(sessionId) || !UUID.test(hubTenantId)) return null;
+  const t = hubTenantId.toLowerCase();
+  const l = await prisma.sessionDelegation.findFirst({ where: { sessionId, userId, hubTenantId: t, expireLe: { gt: new Date() } } });
+  return l ? dechiffrer(l.poignee, contexte(sessionId, t)) : null;
+}
+
+/** Le Hub a refusé cette poignée (révoquée, expirée) : on ne la représente plus. */
+export async function oublierPoignee(sessionId: string, hubTenantId: string): Promise<void> {
+  await prisma.sessionDelegation.deleteMany({ where: { sessionId, hubTenantId: hubTenantId.toLowerCase() } });
 }
 
 export async function oublierSession(sessionId: unknown): Promise<void> {

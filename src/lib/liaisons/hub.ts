@@ -6,7 +6,7 @@ import { createHmac, randomBytes } from "node:crypto";
 
 import { refusDuHub, RefusLiaison, type Cible } from "./erreurs";
 
-export const PORTEES: Record<Cible, string> = { crm: "crm:societe.ecrire crm:tache.ecrire", notifuse: "mail:contacts.importer" };
+export const PORTEES: Record<Cible, string> = { crm: "crm:societe.ecrire crm:tache.ecrire", notifuse: "notifuse:contacts.ecrire" };
 
 export type JetonAction = { jeton: string; url: string };
 type Opts = { env?: NodeJS.ProcessEnv; fetchImpl?: typeof fetch; maintenant?: () => number };
@@ -68,7 +68,7 @@ export async function demanderJeton(
   const r = (await res.json().catch(() => null)) as Record<string, unknown> | null;
   if (!res.ok) {
     const attendre = Number(res.headers.get("retry-after"));
-    const code = res.status === 429 ? "plafond" : typeof r?.error === "string" ? r.error : `http_${res.status}`;
+    const code = res.status === 429 ? "rate_limited" : typeof r?.error === "string" ? r.error : `http_${res.status}`;
     console.warn(`[liaisons] hub refus cible=${d.cible} code=${code.slice(0, 40)} http=${res.status}`);
     throw refusDuHub(code, d.cible, Number.isFinite(attendre) && attendre > 0 ? Math.min(attendre, 3600) : undefined);
   }

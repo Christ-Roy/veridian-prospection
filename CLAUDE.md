@@ -85,7 +85,7 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
   Le Hub ne garde que 300 caractères de la 1re ligne des descriptions.
 - Quota ou porte de connexion : `src/lib/compteurs.ts` (en base). `isRateLimited` = confort, par instance.
 - Journaux : `obs search '\[mcp\] outil='` ; l'écran n'en écrit aucun, sauf `[liaisons]`.
-- Envoi vers le CRM et Mail (VER-246) : `docs/LIAISONS.md`, drapeau `ATLAS_LIAISONS`, vide = éteint.
+- Envoi vers le CRM et Mail (VER-246) : `docs/LIAISONS.md`, drapeau `ATLAS_LIAISONS`.
 
 ## Déploiement et promotion
 

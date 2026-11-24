@@ -16,26 +16,27 @@ export const NOM_CIBLE: Record<Cible, string> = { crm: "le CRM", notifuse: "Mail
 
 /**
  * Refus du Hub (`/api/delegation/jeton`) traduits. Un code inconnu n'invente rien : message neutre, code gardé.
- * `poignee_*` demande à l'écran de repasser par le Hub (rebond silencieux).
+ * `grant_invalid` demande à l'écran de repasser par le Hub (rebond silencieux).
  */
 export function refusDuHub(code: string, cible: Cible, attendre?: number): RefusLiaison {
   const c = NOM_CIBLE[cible];
   switch (code) {
-    case "paire_eteinte":
-      return new RefusLiaison(code, `La liaison entre Atlas et ${c} est éteinte dans votre organisation. Un propriétaire ou un administrateur peut l'allumer dans Veridian.`, 403);
-    case "paire_absente":
-      return new RefusLiaison(code, `La liaison entre Atlas et ${c} n'existe pas encore.`, 403);
-    case "poignee_invalide":
-    case "poignee_expiree":
+    case "integration_off":
+      return new RefusLiaison("paire_eteinte", `La liaison entre Atlas et ${c} est éteinte dans votre organisation. Un propriétaire ou un administrateur peut l'allumer dans Veridian.`, 403);
+    case "pair_not_allowed":
+    case "target_not_served":
+    case "target_not_registered":
+      return new RefusLiaison("paire_absente", `La liaison entre Atlas et ${c} n'est pas encore ouverte par Veridian.`, 403);
+    case "grant_invalid":
       return new RefusLiaison("rebond", "Votre connexion Veridian doit être renouvelée avant cet envoi.", 401);
-    case "membre_requis":
-      return new RefusLiaison(code, "Vous n'êtes plus membre de cette organisation Veridian.", 403);
-    case "tenant_suspendu":
-      return new RefusLiaison(code, "Votre organisation Veridian est suspendue : aucun envoi possible.", 403);
-    case "app_non_ouverte":
-      return new RefusLiaison(code, `Vous n'avez pas encore ouvert ${c} : ouvrez-le une fois depuis Veridian, puis réessayez.`, 403);
-    case "plafond":
-      return new RefusLiaison(code, "Trop d'envois en peu de temps : patientez avant de reprendre.", 429, attendre ?? 60);
+    case "not_member":
+    case "user_invalid":
+      return new RefusLiaison("membre_requis", "Vous n'êtes plus membre de cette organisation Veridian.", 403);
+    case "tenant_suspended":
+    case "tenant_not_found":
+      return new RefusLiaison("tenant_suspendu", "Votre organisation Veridian est suspendue : aucun envoi possible.", 403);
+    case "rate_limited":
+      return new RefusLiaison("plafond", "Trop d'envois en peu de temps : patientez avant de reprendre.", 429, attendre ?? 60);
     default:
       return new RefusLiaison("hub_refus", "Veridian a refusé cet envoi. Réessayez, puis signalez-le si cela continue.", 502);
   }

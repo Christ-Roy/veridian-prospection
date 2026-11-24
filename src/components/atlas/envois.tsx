@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { Icone } from "./icones";
 import {
   adresseRebond, appelerLiaison, BILAN_CRM_VIDE, BILAN_MAIL_VIDE, cumulerCrm, cumulerMail, ErreurLiaison, phraseFicheCrm, phrasesCrm, phrasesMail, preparerRebond,
-  type BilanCrm, type BilanMail, type EtatLiaisons, type PageCrm, type PageMail, type Reprise, type ResultatFicheCrm,
+  type BilanCrm, type BilanMail, type EtatLiaisons, type ListeMail, type PageCrm, type PageMail, type Reprise, type ResultatFicheCrm,
 } from "./liaisons-logique";
 import { formaterNombre } from "./logique";
 
@@ -36,7 +36,7 @@ function useErreur(reprise: Reprise) {
 
 function MessageErreur({ erreur }: { erreur: ErreurLiaison | null }) {
   if (!erreur) return null;
-  const lien = erreur.code === "plan" ? { href: `${HUB}/dashboard/billing`, texte: "Voir les plans" } : ["paire_eteinte", "app_non_ouverte", "cible_non_reliee", "cible_non_membre", "rebond_echoue", "autre_espace"].includes(erreur.code) ? { href: `${HUB}/dashboard`, texte: "Ouvrir Veridian" } : null;
+  const lien = erreur.code === "plan" ? { href: `${HUB}/dashboard/billing`, texte: "Voir les plans" } : ["paire_eteinte", "cible_non_reliee", "cible_non_membre", "rebond_echoue", "autre_espace"].includes(erreur.code) ? { href: `${HUB}/dashboard`, texte: "Ouvrir Veridian" } : null;
   return (
     <div className="err" role="alert">
       <Icone nom="alerte" />
@@ -250,7 +250,7 @@ const NOUVELLE = "__nouvelle";
 export function DialogueMail({ objet, onFermer }: { objet: ObjetMail; onFermer: () => void }) {
   const { erreur, setErreur, traiter } = useErreur(objet.type === "fiche" ? { type: "fiche", siren: objet.siren, nom: objet.nom } : { type: "segment", segmentId: objet.segmentId, cible: "notifuse" });
   const payant = objet.type === "fiche" || objet.payant;
-  const [listes, setListes] = useState<{ id: string; nom: string }[] | null>(null);
+  const [listes, setListes] = useState<ListeMail[] | null>(null);
   const [liste, setListe] = useState("");
   const [nouvelle, setNouvelle] = useState("");
   const [etape, setEtape] = useState<"choix" | "simulation" | "simule" | "import" | "fait">("choix");
@@ -266,7 +266,7 @@ export function DialogueMail({ objet, onFermer }: { objet: ObjetMail; onFermer: 
     vivant.current = true;
     if (!payant) setErreur(PLAN);
     else
-      appelerLiaison<{ listes: { id: string; nom: string }[] }>("mail-listes", {})
+      appelerLiaison<{ listes: ListeMail[] }>("mail-listes", {})
         .then((r) => vivant.current && (setListes(r.listes), setListe((x) => x || (r.listes.length ? "" : NOUVELLE))))
         .catch((e) => vivant.current && traiter(e));
     return () => {
@@ -290,7 +290,7 @@ export function DialogueMail({ objet, onFermer }: { objet: ObjetMail; onFermer: 
     try {
       let cible = liste;
       if (cible === NOUVELLE) {
-        const l = await appelerLiaison<{ id: string; nom: string }>("mail-creer-liste", { geste: id.current, nom: nouvelle.trim() });
+        const l = await appelerLiaison<ListeMail>("mail-creer-liste", { geste: id.current, nom: nouvelle.trim() });
         cible = l.id;
         setListes((x) => [...(x ?? []).filter((y) => y.id !== l.id), l]);
         setListe(l.id);
@@ -347,8 +347,8 @@ export function DialogueMail({ objet, onFermer }: { objet: ObjetMail; onFermer: 
                 Choisir une liste
               </option>
               {listes.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.nom}
+                <option key={l.id} value={l.id} disabled={l.sequence}>
+                  {l.sequence ? `${l.nom} (démarre une séquence)` : l.nom}
                 </option>
               ))}
               <option value={NOUVELLE}>Nouvelle liste…</option>

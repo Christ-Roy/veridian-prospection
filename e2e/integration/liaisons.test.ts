@@ -49,8 +49,8 @@ const id = randomUUID().slice(0, 8);
 
 type Etat = { poignees: Map<string, { user: string; tenant: string }>; nonces: Set<string>; jetons: Map<string, { tenant: string; cible: string; scope: string }>; paire: Record<string, boolean>; forcer: null | { status: number; corps: unknown }; tenantRendu: string | null; demandes: { cible: string; motif: string; headers: IncomingMessage["headers"] }[] };
 const hub: Etat = { poignees: new Map(), nonces: new Set(), jetons: new Map(), paire: {}, forcer: null, tenantRendu: null, demandes: [] };
-const crm = { fiches: new Map<string, string>(), appels: 0, corbeille: new Set<string>(), tenants: new Set<string>(), panne: 0, cles: [] as string[], sse: false };
-const mail = { contacts: new Map<string, Record<string, unknown>>(), listes: new Map<string, string>(), appels: [] as { outil: string; args: Record<string, unknown>; cle: string }[], mails: 0, desinscrits: new Set<string>(), sequence: new Set<string>(), sautePage: 0, tenants: new Set<string>() };
+const crm = { fiches: new Map<string, string>(), appels: 0, corbeille: new Set<string>(), tenants: new Set<string>(), panne: 0, lenteur: 0, oubli: false, droits: false, cles: [] as string[], sse: false };
+const mail = { contacts: new Map<string, Record<string, unknown>>(), listes: new Map<string, string>(), appels: [] as { outil: string; args: Record<string, unknown>; cle: string }[], mails: 0, desinscrits: new Set<string>(), sequence: new Set<string>(), sautePage: 0, ment: "" as "" | "dry_run" | "http", tenants: new Set<string>() };
 
 const lire = (r: IncomingMessage) => new Promise<string>((ok) => { let s = ""; r.on("data", (d) => (s += d)); r.on("end", () => ok(s)); });
 const serveurs: Server[] = [];
@@ -89,28 +89,45 @@ beforeAll(async () => {
     const { params } = JSON.parse(corps);
     if (params.name !== "app_envoyer_au_crm") return { status: 200, corps: outil({ error: "Tool not found" }, true) };
     const a = params.arguments;
-    if (crm.corbeille.has(a.siren)) return { status: 200, corps: outil({ ok: false, erreur: "corbeille", message: "Cette société est dans la corbeille du CRM." }) };
-    const neuf = !crm.fiches.has(a.siren);
-    crm.fiches.set(a.siren, j.tenant);
-    const r = outil({ result: { ok: true, rejoue: !neuf, societe: { id: "x", etat: neuf ? "creee" : "inchangee" }, contact: null, tache: null } });
+    const un = (e: { siren: string }) => {
+      if (crm.corbeille.has(e.siren)) return { ok: false, erreur: "corbeille", message: "Cette société est dans la corbeille du CRM." };
+      const neuf = !crm.fiches.has(e.siren);
+      crm.fiches.set(e.siren, j.tenant);
+      return { ok: true, rejoue: !neuf, societe: { id: "x", etat: neuf ? "creee" : "inchangee", url: `https://banc.crm.app.veridian.site/object/company/${e.siren}` }, contact: null, tache: null };
+    };
+    let resultat: unknown;
+    if (Array.isArray(a.envois)) {
+      if (a.envois.length < 1 || a.envois.length > 20) resultat = { ok: false, erreur: "lot_invalide", message: "Un lot contient de 1 à 20 envois." };
+      else {
+        const l = a.envois.map((e: { siren: string }, i: number) => ({ siren: e.siren, ...(crm.lenteur > 0 && i >= 10 ? { ok: false, erreur: "non_traite", message: "Pas traité à temps" } : crm.droits ? { ok: false, erreur: "droits", message: "Votre rôle dans ce CRM ne permet pas cet envoi." } : un(e)) }));
+        if (crm.lenteur > 0) crm.lenteur--;
+        resultat = { ok: true, lot: true, reussis: l.length, total: l.length, resultats: crm.oubli ? l.slice(1) : l };
+      }
+    } else resultat = un(a);
+    const r = outil({ result: resultat });
     return crm.sse ? { status: 200, corps: null, entetes: { "Content-Type": "text/event-stream" }, brut: `event: message\ndata: ${JSON.stringify(r)}\n\n` } : { status: 200, corps: r };
   });
   const urlMail = await servir((req, corps) => {
     const j = jetonValable(req, "notifuse");
     if (!j) return { status: 401, corps: { error: "jeton" } };
-    const { params } = JSON.parse(corps);
-    const a = params.arguments as Record<string, unknown>;
-    mail.appels.push({ outil: params.name, args: a, cle: String(req.headers["idempotency-key"]) });
-    if (params.name === "lists_list") return { status: 200, corps: outil({ lists: [...mail.listes].map(([id, name]) => ({ id, name })) }) };
-    if (params.name === "lists_create") {
+    const action = /^\/api\/veridian\/actions\/([a-z.]+)$/.exec(req.url ?? "")?.[1] ?? "";
+    const a = JSON.parse(corps) as Record<string, unknown>;
+    const cle = String(req.headers["idempotency-key"] ?? "");
+    mail.appels.push({ outil: action, args: a, cle });
+    if (j.scope !== "notifuse:contacts.ecrire") return { status: 403, corps: { error: "portee_insuffisante" } };
+    if (!a.dry_run && (cle.length < 8 || cle.length > 128)) return { status: 400, corps: { error: "cle_requise" } };
+    const fait = (resultat: unknown) => ({ status: 200, corps: { action, rejoue: false, simulation: !!a.dry_run, resultat } });
+    if (action === "listes.lister") return fait({ listes: [...mail.listes].map(([id, nom]) => ({ id, nom, sequence: mail.sequence.has(id) })) });
+    if (action === "listes.creer") {
       mail.listes.set(String(a.id), String(a.name));
-      return { status: 200, corps: outil({ list: { id: a.id } }) };
+      return fait({ id: a.id });
     }
-    if (params.name !== "contacts_import" || a.allow_triggers) return { status: 403, corps: { error: "delegation_forbidden" } };
+    if (action !== "contacts.importer") return { status: 404, corps: { error: "action_inconnue" } };
+    if (Object.keys(a).some((k) => !["list_ids", "contacts", "dry_run"].includes(k))) return { status: 400, corps: { error: "demande_invalide" } };
     const contacts = a.contacts as { email: string }[];
     if (contacts.length > 1000) return { status: 400, corps: { error: "trop" } };
     const liste = (a.list_ids as string[])[0];
-    if (mail.sequence.has(liste) && !a.dry_run) return { status: 200, corps: outil({ code: "would_trigger", error: "x" }, true) };
+    if (mail.sequence.has(liste) && !a.dry_run) return { status: 409, corps: { error: "refus_de_l_app", reason: "x", detail: { code: "would_trigger", error: "x" } } };
     if (!a.dry_run && mail.sautePage > 0 && --mail.sautePage === 0) return { status: 502, corps: { error: "coupure" } };
     let crees = 0, existants = 0, exclus = 0;
     for (const c of contacts) {
@@ -121,25 +138,26 @@ beforeAll(async () => {
         if (!a.dry_run) mail.contacts.set(c.email, c);
       }
     }
-    return { status: 200, corps: outil({ dry_run: a.dry_run, received: contacts.length, created: crees, updated: 0, existing: existants, subscribed: a.dry_run ? 0 : crees, skipped: exclus ? { unsubscribed: exclus } : {}, ...(mail.sequence.has(liste) ? { triggers: [{ id: "s", name: "Séquence" }] } : {}) }) };
+    if (mail.ment === "http") return { status: 500, corps: { resultat: { dry_run: a.dry_run, received: 1, created: 1 } } };
+    return fait({ dry_run: mail.ment === "dry_run" ? !a.dry_run : a.dry_run, received: contacts.length, created: crees, updated: 0, existing: existants, subscribed: a.dry_run ? 0 : crees, skipped: exclus ? { unsubscribed: exclus } : {}, ...(mail.sequence.has(liste) ? { triggers: [{ id: "s", name: "Séquence" }] } : {}) });
   });
   process.env.HUB_API_URL = await servir((req, corps) => {
     const h = req.headers;
     if (req.url !== "/api/delegation/jeton" || h["x-veridian-app"] !== "prospection") return { status: 404, corps: { error: "x" } };
     const ts = String(h["x-veridian-timestamp"]), nonce = String(h["x-veridian-nonce"]);
     const sig = createHmac("sha256", SECRET).update(`${ts}.${nonce}.${corps}`).digest("hex");
-    if (sig !== h["x-veridian-hub-signature"] || Math.abs(Date.now() - Number(ts)) > 300_000 || !/^[0-9a-f]{32}$/.test(nonce) || hub.nonces.has(nonce)) return { status: 401, corps: { error: "signature_invalide" } };
+    if (sig !== h["x-veridian-hub-signature"] || Math.abs(Date.now() - Number(ts)) > 300_000 || !/^[0-9a-f]{32}$/.test(nonce) || hub.nonces.has(nonce)) return { status: 401, corps: { error: "invalid_signature" } };
     hub.nonces.add(nonce);
     const d = JSON.parse(corps);
     hub.demandes.push({ cible: d.audience, motif: d.motif, headers: h });
     if (hub.forcer) return { status: hub.forcer.status, corps: hub.forcer.corps, entetes: { "Retry-After": "30" } };
     const p = hub.poignees.get(d.subject_grant);
-    if (!p) return { status: 401, corps: { error: "poignee_invalide" } };
-    if (hub.paire[d.audience] === false) return { status: 403, corps: { error: "paire_eteinte" } };
-    if (d.audience === "crm" ? d.scope !== "crm:societe.ecrire crm:tache.ecrire" : d.scope !== "mail:contacts.importer") return { status: 403, corps: { error: "paire_absente" } };
+    if (!p) return { status: 403, corps: { error: "grant_invalid" } };
+    if (hub.paire[d.audience] === false) return { status: 403, corps: { error: "integration_off" } };
+    if (d.audience === "crm" ? d.scope !== "crm:societe.ecrire crm:tache.ecrire" : d.scope !== "notifuse:contacts.ecrire") return { status: 403, corps: { error: "pair_not_allowed" } };
     const jeton = randomBytes(24).toString("base64url");
     hub.jetons.set(jeton, { tenant: p.tenant, cible: d.audience, scope: d.scope });
-    return { status: 200, corps: { access_token: jeton, expires_in: 120, tenant_id: hub.tenantRendu ?? p.tenant, url: d.audience === "crm" ? `${urlCrm}/mcp` : `${urlMail}/api/mcp` } };
+    return { status: 200, corps: { access_token: jeton, expires_in: 120, tenant_id: hub.tenantRendu ?? p.tenant, url: d.audience === "crm" ? `${urlCrm}/mcp` : `${urlMail}/api/veridian/actions` } };
   });
 
   for (const [nom, plan] of [["paye", "business"], ["gratuit", "freemium"], ["autre", "business"]]) {
@@ -158,8 +176,8 @@ beforeEach(async () => {
   await prisma.sessionDelegation.deleteMany({ where: { userId: { in: Object.values(T).map((x) => x.u) } } });
   await prisma.compteur.deleteMany({ where: { cle: { in: Object.values(T).map((x) => `sso:issue-magic-link:${x.hubUser}`) } } });
   Object.assign(hub, { poignees: new Map(), jetons: new Map(), paire: {}, forcer: null, tenantRendu: null, demandes: [] });
-  Object.assign(crm, { fiches: new Map(), appels: 0, corbeille: new Set(), tenants: new Set(Object.values(T).map((x) => x.hub)), panne: 0, cles: [], sse: false });
-  Object.assign(mail, { contacts: new Map(), listes: new Map([["reserve", "Réserve"]]), appels: [], desinscrits: new Set(), sequence: new Set(), sautePage: 0 });
+  Object.assign(crm, { fiches: new Map(), appels: 0, corbeille: new Set(), tenants: new Set(Object.values(T).map((x) => x.hub)), panne: 0, lenteur: 0, oubli: false, droits: false, cles: [], sse: false });
+  Object.assign(mail, { contacts: new Map(), listes: new Map([["reserve", "Réserve"]]), appels: [], desinscrits: new Set(), sequence: new Set(), sautePage: 0, ment: "" });
   odh.n = 45;
   odh.bloques.clear();
   process.env.ATLAS_LIAISONS = "crm=*;notifuse=*";
@@ -176,11 +194,11 @@ afterAll(async () => {
 // ---------------------------------------------------------------- le parcours
 
 /** Le rebond : le Hub émet un lien avec une poignée, le navigateur l'ouvre, on rend le cookie. */
-async function rebond(nom: string, plus: Record<string, unknown> = {}): Promise<{ cookie: string; poignee: string }> {
+async function rebond(nom: string, plus: Record<string, unknown> = {}, autres: unknown[] = []): Promise<{ cookie: string; poignee: string }> {
   const x = T[nom];
   const poignee = randomBytes(32).toString("base64url");
   hub.poignees.set(poignee, { user: x.hubUser, tenant: x.hub });
-  const corps = JSON.stringify({ hub_user_id: x.hubUser, email: x.email, email_proven: true, delegation_grant: poignee, delegation_tenant_id: x.hub, delegation_expires_at: new Date(Date.now() + 3600_000).toISOString(), ...plus });
+  const corps = JSON.stringify({ hub_user_id: x.hubUser, email: x.email, email_proven: true, delegations: [{ hub_tenant_id: x.hub, grant: poignee, expire_le: new Date(Date.now() + 3600_000).toISOString(), ...plus }, ...autres] });
   const ts = Date.now();
   const r = await emettreLien(new NextRequest("http://localhost:3000/api/sso/issue-magic-link", { method: "POST", body: corps, headers: { "content-type": "application/json", "x-veridian-timestamp": String(ts), "x-veridian-hub-signature": createHmac("sha256", SECRET).update(`${ts}.${corps}`).digest("hex") } }));
   expect(r.status).toBe(200);
@@ -203,7 +221,7 @@ describe("poignée et session", () => {
   test("la poignée passe du lien à la session, chiffrée, et le lien n'en garde rien", async () => {
     const { cookie, poignee } = await rebond("paye");
     const s = await sid(cookie);
-    const l = await prisma.sessionDelegation.findUniqueOrThrow({ where: { sessionId: s! } });
+    const l = await prisma.sessionDelegation.findFirstOrThrow({ where: { sessionId: s! } });
     expect(l.poignee).not.toContain(poignee);
     expect(cookie).not.toContain(poignee);
     expect(await poigneeDe(s, T.paye.u, T.paye.hub)).toBe(poignee);
@@ -216,36 +234,49 @@ describe("poignée et session", () => {
     expect(await poigneeDe(null, T.paye.u, T.paye.hub)).toBeNull();
     expect(await poigneeDe(s, T.autre.u, T.paye.hub)).toBeNull();
     expect(await poigneeDe(s, T.paye.u, T.autre.hub)).toBeNull();
-    await prisma.sessionDelegation.update({ where: { sessionId: s! }, data: { expireLe: new Date(Date.now() - 1) } });
+    await prisma.sessionDelegation.updateMany({ where: { sessionId: s! }, data: { expireLe: new Date(Date.now() - 1) } });
     expect(await poigneeDe(s, T.paye.u, T.paye.hub)).toBeNull();
   });
   test("un chiffré recopié sur une autre session ne s'ouvre pas", async () => {
     const a = await sid((await rebond("paye")).cookie);
     const b = await sid((await rebond("paye")).cookie);
-    const l = await prisma.sessionDelegation.findUniqueOrThrow({ where: { sessionId: a! } });
-    await prisma.sessionDelegation.update({ where: { sessionId: b! }, data: { poignee: l.poignee } });
+    const l = await prisma.sessionDelegation.findFirstOrThrow({ where: { sessionId: a! } });
+    await prisma.sessionDelegation.updateMany({ where: { sessionId: b! }, data: { poignee: l.poignee } });
     expect(await poigneeDe(b, T.paye.u, T.paye.hub)).toBeNull();
   });
   test.each([
-    ["trop courte", { delegation_grant: "court" }],
-    ["tenant illisible", { delegation_tenant_id: "pas-un-uuid" }],
-    ["déjà expirée", { delegation_expires_at: "2020-01-01T00:00:00Z" }],
-    ["date illisible", { delegation_expires_at: "demain" }],
-    ["absente", { delegation_grant: undefined }],
+    ["trop courte", { grant: "court" }],
+    ["tenant illisible", { hub_tenant_id: "pas-un-uuid" }],
+    ["déjà expirée", { expire_le: "2020-01-01T00:00:00Z" }],
+    ["date illisible", { expire_le: "demain" }],
+    ["absente", { grant: undefined }],
   ])("poignée %s : on entre quand même, sans liaison", async (_n, plus) => {
     const s = await sid((await rebond("paye", plus)).cookie);
     expect(s).toBeTruthy();
-    expect(await prisma.sessionDelegation.findUnique({ where: { sessionId: s! } })).toBeNull();
+    expect(await prisma.sessionDelegation.findFirst({ where: { sessionId: s! } })).toBeNull();
     await expect(li.ficheVersCrm(await li.appelDe(T.paye.ctx, s), { geste: randomUUID(), siren: "100000001" })).rejects.toEqual(refus("rebond"));
     expect(hub.demandes).toEqual([]);
   });
+});
+
+test("une poignée par organisation : chacune ne sert que dans la sienne, une entrée mal formée n'en fait perdre aucune autre", async () => {
+  const g = randomBytes(32).toString("base64url");
+  const { cookie, poignee } = await rebond("paye", {}, [{ hub_tenant_id: T.autre.hub, grant: g, expire_le: new Date(Date.now() + 3600_000).toISOString() }, { hub_tenant_id: randomUUID(), grant: "x" }, { hub_tenant_id: "pas-un-uuid", grant: "g".repeat(43), expire_le: new Date(Date.now() + 3600_000).toISOString() }, null]);
+  const s = await sid(cookie);
+  expect(await poigneeDe(s, T.paye.u, T.paye.hub)).toBe(poignee);
+  expect(await poigneeDe(s, T.paye.u, T.autre.hub)).toBe(g);
+  expect(await prisma.sessionDelegation.count({ where: { sessionId: s! } })).toBe(2);
+  // Recopiée sur l'autre organisation de la même session, elle ne s'ouvre pas.
+  const l = await prisma.sessionDelegation.findFirstOrThrow({ where: { sessionId: s!, hubTenantId: T.autre.hub } });
+  await prisma.sessionDelegation.updateMany({ where: { sessionId: s!, hubTenantId: T.paye.hub }, data: { poignee: l.poignee } });
+  expect(await poigneeDe(s, T.paye.u, T.paye.hub)).toBeNull();
 });
 
 describe("fiche vers le CRM", () => {
   test("un clic crée, le même geste rend le premier résultat, un second clic ne recrée rien ; une ligne tracée par geste", async () => {
     const a = await appel();
     const geste = randomUUID();
-    expect(await li.ficheVersCrm(a, { geste, siren: "100000001" })).toMatchObject({ sort: "cree" });
+    expect(await li.ficheVersCrm(a, { geste, siren: "100000001" })).toMatchObject({ sort: "cree", url: "https://banc.crm.app.veridian.site/object/company/100000001" });
     expect(await li.ficheVersCrm(a, { geste, siren: "100000001" })).toMatchObject({ sort: "cree", rejoue: true });
     expect(crm.appels).toBe(1);
     expect(await li.ficheVersCrm(a, { geste: randomUUID(), siren: "100000001" })).toMatchObject({ sort: "deja" });
@@ -280,16 +311,25 @@ describe("fiche vers le CRM", () => {
     await expect(li.ficheVersCrm(a, { geste, siren: "100000002" })).rejects.toEqual(refus("geste_reutilise"));
   });
   test.each([
-    ["paire_eteinte", 403, "paire_eteinte"],
-    ["poignee_expiree", 401, "rebond"],
-    ["membre_requis", 403, "membre_requis"],
-    ["tenant_suspendu", 403, "tenant_suspendu"],
-    ["autre", 429, "plafond"],
+    ["integration_off", 403, "paire_eteinte"],
+    ["pair_not_allowed", 403, "paire_absente"],
+    ["target_not_served", 403, "paire_absente"],
+    ["grant_invalid", 403, "rebond"],
+    ["not_member", 403, "membre_requis"],
+    ["tenant_suspended", 403, "tenant_suspendu"],
+    ["rate_limited", 429, "plafond"],
+    ["invalid_signature", 401, "hub_refus"],
     ["inconnu", 500, "hub_refus"],
   ])("le Hub répond %s : message clair, rien chez le CRM", async (error, status, code) => {
     hub.forcer = { status: status as number, corps: { error } };
     await expect(li.ficheVersCrm(await appel(), { geste: randomUUID(), siren: "100000001" })).rejects.toEqual(refus(code));
     expect(crm.appels).toBe(0);
+  });
+  test("poignée refusée par le Hub : oubliée, l'écran sait qu'il faut un rebond", async () => {
+    const a = await appel();
+    hub.poignees.clear();
+    await expect(li.ficheVersCrm(a, { geste: randomUUID(), siren: "100000001" })).rejects.toEqual(refus("rebond"));
+    expect((await li.etatLiaisons(a)).connexion).toBe(false);
   });
   test("paire éteinte dans l'organisation : dit à qui s'adresser", async () => {
     hub.paire.crm = false;
@@ -348,10 +388,35 @@ describe("segment vers le CRM", () => {
     expect([p2.traitees, p3.traitees, p3.curseur_suivant]).toEqual([20, 5, null]);
     expect(crm.fiches.size).toBe(45);
     expect(await lignesTracees()).toBe(45);
+    // Un jeton et un appel par lot de 20 : trois lots, plus celui de la panne.
+    expect([crm.appels, hub.demandes.length]).toEqual([4, 4]);
     const avant = crm.appels;
     expect(await li.segmentVersCrm(a, { geste, segmentId: s })).toMatchObject({ rejoue: true, creees: 20 });
     expect(crm.appels).toBe(avant);
     expect(new Set(hub.demandes.map((d) => d.headers["x-veridian-nonce"])).size).toBe(hub.demandes.length);
+  });
+  test("le CRM n'a pas tout traité à temps : la page se reprend, rien n'est compté ni créé deux fois", async () => {
+    const a = await appel();
+    const s = await segment();
+    const geste = randomUUID();
+    crm.lenteur = 1;
+    await expect(li.segmentVersCrm(a, { geste, segmentId: s })).rejects.toEqual(refus("a_reprendre"));
+    expect(crm.fiches.size).toBe(10);
+    expect(await li.segmentVersCrm(a, { geste, segmentId: s })).toMatchObject({ traitees: 20, creees: 10, deja: 10 });
+    expect([crm.fiches.size, await lignesTracees()]).toEqual([20, 20]);
+  });
+  test("le CRM oublie une société dans sa réponse : jamais lu comme un succès", async () => {
+    crm.oubli = true;
+    await expect(li.segmentVersCrm(await appel(), { geste: randomUUID(), segmentId: await segment() })).rejects.toEqual(refus("a_reprendre"));
+  });
+  test("société en corbeille : les autres passent ; rôle CRM insuffisant : tout s'arrête", async () => {
+    const a = await appel();
+    const s = await segment();
+    crm.corbeille.add("100000003");
+    const p = await li.segmentVersCrm(a, { geste: randomUUID(), segmentId: s });
+    expect([p.creees, p.refusees]).toEqual([19, [{ siren: "100000003", message: "Cette société est dans la corbeille du CRM." }]]);
+    crm.droits = true;
+    await expect(li.segmentVersCrm(a, { geste: randomUUID(), segmentId: s })).rejects.toEqual(refus("cible_droits"));
   });
   test("100 sociétés au plus par geste", async () => {
     odh.n = 150;
@@ -404,7 +469,7 @@ describe("vers Mail", () => {
     expect(mail.contacts.size).toBe(2299);
     expect(await lignesTracees()).toBe(2300);
     expect(mail.appels.every((x) => !("allow_triggers" in x.args))).toBe(true);
-    expect(mail.appels.filter((x) => x.outil === "contacts_import").every((x) => x.args.existing === "attach")).toBe(true);
+    expect(mail.appels.every((x) => x.outil === "contacts.importer")).toBe(true);
     expect([...mail.contacts.values()][0]).toMatchObject({ siren: expect.stringMatching(/^\d{9}$/), source: "Veridian Atlas", first_name: "CAROLE", last_name: "GABARROCA" });
   });
   test("sans simulation, ou vers une autre liste que celle simulée : refusé", async () => {
@@ -455,9 +520,15 @@ describe("vers Mail", () => {
     odh.bloques.add("100000006");
     await expect(li.ficheVersMail(a, { geste: randomUUID(), siren: "100000006", listeId: "reserve", simulation: true })).rejects.toEqual(refus("sans_email"));
   });
+  test.each([["dry_run", "reponse_invalide"], ["http", "cible_refus"]] as const)("Mail répond à côté (%s) : jamais présenté comme réussi", async (ment, code) => {
+    mail.ment = ment;
+    await expect(li.ficheVersMail(await appel(), { geste: randomUUID(), siren: "100000005", listeId: "reserve", simulation: true })).rejects.toEqual(refus(code));
+  });
   test("listes lues et créées chez Mail, une seule fois par geste", async () => {
     const a = await appel();
-    expect((await li.listesMail(a)).listes).toEqual([{ id: "reserve", nom: "Réserve" }]);
+    expect((await li.listesMail(a)).listes).toEqual([{ id: "reserve", nom: "Réserve", sequence: false }]);
+    mail.sequence.add("reserve");
+    expect((await li.listesMail(a)).listes[0].sequence).toBe(true);
     const geste = randomUUID();
     const l = await li.creerListeMail(a, { geste, nom: "Éleveurs" });
     expect((await li.creerListeMail(a, { geste, nom: "Éleveurs" })).id).toBe(l.id);

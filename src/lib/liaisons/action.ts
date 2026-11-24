@@ -1,4 +1,7 @@
-/** Appel d'une action chez l'app cible : `tools/call` sur son MCP, avec le jeton d'action. Réponse JSON ou SSE. */
+/**
+ * Appel d'une action chez l'app cible, avec le jeton d'action. CRM : `tools/call` sur son MCP (JSON ou SSE). Mail :
+ * `POST <adresse>/<action>` (fiche 87 de Notifuse), idempotente par clé.
+ */
 import { NOM_CIBLE, refusDuHub, RefusLiaison, type Cible } from "./erreurs";
 import type { JetonAction } from "./hub";
 
@@ -33,6 +36,41 @@ function analyser(texte: string): Record<string, unknown> | null {
   }
 }
 
+/** Requête bornée. Le jeton ne suit jamais une redirection. */
+async function poster(url: string, jeton: string, cible: Cible, corps: unknown, cle: string, o: Opts): Promise<{ res: Response; texte: string }> {
+  try {
+    const res = await (o.fetchImpl ?? fetch)(url, {
+      method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(o.delaiMs ?? 60_000),
+      headers: {
+        Authorization: `Bearer ${jeton}`,
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+        "Idempotency-Key": cle,
+        "X-Veridian-MCP-Appel": "programme",
+      },
+      body: JSON.stringify(corps),
+    });
+    return { res, texte: await corpsBorne(res) };
+  } catch (e) {
+    if (e instanceof RefusLiaison) throw e;
+    // Peut-être reçu : le rejeu du même geste est sans effet chez la cible.
+    throw new RefusLiaison("cible_injoignable", `Pas de réponse de ${NOM_CIBLE[cible]}. Vous pouvez réessayer, rien ne sera créé deux fois.`, 503);
+  }
+}
+
+/** Action de Mail. Rend `resultat`. */
+export async function appelerMail(a: JetonAction, action: string, corps: Record<string, unknown>, cle: string, o: Opts = {}): Promise<Record<string, unknown>> {
+  const { res, texte } = await poster(`${a.url.replace(/\/+$/, "")}/${action}`, a.jeton, "notifuse", corps, cle, o);
+  const r = analyser(texte);
+  const sortie = objet(r?.resultat);
+  if (res.ok && sortie) return sortie;
+  const code = codeRefus(r);
+  console.warn(`[liaisons] action refusée cible=notifuse action=${action} http=${res.status} code=${code.slice(0, 60)}`);
+  throw traduireRefus("notifuse", res.status, code, JSON.stringify(r?.detail ?? ""), Number(res.headers.get("retry-after")));
+}
+
 /** Code de refus, où qu'il soit : `error.data.error`, `error.data.code`, `error` ou `code`. */
 function codeRefus(r: Record<string, unknown> | null): string {
   const e = objet(r?.error);
@@ -41,38 +79,10 @@ function codeRefus(r: Record<string, unknown> | null): string {
   return "";
 }
 
-/** Rend l'objet produit par l'outil. Lève `RefusLiaison` ; les codes d'espace du contrat MCP deviennent des messages. */
-export async function appelerAction(
-  a: JetonAction,
-  cible: Cible,
-  outil: string,
-  args: Record<string, unknown>,
-  cleIdempotence: string,
-  o: Opts = {},
-): Promise<Record<string, unknown>> {
-  const nom = NOM_CIBLE[cible];
-  let res: Response;
-  let texte: string;
-  try {
-    res = await (o.fetchImpl ?? fetch)(a.url, {
-      method: "POST",
-      redirect: "error", // le jeton ne suit jamais une redirection
-      signal: AbortSignal.timeout(o.delaiMs ?? 60_000),
-      headers: {
-        Authorization: `Bearer ${a.jeton}`,
-        "Content-Type": "application/json",
-        Accept: "application/json, text/event-stream",
-        "Idempotency-Key": cleIdempotence,
-        "X-Veridian-MCP-Appel": "programme",
-      },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: outil, arguments: args } }),
-    });
-    texte = await corpsBorne(res);
-  } catch (e) {
-    if (e instanceof RefusLiaison) throw e;
-    // Peut-être reçu : le rejeu du même geste est sans effet chez la cible.
-    throw new RefusLiaison("cible_injoignable", `Pas de réponse de ${nom}. Vous pouvez réessayer, rien ne sera créé deux fois.`, 503);
-  }
+/** Outil du CRM. Rend l'objet produit par l'outil. Lève `RefusLiaison` ; les codes d'espace du contrat MCP deviennent des messages. */
+export async function appelerCrm(a: JetonAction, outil: string, args: Record<string, unknown>, cle: string, o: Opts = {}): Promise<Record<string, unknown>> {
+  const cible: Cible = "crm";
+  const { res, texte } = await poster(a.url, a.jeton, cible, { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: outil, arguments: args } }, cle, o);
   const r = analyser(texte);
   const code = codeRefus(r);
   const resultat = objet(r?.result);
@@ -100,10 +110,13 @@ export async function appelerAction(
 function traduireRefus(cible: Cible, http: number, code: string, texte: string, attendre: number): RefusLiaison {
   const nom = NOM_CIBLE[cible];
   const dit = (c: string) => code === c || texte.includes(c);
-  if (http === 429) return refusDuHub("plafond", cible, attendre > 0 ? Math.min(attendre, 3600) : undefined);
-  if (dit("tenant_not_linked")) return new RefusLiaison("cible_non_reliee", `Votre organisation n'est pas reliée à ${nom} : ouvrez-le une fois depuis Veridian, puis réessayez.`, 403);
-  if (dit("tenant_forbidden") || dit("hub_user_unknown")) return new RefusLiaison("cible_non_membre", `Vous n'avez pas accès à ${nom} dans cette organisation.`, 403);
+  if (http === 429) return refusDuHub("rate_limited", cible, attendre > 0 ? Math.min(attendre, 3600) : undefined);
+  if (dit("tenant_not_linked") || dit("espace_non_relie")) return new RefusLiaison("cible_non_reliee", `Votre organisation n'est pas reliée à ${nom} : ouvrez-le une fois depuis Veridian, puis réessayez.`, 403);
+  if (["tenant_forbidden", "hub_user_unknown", "utilisateur_inconnu", "non_membre"].some(dit)) return new RefusLiaison("cible_non_membre", `Vous n'avez pas accès à ${nom} dans cette organisation.`, 403);
+  if (dit("espace_suspendu")) return new RefusLiaison("cible_suspendue", `Votre espace dans ${nom} est suspendu.`, 403);
+  if (dit("cle_reutilisee")) return new RefusLiaison("geste_reutilise", "Le contenu a changé depuis le premier essai : recommencez l'envoi.", 409);
+  if (dit("en_cours")) return new RefusLiaison("en_cours", "Cet envoi est déjà en cours.", 409, 5);
   if (dit("would_trigger")) return new RefusLiaison("sequence", "Cette liste démarre une séquence d'envoi : choisissez une liste sans séquence. Rien n'a été écrit.", 409);
-  if (/not found|unknown tool|outil inconnu/i.test(texte)) return new RefusLiaison("cible_absente", `${nom === "Mail" ? "Mail" : "Votre CRM"} ne sait pas encore recevoir cet envoi : la liaison n'y est pas installée.`, 409);
+  if (dit("action_inconnue") || /not found|unknown tool|outil inconnu/i.test(texte)) return new RefusLiaison("cible_absente", `${nom === "Mail" ? "Mail" : "Votre CRM"} ne sait pas encore recevoir cet envoi : la liaison n'y est pas installée.`, 409);
   return new RefusLiaison("cible_refus", `${nom === "Mail" ? "Mail" : "Le CRM"} n'a pas accepté cet envoi. Vous pouvez réessayer, rien ne sera créé deux fois.`, 502);
 }

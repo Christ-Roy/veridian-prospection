@@ -300,16 +300,17 @@ model SsoLoginToken {
 
 /// Poignée de délégation du Hub (VER-246), chiffrée, liée à UNE session de navigateur. Elle meurt avec elle.
 model SessionDelegation {
-  sessionId   String   @id @map("session_id") @db.Uuid
+  sessionId   String   @map("session_id") @db.Uuid
   userId      String   @map("user_id") @db.Uuid
   /// Tenant Hub auquel la poignée est liée : elle ne sert que dans l'espace relié à ce tenant.
-  hubTenantId String?  @map("hub_tenant_id") @db.Uuid
+  hubTenantId String   @map("hub_tenant_id") @db.Uuid
   poignee     String
   expireLe    DateTime @map("expire_le") @db.Timestamptz
   creeLe      DateTime @default(now()) @map("cree_le") @db.Timestamptz
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@id([sessionId, hubTenantId])
   @@index([userId])
   @@map("session_delegations")
 }

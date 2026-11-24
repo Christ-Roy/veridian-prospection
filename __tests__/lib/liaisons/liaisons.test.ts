@@ -14,7 +14,7 @@ import { GET, POST } from "@/app/api/liaisons/[action]/route";
 import { RefusLiaison } from "@/lib/liaisons/erreurs";
 import { liaisonOuverte } from "@/lib/liaisons/drapeau";
 import { adresseSure, demanderJeton } from "@/lib/liaisons/hub";
-import { appelerAction } from "@/lib/liaisons/action";
+import { appelerCrm, appelerMail } from "@/lib/liaisons/action";
 import { adresseRebond, BILAN_MAIL_VIDE, cumulerMail, envoisPossibles, lireReprise, phrasesMail, preparerRebond } from "@/components/atlas/liaisons-logique";
 
 const prod = { NODE_ENV: "production" } as NodeJS.ProcessEnv;
@@ -69,7 +69,7 @@ describe("jeton d'action", () => {
     const traces: string[] = [];
     for (const k of ["log", "warn", "error"] as const) vi.spyOn(console, k).mockImplementation((...x) => void traces.push(x.join(" ")));
     await demanderJeton(d, { env, fetchImpl: rep({ error: d.poignee }, 403) as unknown as typeof fetch }).catch((e) => traces.push(String(e.message)));
-    await appelerAction({ jeton: bon.access_token, url: bon.url }, "crm", "x", {}, "k", { fetchImpl: rep({ error: "refus" }, 403) as unknown as typeof fetch }).catch((e) => traces.push(String(e.message)));
+    for (const f of [appelerCrm, appelerMail]) await f({ jeton: bon.access_token, url: bon.url }, "x", {}, "k", { fetchImpl: rep({ error: "refus" }, 403) as unknown as typeof fetch }).catch((e) => traces.push(String(e.message)));
     vi.restoreAllMocks();
     expect(traces.join("\n")).not.toContain(bon.access_token);
     expect(traces.some((x) => x.includes("https://crm"))).toBe(false);
@@ -78,8 +78,11 @@ describe("jeton d'action", () => {
 
 test("réponse de plus de 2 Mo coupée, réponse illisible refusée", async () => {
   const a = { jeton: "j", url: "https://crm.app.veridian.site/mcp" };
-  await expect(appelerAction(a, "crm", "x", {}, "k", { fetchImpl: (async () => new Response("x".repeat(2_100_000))) as unknown as typeof fetch })).rejects.toMatchObject({ code: "reponse_invalide" });
-  await expect(appelerAction(a, "crm", "x", {}, "k", { fetchImpl: (async () => new Response("<html>")) as unknown as typeof fetch })).rejects.toBeInstanceOf(RefusLiaison);
+  for (const f of [appelerCrm, appelerMail]) {
+    await expect(f(a, "x", {}, "k", { fetchImpl: (async () => new Response("x".repeat(2_100_000))) as unknown as typeof fetch })).rejects.toMatchObject({ code: "reponse_invalide" });
+    await expect(f(a, "x", {}, "k", { fetchImpl: (async () => new Response("<html>")) as unknown as typeof fetch })).rejects.toBeInstanceOf(RefusLiaison);
+    await expect(f(a, "x", {}, "k", { fetchImpl: (async () => new Response("null")) as unknown as typeof fetch })).rejects.toBeInstanceOf(RefusLiaison);
+  }
 });
 
 test("dirigeant : jamais un prénom deviné", () => {
