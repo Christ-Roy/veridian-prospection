@@ -172,5 +172,5 @@ Tests et builds : `lourd <commande>` (rise), jamais en local.
 ## Dette
 
 - `audit_log` n'existe pas en prod : les audits sont ignorés en silence.
-- `prospection-ci.yml` tourne sur `ubuntu-latest` (permis : dépôt public).
+- `prospection-ci.yml` sur `ubuntu-latest` (dépôt public).
 - `check-test-mapping.sh` ne voit rien sur un push vers `main`, et le pre-push ne le lance pas.
