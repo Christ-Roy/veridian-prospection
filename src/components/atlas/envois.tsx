@@ -10,6 +10,8 @@ import {
 import { formaterNombre } from "./logique";
 
 const HUB = process.env.NEXT_PUBLIC_HUB_URL || "https://app.veridian.site";
+/** Page du Hub où un propriétaire allume ou coupe une liaison, sans IA. */
+const HUB_LIAISONS = `${HUB}/dashboard/liaisons`;
 const geste = () => crypto.randomUUID();
 
 /** Erreur lisible ; `rebond` repasse une fois par le Hub, puis l'écran rouvre ce qu'on faisait. */
@@ -36,7 +38,7 @@ function useErreur(reprise: Reprise) {
 
 function MessageErreur({ erreur }: { erreur: ErreurLiaison | null }) {
   if (!erreur) return null;
-  const lien = erreur.code === "plan" ? { href: `${HUB}/dashboard/billing`, texte: "Voir les plans" } : ["paire_eteinte", "cible_non_reliee", "cible_non_membre", "rebond_echoue", "autre_espace"].includes(erreur.code) ? { href: `${HUB}/dashboard`, texte: "Ouvrir Veridian" } : null;
+  const lien = erreur.code === "plan" ? { href: `${HUB}/dashboard/billing`, texte: "Voir les plans" } : erreur.code === "paire_eteinte" ? { href: HUB_LIAISONS, texte: "Ouvrir les liaisons" } : ["cible_non_reliee", "cible_non_membre", "rebond_echoue", "autre_espace"].includes(erreur.code) ? { href: `${HUB}/dashboard`, texte: "Ouvrir Veridian" } : null;
   return (
     <div className="err" role="alert">
       <Icone nom="alerte" />
@@ -63,8 +65,8 @@ export function LiaisonsEteintes({ etat }: { etat: EtatLiaisons }) {
   return (
     <p className="hint">
       {phrase}{" "}
-      <a className="lnk" href={`${HUB}/dashboard`} target="_blank" rel="noopener noreferrer">
-        Ouvrir Veridian
+      <a className="lnk" href={HUB_LIAISONS} target="_blank" rel="noopener noreferrer">
+        Ouvrir les liaisons
       </a>
     </p>
   );
