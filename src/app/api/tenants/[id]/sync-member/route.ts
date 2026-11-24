@@ -30,6 +30,7 @@ import { resolveTenantByIdOrEmail } from "@/lib/hub/tenant-lookup";
 import { logAudit } from "@/lib/audit";
 import { ROLE_RANK, type WorkspaceRole } from "@/lib/auth/roles";
 import { enqueueEvent } from "@/lib/hub-webhook/outbox";
+import { invalidateAllUserContexts } from "@/lib/auth/cache-contexte";
 
 const SyncMemberSchema = z.object({
   user_email: z.string().email().max(254),
@@ -193,6 +194,8 @@ export async function POST(
       `user=${localUserId} role=${appRole} action=${roleAction}`,
   );
 
+  // Effet immédiat : le contexte gardé 30 s ne laisse pas un membre retiré, ni un nouveau dehors.
+  invalidateAllUserContexts();
   return NextResponse.json({
     tenant_id: tenantId,
     user_email: body.user_email,

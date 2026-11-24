@@ -5,6 +5,7 @@ import { signOut, useSession } from "next-auth/react";
 import { ciblesDe, marcheDe, sectionsRail, type IAVue } from "./flux";
 import { Icone } from "./icones";
 import type { Arbre, SegmentArbre } from "./types";
+import { ChoixEspace } from "./choix-espace";
 
 const HUB = process.env.NEXT_PUBLIC_HUB_URL || "https://app.veridian.site";
 /** Page du Hub où l'on branche Claude, ChatGPT, Cursor… (une seule connexion pour toutes les apps). */
@@ -118,6 +119,7 @@ export function Rail({ arbre, erreur, selection, ouvert, peutEcrire, ias, onBran
           </div>
         )}
 
+        <ChoixEspace />
         <div className="rsec">
           <div className="rhead lbl">Outils</div>
           <button type="button" className="ritem" title="Vérifier une liste de SIREN : site, email, téléphone" onClick={onVerifier}>

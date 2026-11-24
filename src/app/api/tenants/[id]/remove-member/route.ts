@@ -20,6 +20,7 @@ import { requireHubHmac } from "@/lib/hub/auth";
 import { resolveTenantByIdOrEmail } from "@/lib/hub/tenant-lookup";
 import { logAudit } from "@/lib/audit";
 import { enqueueEvent } from "@/lib/hub-webhook/outbox";
+import { invalidateAllUserContexts } from "@/lib/auth/cache-contexte";
 
 const RemoveMemberSchema = z
   .object({
@@ -149,6 +150,8 @@ export async function POST(
     `[remove-member] tenant=${tenantId} user=${user.id} affected=${result.count}`,
   );
 
+  // Effet immédiat : le contexte gardé 30 s ne laisse pas un membre retiré, ni un nouveau dehors.
+  invalidateAllUserContexts();
   return NextResponse.json({
     tenant_id: tenantId,
     user_email: user.email,

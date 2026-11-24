@@ -6,6 +6,8 @@ import { auth } from "@/lib/auth-config";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { contextCache, invalidateAllUserContexts, invalidateUserContext } from "./cache-contexte";
+import { COOKIE_ESPACE } from "./espaces";
 
 export type WorkspaceMembership = {
   id: string;
@@ -27,7 +29,6 @@ export type UserContext = {
 
 export type AuthFailure = { error: NextResponse };
 
-const contextCache = new Map<string, { ctx: UserContext; expiresAt: number }>();
 const CACHE_TTL_MS = 30_000;
 
 async function getAuthUser(): Promise<{ id: string; email: string } | null> {
@@ -40,7 +41,7 @@ export async function getUserContext(): Promise<UserContext | null> {
   const user = await getAuthUser();
   if (!user) return null;
   const cookieStore = await cookies();
-  return buildUserContext(user, cookieStore.get("active_workspace_id")?.value || null);
+  return buildUserContext(user, cookieStore.get("active_workspace_id")?.value || null, cookieStore.get(COOKIE_ESPACE)?.value || null);
 }
 
 /**
@@ -54,8 +55,9 @@ export async function buildUserContext(
   /** Espace demandé (MCP : `tenant_id` signé par le Hub). Retenu seulement si l'utilisateur en est propriétaire ou membre. */
   preferredTenantId: string | null = null,
 ): Promise<UserContext | null> {
-  const cached = contextCache.get(user.id);
-  if (cached && cached.expiresAt > Date.now() && !preferredTenantId) {
+  const cle = preferredTenantId ? `${user.id}:${preferredTenantId.toLowerCase()}` : user.id;
+  const cached = contextCache.get(cle);
+  if (cached && cached.expiresAt > Date.now()) {
     return { ...cached.ctx, activeWorkspaceId: activeCookie };
   }
 
@@ -132,10 +134,8 @@ export async function buildUserContext(
     activeWorkspaceId,
   };
 
-  // Le cache par utilisateur ne garde que l'espace par défaut : un espace demandé est relu à chaque fois.
-  if (!preferredTenantId) {
-    contextCache.set(user.id, { ctx, expiresAt: Date.now() + CACHE_TTL_MS });
-  }
+  if (contextCache.size > 5000) contextCache.clear(); // la clé vient d'un cookie : bornée
+  contextCache.set(cle, { ctx, expiresAt: Date.now() + CACHE_TTL_MS });
   return ctx;
 }
 
@@ -247,10 +247,4 @@ export async function resolveInsertWorkspaceId(
   }
 }
 
-export function invalidateUserContext(userId: string) {
-  contextCache.delete(userId);
-}
-
-export function invalidateAllUserContexts() {
-  contextCache.clear();
-}
+export { invalidateAllUserContexts, invalidateUserContext };
