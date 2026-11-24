@@ -17,7 +17,7 @@ Plan : `nomad-veridian/plan/INTEGRATIONS-NATIVES.md` (§2.1 à 2.3, F1, F2). Un 
 - **Mail** : `POST <adresse>/<action>` (fiche 87 de Notifuse), `contacts.importer`, portée `notifuse:contacts.ecrire` ,
   `listes.lister` (`starts_sequence` : liste grisée) et `listes.creer`. Ni `allow_triggers` ni `existing` : Mail les fixe, rien ne peut partir.
 - **Un geste** = un uuid choisi par l'écran, gardé s'il réessaie (`atlas_envois`, une ligne par étape, sans coordonnée). Rejoué : premier
-  résultat. Deux clics simultanés : un seul travaille. Une étape morte se reprend après 180 s, toujours plus que l'appel le plus long (120 s).
+  résultat. Deux clics simultanés : un seul travaille. Une étape morte se reprend après 420 s, toujours plus que l'appel le plus long (120 s, trois essais pendant l'installation de Liaisons).
 - **Plafonds** : ceux de l'extraction (plan payant, 5 000 lignes par jour et par espace, tracées dans `atlas_exports`, canal
   `liaison`). Segment vers CRM : pages de 20, 100 sociétés par geste. Segment vers Mail : pages de 1 000, simulation obligatoire puis
   confirmation de la même liste figée.

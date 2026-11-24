@@ -220,5 +220,5 @@ test("paire éteinte : une phrase, jamais un bouton", () => {
 
 test("une étape n'est reprise comme morte qu'après la fin possible de l'appel le plus long", () => {
   expect(DELAI_LOT_MS).toBeGreaterThanOrEqual(120_000);
-  expect(EN_COURS_MAX_MS).toBeGreaterThan(DELAI_LOT_MS);
+  expect(EN_COURS_MAX_MS).toBeGreaterThan(3 * (DELAI_LOT_MS + 8000));
 });

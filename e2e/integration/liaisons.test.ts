@@ -49,7 +49,7 @@ const id = randomUUID().slice(0, 8);
 
 type Etat = { poignees: Map<string, { user: string; tenant: string }>; nonces: Set<string>; jetons: Map<string, { tenant: string; cible: string; scope: string }>; paire: Record<string, boolean>; forcer: null | { status: number; corps: unknown }; tenantRendu: string | null; etats: Record<string, string> | "panne"; demandes: { cible: string; motif: string; headers: IncomingMessage["headers"] }[] };
 const hub: Etat = { poignees: new Map(), nonces: new Set(), jetons: new Map(), paire: {}, forcer: null, tenantRendu: null, etats: {}, demandes: [] };
-const crm = { fiches: new Map<string, string>(), appels: 0, corbeille: new Set<string>(), tenants: new Set<string>(), panne: 0, lenteur: 0, oubli: false, droits: false, cles: [] as string[], sse: false };
+const crm = { fiches: new Map<string, string>(), appels: 0, corbeille: new Set<string>(), tenants: new Set<string>(), panne: 0, lenteur: 0, refus: [] as [number, string][], oubli: false, droits: false, cles: [] as string[], sse: false };
 const mail = { contacts: new Map<string, Record<string, unknown>>(), listes: new Map<string, string>(), appels: [] as { outil: string; args: Record<string, unknown>; cle: string }[], mails: 0, desinscrits: new Set<string>(), sequence: new Set<string>(), sautePage: 0, ment: "" as "" | "dry_run" | "http", tenants: new Set<string>() };
 
 const lire = (r: IncomingMessage) => new Promise<string>((ok) => { let s = ""; r.on("data", (d) => (s += d)); r.on("end", () => ok(s)); });
@@ -82,6 +82,8 @@ beforeAll(async () => {
     if (!crm.tenants.has(j.tenant)) return { status: 403, corps: { jsonrpc: "2.0", id: 1, error: { code: -32003, message: "x", data: { error: "tenant_not_linked" } } } };
     crm.appels++;
     crm.cles.push(String(req.headers["idempotency-key"]));
+    const ref = crm.refus.shift();
+    if (ref) return { status: ref[0], corps: { jsonrpc: "2.0", id: 1, error: { code: -32000, message: "x", data: { error: ref[1] } } } };
     if (crm.panne > 0) {
       crm.panne--;
       return { status: 500, corps: { error: "panne" } };
@@ -182,7 +184,7 @@ beforeEach(async () => {
   await prisma.sessionDelegation.deleteMany({ where: { userId: { in: Object.values(T).map((x) => x.u) } } });
   await prisma.compteur.deleteMany({ where: { cle: { in: Object.values(T).map((x) => `sso:issue-magic-link:${x.hubUser}`) } } });
   Object.assign(hub, { poignees: new Map(), jetons: new Map(), paire: {}, forcer: null, tenantRendu: null, etats: {}, demandes: [] });
-  Object.assign(crm, { fiches: new Map(), appels: 0, corbeille: new Set(), tenants: new Set(Object.values(T).map((x) => x.hub)), panne: 0, lenteur: 0, oubli: false, droits: false, cles: [], sse: false });
+  Object.assign(crm, { fiches: new Map(), appels: 0, corbeille: new Set(), tenants: new Set(Object.values(T).map((x) => x.hub)), panne: 0, lenteur: 0, refus: [], oubli: false, droits: false, cles: [], sse: false });
   Object.assign(mail, { contacts: new Map(), listes: new Map([["reserve", "Réserve"]]), appels: [], desinscrits: new Set(), sequence: new Set(), sautePage: 0, ment: "" });
   odh.n = 45;
   odh.bloques.clear();
@@ -329,6 +331,21 @@ describe("fiche vers le CRM", () => {
     await expect(li.ficheVersCrm(a, { geste, siren: "100000001" })).rejects.toEqual(refus("cible_refus"));
     expect(await li.ficheVersCrm(a, { geste, siren: "100000001" })).toMatchObject({ sort: "cree" });
     expect(await lignesTracees()).toBe(1);
+  });
+  test("le CRM installe la liaison : repris tout seul, un jeton neuf par essai, compté une fois ; au-delà, dit", async () => {
+    li.attenteReprise.ms = 5;
+    const a = await appel();
+    crm.refus = [[503, "app_installing"], [503, "app_install_failed"]];
+    expect(await li.ficheVersCrm(a, { geste: randomUUID(), siren: "100000001" })).toMatchObject({ sort: "cree" });
+    expect([crm.appels, hub.demandes.length, await lignesTracees()]).toEqual([3, 3, 1]);
+    crm.refus = Array.from({ length: 5 }, () => [503, "app_installing"] as [number, string]);
+    await expect(li.ficheVersCrm(a, { geste: randomUUID(), siren: "100000002" })).rejects.toEqual(refus("cible_installe"));
+    for (const c of ["app_uninstalled", "app_not_available"]) {
+      crm.refus = [[403, c]];
+      const avant = crm.appels;
+      await expect(li.ficheVersCrm(a, { geste: randomUUID(), siren: "100000002" })).rejects.toEqual(refus("cible_absente"));
+      expect(crm.appels).toBe(avant + 1);
+    }
   });
   test("dix clics simultanés du même geste : un seul appel", async () => {
     const a = await appel();

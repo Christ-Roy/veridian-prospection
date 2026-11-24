@@ -9,7 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { RefusLiaison, type Cible } from "./erreurs";
 
 /** Au-delà, une étape « en cours » est une exécution morte (redémarrage) : elle se reprend. */
-export const EN_COURS_MAX_MS = 180_000;
+export const EN_COURS_MAX_MS = 420_000;
 
 export type Etape = { tenantId: string; userId: string; geste: string; etape: string; cible: Cible; reference: string };
 

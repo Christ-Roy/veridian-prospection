@@ -130,6 +130,21 @@ export function contactMail(l: LigneExtraite, origine: string): Record<string, u
 
 // ---------------------------------------------------------------- vers le CRM
 
+/** Un appel au CRM, repris par un jeton neuf si la liaison s'y installe (premier appel d'un espace). */
+async function crm(p: Pret, motif: string, args: Record<string, unknown>, cle: string): Promise<Record<string, unknown>> {
+  for (let essai = 1; ; essai++) {
+    try {
+      return await appelerCrm(await jeton(p, "crm", motif), "app_envoyer_au_crm", args, cle, { delaiMs: DELAI_LOT_MS });
+    } catch (e) {
+      if (!(e instanceof RefusLiaison) || e.code !== "cible_installe" || essai >= REPRISES) throw e;
+      await new Promise((r) => setTimeout(r, attenteReprise.ms));
+    }
+  }
+}
+const REPRISES = 3;
+/** Réglable par les tests. */
+export const attenteReprise = { ms: 8000 };
+
 type SortCrm = { siren: string; sort: "cree" | "complete" | "deja" | "refuse"; message?: string; url?: string };
 
 /** Un refus de droits, de jeton ou de rôle vaut pour tout l'envoi ; les autres sont propres à une société (corbeille, donnée). */
@@ -149,7 +164,7 @@ function sortCrm(siren: string, r: Record<string, unknown>): SortCrm {
 
 async function lotPourCrm(p: Pret, lignes: readonly LigneExtraite[], cle: string): Promise<SortCrm[]> {
   if (!lignes.length) return [];
-  const r = await appelerCrm(await jeton(p, "crm", "segment.envoyer_au_crm"), "app_envoyer_au_crm", { envois: lignes.map(envoiCrm) }, cle, { delaiMs: DELAI_LOT_MS });
+  const r = await crm(p, "segment.envoyer_au_crm", { envois: lignes.map(envoiCrm) }, cle);
   if (!Array.isArray(r.resultats)) {
     sortCrm("", r); // refus de tout le lot : lève s'il est général
     throw new RefusLiaison("reponse_invalide", `Le CRM n'a pas traité ce lot : ${message(r)}`, 502);
@@ -170,7 +185,7 @@ export async function ficheVersCrm(a: Appel, e: { geste: string; siren: string }
   if (!l) throw new RefusLiaison("non_prospectable", "Cette entreprise ne se prospecte pas (fermée, en diffusion limitée ou bloquée).", 409);
   return uneFois({ tenantId: a.ctx.tenantId, userId: a.ctx.userId, geste: e.geste, etape: "fiche", cible: "crm", reference: e.siren }, async (id) => {
     await reserverFiche({ tenantId: a.ctx.tenantId, userId: a.ctx.userId, client: null, canal: "liaison" }, "crm", id);
-    return sortCrm(l.siren, await appelerCrm(await jeton(p, "crm", "bouton.envoyer_au_crm"), "app_envoyer_au_crm", envoiCrm(l), `${e.geste}:${e.siren}`));
+    return sortCrm(l.siren, await crm(p, "bouton.envoyer_au_crm", envoiCrm(l), `${e.geste}:${e.siren}`));
   });
 }
 

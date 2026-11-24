@@ -116,6 +116,10 @@ function traduireRefus(cible: Cible, http: number, code: string, texte: string, 
   if (dit("espace_suspendu")) return new RefusLiaison("cible_suspendue", `Votre espace dans ${nom} est suspendu.`, 403);
   if (dit("cle_reutilisee")) return new RefusLiaison("geste_reutilise", "Le contenu a changé depuis le premier essai : recommencez l'envoi.", 409);
   if (dit("en_cours")) return new RefusLiaison("en_cours", "Cet envoi est déjà en cours.", 409, 5);
+  // Le CRM installe Liaisons au premier appel valide (jusqu'à 45 s) : un nouveau jeton, puis réessai.
+  if (dit("app_installing") || dit("app_install_failed")) return new RefusLiaison("cible_installe", "Votre CRM prépare la liaison. Réessayez dans une minute.", 503, 60);
+  if (dit("app_uninstalled")) return new RefusLiaison("cible_absente", "La liaison a été désinstallée de votre CRM : un administrateur peut la réinstaller dans Paramètres > Applications.", 409);
+  if (dit("app_not_available")) return new RefusLiaison("cible_absente", "La liaison n'est pas encore disponible dans votre CRM.", 409);
   if (dit("would_trigger")) return new RefusLiaison("sequence", "Cette liste démarre une séquence d'envoi : choisissez une liste sans séquence. Rien n'a été écrit.", 409);
   if (dit("action_inconnue") || /not found|unknown tool|outil inconnu/i.test(texte)) return new RefusLiaison("cible_absente", `${nom === "Mail" ? "Mail" : "Votre CRM"} ne sait pas encore recevoir cet envoi : la liaison n'y est pas installée.`, 409);
   return new RefusLiaison("cible_refus", `${nom === "Mail" ? "Mail" : "Le CRM"} n'a pas accepté cet envoi. Vous pouvez réessayer, rien ne sera créé deux fois.`, 502);
