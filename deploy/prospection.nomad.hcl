@@ -165,6 +165,9 @@ job "prospection" {
         destination = "secrets/app.env"
         perms       = "600"   # secret: lisible du seul proprietaire
         env         = true
+        # Une valeur neuve dans la Variable ne redémarre pas l'unique instance (coupure) : elle entre au déploiement
+        # canari suivant. Indispensable pour renouveler le secret du Hub sans coupure (VER-251).
+        change_mode = "noop"
         data        = <<EOH
 NODE_ENV=production
 HOSTNAME=0.0.0.0
