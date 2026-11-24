@@ -52,6 +52,26 @@ export async function requireHubHmac<TBody = unknown>(
   }
 
   const rawBody = await request.text();
+
+  // La signature d'abord : le corps d'un inconnu n'est pas lu.
+  if (!request.headers.get("x-veridian-hub-signature")) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+    };
+  }
+  const v = verifierAppelHub(request, rawBody);
+  if (!v.ok) {
+    const error =
+      v.reason === "timestamp_drift" || v.reason === "invalid_timestamp"
+        ? "Timestamp expired or invalid"
+        : "Invalid signature";
+    return {
+      ok: false,
+      response: NextResponse.json({ error }, { status: 401 }),
+    };
+  }
+
   let body: TBody;
   try {
     body = (rawBody ? JSON.parse(rawBody) : {}) as TBody;
@@ -64,27 +84,5 @@ export async function requireHubHmac<TBody = unknown>(
       ),
     };
   }
-
-  // Standard HMAC contrat §6.1
-  const headerSig = request.headers.get("x-veridian-hub-signature");
-
-  if (headerSig) {
-    const v = verifierAppelHub(request, rawBody);
-    if (v.ok) return { ok: true, body, rawBody, mode: "standard" };
-
-    const status = 401;
-    const error =
-      v.reason === "timestamp_drift" || v.reason === "invalid_timestamp"
-        ? "Timestamp expired or invalid"
-        : "Invalid signature";
-    return {
-      ok: false,
-      response: NextResponse.json({ error }, { status }),
-    };
-  }
-
-  return {
-    ok: false,
-    response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
-  };
+  return { ok: true, body, rawBody, mode: "standard" };
 }

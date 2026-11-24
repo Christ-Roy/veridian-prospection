@@ -156,6 +156,24 @@ export async function POST(request: NextRequest) {
   }
 
   const rawBody = await request.text();
+
+  // La signature d'abord : un inconnu n'apprend rien de ce que la route attend.
+  // HMAC standard contrat §6.1 : signature dans les headers sur
+  // `${timestamp}.${rawBody}`. Seul mode accepté.
+  const headerSig = request.headers.get("x-veridian-hub-signature");
+
+  if (!headerSig) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const v = verifierAppelHub(request, rawBody);
+  if (!v.ok) {
+    const error =
+      v.reason === "timestamp_drift" || v.reason === "invalid_timestamp"
+        ? "Timestamp expired or invalid"
+        : "Invalid signature";
+    return NextResponse.json({ error }, { status: 401 });
+  }
+
   let body: {
     email?: string;
     plan?: string;
@@ -178,22 +196,6 @@ export async function POST(request: NextRequest) {
 
   if (!email) {
     return NextResponse.json({ error: "email is required" }, { status: 400 });
-  }
-
-  // HMAC standard contrat §6.1 : signature dans les headers sur
-  // `${timestamp}.${rawBody}`. Seul mode accepté.
-  const headerSig = request.headers.get("x-veridian-hub-signature");
-
-  if (!headerSig) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  const v = verifierAppelHub(request, rawBody);
-  if (!v.ok) {
-    const error =
-      v.reason === "timestamp_drift" || v.reason === "invalid_timestamp"
-        ? "Timestamp expired or invalid"
-        : "Invalid signature";
-    return NextResponse.json({ error }, { status: 401 });
   }
 
   // Lien de connexion à usage unique (distinct de l'api_key §6.2) : jeton lié au propriétaire et haché

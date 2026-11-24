@@ -29,14 +29,14 @@ const routes = fichiers(racine).filter((f) => /\b(requireHubHmac|verifierAppelHu
 const ID = "11111111-1111-4111-8111-111111111111";
 const CORPS = { hub_user_id: ID, hub_tenant_id: ID, tenant_id: ID, user_id: ID, email: "a@exemple.fr", owner_email: "a@exemple.fr", plan: "pro", role: "member" };
 
-async function appeler(route: string, secret: string | null): Promise<(number | "leve")[]> {
+async function appeler(route: string, secret: string | null, corpsPoste: string = JSON.stringify(CORPS)): Promise<(number | "leve")[]> {
   const m = (await import(path.join(racine, route))) as Record<string, (r: NextRequest, c: unknown) => Promise<Response>>;
   const statuts: (number | "leve")[] = [];
   for (const methode of ["GET", "POST", "PUT", "PATCH", "DELETE"].filter((x) => typeof m[x] === "function")) {
-    const corps = methode === "GET" ? "" : JSON.stringify(CORPS);
+    const corps = methode === "GET" ? "" : corpsPoste;
     const ts = Date.now();
     const headers: Record<string, string> = { "content-type": "application/json", "x-forwarded-for": `203.0.113.${Math.floor(Math.random() * 250)}`, ...(secret === null ? {} : { "x-veridian-timestamp": String(ts), "x-veridian-hub-signature": createHmac("sha256", secret).update(`${ts}.${corps}`).digest("hex") }) };
-    const req = new NextRequest(`https://x/api/${route}?email=a@exemple.fr`, { method: methode, headers, ...(corps ? { body: corps } : {}) });
+    const req = new NextRequest(`https://x/api/${route}?email=a@exemple.fr`, { method: methode, headers, ...(methode === "GET" ? {} : { body: corps }) });
     statuts.push(await m[methode](req, { params: Promise.resolve({ id: ID, workspaceId: ID }) }).then((r) => r.status, () => "leve" as const));
   }
   return statuts;
@@ -57,6 +57,10 @@ describe.each(routes)("%s", (route) => {
     const s = await appeler(route, secret);
     expect(s.length).toBeGreaterThan(0);
     expect(s.every((x) => x === 401), `${route} ${s}`).toBe(true);
+    expect(base.lectures).toBe(0);
+  });
+  test.each([["vide", ""], ["{}", "{}"], ["pas du JSON", "{"]])("corps %s signé par un tiers : 401 avant toute lecture du corps", async (_n, corps) => {
+    expect((await appeler(route, TIERS, corps)).every((x) => x === 401), route).toBe(true);
     expect(base.lectures).toBe(0);
   });
   test.each([["le courant", COURANT], ["le second", SECOND]])("signée par %s : la porte s'ouvre", async (_n, secret) => {
