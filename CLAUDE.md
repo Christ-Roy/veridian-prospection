@@ -80,8 +80,8 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
   `requete_sql` (garde : SELECT sur 3 tables d'ODH, 1 000 lignes ; le compte ClickHouse refuse `url()`) et les clés API
   (`Bearer atl_…` sur `/api/atlas/[outil]`, empreinte SHA-256 seule). `verifier_entreprises` : 50 SIREN/jour gratuit, 5 000 payant.
 - `extraire_segment` (VER-242, `src/atlas/extraction.ts`) : liste de SIREN figée en base (curseur stable 7 jours), coordonnées
-  relues à chaque page, quota 5 000 lignes/jour/espace compté dans `atlas_exports` sous verrou. Les autres quotas
-  (`verifier_entreprises`, `isRateLimited`) sont en mémoire : perdus au redémarrage, comptés par instance.
+  relues à chaque page, quota 5 000 lignes/jour/espace compté dans `atlas_exports` sous verrou. La porte du Hub coupe une réponse
+  directe à ~15 000 caractères : 30 lignes, 1 000 en programme. Autres quotas (`verifier_entreprises`, `isRateLimited`) en mémoire.
 - Registre : `hub mcp-app add prospection … --acces tous` (09/11).
 - Journaux : `obs search '\[mcp\] outil=' --since 6h` (Loki), pas `nomad alloc logs`.
 
@@ -114,7 +114,7 @@ Les comptes e2e n'existent qu'en base staging, exception de banc. Ne pas pousser
 - **Migrations Prisma par la CI** : `deploy-prod` envoie `prisma/` au verbe (`put-migrations prod`)
   puis `migrate prod` joue `prisma migrate deploy` sur pg-saas, avant le déploiement. Une migration
   destructive (DROP, renommage) reste 💀 : en deux temps, compatible avec le code encore servi.
-- **`prospection-db` est purgée (09/11)** : aucun nom `prospection-db` ni `prospection-saas-db` ne revient dans la CI ni les skills.
+- **`prospection-db` est purgée (09/11)** : ce nom ne revient ni dans la CI ni dans les skills.
 - **Bascule pg-saas (base muette)** : `src/lib/db-bornes.ts` borne l'ouverture des connexions (posé au
   démarrage par `src/instrumentation.ts`). Une requête en cours sur une connexion muette attend sans fin
   dans Prisma 6, `socket_timeout` compris (mesuré) : le filet est `/api/health` (503 en 2 s) + `check_restart`.
