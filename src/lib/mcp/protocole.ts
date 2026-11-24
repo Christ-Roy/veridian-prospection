@@ -4,6 +4,9 @@
  */
 import { z } from "zod";
 
+import { enRestreint } from "@/atlas/restreint";
+
+import { refuserCoordonnees, retirerCoordonnees, sansCoordonnees } from "./coordonnees";
 import { ErreurOutil, outilsVisibles, type ContexteOutil } from "./outils";
 
 export const VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
@@ -52,8 +55,11 @@ function resultat(id: Id, valeur: unknown, programme: boolean): Reponse {
   });
 }
 
-/** `programme` ne change que la taille et la forme de la réponse : ni droits, ni quota, ni trace. */
-export async function traiter(m: Message, c: ContexteOutil, journal: Journal = () => {}, programme = false): Promise<Reponse | null> {
+/**
+ * `programme` change la taille et la forme de la réponse. `restreint` (l'appel porte l'en-tête, même dans un lot) retire
+ * les coordonnées hors extraire_segment (coordonnees.ts). Aucun des deux ne donne de droit, de quota ni de trace.
+ */
+export async function traiter(m: Message, c: ContexteOutil, journal: Journal = () => {}, programme = false, restreint = programme): Promise<Reponse | null> {
   const id = m.id ?? null;
   // Notification (pas d'id) : aucune réponse.
   if (m.id === undefined) return null;
@@ -102,7 +108,10 @@ export async function traiter(m: Message, c: ContexteOutil, journal: Journal = (
         return ok(id, { isError: true, content: [{ type: "text", text: `Arguments invalides. ${detail}` }] });
       }
       try {
-        const valeur = await outil.run(args.data as Record<string, unknown>, c);
+        const a = args.data as Record<string, unknown>;
+        const sans = sansCoordonnees(outil, c, restreint);
+        if (sans) refuserCoordonnees(outil, a);
+        const valeur = sans ? retirerCoordonnees(await enRestreint(() => outil.run(a, c))) : await outil.run(a, c);
         journal({ outil: outil.name, issue: "ok", ms: Date.now() - t0 });
         return resultat(id, valeur, programme);
       } catch (e) {

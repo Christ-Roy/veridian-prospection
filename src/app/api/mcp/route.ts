@@ -79,9 +79,11 @@ export async function POST(request: NextRequest) {
 
   const messages = (Array.isArray(corps) ? corps : [corps]) as Message[];
   if (messages.length === 0 || messages.length > 20) return refus(400, "lot JSON-RPC vide ou trop long");
-  // Appel d'un programme du Hub (CONTRAT-MCP, « Côté app ») : réponse entière, 1 Mo au plus. Aucun droit, et un lot n'y a pas droit.
-  const programme = request.headers.get("x-veridian-mcp-appel") === "programme" && !Array.isArray(corps);
-  const reponses = (await Promise.all(messages.map((m) => traiter(m, contexte, journal, programme)))).filter(
+  // Appel d'un programme du Hub (CONTRAT-MCP, « Côté app ») : réponse entière, 1 Mo au plus ; un lot n'y a pas droit. Aucun
+  // droit en plus, des coordonnées en moins (src/lib/mcp/coordonnees.ts), et un lot n'y échappe pas.
+  const restreint = request.headers.get("x-veridian-mcp-appel") === "programme";
+  const programme = restreint && !Array.isArray(corps);
+  const reponses = (await Promise.all(messages.map((m) => traiter(m, contexte, journal, programme, restreint)))).filter(
     (r): r is Reponse => r !== null,
   );
 

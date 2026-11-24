@@ -81,6 +81,16 @@ describe("X-Veridian-MCP-Appel", () => {
     expect(JSON.parse(r.content[0].text)).toHaveLength(5000);
   });
 
+  test("les coordonnées partent dans un appel de programme, seul ou en lot, jamais dans un autre appel", async () => {
+    valeur.v = { lignes: [{ siren: "100000000", email: "a@b.fr" }] };
+    for (const corps of [APPEL, [APPEL, APPEL]]) {
+      const t = await (await post("programme", corps)).text();
+      expect(t).not.toContain("a@b.fr");
+      expect(t).toContain("extraire_segment");
+      for (const h of [undefined, "Programme", "1"]) expect(await (await post(h, corps)).text()).toContain("a@b.fr");
+    }
+  });
+
   test("ne donne aucun droit : jeton refusé, outil inconnu, débit et lot restent bornés", async () => {
     expect((await post("programme", APPEL, "faux")).status).toBe(401);
     const inconnu = await (await post("programme", { ...APPEL, params: { name: "requete_sql", arguments: {} } })).json();

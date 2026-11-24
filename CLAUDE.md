@@ -60,7 +60,7 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
   Jamais de repli silencieux. Ids locaux distincts de ceux du Hub : `tenants.hub_tenant_id`, reçu au
   provisionnement (`hub_tenant_id`, racine ou `metadata`), posé une fois et jamais écrasé, fait le lien.
   Tenants existants : `POST /api/tenants/link-hub` (HMAC, `{hub_user_id, hub_tenant_id}`) ne pose que ce lien.
-  Ne pas rejouer `provision` sur un vrai client : il remet le propriétaire `admin` et recrée `default`.
+  Jamais `provision` rejoué sur un vrai client : il remet le propriétaire `admin`.
   `by-email` rend `workspaces[].hub_tenant_id` pour `hub reconcile`.
 - Outils : `src/atlas/outils-mcp.ts` (36), les mêmes que l'écran appelle par `/api/atlas/[outil]` avec la session.
   Espace déduit de l'utilisateur, un `viewer` ne voit pas les outils d'écriture, fiche limitée à 60/min.
@@ -73,8 +73,7 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
   marché ») : le marché ENTIER, pas que les fiches prospectables. Sélection par LISTE de codes NAF avec
   `naf_rev2 = 1`, jamais par intervalle de chaînes ; prévoir « département inconnu » (diffusion partielle) ;
   afficher `nb_*_livrable` comme « envoyables », `nb_avec_*` comme « connus ».
-- Carte : projection exacte (`src/atlas/projection.ts`), communes et EPCI de l'API Géo (`communes.ts`, cache 24 h),
-  outil `repartir_communes`. Le cube ne descend pas à la commune.
+- Carte : `src/atlas/projection.ts`, communes et EPCI de l'API Géo (`communes.ts`). Le cube ne descend pas à la commune.
 - Accès avancé (16/11, `src/atlas/acces.ts`, `sql.ts`) : par espace (`tenants.acces_avance`), accordé par un administrateur
   Atlas (`users.atlas_admin`, outil `accorder_acces_avance` ou volet « API et accès avancé »), jamais par le plan. Donne
   `requete_sql` (garde SELECT, 1 000 lignes) et les clés API
@@ -82,10 +81,11 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
 - `extraire_segment` (VER-242, `src/atlas/extraction.ts`) : liste de SIREN figée en base (curseur stable 7 jours), coordonnées
   relues à chaque page, quota 5 000 lignes/jour/espace compté dans `atlas_exports` sous verrou. Appel direct : réponse
   coupée à 15 000 caractères (`SORTIE_MAX`, chez nous), 30 lignes ; en-tête `X-Veridian-MCP-Appel: programme` : 1 Mo, 1 000 lignes.
+  Programme = aucune coordonnée hors `extraire_segment`, plan payant compris, sauf accès avancé (`src/lib/mcp/coordonnees.ts`).
   Le Hub ne garde que 300 caractères de la 1re ligne des descriptions.
 - Quota ou porte de connexion : `src/lib/compteurs.ts` (en base). `isRateLimited` = confort, par instance.
 - Registre : `hub mcp-app add prospection … --acces tous` (09/11).
-- Journaux : `obs search '\[mcp\] outil=' --since 6h`.
+- Journaux : `obs search '\[mcp\] outil='` ; l'écran n'en écrit aucun.
 
 ## Déploiement et promotion
 
@@ -101,8 +101,7 @@ par le verbe `veridian-ci-deploy prospection` (put-job, plan, deploy canari, smo
 - Ne jamais déployer à la main : `nomad-v deploy` et `nomad job run` ignorent le tag CI.
 - Le job prod est sur `ovh-prod` (contrainte `meta.provider`), pas sur le bastion.
 
-Staging (branche `staging`) : divergé et à l'arrêt ; ses workflows sont retirés de `main`.
-Les comptes e2e n'existent qu'en base staging, exception de banc. Ne pas pousser sur `staging` avant d'avoir tranché.
+Staging (branche `staging`) : divergé et à l'arrêt, workflows retirés. Ne pas y pousser avant d'avoir tranché.
 
 | Tier | Exemples | Action agent |
 |---|---|---|
@@ -172,6 +171,6 @@ Tests et builds : `lourd <commande>` (rise), jamais en local.
 
 ## Dette
 
-- `audit_log` n'existe pas en prod : audits ignorés en silence.
+- `audit_log` n'existe pas en prod : audits ignorés.
 - `prospection-ci.yml` sur `ubuntu-latest` (dépôt public).
 - `check-test-mapping.sh` ne voit rien sur un push vers `main`, et le pre-push ne le lance pas.

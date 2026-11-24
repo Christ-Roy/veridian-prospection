@@ -71,6 +71,9 @@ vi.mock("@/lib/prisma", () => {
 vi.mock("@/lib/auth/user-context", () => ({}));
 
 import { traiter } from "@/lib/mcp/protocole";
+import { retirerCoordonnees } from "@/lib/mcp/coordonnees";
+import { OUTILS_ATLAS } from "@/atlas/outils-mcp";
+import { sourceMarche } from "@/atlas/source";
 import type { UserContext } from "@/lib/auth/user-context";
 
 const ctx = (tenantId: string, role: "member" | "viewer" = "member"): { ctx: UserContext; workspaceId: string; client: string } => ({
@@ -244,4 +247,108 @@ describe("Atlas par le MCP", () => {
     expect((await appel(V, "explorer_marche", { filtre: DEP69 })).total).toBeGreaterThan(0);
     expect((await appel(V, "creer_segment", { nom: "x", filtre: DEP69 })).erreur).toMatch(/outil inconnu/);
   });
+});
+
+/** Coordonnées et programmes (24/11) : hors extraire_segment, aucun outil n'en rend à un appel de programme. */
+describe("appel d'un programme : aucune coordonnée hors extraire_segment", () => {
+  const droitsDe = (plan: "gratuit" | "payant" | "avance" | "absents") =>
+    plan === "absents" ? {} : { droits: { accesAvance: plan === "avance", adminAtlas: false, plan: plan === "gratuit" ? "freemium" : "pro", payant: plan !== "gratuit" } };
+  type Plan = Parameters<typeof droitsDe>[0];
+  async function prog(plan: Plan, name: string, args: Record<string, unknown> = {}, programme = true) {
+    const r = await traiter({ jsonrpc: "2.0", id: ++id, method: "tools/call", params: { name, arguments: args } }, { ...A, ...droitsDe(plan) }, undefined, programme);
+    if (r?.error) throw new Error(r.error.message);
+    const x = r!.result as { isError?: boolean; content: { text: string }[]; structuredContent?: Record<string, unknown> };
+    return { erreur: x.isError ? x.content[0].text : null, v: x.structuredContent ?? null, brut: JSON.stringify(x) };
+  }
+  const COORDONNEE = /@entreprise-|0400000000/;
+  const TOUT = { conditions: [{ champ: "email", op: "renseigne", valeur: true }] };
+  const COLONNES = ["nom", "email", "telephone", "site"];
+  async function preparer() {
+    const s = await appel(A, "creer_segment", { nom: "Avec coordonnées", filtre: TOUT, colonnes: COLONNES });
+    const [l] = (await sourceMarche().apercu(TOUT, { colonnes: ["email"], page: 1, parPage: 1 })).lignes;
+    return { segment_id: s.id as string, siren: String(l.siren) };
+  }
+
+  test("chaque outil, gratuit, payant ou droits illisibles : ni email ni téléphone ; le même appel direct en rend", async () => {
+    const { segment_id, siren } = await preparer();
+    const ap: Record<string, Record<string, unknown>> = {
+      lister_champs: {}, explorer_marche: { filtre: TOUT, par_page: 50 }, repartir_marche: { filtre: TOUT, champ: "departement" },
+      analyser_marche: { filtre: DEP69 }, lister_entreprises: { filtre: DEP69 }, chercher_activites: { mots: "conseil" },
+      fiche_entreprise_atlas: { siren }, points_carte: { filtre: DEP69, departement: "69" }, lister_epingles: {}, epingler: { siren },
+      repartir_communes: { filtre: DEP69, departement: "69", base: "prospection" }, lister_segments_atlas: {}, lire_segment: { segment_id },
+      creer_segment: { nom: "x", filtre: TOUT, colonnes: COLONNES }, modifier_segment: { segment_id, colonnes: COLONNES },
+      definir_scoring: { segment_id, scoring: { criteres: [{ champ: "site", op: "renseigne", valeur: true, poids: 1 }] } },
+      classer_segment: { segment_id, par_page: 50 }, historique_segment: { segment_id }, restaurer_version_segment: { segment_id, version: 1 },
+      creer_dossier: { nom: "d" }, retirer_epingle: { siren }, preparer_export: { segment_id },
+    };
+    // Ne lisent aucune fiche, ou réservés à l'accès avancé ou à l'administration, ou seul outil qui rend des coordonnées.
+    const hors = new Set(["extraire_segment", "schema_odh", "requete_sql", "lister_cles_api", "creer_cle_api", "revoquer_cle_api", "accorder_acces_avance", "lister_acces_avances", "connexions_ia", "mes_droits", "verifier_entreprises", "renommer_dossier", "supprimer_dossier", "supprimer_segment"]);
+    // Un outil ajouté demain doit choisir son camp ici.
+    expect(OUTILS_ATLAS.map((o) => o.name).filter((n) => !ap[n] && !hors.has(n))).toEqual([]);
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("hors ligne"); }));
+    for (const plan of ["gratuit", "payant", "absents"] as Plan[]) {
+      for (const [nom, args] of Object.entries(ap)) {
+        const r = await prog(plan, nom, args);
+        expect(r.erreur, `${plan} ${nom}`).toBeNull();
+        expect(r.brut, `${plan} ${nom}`).not.toMatch(COORDONNEE);
+      }
+      expect((await prog(plan, "classer_segment", ap.classer_segment)).v?.coordonnees_retirees).toMatch(/extraire_segment/);
+    }
+    vi.unstubAllGlobals();
+    // Témoin : sans le mode programme, rien ne change (VER-249 attend Robert), et l'accès avancé n'est pas restreint.
+    for (const nom of ["classer_segment", "fiche_entreprise_atlas", "definir_scoring"]) {
+      expect((await prog("gratuit", nom, ap[nom], false)).brut, nom).toMatch(COORDONNEE);
+      expect((await prog("avance", nom, ap[nom])).brut, nom).toMatch(COORDONNEE);
+    }
+    expect((await prog("gratuit", "explorer_marche", { filtre: TOUT, colonnes: COLONNES }, false)).brut).toMatch(COORDONNEE);
+  });
+
+  test("demander la colonne est refusé avec une orientation ; hors programme, accepté", async () => {
+    for (const colonnes of [["email"], ["nom", "telephone"]]) {
+      const r = await prog("payant", "explorer_marche", { filtre: TOUT, colonnes });
+      expect(r.erreur).toMatch(/Colonne refusée ici : (email|telephone)\. .*extraire_segment/);
+    }
+    expect((await prog("avance", "explorer_marche", { filtre: TOUT, colonnes: ["email"] })).erreur).toBeNull();
+    expect((await prog("gratuit", "explorer_marche", { filtre: TOUT, colonnes: ["email"] }, false)).erreur).toBeNull();
+  });
+
+  test("deviner par le filtre est refusé : filtre direct, segment déjà enregistré, scoring", async () => {
+    const DEVINE = { conditions: [{ champ: "email", op: "contient", valeur: "contact@" }] };
+    const s = await appel(A, "creer_segment", { nom: "Contact", filtre: DEVINE });
+    const { segment_id } = await preparer();
+    const essais: [string, Record<string, unknown>][] = [
+      ["explorer_marche", { filtre: DEVINE }],
+      ["repartir_marche", { filtre: DEVINE, champ: "departement" }],
+      ["points_carte", { filtre: DEVINE, departement: "69" }],
+      ["explorer_marche", { filtre: { conditions: [{ champ: "telephone", op: "egal", valeur: "0400000000" }] } }],
+      ["classer_segment", { segment_id: s.id }],
+      ["lire_segment", { segment_id: s.id }],
+      ["definir_scoring", { segment_id, scoring: { criteres: [{ champ: "email", op: "contient", valeur: "a@", poids: 1 }] } }],
+    ];
+    for (const [nom, args] of essais) {
+      expect((await prog("payant", nom, args)).erreur, nom).toMatch(/ne se filtre ici que par « renseigne »/);
+      expect((await prog("payant", nom, args, false)).erreur, `${nom} direct`).toBeNull();
+    }
+  });
+
+  test("le retrait lit les valeurs, pas seulement les clés, et garde drapeaux, comptes, SIREN et écrits de l'utilisateur", () => {
+    const garde = {
+      siren: "005520135", siret: "00552013500012", n: "0475.5", lat: "45.0475123456", email: true, email_envoyable: 12, motif_email: "boite_inexistante", date: "2024-01-05", naf: "7500Z", iso: "2026-11-24T18:17:00.000Z",
+      id: "0a1b2c3d-0123-4567-8901-012345678901", note: "appeler a@b.fr", filtre: { valeur: "a@b.fr" }, colonnes: ["email", "telephone"],
+    };
+    expect(retirerCoordonnees(garde)).toEqual(garde);
+    const r = JSON.stringify(retirerCoordonnees({
+      autre: "Jean <jean.dupont@exemple.fr>", liste: ["04 00 00 00 00", "+33 (0)4 00 00 00 00", "+41223334455", "04.00.00.00.00", "écrire à é.a@b.co.uk"], contact: { telephone: "poste 12", Email: ["x"] }, t: [[{ phone: "1" }]],
+    }));
+    expect(r).not.toMatch(/@|00 00|00\.00|4122|poste|"x"|"1"/);
+    expect(r).toContain("extraire_segment");
+  });
+
+  test("un texte énorme ne bloque pas le processeur", () => {
+    for (const t of ["a".repeat(1_000_000), "@" + "a".repeat(1_000_000), "0 ".repeat(500_000), "+1".repeat(500_000), "a@".repeat(500_000), "a.".repeat(500_000) + "@"]) {
+      const t0 = performance.now();
+      retirerCoordonnees({ t });
+      expect(performance.now() - t0).toBeLessThan(2_000);
+    }
+  }, 60_000);
 });
