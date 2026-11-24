@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { emettreJetonConnexion } from "@/lib/auth/jeton-connexion";
-import { verifyHubHmac } from "@/lib/hub/hmac";
+import { secretCourant, verifierAppelHub } from "@/lib/hub/secrets";
 import { lierTenantHub, UUID_RE } from "@/lib/hub/link-tenant";
 import { generateApiKey, hashApiKey } from "@/lib/hub/apiKey";
 import { resolveOrCreateUserFromHub } from "@/lib/hub/identity";
@@ -129,13 +129,6 @@ async function ensureOwnerWorkspace(
   }
 }
 
-// Le secret est lu *au runtime* (pas au module-load) pour que les tests
-// puissent injecter via vi.hoisted() et que la rotation 6 mois (cf §6.5)
-// fonctionne sans redémarrage du process.
-function getSecret(): string | undefined {
-  return process.env.HUB_API_SECRET || process.env.TENANT_API_SECRET;
-}
-
 // Simple in-memory rate limiter (10 requests per minute per IP)
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 
@@ -158,8 +151,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }
 
-  const secret = getSecret();
-  if (!secret) {
+  if (!secretCourant()) {
     return NextResponse.json({ error: "Server misconfigured" }, { status: 500 });
   }
 
@@ -191,12 +183,11 @@ export async function POST(request: NextRequest) {
   // HMAC standard contrat §6.1 : signature dans les headers sur
   // `${timestamp}.${rawBody}`. Seul mode accepté.
   const headerSig = request.headers.get("x-veridian-hub-signature");
-  const headerTs = Number(request.headers.get("x-veridian-timestamp"));
 
   if (!headerSig) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const v = verifyHubHmac(secret, headerTs, rawBody, headerSig);
+  const v = verifierAppelHub(request, rawBody);
   if (!v.ok) {
     const error =
       v.reason === "timestamp_drift" || v.reason === "invalid_timestamp"

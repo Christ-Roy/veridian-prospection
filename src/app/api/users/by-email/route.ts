@@ -19,12 +19,8 @@
  *   500 { error: "Server misconfigured" }
  */
 import { NextRequest, NextResponse } from "next/server";
-import { verifyHubHmac } from "@/lib/hub/hmac";
+import { secretCourant, verifierAppelHub } from "@/lib/hub/secrets";
 import { prisma } from "@/lib/prisma";
-
-function getSecret(): string | undefined {
-  return process.env.HUB_API_SECRET || process.env.TENANT_API_SECRET;
-}
 
 // Validation email RFC-light (suffisant pour empêcher l'injection,
 // strict enough sans bloquer les TLDs longs).
@@ -55,20 +51,18 @@ function hubTrialStatus(metadata: unknown): string | null {
 
 export async function GET(request: NextRequest) {
   // ─── Auth HMAC ────────────────────────────────────────────────────────────
-  const secret = getSecret();
-  if (!secret) {
+  if (!secretCourant()) {
     return NextResponse.json({ error: "Server misconfigured" }, { status: 500 });
   }
 
   const sig = request.headers.get("x-veridian-hub-signature");
-  const ts = Number(request.headers.get("x-veridian-timestamp"));
 
   if (!sig) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   // Pour GET, rawBody = "" (pas de body envoyé). Le Hub doit signer
   // exactement `${ts}.` (la chaîne avec point final).
-  const v = verifyHubHmac(secret, ts, "", sig);
+  const v = verifierAppelHub(request, "");
   if (!v.ok) {
     const error =
       v.reason === "timestamp_drift" || v.reason === "invalid_timestamp"

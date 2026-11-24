@@ -20,6 +20,7 @@
  * Header signature : `X-Veridian-Hub-Signature: <hex hmac_sha256(secret, sig)>`.
  */
 import { createHmac } from "crypto";
+import { secretCourant } from "./secrets";
 
 const DEFAULT_TIMEOUT_MS = 2000;
 
@@ -50,7 +51,7 @@ export async function fetchHubDiscovery(
   opts: { timeoutMs?: number } = {},
 ): Promise<DiscoveryResult | null> {
   const url = process.env.HUB_API_URL;
-  const secret = process.env.HUB_API_SECRET || process.env.TENANT_API_SECRET;
+  const secret = secretCourant();
 
   if (!url || !secret) {
     return null;

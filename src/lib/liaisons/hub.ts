@@ -5,6 +5,7 @@
 import { createHmac, randomBytes } from "node:crypto";
 
 import { refusDuHub, RefusLiaison, type Cible } from "./erreurs";
+import { secretCourant } from "@/lib/hub/secrets";
 
 export const PORTEES: Record<Cible, string> = { crm: "crm:societe.ecrire crm:tache.ecrire", notifuse: "notifuse:contacts.ecrire" };
 
@@ -31,7 +32,7 @@ export function adresseSure(url: unknown, env: NodeJS.ProcessEnv = process.env):
 
 async function appelerHub(chemin: string, contenu: object, o: Opts, delaiMs: number): Promise<{ res: Response; r: Record<string, unknown> | null }> {
   const env = o.env ?? process.env;
-  const secret = env.HUB_API_SECRET || env.TENANT_API_SECRET;
+  const secret = secretCourant(env);
   const hub = (env.HUB_API_URL || env.NEXT_PUBLIC_HUB_URL || "https://app.veridian.site").replace(/\/+$/, "");
   if (!secret) throw new RefusLiaison("config", "Les liaisons ne sont pas configurées sur ce serveur.", 503);
   const corps = JSON.stringify(contenu);

@@ -33,7 +33,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash, randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
-import { verifyHubHmac } from "@/lib/hub/hmac";
+import { secretCourant, verifierAppelHub } from "@/lib/hub/secrets";
 import { tropDeRequetes } from "@/lib/compteurs";
 import { safeReturnPath } from "@/lib/auth/auto-bounce";
 import { emballer, lireDelegations } from "@/lib/liaisons/poignee";
@@ -42,25 +42,19 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TOKEN_TTL_MS = 15 * 60 * 1000; // 15 min, CONTRAT-HUB §6bis.8.3
 
-function getSecret(): string | undefined {
-  return process.env.HUB_API_SECRET || process.env.TENANT_API_SECRET;
-}
-
 export async function POST(request: NextRequest) {
   // ─── Auth HMAC ────────────────────────────────────────────────────────────
-  const secret = getSecret();
-  if (!secret) {
+  if (!secretCourant()) {
     return NextResponse.json({ error: "missing_secret" }, { status: 500 });
   }
 
   const rawBody = await request.text();
   const sig = request.headers.get("x-veridian-hub-signature");
-  const ts = Number(request.headers.get("x-veridian-timestamp"));
 
   if (!sig) {
     return NextResponse.json({ error: "invalid_hmac" }, { status: 401 });
   }
-  const v = verifyHubHmac(secret, ts, rawBody, sig);
+  const v = verifierAppelHub(request, rawBody);
   if (!v.ok) {
     return NextResponse.json({ error: "invalid_hmac" }, { status: 401 });
   }

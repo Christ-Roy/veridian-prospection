@@ -192,6 +192,8 @@ CLICKHOUSE_USER=prospection_ro
 {{ with nomadVar "nomad/jobs/prospection" }}
 AUTH_SECRET={{ .AUTH_SECRET }}
 TENANT_API_SECRET={{ .TENANT_API_SECRET }}
+# Second secret du Hub, facultatif (VER-251) : accepté en vérification seulement, absent = rien.
+{{ with .HUB_API_SECRET_SECOND }}HUB_API_SECRET_SECOND={{ . }}{{ end }}
 SEARCH_API_SECRET={{ .SEARCH_API_SECRET }}
 CRON_SECRET={{ .CRON_SECRET }}
 HUB_WEBHOOK_TOKEN={{ .HUB_WEBHOOK_TOKEN }}

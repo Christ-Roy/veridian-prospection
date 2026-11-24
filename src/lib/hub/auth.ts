@@ -14,11 +14,7 @@
  *   const rawBody = auth.rawBody;
  */
 import { NextRequest, NextResponse } from "next/server";
-import { verifyHubHmac } from "./hmac";
-
-function getSecret(): string | undefined {
-  return process.env.HUB_API_SECRET || process.env.TENANT_API_SECRET;
-}
+import { secretCourant, verifierAppelHub } from "./secrets";
 
 export type HubHmacAuthResult<TBody = unknown> =
   | {
@@ -45,8 +41,7 @@ export type HubHmacAuthResult<TBody = unknown> =
 export async function requireHubHmac<TBody = unknown>(
   request: NextRequest,
 ): Promise<HubHmacAuthResult<TBody>> {
-  const secret = getSecret();
-  if (!secret) {
+  if (!secretCourant()) {
     return {
       ok: false,
       response: NextResponse.json(
@@ -72,10 +67,9 @@ export async function requireHubHmac<TBody = unknown>(
 
   // Standard HMAC contrat §6.1
   const headerSig = request.headers.get("x-veridian-hub-signature");
-  const headerTs = Number(request.headers.get("x-veridian-timestamp"));
 
   if (headerSig) {
-    const v = verifyHubHmac(secret, headerTs, rawBody, headerSig);
+    const v = verifierAppelHub(request, rawBody);
     if (v.ok) return { ok: true, body, rawBody, mode: "standard" };
 
     const status = 401;

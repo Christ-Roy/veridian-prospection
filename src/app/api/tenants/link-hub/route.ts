@@ -12,7 +12,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
-import { verifyHubHmac } from "@/lib/hub/hmac";
+import { secretCourant, verifierAppelHub } from "@/lib/hub/secrets";
 import { lierTenantHub, UUID_RE } from "@/lib/hub/link-tenant";
 import { isRateLimited } from "@/lib/rate-limit";
 
@@ -25,13 +25,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }
 
-  const secret = process.env.HUB_API_SECRET || process.env.TENANT_API_SECRET;
-  if (!secret) return NextResponse.json({ error: "Server misconfigured" }, { status: 500 });
+  if (!secretCourant()) return NextResponse.json({ error: "Server misconfigured" }, { status: 500 });
 
   const rawBody = await request.text();
   const sig = request.headers.get("x-veridian-hub-signature");
   if (!sig) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const v = verifyHubHmac(secret, Number(request.headers.get("x-veridian-timestamp")), rawBody, sig);
+  const v = verifierAppelHub(request, rawBody);
   if (!v.ok) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   let body: { hub_user_id?: unknown; hub_tenant_id?: unknown };

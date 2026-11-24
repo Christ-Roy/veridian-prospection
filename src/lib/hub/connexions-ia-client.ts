@@ -8,6 +8,7 @@
  * par compte : l'écran relit chaque minute.
  */
 import { createHmac } from "crypto";
+import { secretCourant } from "./secrets";
 
 export type ConnexionHub = { nom: string; depuis: string | null; derniere_utilisation: string | null };
 
@@ -23,7 +24,7 @@ export async function connexionsIaHub(
   opts: { env?: NodeJS.ProcessEnv; fetchImpl?: typeof fetch; maintenant?: number; timeoutMs?: number } = {},
 ): Promise<ConnexionHub[] | null> {
   const env = opts.env ?? process.env;
-  const secret = env.HUB_API_SECRET || env.TENANT_API_SECRET;
+  const secret = secretCourant(env);
   if (!hubUserId || !secret) return null;
   const maintenant = opts.maintenant ?? Date.now();
   const enCache = cache.get(hubUserId);

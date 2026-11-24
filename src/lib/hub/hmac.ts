@@ -1,17 +1,8 @@
 /**
- * HMAC Hub authentication — pattern A du CONTRAT-HUB.md §6.1.
- *
- * Format de signature standard cross-app Veridian :
- *
- *     X-Veridian-Timestamp: <unix_ms>
- *     X-Veridian-Hub-Signature: <hex(hmac_sha256(secret, "{timestamp}.{raw_body}"))>
- *
- * Vérification :
- *   1) drift timestamp < 5min (anti-replay)
- *   2) recompute HMAC sur `${timestamp}.${rawBody}` avec le secret partagé
- *   3) comparaison en temps constant via `crypto.timingSafeEqual`
+ * Aides d'authentification du contrat Hub (CONTRAT-HUB §6). La signature des appels du Hub se vérifie dans
+ * `secrets.ts` et nulle part ailleurs : c'est là que vivent le secret courant et le second (VER-251).
  */
-import { createHmac, timingSafeEqual } from "crypto";
+import { timingSafeEqual } from "crypto";
 
 const MAX_TIMESTAMP_DRIFT_MS = 5 * 60 * 1000;
 
@@ -27,44 +18,6 @@ export type HmacVerificationResult =
         | "invalid_signature"
         | "invalid_bearer";
     };
-
-/**
- * Vérifie une signature HMAC au format contrat `{ts}.{body}`.
- *
- * @param secret  Secret partagé Hub/app (env `HUB_API_SECRET` côté app).
- * @param timestamp Header `X-Veridian-Timestamp` (unix ms).
- * @param rawBody Body request exactement tel qu'il a été reçu (raw bytes,
- *                pas re-stringifié — sinon les whitespace divergent).
- * @param signature Header `X-Veridian-Hub-Signature` (hex).
- */
-export function verifyHubHmac(
-  secret: string | undefined,
-  timestamp: number,
-  rawBody: string,
-  signature: string,
-): HmacVerificationResult {
-  if (!secret) return { ok: false, reason: "missing_secret" };
-  if (!signature) return { ok: false, reason: "missing_signature" };
-  if (!Number.isFinite(timestamp)) return { ok: false, reason: "invalid_timestamp" };
-  if (Math.abs(Date.now() - timestamp) > MAX_TIMESTAMP_DRIFT_MS) {
-    return { ok: false, reason: "timestamp_drift" };
-  }
-
-  const expected = createHmac("sha256", secret)
-    .update(`${timestamp}.${rawBody}`)
-    .digest("hex");
-
-  try {
-    const a = Buffer.from(signature, "hex");
-    const b = Buffer.from(expected, "hex");
-    if (a.length !== b.length) return { ok: false, reason: "invalid_signature" };
-    if (!timingSafeEqual(a, b)) return { ok: false, reason: "invalid_signature" };
-  } catch {
-    return { ok: false, reason: "invalid_signature" };
-  }
-
-  return { ok: true, mode: "standard" };
-}
 
 /**
  * Comparaison `Authorization: Bearer <secret>` en temps constant.
