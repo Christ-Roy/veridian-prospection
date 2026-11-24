@@ -21,10 +21,10 @@ const cache = new Map<string, { t: number; v: Droits }>();
 const DUREE = 30_000;
 
 /** Droits Atlas d'un utilisateur dans un espace, gardés 30 s. */
-export async function droits(userId: string, tenantId: string): Promise<Droits> {
+export async function droits(userId: string, tenantId: string, frais = false): Promise<Droits> {
   const k = `${userId}:${tenantId}`;
   const c = cache.get(k);
-  if (c && Date.now() - c.t < DUREE) return c.v;
+  if (!frais && c && Date.now() - c.t < DUREE) return c.v;
   // Lecture impossible : aucun droit réservé (fermé par défaut), sans garder ce résultat en cache.
   let t: { accesAvance: boolean; plan: string | null } | null = null;
   let u: { atlasAdmin: boolean } | null = null;

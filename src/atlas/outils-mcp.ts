@@ -19,7 +19,7 @@ import { peutExporter } from "./export";
 import { extraireSegment, PAGE_DEFAUT, PAGE_MAX, RefusExtraction } from "./extraction";
 import { compilerMaitre } from "./maitre";
 import { geometrieCommunes, rapprocher } from "./communes";
-import { accorderAcces, creerCle, listerAccesAvances, listerCles, RefusAcces, revoquerCle } from "./acces";
+import { accorderAcces, creerCle, droits, listerAccesAvances, listerCles, RefusAcces, revoquerCle } from "./acces";
 import { LIGNES_MAX_SQL, TABLES_SQL, verifierRequete } from "./sql";
 import { FiltreInvalide } from "./filtres";
 import { sourceMarche } from "./source";
@@ -84,7 +84,7 @@ const OUTILS_BRUTS: Outil[] = [
     name: "explorer_marche",
     title: "Explorer le marché",
     description:
-      "Compte et liste les entreprises CONTACTABLES (1,3 M de fiches non bloquées) d'un filtre, sans rien enregistrer ; total, puis page par page. " +
+      "Compter et lister les entreprises CONTACTABLES (prospects, 1,3 M) d'un filtre (métier, département…), sans rien enregistrer ; total, puis page par page. " +
       "Codes NAF d'un métier : chercher_activites. Toutes les entreprises de France : lister_entreprises. Garder le filtre : creer_segment.",
     input: z.object({
       filtre: FILTRE,
@@ -121,7 +121,7 @@ const OUTILS_BRUTS: Outil[] = [
     name: "analyser_marche",
     title: "Analyser la taille d'un marché",
     description:
-      "Taille du marché ENTIER (toutes les entreprises, pas que les contactables), au total et par axe : naf, departement, forme, effectif, " +
+      "Compter combien d'entreprises : la taille du marché ENTIER (pas que les contactables), au total et par axe : naf, departement, forme, effectif, " +
       "annee_creation… Emails connus et envoyables, signaux récents. Accepte le filtre d'un segment ; rend conditions_ignorees.",
     input: EntreeCubeSchema.extend({ filtre: FILTRE.optional() }),
     annotations: LECTURE,
@@ -164,7 +164,7 @@ const OUTILS_BRUTS: Outil[] = [
     name: "chercher_activites",
     title: "Trouver les codes NAF d'un métier",
     description:
-      "Codes NAF d'un métier décrit en quelques mots (« chasse », « toilettage chien ») : par le libellé et par le nom réel des entreprises, avec la " +
+      "Trouver un métier : ses codes NAF, décrit en quelques mots (« chasse », « toilettage chien ») : par le libellé et par le nom réel des entreprises, avec la " +
       "taille de chaque code. Un métier tient rarement dans un seul code : regroupez, et ajoutez une condition sur le nom si besoin.",
     input: EntreeActivitesSchema,
     annotations: LECTURE,
@@ -208,14 +208,18 @@ const OUTILS_BRUTS: Outil[] = [
     description: "Plan de l'espace, accès avancé (SQL, clés API), administration Atlas, et quota du jour de verifier_entreprises.",
     input: z.object({}),
     annotations: LECTURE,
-    run: lisible(async (_a, c) => ({
-      plan: c.droits?.plan ?? null,
-      payant: !!c.droits?.payant,
-      acces_avance: !!c.droits?.accesAvance,
-      admin_atlas: !!c.droits?.adminAtlas,
-      peut_creer_cles: !!c.droits?.accesAvance && c.ctx.isAdmin,
-      quota_verification_jour: c.droits?.payant || c.droits?.accesAvance ? QUOTA_VERIFICATION.payant : QUOTA_VERIFICATION.gratuit,
-    })),
+    run: lisible(async (_a, c) => {
+      // Relu en base : un plan qui vient de changer se voit tout de suite (les droits sont sinon gardés 30 s).
+      const d = await droits(c.ctx.userId, c.ctx.tenantId, true);
+      return {
+        plan: d.plan,
+        payant: !!d.payant,
+        acces_avance: !!d.accesAvance,
+        admin_atlas: !!d.adminAtlas,
+        peut_creer_cles: !!d.accesAvance && c.ctx.isAdmin,
+        quota_verification_jour: d.payant || d.accesAvance ? QUOTA_VERIFICATION.payant : QUOTA_VERIFICATION.gratuit,
+      };
+    }),
   },
   {
     name: "verifier_entreprises",
@@ -570,7 +574,7 @@ const OUTILS_BRUTS: Outil[] = [
     name: "extraire_segment",
     title: "Extraire un segment, page par page",
     description:
-      "Extrait ou exporte les contacts envoyables d'un segment (email, entreprise, dirigeant, lieu), pour Notifuse, un CRM ou un tableur. Sans curseur, puis " +
+      "Récupérer, extraire, exporter les contacts des prospects d'un segment (emails, entreprise, dirigeant, lieu) pour Notifuse, un CRM, un tableur. Sans curseur, puis " +
       "curseur_suivant jusqu'à null. Plans payants, 5 000 lignes par jour. Segment à créer d'abord : creer_segment.",
     input: z.object({
       segment_id: SEGMENT,
