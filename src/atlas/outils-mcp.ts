@@ -15,7 +15,7 @@ import { CHAMPS, OPERATEURS } from "./champs";
 import { EntreeActivitesSchema, codesParLibelle, validerActivites } from "./activites";
 import { EntreeCubeSchema, entreeDepuisFiltre } from "./cube";
 import { peutExporter } from "./export";
-import { extraireSegment, PAGE_MAX, RefusExtraction } from "./extraction";
+import { extraireSegment, PAGE_DEFAUT, PAGE_MAX, RefusExtraction } from "./extraction";
 import { compilerMaitre } from "./maitre";
 import { geometrieCommunes, rapprocher } from "./communes";
 import { accorderAcces, creerCle, listerAccesAvances, listerCles, RefusAcces, revoquerCle } from "./acces";
@@ -553,8 +553,10 @@ const OUTILS_BRUTS: Outil[] = [
     description:
       "Entreprises envoyables par email d'un segment (siren, email, domaine, raison_sociale, dirigeant, activité, lieu, téléphone), dans l'ordre " +
       "de sa priorité. Premier appel sans curseur, puis curseur_suivant jusqu'à null. La liste est figée au premier appel : ni doublon ni " +
-      "trou. retires : SIREN de la page devenus non envoyables, à ne pas contacter. Plans payants, 5 000 lignes par jour et par espace, tracé.",
-    input: z.object({ segment_id: UUID, curseur: z.string().max(200).nullish(), limite: z.number().int().min(1).max(PAGE_MAX).default(500) }),
+      "trou. retires : SIREN de la page devenus non envoyables, à ne pas contacter. limite : 30 en appel direct (au-delà la réponse est coupée ; " +
+      "rappeler alors le même curseur avec une limite plus petite, rien n'est recompté), jusqu'à 1000 dans un programme. Plans payants, 5 000 " +
+      "lignes par jour et par espace, tracé.",
+    input: z.object({ segment_id: UUID, curseur: z.string().max(200).nullish(), limite: z.number().int().min(1).max(PAGE_MAX).default(PAGE_DEFAUT) }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: lisible(async (a, c) => {
       if (isRateLimited(`atlas-extraction:${c.ctx.tenantId}`, 60, 60_000)) throw new ErreurOutil("60 pages par minute au plus.");

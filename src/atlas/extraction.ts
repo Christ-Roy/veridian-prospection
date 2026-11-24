@@ -8,8 +8,9 @@
  * réunis valent toujours exactement la page figée.
  *
  * Quota : 5 000 lignes par jour (Paris) et par espace, lu dans le journal atlas_exports sous un verrou Postgres.
- * Il survit à un redémarrage et vaut pour toutes les instances. Une page déjà servie se rejoue sans être
- * recomptée, à la même taille quelle que soit la limite demandée.
+ * Il survit à un redémarrage et vaut pour toutes les instances. Une page déjà servie se rejoue à l'identique sans
+ * être recomptée, et se relit par morceaux plus petits au même curseur : la porte MCP du Hub coupe une réponse
+ * directe vers 15 000 caractères (une trentaine de lignes), le mode programme accepte 1 000 lignes.
  */
 import { createHash } from "node:crypto";
 
@@ -21,6 +22,8 @@ import { sourceMarche, type LigneExtraite } from "./source";
 
 export const QUOTA_EXTRACTION_JOUR = 5000;
 export const PAGE_MAX = 1000;
+/** Sûr en appel direct par la porte MCP du Hub (réponse coupée vers 15 000 caractères). */
+export const PAGE_DEFAUT = 30;
 /** Un curseur vit une semaine : sept jours de quota, donc au plus 35 000 lignes par extraction. */
 const DUREE_JOURS = 7;
 export const LIGNES_MAX_EXTRACTION = QUOTA_EXTRACTION_JOUR * DUREE_JOURS;
@@ -93,22 +96,21 @@ async function extractionCourante(a: Appelant, segmentId: string) {
   });
 }
 
-/** Réserve la page dans le journal (une fois), ou retrouve celle déjà servie. */
+/**
+ * Taille de la page demandée. Déjà comptée (une page du journal contient ce début) : relue telle quelle, ou en
+ * partie si la limite est plus petite, sans rien recompter. Sinon elle doit prolonger la dernière, et se compte.
+ */
 async function reserverPage(a: Appelant, e: { id: string; segmentId: string; segmentVersion: number; sirens: string[] }, debut: number, limite: number) {
   return prisma.$transaction(async (tx) => {
     await verrouiller(tx, a.tenantId);
-    const consomme = await consommeAujourdhui(tx, a.tenantId);
-    const deja = await tx.atlasExport.findUnique({ where: { extractionId_debut: { extractionId: e.id, debut } } });
-    if (deja) return { taille: deja.lignes, reste: Math.max(0, QUOTA_EXTRACTION_JOUR - consomme) };
-    // Un curseur n'est valable qu'à une frontière de page réellement servie : 0, ou la fin d'une page du journal.
-    if (debut > 0) {
-      const avant = await tx.atlasExport.findFirst({ where: { extractionId: e.id, debut: { lt: debut } }, orderBy: { debut: "desc" } });
-      if (!avant || (avant.debut ?? 0) + avant.lignes !== debut) throw new RefusExtraction("Curseur invalide.");
-    }
-    const reste = Math.max(0, QUOTA_EXTRACTION_JOUR - consomme);
+    const reste = Math.max(0, QUOTA_EXTRACTION_JOUR - (await consommeAujourdhui(tx, a.tenantId)));
+    const derniere = await tx.atlasExport.findFirst({ where: { extractionId: e.id, debut: { lte: debut } }, orderBy: { debut: "desc" } });
+    const fin = derniere ? (derniere.debut ?? 0) + derniere.lignes : 0;
+    if (debut < fin) return { taille: Math.min(limite, fin - debut), reste };
+    if (debut > fin) throw new RefusExtraction("Curseur invalide.");
     const taille = Math.min(limite, e.sirens.length - debut, reste);
     if (taille <= 0) {
-      if (debut < e.sirens.length && reste === 0) throw new RefusExtraction(messageQuota);
+      if (debut < e.sirens.length) throw new RefusExtraction(messageQuota);
       return { taille: 0, reste };
     }
     await tx.atlasExport.create({

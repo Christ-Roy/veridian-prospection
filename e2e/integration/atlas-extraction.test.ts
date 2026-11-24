@@ -84,23 +84,39 @@ describe("curseur stable", () => {
     expect(p3.extraction.version_odh).toBe("R1");
   });
 
-  test("deux appels au même curseur (ou sans curseur) rendent la même page, comptée une fois, même avec une autre limite", async () => {
+  test("deux appels au même curseur (ou sans curseur) rendent la même page, comptée une fois, même avec une limite plus grande", async () => {
     const s = await segment();
     const a = await page(s, null, 700);
     const b = await page(s, null, 1000);
     expect(b).toEqual(a);
     const c = await page(s, a.curseur_suivant, 700);
-    expect(await page(s, a.curseur_suivant, 10)).toEqual(c);
+    expect(await page(s, a.curseur_suivant, 700)).toEqual(c);
     expect(c.quota_restant_aujourdhui).toBe(QUOTA_EXTRACTION_JOUR - 1400);
     expect(await prisma.atlasExport.count({ where: { tenantId: T.paye.t } })).toBe(2);
   });
 
-  test("curseur forgé, d'un autre segment ou expiré : refusé", async () => {
+  test("réponse coupée en route : la page se relit par morceaux au même curseur, sans trou, doublon ni recompte", async () => {
+    const s = await segment();
+    const grande = await page(s, null, 1000);
+    const lus: string[] = [];
+    let c: string | null = null;
+    for (let i = 0; i < 4; i++) {
+      const p = await page(s, c, 300);
+      lus.push(...sirens(p));
+      c = p.curseur_suivant;
+      expect(p.quota_restant_aujourdhui).toBe(QUOTA_EXTRACTION_JOUR - 1000);
+    }
+    expect(lus).toEqual(sirens(grande)); // 300 + 300 + 300 + 100, dans le même ordre
+    expect(c).toBe(grande.curseur_suivant);
+    expect((await page(s, c, 300)).quota_restant_aujourdhui).toBe(QUOTA_EXTRACTION_JOUR - 1300);
+  });
+
+  test("curseur au-delà de ce qui est servi, d'un autre segment ou expiré : refusé", async () => {
     const s = await segment();
     const s2 = await segment();
     const p1 = await page(s, null, 100);
     const e = await prisma.atlasExtraction.findFirstOrThrow({ where: { segmentId: s } });
-    await expect(page(s, encoderCurseur(e.id, 50))).rejects.toThrow(/Curseur invalide/);
+    await expect(page(s, encoderCurseur(e.id, 150))).rejects.toThrow(/Curseur invalide/);
     await expect(page(s, encoderCurseur(e.id, 999999))).rejects.toThrow(/Curseur invalide/);
     await expect(page(s2, p1.curseur_suivant)).rejects.toThrow(/Curseur invalide/);
     await expect(page(s, "n'importe quoi")).rejects.toThrow(/Curseur invalide/);
