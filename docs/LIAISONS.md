@@ -14,8 +14,8 @@ Plan : `nomad-veridian/plan/INTEGRATIONS-NATIVES.md` (§2.1 à 2.3, F1, F2). Un 
   bouton reste, le clic dira.
 - **CRM** : `tools/call app_envoyer_au_crm` sur son MCP, lot de 20 (plugin liaisons 0.4), un résultat par SIREN. Non traité ou absent de
   la réponse : la page entière se reprend.
-- **Mail** : `POST <adresse>/<action>` (fiche 87 de Notifuse), `contacts.importer`, portée `notifuse:contacts.ecrire` ; attend de Mail
-  `listes.lister` et `listes.creer`. Ni `allow_triggers` ni `existing` : Mail les fixe, rien ne peut partir.
+- **Mail** : `POST <adresse>/<action>` (fiche 87 de Notifuse), `contacts.importer`, portée `notifuse:contacts.ecrire` ,
+  `listes.lister` (`starts_sequence` : liste grisée) et `listes.creer`. Ni `allow_triggers` ni `existing` : Mail les fixe, rien ne peut partir.
 - **Un geste** = un uuid choisi par l'écran, gardé s'il réessaie (`atlas_envois`, une ligne par étape, sans coordonnée). Rejoué : premier
   résultat. Deux clics simultanés : un seul travaille. Une étape morte se reprend après 120 s.
 - **Plafonds** : ceux de l'extraction (plan payant, 5 000 lignes par jour et par espace, tracées dans `atlas_exports`, canal

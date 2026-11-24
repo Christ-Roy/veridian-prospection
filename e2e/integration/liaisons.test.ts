@@ -117,10 +117,10 @@ beforeAll(async () => {
     if (j.scope !== "notifuse:contacts.ecrire") return { status: 403, corps: { error: "portee_insuffisante" } };
     if (!a.dry_run && (cle.length < 8 || cle.length > 128)) return { status: 400, corps: { error: "cle_requise" } };
     const fait = (resultat: unknown) => ({ status: 200, corps: { action, rejoue: false, simulation: !!a.dry_run, resultat } });
-    if (action === "listes.lister") return fait({ listes: [...mail.listes].map(([id, nom]) => ({ id, nom, sequence: mail.sequence.has(id) })) });
+    if (action === "listes.lister") return fait(mail.ment === "http" ? { lists: null } : { lists: [...mail.listes].map(([id, name]) => ({ id, name, starts_sequence: mail.sequence.has(id) })) });
     if (action === "listes.creer") {
       mail.listes.set(String(a.id), String(a.name));
-      return fait({ id: a.id });
+      return fait({ id: a.id, name: a.name, existait: false });
     }
     if (action !== "contacts.importer") return { status: 404, corps: { error: "action_inconnue" } };
     if (Object.keys(a).some((k) => !["list_ids", "contacts", "dry_run"].includes(k))) return { status: 400, corps: { error: "demande_invalide" } };
@@ -564,6 +564,9 @@ describe("vers Mail", () => {
     expect((await li.listesMail(a)).listes).toEqual([{ id: "reserve", nom: "Réserve", sequence: false }]);
     mail.sequence.add("reserve");
     expect((await li.listesMail(a)).listes[0].sequence).toBe(true);
+    mail.ment = "http";
+    await expect(li.listesMail(a)).rejects.toEqual(refus("reponse_invalide"));
+    mail.ment = "";
     const geste = randomUUID();
     const l = await li.creerListeMail(a, { geste, nom: "Éleveurs" });
     expect((await li.creerListeMail(a, { geste, nom: "Éleveurs" })).id).toBe(l.id);

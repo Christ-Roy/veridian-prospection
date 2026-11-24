@@ -183,11 +183,13 @@ export type ListeMail = { id: string; nom: string; sequence: boolean };
 export async function listesMail(a: Appel): Promise<{ listes: ListeMail[] }> {
   const p = await preparer(a, "notifuse");
   const r = await appelerMail(await jeton(p, "notifuse", "bouton.envoyer_vers_mail"), "listes.lister", {}, `listes:${randomUUID()}`);
-  const brutes = (Array.isArray(r.listes) ? r.listes : Array.isArray(r.lists) ? r.lists : []) as Record<string, unknown>[];
+  // Une réponse sans liste lisible n'est pas « aucune liste ».
+  if (!Array.isArray(r.lists)) throw new RefusLiaison("reponse_invalide", "Mail n'a pas rendu vos listes. Réessayez.", 502);
+  const brutes = r.lists as Record<string, unknown>[];
   return {
     listes: brutes
       .filter((l) => typeof l?.id === "string")
-      .map((l) => ({ id: String(l.id), nom: String(l.nom ?? l.name ?? l.id).slice(0, 120), sequence: l.sequence === true })),
+      .map((l) => ({ id: String(l.id), nom: String(l.name ?? l.id).slice(0, 120), sequence: l.starts_sequence !== false })),
   };
 }
 
