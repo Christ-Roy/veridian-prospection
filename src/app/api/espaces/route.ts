@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-import { COOKIE_ESPACE, espacesDe } from "@/lib/auth/espaces";
+import { cookieEspace, espacesDe } from "@/lib/auth/espaces";
 import { getUserContext } from "@/lib/auth/user-context";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +26,6 @@ export async function POST(request: NextRequest) {
   // Même réponse pour un espace inconnu et pour celui d'un autre.
   if (!espace) return rendre({ error: "organisation inconnue" }, 404);
   const r = rendre({ courant: espace.id });
-  r.cookies.set({ name: COOKIE_ESPACE, value: espace.id, httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 365 });
+  r.cookies.set(cookieEspace(espace.id));
   return r;
 }

@@ -32,6 +32,7 @@ import { createHash, randomUUID } from "crypto";
 import { encode } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { AUTO_BOUNCE_COOKIE, LOGGED_OUT_COOKIE, safeReturnPath } from "@/lib/auth/auto-bounce";
+import { cookieEspace, espacesDe } from "@/lib/auth/espaces";
 import { attacher } from "@/lib/liaisons/poignee";
 
 const MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 heures
@@ -91,7 +92,9 @@ export async function GET(request: NextRequest) {
       const ok = await attacher(ssoToken.delegation, tokenHash, sid, ssoToken.userId).catch(() => false);
       if (!ok) console.warn(`[auth/token] délégation non attachée user=${ssoToken.userId}`);
     }
-    return createSessionResponse(ssoToken.userId, baseUrl, "sso", returnPath, sid);
+    const reponse = await createSessionResponse(ssoToken.userId, baseUrl, "sso", returnPath, sid);
+    await poserEspace(reponse, ssoToken.userId, request.nextUrl.searchParams.get("espace"));
+    return reponse;
   }
 
   let tenant;
@@ -145,6 +148,16 @@ export async function GET(request: NextRequest) {
   }
 
   return createSessionResponse(tenant.userId, baseUrl, `tenant=${tenant.id}`, returnPath);
+}
+
+/** L'organisation où l'on travaillait au Hub (VER-252) : posée seulement si l'utilisateur en est membre, sans jamais empêcher d'entrer. */
+async function poserEspace(reponse: NextResponse, userId: string, espace: string | null): Promise<void> {
+  if (!espace) return;
+  try {
+    if ((await espacesDe(userId)).some((e) => e.id === espace)) reponse.cookies.set(cookieEspace(espace));
+  } catch {
+    console.warn("[auth/token] organisation non posée");
+  }
 }
 
 async function createSessionResponse(

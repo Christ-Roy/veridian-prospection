@@ -12,7 +12,7 @@
  *
  * Body attendu :
  *   { "hub_user_id": "<uuid>", "email": "<string>", "email_proven"?: true, "next"?: "<url>",
- *     "delegations"?: [{ "hub_tenant_id": "<uuid>", "grant": "<opaque>", "expire_le": "<ISO>" }] }
+ *     "hub_tenant_id"?: "<uuid>" (organisation active au Hub), "delegations"?: [{ "hub_tenant_id": "<uuid>", "grant": "<opaque>", "expire_le": "<ISO>" }] }
  *   Les poignées de délégation (VER-246) sont gardées chiffrées et passent à la session ouverte par ce lien.
  *
  * Réponses :
@@ -36,6 +36,7 @@ import { prisma } from "@/lib/prisma";
 import { secretCourant, verifierAppelHub } from "@/lib/hub/secrets";
 import { tropDeRequetes } from "@/lib/compteurs";
 import { safeReturnPath } from "@/lib/auth/auto-bounce";
+import { espaceHub } from "@/lib/auth/espaces";
 import { emballer, lireDelegations } from "@/lib/liaisons/poignee";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -202,9 +203,16 @@ export async function POST(request: NextRequest) {
     "https://prospection.app.veridian.site";
   // §6bis.8.0 : retour à la page demandée, seulement sur l'origine de l'app.
   const returnPath = safeReturnPath(obj.next, appUrl);
+  // Organisation où il travaillait au Hub (VER-252) : retenue seulement s'il en est membre ici. Inconnue, on entre comme avant.
+  let espace: string | null = null;
+  if (typeof obj.hub_tenant_id === "string" && UUID_RE.test(obj.hub_tenant_id)) {
+    const e = await espaceHub(user.id, obj.hub_tenant_id.toLowerCase()).catch(() => null);
+    if (e && typeof e === "object") espace = e.id;
+  }
   const magicLinkUrl =
     `${appUrl}/api/auth/token?t=${loginToken}` +
-    (returnPath ? `&next=${encodeURIComponent(returnPath)}` : "");
+    (returnPath ? `&next=${encodeURIComponent(returnPath)}` : "") +
+    (espace ? `&espace=${espace}` : "");
 
   console.log(
     `[sso/issue-magic-link] issued user=${user.id} tenant=${tenant.id} expires=${expiresAt.toISOString()}`,

@@ -7,6 +7,9 @@ import { prisma } from "@/lib/prisma";
 
 export const COOKIE_ESPACE = "veridian-espace";
 
+export const cookieEspace = (id: string) =>
+  ({ name: COOKIE_ESPACE, value: id, httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 365 }) as const;
+
 export type Espace = { id: string; nom: string; role: "owner" | "admin" | "member" | "viewer"; membres: number };
 
 const RANG = { owner: 4, admin: 3, member: 2, viewer: 1 } as const;
@@ -32,4 +35,26 @@ export async function espacesDe(userId: string): Promise<Espace[]> {
     const role = t.userId === userId ? "owner" : roles.sort((a, b) => RANG[b] - RANG[a])[0] ?? "member";
     return { id: t.id, nom: t.name, role, membres: new Set([...(par.get(t.id) ?? []), t.userId]).size };
   });
+}
+
+/**
+ * Espace désigné par le `tenant_id` signé du Hub (CONTRAT-MCP §2), sans repli silencieux :
+ * relié à aucun tenant local = `tenant_not_linked` ; relié mais l'utilisateur n'en est ni
+ * propriétaire ni membre = `tenant_forbidden` ; sinon l'id local du tenant.
+ */
+export async function espaceHub(
+  userId: string,
+  hubTenantId: string,
+): Promise<{ id: string } | "tenant_not_linked" | "tenant_forbidden"> {
+  const t = await prisma.tenant.findFirst({
+    where: { hubTenantId, deletedAt: null },
+    select: { id: true, userId: true },
+  });
+  if (!t) return "tenant_not_linked";
+  if (t.userId === userId) return { id: t.id };
+  const m = await prisma.workspaceMember.findFirst({
+    where: { userId, deletedAt: null, workspace: { tenantId: t.id, deletedAt: null } },
+    select: { userId: true },
+  });
+  return m ? { id: t.id } : "tenant_forbidden";
 }
