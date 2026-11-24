@@ -1,7 +1,8 @@
 /**
  * Outils MCP d'Atlas : explorer le marché (ClickHouse ODH), ranger des segments, les scorer.
- * L'espace vient de l'utilisateur (ctx.tenantId), jamais d'un argument. L'export n'est pas ici :
- * il passe par un clic humain (docs/PLAN-ATLAS.md).
+ * L'espace vient de l'utilisateur (ctx.tenantId), jamais d'un argument. L'extraction d'un segment par une IA
+ * (extraire_segment) est réservée aux plans payants, bornée à 5 000 lignes par jour et par espace, et tracée
+ * dans atlas_exports comme un export de l'écran (docs/PLAN-ATLAS.md).
  */
 import { z } from "zod";
 
@@ -14,6 +15,7 @@ import { CHAMPS, OPERATEURS } from "./champs";
 import { EntreeActivitesSchema, codesParLibelle, validerActivites } from "./activites";
 import { EntreeCubeSchema, entreeDepuisFiltre } from "./cube";
 import { peutExporter } from "./export";
+import { extraireSegment, PAGE_MAX, RefusExtraction } from "./extraction";
 import { compilerMaitre } from "./maitre";
 import { geometrieCommunes, rapprocher } from "./communes";
 import { accorderAcces, creerCle, listerAccesAvances, listerCles, RefusAcces, revoquerCle } from "./acces";
@@ -37,7 +39,7 @@ function lisible<T>(f: (a: Record<string, unknown>, c: ContexteOutil) => Promise
     try {
       return await f(a, c);
     } catch (e) {
-      if (e instanceof FiltreInvalide || e instanceof seg.Introuvable || e instanceof seg.Refus || e instanceof RefusAcces) throw new ErreurOutil(e.message);
+      if (e instanceof FiltreInvalide || e instanceof seg.Introuvable || e instanceof seg.Refus || e instanceof RefusAcces || e instanceof RefusExtraction) throw new ErreurOutil(e.message);
       throw e;
     }
   };
@@ -546,11 +548,30 @@ const OUTILS_BRUTS: Outil[] = [
     run: lisible(async (a, c) => seg.supprimerDossier(c.ctx.tenantId, a.dossier_id as string)),
   },
   {
+    name: "extraire_segment",
+    title: "Extraire un segment, page par page",
+    description:
+      "Entreprises envoyables par email d'un segment (siren, email, domaine, raison_sociale, dirigeant, activité, lieu, téléphone), dans l'ordre " +
+      "de sa priorité. Premier appel sans curseur, puis curseur_suivant jusqu'à null. La liste est figée au premier appel : ni doublon ni " +
+      "trou. retires : SIREN de la page devenus non envoyables, à ne pas contacter. Plans payants, 5 000 lignes par jour et par espace, tracé.",
+    input: z.object({ segment_id: UUID, curseur: z.string().max(200).nullish(), limite: z.number().int().min(1).max(PAGE_MAX).default(500) }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    run: lisible(async (a, c) => {
+      if (isRateLimited(`atlas-extraction:${c.ctx.tenantId}`, 60, 60_000)) throw new ErreurOutil("60 pages par minute au plus.");
+      return avecSource(
+        await extraireSegment(
+          { tenantId: c.ctx.tenantId, userId: c.ctx.userId, client: c.client ?? null },
+          { segmentId: a.segment_id as string, curseur: a.curseur as string | null | undefined, limite: a.limite as number },
+        ),
+      );
+    }),
+  },
+  {
     name: "preparer_export",
     title: "Préparer un export",
     description:
       "Donne les liens de téléchargement Excel et CSV d'un segment (5 000 entreprises au plus, classées par sa priorité), à cliquer par " +
-      "l'utilisateur connecté : aucune donnée n'est rendue ici, l'export reste un geste humain. Indique si le plan de l'espace le permet.",
+      "l'utilisateur connecté : aucune donnée n'est rendue ici (pour les lire toi-même : extraire_segment). Indique si le plan de l'espace le permet.",
     input: z.object({ segment_id: UUID }),
     annotations: LECTURE,
     run: lisible(async (a, c) => {

@@ -64,7 +64,9 @@ Plus tard : apprentissage sur les conversions remontées de Twenty.
 `lister_dossiers`, `creer_segment`, `modifier_segment` (nouvelle version), `compter_segment`, `apercu_segment`
 (échantillon paginé), `repartition_segment` (par département, NAF, taille : base des vues carte et diagrammes),
 `combiner_segments`, `definir_scoring`, `classer_segment` (top N scoré), `historique_segment`, `restaurer_version`.
-Export : jamais par le MCP sans clic humain.
+Export par une IA (`extraire_segment`, VER-242, Robert 24/11 ; remplace « jamais par le MCP sans clic humain », écrit par l'agent le
+09/11) : plans payants, emails envoyables et fiches non exclues seulement, 5 000 lignes par jour et par espace (compté en base),
+chaque page tracée dans `atlas_exports`. La base brute (`requete_sql`) reste un accès accordé espace par espace.
 
 ## Cas d'usage zéro : éleveurs de France pour ASD (Henri), 09/11
 

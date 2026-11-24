@@ -23,14 +23,14 @@ archives : tag `archive/prospection-v1-20261109`, dump `~/archives/prospection-v
 ## Vision produit : `docs/VISION-ATLAS.md` fait foi (Robert, 15/11 : Pappers des marchés, lead magnet, chaîne Atlas → Notifuse → CRM → ERP, API)
 
 Le pipeline commercial part dans Twenty ; Prospection sert à trouver et qualifier un marché.
-Maquette : `docs/maquette/atlas-des-marches.html`. Linear : ROB-173.
+Maquette : `docs/maquette/atlas-des-marches.html`.
 Flux (Robert, 09/11) : **analyse du marché → définition de la cible → priorité (scoring froid) → envoi**.
 1. **Marché, sur la base maître** (Robert, 10/11) : la première vue montre toutes les entreprises (cube ODH). Un marché
    = segment racine sur les champs `marche` du catalogue (NAF, division, département, forme, effectif, création).
 2. **Cible** : segment enfant qui hérite et ajoute les filtres de prospection (contact, web, signaux), sur les fiches
    prospectables ; sa part contactable et sa part du marché s'affichent tout de suite. Rangés en dossiers.
 3. **Priorité** : des règles simples « si … alors +N points », suggestions neutres, IA hautement recommandée.
-4. **Export** : Excel ou CSV (`/api/atlas/export`, plans payants, 5 000 lignes, tracé), Notifuse à venir.
+4. **Export** : Excel ou CSV (`/api/atlas/export`, plans payants, 5 000 lignes), ou `extraire_segment` par l'IA ; tracés.
 5. **IA** : boutons pour brancher son IA dans l'app (liens lus au Hub), accueil « avec l'IA / à la main ».
 Pilotage par IA via le MCP (Claude, ChatGPT en OAuth par le Hub), jamais d'IA payée par l'app.
 
@@ -62,14 +62,13 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
   Tenants existants : `POST /api/tenants/link-hub` (HMAC, `{hub_user_id, hub_tenant_id}`) ne pose que ce lien.
   Ne pas rejouer `provision` sur un vrai client : il remet le propriétaire `admin` et recrée `default`.
   `by-email` rend `workspaces[].hub_tenant_id` pour `hub reconcile`.
-- Outils : `src/atlas/outils-mcp.ts` (35), les mêmes que l'écran appelle par `/api/atlas/[outil]` avec la session.
+- Outils : `src/atlas/outils-mcp.ts` (36), les mêmes que l'écran appelle par `/api/atlas/[outil]` avec la session.
   Espace déduit de l'utilisateur, un `viewer` ne voit pas les outils d'écriture, fiche limitée à 60/min.
   Ajouter un outil = une entrée dans `OUTILS_ATLAS`, le Hub le relit seul.
 - ClickHouse (`src/atlas/source.ts`) : compte `prospection_ro`, 12 requêtes simultanées pour toute l'app, aucun
   réglage par requête (profil readonly). File de 3 par conteneur et rejeu du code 202 : ne pas les retirer.
   Champs = liste blanche `src/atlas/champs.ts`, filtres compilés en paramètres typés (`src/atlas/filtres.ts`).
-  `deliverable` d'ODH = joignable par un canal. Email et téléphone se filtrent sur `email_envoyable` et
-  `telephone_envoyable` (ODH-0239, même règle que leur export Notifuse).
+  Envoyable = adresse valable ET fiche livrable : `email_envoyable = 1 AND deliverable = 1` (base maître : `prospectable`).
 - Cube de marché ODH-0245 (`odh.market_cube_current`, `src/atlas/cube.ts`, outil `analyser_marche`, vue « Taille du
   marché ») : le marché ENTIER, pas que les fiches prospectables. Sélection par LISTE de codes NAF avec
   `naf_rev2 = 1`, jamais par intervalle de chaînes ; prévoir « département inconnu » (diffusion partielle) ;
@@ -80,8 +79,11 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
   Atlas (`users.atlas_admin`, outil `accorder_acces_avance` ou volet « API et accès avancé »), jamais par le plan. Donne
   `requete_sql` (garde : SELECT sur 3 tables d'ODH, 1 000 lignes ; le compte ClickHouse refuse `url()`) et les clés API
   (`Bearer atl_…` sur `/api/atlas/[outil]`, empreinte SHA-256 seule). `verifier_entreprises` : 50 SIREN/jour gratuit, 5 000 payant.
+- `extraire_segment` (VER-242, `src/atlas/extraction.ts`) : liste de SIREN figée en base (curseur stable 7 jours), coordonnées
+  relues à chaque page, quota 5 000 lignes/jour/espace compté dans `atlas_exports` sous verrou. Les autres quotas
+  (`verifier_entreprises`, `isRateLimited`) sont en mémoire : perdus au redémarrage, comptés par instance.
 - Registre : `hub mcp-app add prospection … --acces tous` (09/11).
-- Journaux : `obs search '\[mcp\] outil=' --since 6h` (Loki) ; `nomad alloc logs` ne rend rien pour ce job.
+- Journaux : `obs search '\[mcp\] outil=' --since 6h` (Loki), pas `nomad alloc logs`.
 
 ## Déploiement et promotion
 
@@ -95,9 +97,7 @@ par le verbe `veridian-ci-deploy prospection` (put-job, plan, deploy canari, smo
 - `image_tag` n'a AUCUN défaut : un défaut figé a fait reculer la prod (09/11 : c70ba3c servi 0537d22).
   `scripts/ci/check-image-tag-sans-defaut.py` refuse tout défaut, auto-test compris (quality).
 - Ne jamais déployer à la main : `nomad-v deploy` et `nomad job run` ignorent le tag CI.
-- Le job prod est sur `ovh-prod` (contrainte `meta.provider`), pas sur le bastion : le verbe pré-pull
-  là où tourne l'allocation.
-- Vérifier après déploiement : `nomad job inspect prospection` (image) puis `docker ps` sur `prod-pub`.
+- Le job prod est sur `ovh-prod` (contrainte `meta.provider`), pas sur le bastion.
 
 Staging (branche `staging`) : divergé et à l'arrêt ; ses workflows (Compose sur ovh-dev) sont retirés de `main` le 16/11.
 Les comptes e2e n'existent qu'en base staging, exception de banc. Ne pas pousser sur `staging` avant d'avoir tranché.
@@ -160,7 +160,7 @@ Tests et builds : `lourd <commande>` (rise), jamais en local.
 
 ## Multi-tenant
 
-- Tables Atlas (`atlas_*`) bornées au tenant ; la base ne garde que l'identité, le contrat Hub et Atlas (18 tables).
+- Tables Atlas (`atlas_*`) bornées au tenant ; la base ne garde que l'identité, le contrat Hub et Atlas (21 tables).
 - Résolution : session → `tenants.user_id`, sinon `workspace_members` → tenant (cache 60 s).
 
 ## Règles

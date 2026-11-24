@@ -1,8 +1,8 @@
 /**
  * GET /api/atlas/export?segment_id=…&format=xlsx|csv — export d'un segment, réservé aux plans payants
  * (Robert, 09/11). Espace de la session, jamais un argument ; 5 000 lignes au plus, classées par la
- * priorité du segment ; 20 exports par heure et par utilisateur ; chaque export est journalisé.
- * Pas d'outil MCP : un export passe par un clic humain (docs/PLAN-ATLAS.md).
+ * priorité du segment ; 20 exports par heure et par utilisateur ; chaque export est tracé dans atlas_exports.
+ * Par une IA, l'extraction paginée est l'outil MCP extraire_segment (src/atlas/extraction.ts).
  */
 import { NextRequest, NextResponse } from "next/server";
 
@@ -42,6 +42,10 @@ export async function GET(request: NextRequest) {
     const colonnes = colonnesExport(s.colonnes);
     const r = await sourceMarche().apercu(filtre, { colonnes, page: 1, parPage: LIGNES_MAX_EXPORT, plafond: LIGNES_MAX_EXPORT, livrablesSeuls: true, ...(scoring ? { scoring } : {}) });
     const corps = format === "csv" ? versCsv(r.colonnes, r.lignes) : versXlsx(r.colonnes, r.lignes, s.nom);
+    // Tracé avant de rendre le fichier : un export sans trace n'est pas servi.
+    await prisma.atlasExport.create({
+      data: { tenantId: ctx.tenantId, userId: ctx.userId, canal: "ecran", format, segmentId: s.id, segmentVersion: s.version, lignes: r.lignes.length },
+    });
     console.info(`[atlas] export user=${ctx.userId} tenant=${ctx.tenantId} segment=${s.id} format=${format} lignes=${r.lignes.length}`);
     return new NextResponse(new Uint8Array(corps), {
       headers: {

@@ -87,6 +87,8 @@ function req(tenantId: string, raw: string, headers: Record<string, string>) {
 function setupTxMock(rowCounts: Record<string, number> = {}) {
   mocks.prismaTransaction.mockImplementationOnce(async (cb) => {
     const tx = {
+      atlasExtraction: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      atlasExport: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
       atlasEpingle: { deleteMany: vi.fn().mockResolvedValue({ count: rowCounts.atlas_epingles ?? 0 }) },
       atlasSegment: { deleteMany: vi.fn().mockResolvedValue({ count: rowCounts.atlas_segments ?? 0 }) },
       atlasDossier: { deleteMany: vi.fn().mockResolvedValue({ count: rowCounts.atlas_dossiers ?? 0 }) },

@@ -598,6 +598,50 @@ model AtlasPresenceIa {
   @@map("atlas_presence_ia")
 }
 
+/// Extraction paginée d'un segment par le MCP (VER-242) : la liste ordonnée des SIREN est figée à la première
+/// page. Aucune coordonnée n'est copiée : chaque page relit ODH, et retire ce qui n'est plus envoyable.
+model AtlasExtraction {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  segmentId      String   @map("segment_id") @db.Uuid
+  segmentVersion Int      @map("segment_version")
+  /// SHA-256 du filtre effectif (parents compris) et du scoring : une autre définition, une autre extraction.
+  empreinte      String
+  userId         String   @map("user_id") @db.Uuid
+  client         String?
+  versionOdh     String   @map("version_odh")
+  sirens         String[]
+  /// Entreprises envoyables du segment, au-delà de la liste figée quand elle est plafonnée.
+  totalSegment   Int      @map("total_segment")
+  creeLe         DateTime @default(now()) @map("cree_le") @db.Timestamptz
+  expireLe       DateTime @map("expire_le") @db.Timestamptz
+
+  @@index([tenantId, segmentId, creeLe])
+  @@map("atlas_extractions")
+}
+
+/// Journal des exports (écran et MCP) : qui, quand, quel segment et quelle version, combien de lignes.
+/// Pour le MCP, une ligne par page : c'est aussi le compteur du quota quotidien de l'espace.
+model AtlasExport {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  client         String?
+  /// « ecran » (Excel, CSV) ou « mcp » (extraire_segment).
+  canal          String
+  format         String
+  segmentId      String   @map("segment_id") @db.Uuid
+  segmentVersion Int      @map("segment_version")
+  extractionId   String?  @map("extraction_id") @db.Uuid
+  debut          Int?
+  lignes         Int
+  creeLe         DateTime @default(now()) @map("cree_le") @db.Timestamptz
+
+  @@unique([extractionId, debut])
+  @@index([tenantId, canal, creeLe])
+  @@map("atlas_exports")
+}
+
 /// Clé API Atlas d'un espace à accès avancé : seule l'empreinte SHA-256 est gardée, la clé n'est montrée
 /// qu'une fois. Elle agit au nom de son créateur, dans son espace, avec les droits de son créateur.
 model AtlasCleApi {

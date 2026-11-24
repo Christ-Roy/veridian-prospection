@@ -13,7 +13,8 @@ const { ctx, tenant, apercu, lire, filtre, scoring } = vi.hoisted(() => ({
   scoring: vi.fn(async () => ({ criteres: [{ champ: "email", op: "renseigne", valeur: true, poids: 3 }] })),
 }));
 vi.mock("@/lib/auth/user-context", () => ({ getUserContext: ctx }));
-vi.mock("@/lib/prisma", () => ({ prisma: { tenant: { findUnique: tenant } } }));
+const trace = vi.hoisted(() => vi.fn(async (_a: unknown) => ({})));
+vi.mock("@/lib/prisma", () => ({ prisma: { tenant: { findUnique: tenant }, atlasExport: { create: trace } } }));
 vi.mock("@/lib/rate-limit", () => ({ isRateLimited: vi.fn(() => false) }));
 vi.mock("@/atlas/source", () => ({ sourceMarche: () => ({ apercu }) }));
 vi.mock("@/atlas/segments", async (orig) => ({ ...(await orig<typeof import("@/atlas/segments")>()), lireSegment: lire, filtreEffectif: filtre, scoringCourant: scoring }));
@@ -61,6 +62,12 @@ describe("GET /api/atlas/export", () => {
     expect(o.colonnes.slice(0, 2)).toEqual(["nom", "email"]);
     const corps = Buffer.from(await r.arrayBuffer());
     expect(corps.subarray(0, 2).toString()).toBe("PK");
+    expect(trace).toHaveBeenCalledWith({ data: expect.objectContaining({ tenantId: "t-1", canal: "ecran", format: "xlsx", lignes: 1 }) });
+  });
+
+  test("un export qui ne peut pas être tracé n'est pas servi", async () => {
+    trace.mockRejectedValueOnce(new Error("base muette"));
+    expect((await GET(req(`segment_id=${ID}&format=csv`))).status).toBe(500);
   });
 
   test("CSV ; segment d'un autre espace : 404", async () => {

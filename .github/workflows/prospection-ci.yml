@@ -127,10 +127,10 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:testpass@localhost:5432/prospection_test
         run: npx prisma db push --accept-data-loss --skip-generate
-      - name: Run integration tests (isolation des données Atlas entre espaces)
+      - name: Run integration tests (isolation entre espaces, extraction et quota)
         env:
           DATABASE_URL: postgresql://postgres:testpass@localhost:5432/prospection_test
-        run: npx vitest run e2e/integration/atlas-isolation.test.ts
+        run: npx vitest run e2e/integration/atlas-isolation.test.ts e2e/integration/atlas-extraction.test.ts
 
   # ── Build + push image GHCR (sur push main uniquement) ──────────────────
   docker:

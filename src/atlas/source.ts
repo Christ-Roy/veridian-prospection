@@ -29,6 +29,21 @@ export type CommunesBrutes = {
   repli: boolean;
   lignes: { insee: string | null; nom: string; code_postal: string | null; mesures: Record<string, number> }[];
 };
+/** Ligne d'extraire_segment : de quoi écrire un mail, rien de plus. */
+export type LigneExtraite = {
+  siren: string;
+  email: string;
+  domaine: string | null;
+  raison_sociale: string;
+  dirigeant: string | null;
+  role_dirigeant: string | null;
+  activite: string | null;
+  naf: string | null;
+  code_postal: string | null;
+  commune: string | null;
+  departement: string | null;
+  telephone: string | null;
+};
 /** Ligne de verifier_entreprises : ce qu'on sait d'une entreprise, en un coup d'œil. */
 export type Verification = {
   siren: string;
@@ -87,6 +102,10 @@ export interface SourceMarche {
   points(filtre: unknown, departement: string, limite?: number): Promise<Point[]>;
   /** Vérification par lot : une ligne par SIREN demandé (fiche contactable, sinon base complète, sinon introuvable). */
   verifier(sirens: readonly string[]): Promise<Verification[]>;
+  /** SIREN envoyables par email d'un filtre, dans l'ordre de la priorité ; au plus `plafond` (extraire_segment). */
+  sirensEnvoyables(filtre: unknown, scoring: unknown, plafond: number): Promise<{ sirens: string[]; total: number; version: string }>;
+  /** Coordonnées de ces SIREN, relues maintenant : ceux qui ne sont plus envoyables n'y sont pas. */
+  extraire(sirens: readonly string[]): Promise<LigneExtraite[]>;
   /** Accès avancé : requête SQL déjà passée par verifierRequete (sql.ts). */
   sql(requete: string): Promise<{ colonnes: string[]; lignes: Ligne[] }>;
   /** Colonnes des tables autorisées au SQL. */
@@ -396,6 +415,40 @@ export class SourceClickHouse implements SourceMarche {
     );
   }
 
+  async sirensEnvoyables(filtre: unknown, scoring: unknown, plafond: number) {
+    // Les exclues ne sortent jamais, même si le segment les montre à l'écran.
+    const f = FiltreSchema.parse(filtre ?? {});
+    const { where, params, score } = compilerFiltre({ ...f, inclure_bloques: false }, scoring ?? undefined);
+    const envoyable = `${where} AND ${ENVOYABLE_EMAIL} AND email != ''`;
+    const [l, t] = await Promise.all([
+      this.requete<{ siren: string; version: string }>(
+        `SELECT siren, toString(projection_version) AS version FROM ${TABLE} WHERE ${envoyable}
+         ORDER BY ${score ?? "priority_score_v2"} DESC NULLS LAST, siren LIMIT ${Math.trunc(plafond)}`,
+        params,
+      ),
+      this.requete<{ n: string }>(`SELECT count() AS n FROM ${TABLE} WHERE ${envoyable}`, params),
+    ]);
+    const sirens = [...new Set(l.map((x) => String(x.siren)))];
+    return { sirens, total: Math.max(sirens.length, Number(t[0]?.n ?? 0)), version: l[0]?.version ?? "" };
+  }
+
+  async extraire(sirens: readonly string[]): Promise<LigneExtraite[]> {
+    if (!sirens.length) return [];
+    const r = await this.requete<Record<string, unknown>>(
+      `SELECT siren, email, primary_domain AS domaine, legal_name AS raison_sociale, director_name AS dirigeant,
+        director_role AS role_dirigeant, activity_label AS activite, naf_code AS naf, postal_code AS code_postal, city AS commune,
+        department AS departement, if(${ENVOYABLE_TELEPHONE}, phone, '') AS telephone
+       FROM ${TABLE} WHERE siren IN {s:Array(String)} AND is_deleted = 0 AND empty(blocking_reasons) AND ${ENVOYABLE_EMAIL} AND email != ''`,
+      { s: { type: "Array(String)", valeur: [...sirens] } },
+    );
+    const v = (x: unknown) => (x === "" || x === null || x === undefined ? null : String(x));
+    return r.map((l) => ({
+      siren: String(l.siren), email: String(l.email), domaine: v(l.domaine), raison_sociale: String(l.raison_sociale ?? ""),
+      dirigeant: v(l.dirigeant), role_dirigeant: v(l.role_dirigeant), activite: v(l.activite), naf: v(l.naf), code_postal: v(l.code_postal),
+      commune: v(l.commune), departement: v(l.departement), telephone: v(l.telephone),
+    }));
+  }
+
   async sql(requete: string) {
     const lignes = await this.requete<Ligne>(requete, {});
     return { colonnes: lignes[0] ? Object.keys(lignes[0]) : [], lignes };
@@ -699,6 +752,22 @@ export class SourceSimulee implements SourceMarche {
         ? { siren: x, trouvee: true, nom: String(l.nom), active: true, commune: String(l.commune), departement: String(l.departement), naf: String(l.naf), site: l.site ? String(l.site) : null, a_site: !!l.site, email_envoyable: !!l.email_envoyable, telephone_utilisable: !!l.telephone_envoyable, contactable: true, logiciels: [] }
         : { siren: x, trouvee: false, nom: null, active: null, commune: null, departement: null, naf: null, site: null, a_site: null, email_envoyable: null, telephone_utilisable: null, contactable: false, logiciels: [] };
     });
+  }
+  async sirensEnvoyables(filtre: unknown, scoring: unknown, plafond: number) {
+    const f = FiltreSchema.parse(filtre ?? {});
+    const l = this.filtrer({ ...f, inclure_bloques: false }).filter((x) => x.email_envoyable);
+    if (scoring) ScoringSchema.parse(scoring);
+    l.sort((a, b) => Number(b.score_odh) - Number(a.score_odh) || (String(a.siren) < String(b.siren) ? -1 : 1));
+    return { sirens: l.slice(0, plafond).map((x) => String(x.siren)), total: l.length, version: "simulee" };
+  }
+  async extraire(sirens: readonly string[]): Promise<LigneExtraite[]> {
+    const voulus = new Set(sirens);
+    return this.lignes
+      .filter((l) => voulus.has(String(l.siren)) && l.email_envoyable)
+      .map((l) => ({
+        siren: String(l.siren), email: String(l.email), domaine: l.site ? String(l.site) : null, raison_sociale: String(l.nom), dirigeant: null, role_dirigeant: null,
+        activite: null, naf: String(l.naf), code_postal: String(l.code_postal), commune: String(l.commune), departement: String(l.departement), telephone: l.telephone ? String(l.telephone) : null,
+      }));
   }
   async sql(_requete: string) {
     return { colonnes: ["siren", "nom"], lignes: this.lignes.slice(0, 3).map((l) => ({ siren: l.siren, nom: l.nom })) };
