@@ -9,7 +9,8 @@ vi.mock("@/atlas/liaisons", async (o) => ({ ...(await o<typeof import("@/atlas/l
 
 import { NextRequest } from "next/server";
 
-import { contactMail, envoiCrm, personne } from "@/atlas/liaisons";
+import { contactMail, DELAI_LOT_MS, envoiCrm, personne } from "@/atlas/liaisons";
+import { EN_COURS_MAX_MS } from "@/lib/liaisons/envois";
 import { GET, POST } from "@/app/api/liaisons/[action]/route";
 import { RefusLiaison } from "@/lib/liaisons/erreurs";
 import { liaisonOuverte } from "@/lib/liaisons/drapeau";
@@ -190,4 +191,9 @@ test("paire éteinte : une phrase, jamais un bouton", () => {
   expect(phraseEteintes(e)).toBeNull();
   expect(phraseEteintes({ ...e, eteintes: ["crm"] })).toBe("La liaison vers le CRM est éteinte dans votre organisation : un propriétaire ou un administrateur peut l'allumer dans Veridian.");
   expect(phraseEteintes({ ...e, eteintes: ["crm", "notifuse"] })).toBe("Les liaisons vers le CRM et Mail sont éteintes dans votre organisation : un propriétaire ou un administrateur peut les allumer dans Veridian.");
+});
+
+test("une étape n'est reprise comme morte qu'après la fin possible de l'appel le plus long", () => {
+  expect(DELAI_LOT_MS).toBeGreaterThanOrEqual(120_000);
+  expect(EN_COURS_MAX_MS).toBeGreaterThan(DELAI_LOT_MS);
 });

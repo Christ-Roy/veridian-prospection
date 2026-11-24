@@ -25,6 +25,8 @@ export const PAGE_MAIL = 1000;
 /** Lot accepté par le CRM (plugin liaisons 0.4) : un jeton et un appel par lot, et au plus 100 sociétés par geste. */
 export const PAGE_CRM = 20;
 export const MAX_CRM_PAR_GESTE = 100;
+/** Le CRM rend le reste « non_traite » au-delà de 90 s, et sa fonction s'arrête à 120 s. */
+export const DELAI_LOT_MS = 120_000;
 
 export type Appel = { ctx: UserContext; sessionId: string | null; hubTenantId: string | null; payant: boolean };
 
@@ -136,7 +138,7 @@ function sortCrm(siren: string, r: Record<string, unknown>): SortCrm {
 
 async function lotPourCrm(p: Pret, lignes: readonly LigneExtraite[], cle: string): Promise<SortCrm[]> {
   if (!lignes.length) return [];
-  const r = await appelerCrm(await jeton(p, "crm", "segment.envoyer_au_crm"), "app_envoyer_au_crm", { envois: lignes.map(envoiCrm) }, cle, { delaiMs: 110_000 });
+  const r = await appelerCrm(await jeton(p, "crm", "segment.envoyer_au_crm"), "app_envoyer_au_crm", { envois: lignes.map(envoiCrm) }, cle, { delaiMs: DELAI_LOT_MS });
   if (!Array.isArray(r.resultats)) {
     sortCrm("", r); // refus de tout le lot : lève s'il est général
     throw new RefusLiaison("reponse_invalide", `Le CRM n'a pas traité ce lot : ${message(r)}`, 502);
