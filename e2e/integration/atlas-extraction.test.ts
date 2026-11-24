@@ -183,6 +183,35 @@ describe("quota en base", () => {
   });
 });
 
+describe("appel d'un programme : la taille change, jamais la trace ni le quota", () => {
+  const appel = async (programme: boolean, s: string, limite = 1000) => {
+    const { traiter } = await import("@/lib/mcp/protocole");
+    const ctx = { userId: T.paye.u, email: "x@exemple.invalid", tenantId: T.paye.t, tenantOwnerId: T.paye.u, workspaces: [], isAdmin: true, activeWorkspaceId: null };
+    const r = await traiter({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "extraire_segment", arguments: { segment_id: s, limite } } }, { ctx, workspaceId: null, client: "test" }, () => {}, programme);
+    return r!.result as { isError?: boolean; content: { text: string }[]; structuredContent?: PageExtraite };
+  };
+  const journal = async () => (await prisma.atlasExport.findMany({ where: { tenantId: T.paye.t }, orderBy: { creeLe: "asc" } })).map((l) => [l.canal, l.client, l.debut, l.lignes]);
+
+  test("coupée en direct, entière en programme, refusée au-delà de 1 Mo : même journal, même reste", async () => {
+    const s = await segment();
+    const direct = await appel(false, s);
+    expect(() => JSON.parse(direct.content[0].text)).toThrow();
+    const attendu = [["mcp", "test", 0, 1000]];
+    expect(await journal()).toEqual(attendu);
+    const prog = await appel(true, s);
+    expect(prog.structuredContent!.lignes).toHaveLength(1000);
+    expect(prog.structuredContent!.quota_restant_aujourdhui).toBe(QUOTA_EXTRACTION_JOUR - 1000);
+    expect(await journal()).toEqual(attendu);
+    // Des fiches énormes : erreur franche, et la même page reste lisible en plus petit, sans recompte.
+    odh.lignes = odh.lignes.map((x) => ({ ...x, email: `${"e".repeat(1500)}@exemple.invalid` }));
+    const trop = await appel(true, s);
+    expect(trop.isError).toBe(true);
+    expect(trop.content[0].text).toMatch(/Réponse trop grosse : \d+ octets, 1000000 au plus/);
+    expect((await appel(true, s, 100)).structuredContent!.lignes).toHaveLength(100);
+    expect(await journal()).toEqual(attendu);
+  });
+});
+
 describe("droits et trace", () => {
   test("plan gratuit refusé, espace d'un autre invisible, plan perdu en cours d'extraction : arrêt", async () => {
     await expect(page(await segment("gratuit"), null, 10, "gratuit")).rejects.toThrow(RefusExtraction);

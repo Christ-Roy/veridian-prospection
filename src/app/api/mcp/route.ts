@@ -21,7 +21,7 @@ const CORPS_MAX = 256 * 1024;
 const DEBIT_MAX = 120; // requêtes MCP par minute et par utilisateur
 
 function refus(status: number, message: string, id: Message["id"] = null) {
-  return NextResponse.json({ jsonrpc: "2.0", id, error: { code: status === 429 ? -32000 : -32001, message } }, { status });
+  return NextResponse.json({ jsonrpc: "2.0", id, error: { code: status === 429 ? -32000 : -32001, message } }, { status, ...(status === 429 ? { headers: { "Retry-After": "5" } } : {}) });
 }
 
 export async function POST(request: NextRequest) {
@@ -79,7 +79,9 @@ export async function POST(request: NextRequest) {
 
   const messages = (Array.isArray(corps) ? corps : [corps]) as Message[];
   if (messages.length === 0 || messages.length > 20) return refus(400, "lot JSON-RPC vide ou trop long");
-  const reponses = (await Promise.all(messages.map((m) => traiter(m, contexte, journal)))).filter(
+  // Appel d'un programme du Hub (CONTRAT-MCP, « Côté app ») : réponse entière, 1 Mo au plus. Aucun droit, et un lot n'y a pas droit.
+  const programme = request.headers.get("x-veridian-mcp-appel") === "programme" && !Array.isArray(corps);
+  const reponses = (await Promise.all(messages.map((m) => traiter(m, contexte, journal, programme)))).filter(
     (r): r is Reponse => r !== null,
   );
 

@@ -80,11 +80,12 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
   `requete_sql` (garde SELECT, 1 000 lignes) et les clés API
   (`Bearer atl_…` sur `/api/atlas/[outil]`, empreinte SHA-256 seule). `verifier_entreprises` : 50/jour gratuit, 5 000 payant.
 - `extraire_segment` (VER-242, `src/atlas/extraction.ts`) : liste de SIREN figée en base (curseur stable 7 jours), coordonnées
-  relues à chaque page, quota 5 000 lignes/jour/espace compté dans `atlas_exports` sous verrou. La porte du Hub coupe une réponse
-  directe à ~15 000 caractères : 30 lignes, 1 000 en programme. Elle ne garde que 300 caractères de la 1re ligne des descriptions.
+  relues à chaque page, quota 5 000 lignes/jour/espace compté dans `atlas_exports` sous verrou. Appel direct : réponse
+  coupée à 15 000 caractères (`SORTIE_MAX`, chez nous), 30 lignes ; en-tête `X-Veridian-MCP-Appel: programme` : 1 Mo, 1 000 lignes.
+  Le Hub ne garde que 300 caractères de la 1re ligne des descriptions.
 - Quota ou porte de connexion : `src/lib/compteurs.ts` (en base). `isRateLimited` = confort, par instance.
 - Registre : `hub mcp-app add prospection … --acces tous` (09/11).
-- Journaux : `obs search '\[mcp\] outil=' --since 6h` (Loki), pas `nomad alloc logs`.
+- Journaux : `obs search '\[mcp\] outil=' --since 6h`.
 
 ## Déploiement et promotion
 
@@ -167,10 +168,10 @@ Tests et builds : `lourd <commande>` (rise), jamais en local.
 ## Règles
 
 - JAMAIS de signup en e2e (login comptes existants uniquement).
-- `checkTrialExpired` = `return false` (hack temporaire, à recâbler).
+- `checkTrialExpired` = `return false` (à recâbler).
 
 ## Dette
 
-- `audit_log` n'existe pas en prod : les audits sont ignorés en silence.
+- `audit_log` n'existe pas en prod : audits ignorés en silence.
 - `prospection-ci.yml` sur `ubuntu-latest` (dépôt public).
 - `check-test-mapping.sh` ne voit rien sur un push vers `main`, et le pre-push ne le lance pas.

@@ -9,6 +9,8 @@ import { ErreurOutil, outilsVisibles, type ContexteOutil } from "./outils";
 export const VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const PAGE_OUTILS = 50;
 export const SORTIE_MAX = 15_000; // la porte du Hub tronque à ~16 000 caractères : on reste en dessous
+/** Appel venu d'un programme (en-tête X-Veridian-MCP-Appel) : 1 Mo, mesuré sur le corps envoyé, comme le Hub le mesure. */
+export const SORTIE_MAX_PROGRAMME = 1_000_000;
 
 type Id = string | number | null;
 export type Message = { jsonrpc?: string; id?: Id; method?: string; params?: Record<string, unknown> };
@@ -32,7 +34,26 @@ function texte(valeur: unknown): string {
   return `${t.slice(0, SORTIE_MAX)}\n[réponse tronquée à ${SORTIE_MAX} caractères : réduisez par_page ou affinez la recherche]`;
 }
 
-export async function traiter(m: Message, c: ContexteOutil, journal: Journal = () => {}): Promise<Reponse | null> {
+/**
+ * Résultat d'un outil. Appel direct : texte, coupé avec un avis (un modèle le lit). Appel d'un programme : la donnée
+ * entière en structuredContent, une seule fois, ou une erreur franche au-delà de 1 Mo ; jamais un JSON coupé.
+ */
+function resultat(id: Id, valeur: unknown, programme: boolean): Reponse {
+  if (!programme) return ok(id, { content: [{ type: "text", text: texte(valeur) }] });
+  const objet = valeur !== null && typeof valeur === "object" && !Array.isArray(valeur);
+  const r = objet
+    ? ok(id, { content: [{ type: "text", text: "Donnée dans structuredContent." }], structuredContent: valeur })
+    : ok(id, { content: [{ type: "text", text: JSON.stringify(valeur ?? null) }] });
+  const octets = Buffer.byteLength(JSON.stringify(r));
+  if (octets <= SORTIE_MAX_PROGRAMME) return r;
+  return ok(id, {
+    isError: true,
+    content: [{ type: "text", text: `Réponse trop grosse : ${octets} octets, ${SORTIE_MAX_PROGRAMME} au plus. Demandez moins de lignes ou moins de colonnes (extraire_segment : même curseur, limite plus petite, rien n'est recompté).` }],
+  });
+}
+
+/** `programme` ne change que la taille et la forme de la réponse : ni droits, ni quota, ni trace. */
+export async function traiter(m: Message, c: ContexteOutil, journal: Journal = () => {}, programme = false): Promise<Reponse | null> {
   const id = m.id ?? null;
   // Notification (pas d'id) : aucune réponse.
   if (m.id === undefined) return null;
@@ -83,7 +104,7 @@ export async function traiter(m: Message, c: ContexteOutil, journal: Journal = (
       try {
         const valeur = await outil.run(args.data as Record<string, unknown>, c);
         journal({ outil: outil.name, issue: "ok", ms: Date.now() - t0 });
-        return ok(id, { content: [{ type: "text", text: texte(valeur) }] });
+        return resultat(id, valeur, programme);
       } catch (e) {
         journal({ outil: outil.name, issue: "erreur", ms: Date.now() - t0 });
         if (e instanceof ErreurOutil) return ok(id, { isError: true, content: [{ type: "text", text: e.message }] });

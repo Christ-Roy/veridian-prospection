@@ -9,8 +9,8 @@
  *
  * Quota : 5 000 lignes par jour (Paris) et par espace, lu dans le journal atlas_exports sous un verrou Postgres.
  * Il survit à un redémarrage et vaut pour toutes les instances. Une page déjà servie se rejoue à l'identique sans
- * être recomptée, et se relit par morceaux plus petits au même curseur : la porte MCP du Hub coupe une réponse
- * directe vers 15 000 caractères (une trentaine de lignes), le mode programme accepte 1 000 lignes.
+ * être recomptée, et se relit par morceaux plus petits au même curseur : une réponse
+ * directe est coupée à 15 000 caractères (une trentaine de lignes, protocole.ts), un programme du Hub reçoit 1 000 lignes.
  */
 import { createHash } from "node:crypto";
 
@@ -22,7 +22,7 @@ import { sourceMarche, type LigneExtraite } from "./source";
 
 export const QUOTA_EXTRACTION_JOUR = 5000;
 export const PAGE_MAX = 1000;
-/** Sûr en appel direct par la porte MCP du Hub (réponse coupée vers 15 000 caractères). */
+/** Sûr en appel direct (réponse coupée à 15 000 caractères, SORTIE_MAX de protocole.ts). */
 export const PAGE_DEFAUT = 30;
 /** Un curseur vit une semaine : sept jours de quota, donc au plus 35 000 lignes par extraction. */
 const DUREE_JOURS = 7;
