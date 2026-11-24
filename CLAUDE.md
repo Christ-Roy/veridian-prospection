@@ -99,7 +99,7 @@ par le verbe `veridian-ci-deploy prospection` (put-job, plan, deploy canari, smo
 - Ne jamais déployer à la main : `nomad-v deploy` et `nomad job run` ignorent le tag CI.
 - Le job prod est sur `ovh-prod` (contrainte `meta.provider`), pas sur le bastion.
 
-Staging (branche `staging`) : divergé et à l'arrêt ; ses workflows (Compose sur ovh-dev) sont retirés de `main` le 16/11.
+Staging (branche `staging`) : divergé et à l'arrêt ; ses workflows sont retirés de `main`.
 Les comptes e2e n'existent qu'en base staging, exception de banc. Ne pas pousser sur `staging` avant d'avoir tranché.
 
 | Tier | Exemples | Action agent |
@@ -168,7 +168,7 @@ Tests et builds : `lourd <commande>` (rise), jamais en local.
 - JAMAIS de signup en e2e (login comptes existants uniquement).
 - `checkTrialExpired` = `return false` (hack temporaire, à recâbler).
 
-## Dette connue
+## Dette
 
 - `audit_log` n'existe pas en prod : les audits sont ignorés en silence.
 - `prospection-ci.yml` tourne sur `ubuntu-latest` (permis : dépôt public).
