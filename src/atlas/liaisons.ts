@@ -89,11 +89,22 @@ export function personne(dirigeant: string | null): { prenom?: string; nom?: str
   return nom && !reste.length ? { prenom, nom } : { nom: n };
 }
 
+/** Indicatifs d'outre-mer, dont le numéro national commence par les mêmes chiffres. */
+const OUTRE_MER: [RegExp, string][] = [[/^0(262|263|269|639|692|693)/, "262"], [/^0(590|690|691)/, "590"], [/^0(594|694)/, "594"], [/^0(596|696|697)/, "596"]];
+
+/** Téléphone au format international, ou null s'il ne s'y ramène pas : le CRM refuse une fiche au numéro sans indicatif. */
+export function telephoneInternational(t: string | null): string | null {
+  const n = (t ?? "").replace(/[\s.()-]/g, "").replace(/^00/, "+");
+  if (/^\+[1-9]\d{7,14}$/.test(n)) return n;
+  if (!/^0[1-9]\d{8}$/.test(n)) return null;
+  return `+${OUTRE_MER.find(([r]) => r.test(n))?.[1] ?? "33"}${n.slice(1)}`;
+}
+
 const sansVides = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null && v !== undefined && v !== ""));
 
 export function envoiCrm(l: LigneCrm | LigneExtraite): Record<string, unknown> {
   const p = personne(l.dirigeant);
-  const contact = sansVides({ ...p, email: l.email, telephone: l.telephone, poste: p.nom ? l.role_dirigeant : null });
+  const contact = sansVides({ ...p, email: l.email, telephone: telephoneInternational(l.telephone), poste: p.nom ? l.role_dirigeant : null });
   const note = [
     l.activite && `Activité : ${l.activite}${l.naf ? ` (${l.naf})` : ""}`,
     l.telephone && `Téléphone : ${l.telephone}`,
@@ -111,7 +122,7 @@ export function envoiCrm(l: LigneCrm | LigneExtraite): Record<string, unknown> {
 export function contactMail(l: LigneExtraite, origine: string): Record<string, unknown> {
   const p = personne(l.dirigeant);
   return sansVides({
-    email: l.email, first_name: p.prenom, last_name: p.nom, phone: l.telephone, job_title: p.nom ? l.role_dirigeant : null,
+    email: l.email, first_name: p.prenom, last_name: p.nom, phone: telephoneInternational(l.telephone) ?? l.telephone, job_title: p.nom ? l.role_dirigeant : null,
     siren: l.siren, domaine: l.domaine, raison_sociale: l.raison_sociale, activite: l.activite, naf: l.naf,
     code_postal: l.code_postal, ville: l.commune, departement: l.departement, source: "Veridian Atlas", segment_atlas: origine,
   });
@@ -143,6 +154,8 @@ async function lotPourCrm(p: Pret, lignes: readonly LigneExtraite[], cle: string
     sortCrm("", r); // refus de tout le lot : lève s'il est général
     throw new RefusLiaison("reponse_invalide", `Le CRM n'a pas traité ce lot : ${message(r)}`, 502);
   }
+  const erreurs = (r.resultats as Record<string, unknown>[]).filter((x) => x?.ok !== true).map((x) => String(x?.erreur ?? "?").slice(0, 30));
+  if (erreurs.length) console.warn(`[liaisons] lot CRM : ${erreurs.length} non aboutis (${[...new Set(erreurs)].join(", ")})`);
   // Par SIREN, jamais par position seule : une réponse incomplète ou mélangée ne se lit pas comme un succès.
   const par = new Map((r.resultats as Record<string, unknown>[]).map((x) => [String(x?.siren ?? ""), x]));
   const reste = lignes.filter((l) => A_REPRENDRE.includes(String(par.get(l.siren)?.erreur)) || !par.has(l.siren));

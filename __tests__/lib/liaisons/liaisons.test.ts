@@ -9,7 +9,7 @@ vi.mock("@/atlas/liaisons", async (o) => ({ ...(await o<typeof import("@/atlas/l
 
 import { NextRequest } from "next/server";
 
-import { contactMail, DELAI_LOT_MS, envoiCrm, PAGE_MAIL as PAGE_SERVEUR, personne } from "@/atlas/liaisons";
+import { contactMail, DELAI_LOT_MS, envoiCrm, PAGE_MAIL as PAGE_SERVEUR, personne, telephoneInternational } from "@/atlas/liaisons";
 import { EN_COURS_MAX_MS } from "@/lib/liaisons/envois";
 import { GET, POST } from "@/app/api/liaisons/[action]/route";
 import { RefusLiaison } from "@/lib/liaisons/erreurs";
@@ -97,6 +97,14 @@ test("dirigeant : jamais un prénom deviné", () => {
 });
 
 const LIGNE = { siren: "123456789", email: "a@b.fr", domaine: null, raison_sociale: "SA", dirigeant: null, role_dirigeant: "Gérant", activite: null, naf: null, code_postal: null, commune: "LYON", departement: "69", telephone: null };
+test.each([["0466491234", "+33466491234"], ["06 12 34 56 78", "+33612345678"], ["+33466491234", "+33466491234"], ["0033466491234", "+33466491234"], ["0262412345", "+262262412345"], ["0692123456", "+262692123456"], ["0590821234", "+590590821234"], ["0594301234", "+594594301234"], ["0596711234", "+596596711234"], ["3949", null], ["inconnu", null], [null, null], ["", null]])("téléphone %s : %s", (t, v) => {
+  expect(telephoneInternational(t)).toBe(v);
+});
+test("un téléphone illisible ne part pas dans la fiche CRM, il reste dans la note", () => {
+  const e = JSON.stringify(envoiCrm({ ...LIGNE, telephone: "3949" }));
+  expect(e).toContain("Téléphone : 3949");
+  expect(e).not.toContain('"telephone"');
+});
 test("sans dirigeant ni email : société seule ; aucun champ vide envoyé ; le téléphone reste dans la note d'appel", () => {
   expect(envoiCrm({ ...LIGNE, email: null })).not.toHaveProperty("contact");
   expect(JSON.stringify(envoiCrm({ ...LIGNE, email: null, telephone: "0400000000" }))).toContain("Téléphone : 0400000000");
