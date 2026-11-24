@@ -96,6 +96,7 @@ export async function POST(request: NextRequest) {
     // Le JWT reste signé : c'est `applyActiveUser` qui le refuse désormais. On
     // retire aussi les liens en cours, qui en ouvriraient une nouvelle.
     await prisma.ssoLoginToken.deleteMany({ where: { userId: user.id } });
+    await prisma.sessionDelegation.deleteMany({ where: { userId: user.id } });
     await prisma.tenant.updateMany({
       where: { userId: user.id, prospectionLoginToken: { not: null } },
       data: { prospectionLoginToken: null },

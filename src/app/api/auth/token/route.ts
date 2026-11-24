@@ -28,10 +28,11 @@
 //   - token_expired : > 24h depuis création
 //   - server_error  : exception interne (loggée)
 import { NextRequest, NextResponse } from "next/server";
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { encode } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { AUTO_BOUNCE_COOKIE, LOGGED_OUT_COOKIE, safeReturnPath } from "@/lib/auth/auto-bounce";
+import { attacher } from "@/lib/liaisons/poignee";
 
 const MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 heures
 const SESSION_MAX_AGE_S = 60 * 60 * 24 * 90; // 90 jours (cf auth.config.ts)
@@ -81,10 +82,16 @@ export async function GET(request: NextRequest) {
     }
     const consumed = await prisma.ssoLoginToken.updateMany({
       where: { tokenHash, usedAt: null },
-      data: { usedAt: new Date() },
+      data: { usedAt: new Date(), delegation: null },
     });
     if (consumed.count === 0) return redirectLogin(baseUrl, "token_used");
-    return createSessionResponse(ssoToken.userId, baseUrl, "sso", returnPath);
+    const sid = randomUUID();
+    if (ssoToken.delegation) {
+      // Une liaison indisponible n'empêche jamais d'entrer.
+      const ok = await attacher(ssoToken.delegation, tokenHash, sid, ssoToken.userId).catch(() => false);
+      if (!ok) console.warn(`[auth/token] délégation non attachée user=${ssoToken.userId}`);
+    }
+    return createSessionResponse(ssoToken.userId, baseUrl, "sso", returnPath, sid);
   }
 
   let tenant;
@@ -145,6 +152,7 @@ async function createSessionResponse(
   baseUrl: string,
   origin: string,
   returnPath: string | null,
+  sid: string = randomUUID(),
 ): Promise<NextResponse> {
   // Récupère le user pour signer la session. (Le schema Tenant n'a pas de
   // relation Prisma `user` — on join à la main par userId.)
@@ -173,6 +181,7 @@ async function createSessionResponse(
     token: {
       sub: user.id,
       uid: user.id,
+      sid,
       authAt: Date.now(),
       email: user.email,
       name: user.name ?? undefined,

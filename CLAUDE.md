@@ -84,8 +84,8 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
   Programme = aucune coordonnée hors `extraire_segment`, plan payant compris, sauf accès avancé (`src/lib/mcp/coordonnees.ts`).
   Le Hub ne garde que 300 caractères de la 1re ligne des descriptions.
 - Quota ou porte de connexion : `src/lib/compteurs.ts` (en base). `isRateLimited` = confort, par instance.
-- Registre : `hub mcp-app add prospection … --acces tous` (09/11).
-- Journaux : `obs search '\[mcp\] outil='` ; l'écran n'en écrit aucun.
+- Journaux : `obs search '\[mcp\] outil='` ; l'écran n'en écrit aucun, sauf `[liaisons]`.
+- Envoi vers le CRM et Mail (VER-246) : `docs/LIAISONS.md`, drapeau `ATLAS_LIAISONS`, vide = éteint.
 
 ## Déploiement et promotion
 

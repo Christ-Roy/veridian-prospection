@@ -35,13 +35,17 @@ export type PageExtraite = {
   /** SIREN de la page qui ne sont plus envoyables depuis le début de l'extraction. */
   retires: string[];
   curseur_suivant: string | null;
+  /** Curseur de cette page : la relit à l'identique, sans recompter. */
+  curseur_page: string;
   total: number;
   quota_restant_aujourdhui: number;
   extraction: { segment_version: number; version_odh: string; commencee_le: string; expire_le: string };
   tronque?: { total_segment: number };
 };
 
-type Appelant = { tenantId: string; userId: string; client: string | null };
+/** `canal` : « mcp » (extraire_segment, par défaut) ou « liaison » (envoi vers le CRM ou Mail). Un seul quota pour les deux. */
+export type Appelant = { tenantId: string; userId: string; client: string | null; canal?: "mcp" | "liaison" };
+const CANAUX = ["mcp", "liaison"];
 
 export const encoderCurseur = (extractionId: string, debut: number) => Buffer.from(`${extractionId}.${debut}`).toString("base64url");
 export function decoderCurseur(c: string): { extractionId: string; debut: number } | null {
@@ -60,11 +64,11 @@ const debutJour = async (tx: Tx): Promise<Date> =>
 
 async function consommeAujourdhui(tx: Tx, tenantId: string): Promise<number> {
   const jour = await debutJour(tx);
-  const r = await tx.atlasExport.aggregate({ _sum: { lignes: true }, where: { tenantId, canal: "mcp", creeLe: { gte: jour } } });
+  const r = await tx.atlasExport.aggregate({ _sum: { lignes: true }, where: { tenantId, canal: { in: CANAUX }, creeLe: { gte: jour } } });
   return r._sum.lignes ?? 0;
 }
 
-const messageQuota = `Quota du jour atteint : ${QUOTA_EXTRACTION_JOUR} lignes extraites pour cet espace. Reprenez après minuit (heure de Paris) avec le même curseur.`;
+const messageQuota = `Quota du jour atteint : ${QUOTA_EXTRACTION_JOUR} lignes extraites ou envoyées pour cet espace. Reprenez après minuit (heure de Paris) avec le même curseur.`;
 
 /** L'extraction du jour de cette définition de segment, sinon une nouvelle, figée maintenant. */
 async function extractionCourante(a: Appelant, segmentId: string) {
@@ -115,11 +119,26 @@ async function reserverPage(a: Appelant, e: { id: string; segmentId: string; seg
     }
     await tx.atlasExport.create({
       data: {
-        tenantId: a.tenantId, userId: a.userId, client: a.client, canal: "mcp", format: "json",
+        tenantId: a.tenantId, userId: a.userId, client: a.client, canal: a.canal ?? "mcp", format: "json",
         segmentId: e.segmentId, segmentVersion: e.segmentVersion, extractionId: e.id, debut, lignes: taille,
       },
     });
     return { taille, reste: reste - taille };
+  });
+}
+
+/**
+ * Compte une fiche envoyée seule vers une autre app : même quota, même verrou, même journal. Une fois par envoi
+ * (`tracee`), même si le geste est rejoué après un échec.
+ */
+export async function reserverFiche(a: Appelant, format: string, envoiId: string): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    await verrouiller(tx, a.tenantId);
+    const deja = await tx.atlasEnvoi.findUniqueOrThrow({ where: { id: envoiId }, select: { tracee: true } });
+    if (deja.tracee) return;
+    if ((await consommeAujourdhui(tx, a.tenantId)) >= QUOTA_EXTRACTION_JOUR) throw new RefusExtraction(messageQuota);
+    await tx.atlasExport.create({ data: { tenantId: a.tenantId, userId: a.userId, client: a.client, canal: "liaison", format, lignes: 1 } });
+    await tx.atlasEnvoi.update({ where: { id: envoiId }, data: { tracee: true } });
   });
 }
 
@@ -149,6 +168,7 @@ export async function extraireSegment(a: Appelant, p: { segmentId: string; curse
     lignes: page.flatMap((x) => lues.get(x) ?? []),
     retires: page.filter((x) => !lues.has(x)),
     curseur_suivant: fin < e.sirens.length ? encoderCurseur(e.id, fin) : null,
+    curseur_page: encoderCurseur(e.id, debut),
     total: e.sirens.length,
     quota_restant_aujourdhui: reste,
     extraction: { segment_version: e.segmentVersion, version_odh: e.versionOdh, commencee_le: e.creeLe.toISOString(), expire_le: e.expireLe.toISOString() },

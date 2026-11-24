@@ -18,6 +18,7 @@ import { prisma } from "@/lib/prisma";
 import { authConfig } from "./auth.config";
 import { applyActiveUser } from "./auth/active-user";
 import { isLocalAuthEnabled } from "./auth/local-auth";
+import { oublierSession } from "./liaisons/poignee";
 import { fetchHubDiscovery } from "./hub/discovery-client";
 
 const credentialsSchema = z.object({
@@ -104,6 +105,10 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
     },
   },
   events: {
+    // La poignée de délégation meurt avec sa session.
+    async signOut(message) {
+      if ("token" in message) await oublierSession(message.token?.sid).catch(() => undefined);
+    },
     // Hub Discovery best-effort : au signIn, on interroge le Hub pour
     // savoir si l'user a d'autres apps. Le résultat est loggé pour
     // observabilité — un consumer applicatif (page dashboard, redirect

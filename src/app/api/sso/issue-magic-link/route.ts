@@ -11,7 +11,9 @@
  * email qu'il vient de valider via OAuth.
  *
  * Body attendu :
- *   { "hub_user_id": "<uuid>", "email": "<string>", "email_proven"?: true, "next"?: "<url>" }
+ *   { "hub_user_id": "<uuid>", "email": "<string>", "email_proven"?: true, "next"?: "<url>",
+ *     "delegation_grant"?: "<opaque>", "delegation_tenant_id"?: "<uuid>", "delegation_expires_at"?: "<ISO>" }
+ *   La poignée de délégation (VER-246) est gardée chiffrée et passe à la session ouverte par ce lien.
  *
  * Réponses :
  *   200 { magic_link_url: "https://prospection.app.veridian.site/api/auth/token?t=..." }
@@ -34,6 +36,7 @@ import { prisma } from "@/lib/prisma";
 import { verifyHubHmac } from "@/lib/hub/hmac";
 import { tropDeRequetes } from "@/lib/compteurs";
 import { safeReturnPath } from "@/lib/auth/auto-bounce";
+import { emballer, lireDelegation } from "@/lib/liaisons/poignee";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -170,15 +173,26 @@ export async function POST(request: NextRequest) {
   // ─── Génère + persiste token one-shot ─────────────────────────────────────
   const loginToken = randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + TOKEN_TTL_MS);
+  const tokenHash = createHash("sha256").update(loginToken).digest("hex");
+  // Une poignée illisible ou impossible à chiffrer n'empêche jamais d'entrer : les liaisons redemanderont un rebond.
+  let delegation: string | null = null;
+  try {
+    const d = lireDelegation(obj);
+    if (d) delegation = emballer(d, tokenHash);
+    else if (obj.delegation_grant !== undefined) console.warn("[sso/issue-magic-link] délégation illisible, ignorée");
+  } catch {
+    console.error("[sso/issue-magic-link] délégation non chiffrée, ignorée");
+  }
   try {
     await prisma.ssoLoginToken.deleteMany({
       where: { userId: user.id, expiresAt: { lt: new Date() } },
     });
     await prisma.ssoLoginToken.create({
       data: {
-        tokenHash: createHash("sha256").update(loginToken).digest("hex"),
+        tokenHash,
         userId: user.id,
         expiresAt,
+        ...(delegation ? { delegation } : {}),
       },
     });
   } catch (err) {

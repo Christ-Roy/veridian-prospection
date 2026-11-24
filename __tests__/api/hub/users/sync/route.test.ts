@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   findUnique: vi.fn(),
   update: vi.fn(),
   tokenDeleteMany: vi.fn(),
+  delegationDeleteMany: vi.fn(),
   tenantUpdateMany: vi.fn(),
   invalidateActive: vi.fn(),
   invalidateContext: vi.fn(),
@@ -20,6 +21,7 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     user: { findUnique: mocks.findUnique, update: mocks.update },
     ssoLoginToken: { deleteMany: mocks.tokenDeleteMany },
+    sessionDelegation: { deleteMany: mocks.delegationDeleteMany },
     tenant: { updateMany: mocks.tenantUpdateMany },
   },
 }));
@@ -114,6 +116,7 @@ describe("POST /api/hub/users/sync", () => {
     expect(await readJson(res)).toEqual({ updated: true });
     expect(mocks.update.mock.calls[0][0].data.deletedAt).toBeInstanceOf(Date);
     expect(mocks.tokenDeleteMany).toHaveBeenCalledWith({ where: { userId: "local-1" } });
+    expect(mocks.delegationDeleteMany).toHaveBeenCalledWith({ where: { userId: "local-1" } });
     expect(mocks.invalidateActive).toHaveBeenCalledWith("local-1");
     expect(mocks.invalidateContext).toHaveBeenCalledWith("local-1");
   });
@@ -147,6 +150,7 @@ describe("POST /api/hub/users/sync", () => {
     expect(data.sessionsValidAfter).toBeInstanceOf(Date);
     expect(data.deletedAt).toBeUndefined();
     expect(mocks.tokenDeleteMany).toHaveBeenCalledWith({ where: { userId: "local-1" } });
+    expect(mocks.delegationDeleteMany).toHaveBeenCalledWith({ where: { userId: "local-1" } });
     expect(mocks.tenantUpdateMany.mock.calls[0][0].data).toEqual({ prospectionLoginToken: null });
     expect(mocks.invalidateActive).toHaveBeenCalledWith("local-1");
     expect(mocks.invalidateContext).toHaveBeenCalledWith("local-1");

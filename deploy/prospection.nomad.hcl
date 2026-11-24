@@ -180,6 +180,8 @@ APP_URL=https://prospection.app.veridian.site
 NEXT_PUBLIC_SITE_URL=https://prospection.app.veridian.site
 NEXT_PUBLIC_HUB_URL=https://app.veridian.site
 HUB_API_URL=https://app.veridian.site
+# Liaisons vers le CRM et Mail (docs/LIAISONS.md). Vide = éteint, aucun bouton.
+ATLAS_LIAISONS=
 # Atlas : ClickHouse ODH en lecture seule (compte prospection_ro, profil borné côté serveur).
 CLICKHOUSE_URL=http://100.96.29.49:28123/
 CLICKHOUSE_USER=prospection_ro

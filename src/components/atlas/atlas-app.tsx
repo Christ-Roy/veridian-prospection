@@ -10,6 +10,8 @@ import { appeler, ErreurAtlas, estAnnulation, texteErreur } from "./api";
 import { Carte } from "./carte";
 import { departementsFiltre, titreZone } from "./carte-logique";
 import { Accueil, DialogueIA } from "./brancher-ia";
+import { DialogueCrm, DialogueMail } from "./envois";
+import { LIAISONS_ETEINTES, lireEtat, lireReprise, type EtatLiaisons } from "./liaisons-logique";
 import { MenuExport } from "./menu-export";
 import { DialogueCreation, type Creation } from "./dialogues";
 import { montrerAccueil, type LiensIA } from "./ia";
@@ -118,6 +120,15 @@ export function AtlasApp() {
     appeler<DroitsAtlas>("mes_droits")
       .then(setDroits)
       .catch(() => setDroits(null));
+  }, []);
+
+  // ---- liaisons vers le CRM et Mail : éteintes tant que le serveur ne dit pas le contraire
+  const [liaisons, setLiaisons] = useState<EtatLiaisons>(LIAISONS_ETEINTES);
+  const [envoiSegment, setEnvoiSegment] = useState<{ cible: "crm" | "notifuse"; id: string; nom: string } | null>(null);
+  useEffect(() => {
+    const ctl = new AbortController();
+    void lireEtat(ctl.signal).then((e) => !ctl.signal.aborted && setLiaisons(e));
+    return () => ctl.abort();
   }, []);
 
   // ---- surfaces
@@ -527,6 +538,20 @@ export function AtlasApp() {
       /* idem */
     }
   }, []);
+  // Retour d'un rebond par le Hub : on rouvre ce que l'utilisateur faisait, il confirme lui-même l'envoi.
+  const repris = useRef(false);
+  useEffect(() => {
+    if (repris.current || !arbre || !liaisons.connexion) return;
+    repris.current = true;
+    const r = lireReprise();
+    if (r?.type === "fiche") setVolet({ type: "fiche", siren: r.siren, nom: r.nom });
+    const s = r?.type === "segment" ? arbre.segments.find((x) => x.id === r.segmentId) : null;
+    if (r?.type === "segment" && s) {
+      choisir(s.id);
+      setEnvoiSegment({ cible: r.cible, id: s.id, nom: s.nom });
+    }
+  }, [arbre, liaisons.connexion, choisir]);
+
   const ouvrirFiche = useCallback((siren: string, nom: string) => setVolet({ type: "fiche", siren, nom }), []);
 
   // ---------------------------------------------------------------- rendu
@@ -603,7 +628,7 @@ export function AtlasApp() {
       aide: marche && !estCible && !nbCibles ? "Créer une première cible" : undefined,
     },
     { id: "priorite", libelle: detail?.scoring ? `Priorité v${detail.scoring.version}` : "Priorité", etat: etape === "priorite" ? "on" : "", action: estCible ? () => setVue("priorite") : undefined },
-    { id: "envoi", libelle: "Envoi · bientôt", etat: "" },
+    ...(liaisons.notifuse ? [{ id: "envoi", libelle: "Envoi", etat: "" as const, action: segment ? () => setEnvoiSegment({ cible: "notifuse" as const, id: segment.id, nom: segment.nom }) : undefined, aide: "Envoyer vers Mail" }] : []),
   ];
 
   return (
@@ -683,7 +708,7 @@ export function AtlasApp() {
               <span>Brancher une IA</span>
             </button>
           )}
-          {segment && <MenuExport segmentId={segment.id} notifier={notifier} />}
+          {segment && <MenuExport segmentId={segment.id} liaisons={liaisons} onEnvoi={(cible) => setEnvoiSegment({ cible, id: segment.id, nom: segment.nom })} notifier={notifier} />}
           {segment && peutEcrire && (
             <button
               type="button"
@@ -722,18 +747,19 @@ export function AtlasApp() {
               Enregistrer comme marché
             </button>
           )}
-          <button type="button" className="btn pri" aria-disabled="true" title="Bientôt : la cible classée part vers une liste Notifuse, dans l'ordre de priorité" onClick={(e) => e.preventDefault()}>
-            <Icone nom="envoi" />
-            <span className="hide-s">Envoyer vers Notifuse</span>
-            <span className="sr-only"> (bientôt)</span>
-          </button>
+          {segment && liaisons.notifuse && (
+            <button type="button" className="btn pri" aria-label="Envoyer vers Mail" title="Ajouter ce segment à une liste de Mail" onClick={() => setEnvoiSegment({ cible: "notifuse", id: segment.id, nom: segment.nom })}>
+              <Icone nom="envoi" />
+              <span className="hide-s">Envoyer vers Mail</span>
+            </button>
+          )}
         </header>
 
         <main className="page">
           {simulee && <p className="banner">Données simulées : ces chiffres sont inventés, la base ODH n&apos;est pas branchée sur cet environnement.</p>}
           {selection && !peutEcrire && <p className="banner">Lecture seule : vos changements de filtres ne s&apos;enregistrent pas sur cet espace.</p>}
 
-          <ol className="flux" aria-label="Étapes : marché, cible, priorité, envoi">
+          <ol className="flux" aria-label="Étapes du marché">
             {etapes.map((e, i) => (
               <li key={e.id}>
                 {i > 0 && (
@@ -747,7 +773,7 @@ export function AtlasApp() {
                     {e.libelle}
                   </button>
                 ) : (
-                  <span className={`st ${e.etat}`} aria-current={e.etat === "on" ? "step" : undefined} title={e.id === "envoi" ? "Bientôt" : undefined}>
+                  <span className={`st ${e.etat}`} aria-current={e.etat === "on" ? "step" : undefined}>
                     <span className="b">{i + 1}</span>
                     {e.libelle}
                   </span>
@@ -924,7 +950,7 @@ export function AtlasApp() {
       </button>
 
       {volet?.type === "fiche" && (
-        <VoletFiche siren={volet.siren} nom={volet.nom} epingle={epingle(volet.siren)} peutEcrire={peutEcrire} onEpingler={epingler} onRetirer={retirer} onFermer={fermerVolet} />
+        <VoletFiche siren={volet.siren} nom={volet.nom} epingle={epingle(volet.siren)} peutEcrire={peutEcrire} liaisons={liaisons} onEpingler={epingler} onRetirer={retirer} onFermer={fermerVolet} />
       )}
       {volet?.type === "verifier" && <VoletVerifier droits={droits} onFiche={ouvrirFiche} onFermer={fermerVolet} />}
       {volet?.type === "acces" && droits && <VoletAcces droits={droits} onFermer={fermerVolet} />}
@@ -954,6 +980,8 @@ export function AtlasApp() {
           onFermer={fermerVolet}
         />
       )}
+      {envoiSegment?.cible === "crm" && <DialogueCrm segmentId={envoiSegment.id} nom={envoiSegment.nom} payant={liaisons.payant} onFermer={() => setEnvoiSegment(null)} />}
+      {envoiSegment?.cible === "notifuse" && <DialogueMail objet={{ type: "segment", segmentId: envoiSegment.id, nom: envoiSegment.nom, payant: liaisons.payant }} onFermer={() => setEnvoiSegment(null)} />}
       {dialogueIA && <DialogueIA liens={liensIA} pageHub={HUB_IA} onFermer={fermerDialogueIA} />}
       {accueil && !dialogueIA && !creation && (
         <Accueil

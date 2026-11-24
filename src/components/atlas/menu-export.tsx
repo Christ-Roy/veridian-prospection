@@ -4,11 +4,22 @@ import { useEffect, useRef, useState } from "react";
 
 import { messageExport } from "./api";
 import { Icone } from "./icones";
+import type { EtatLiaisons } from "./liaisons-logique";
 
 const HUB = process.env.NEXT_PUBLIC_HUB_URL || "https://app.veridian.site";
 
-/** Exporter le segment : Excel, CSV ; Notifuse arrive. Téléchargement par fetch pour lire un refus. */
-export function MenuExport({ segmentId, notifier }: { segmentId: string; notifier: (texte: string, ko?: boolean) => void }) {
+/** Exporter le segment : Excel, CSV, et les applications reliées. Téléchargement par fetch pour lire un refus. */
+export function MenuExport({
+  segmentId,
+  liaisons,
+  onEnvoi,
+  notifier,
+}: {
+  segmentId: string;
+  liaisons: EtatLiaisons;
+  onEnvoi: (cible: "crm" | "notifuse") => void;
+  notifier: (texte: string, ko?: boolean) => void;
+}) {
   const [ouvert, setOuvert] = useState(false);
   const [envoi, setEnvoi] = useState<string | null>(null);
   const [payant, setPayant] = useState(true);
@@ -64,9 +75,16 @@ export function MenuExport({ segmentId, notifier }: { segmentId: string; notifie
           <button type="button" role="menuitem" disabled={!!envoi} onClick={() => void exporter("csv")}>
             {envoi === "csv" ? "Préparation…" : "Fichier CSV"}
           </button>
-          <span role="menuitem" aria-disabled="true" className="later">
-            Vers Notifuse · bientôt
-          </span>
+          {liaisons.crm && (
+            <button type="button" role="menuitem" onClick={() => (setOuvert(false), onEnvoi("crm"))}>
+              Envoyer au CRM
+            </button>
+          )}
+          {liaisons.notifuse && (
+            <button type="button" role="menuitem" onClick={() => (setOuvert(false), onEnvoi("notifuse"))}>
+              Envoyer vers Mail
+            </button>
+          )}
           <p className="hint">{payant ? "5 000 entreprises au plus, classées par la priorité." : "Réservé aux plans payants."}</p>
           {!payant && (
             <a className="lnk" href={`${HUB}/dashboard/billing`} target="_blank" rel="noopener noreferrer">

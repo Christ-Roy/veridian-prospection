@@ -5,7 +5,9 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { appeler, ErreurAtlas, estAnnulation, texteErreur } from "./api";
 import { enteteFiche, themesFiche } from "./fiche-logique";
 import { diffFiltres, estAuteurIA, formaterHorodatage, nomAuteur } from "./flux";
+import { EnvoisFiche } from "./envois";
 import { Chargement, Icone } from "./icones";
+import { envoisPossibles, type EtatLiaisons } from "./liaisons-logique";
 import { formaterNombre, libellePoints, phraseCondition } from "./logique";
 import type { ChampInfo, Epingle, Fiche, Filtre, Historique } from "./types";
 
@@ -74,6 +76,7 @@ export function VoletFiche({
   nom,
   epingle,
   peutEcrire,
+  liaisons,
   onEpingler,
   onRetirer,
   onFermer,
@@ -82,6 +85,7 @@ export function VoletFiche({
   nom: string;
   epingle: boolean;
   peutEcrire: boolean;
+  liaisons: EtatLiaisons;
   onEpingler: (siren: string, nom: string) => Promise<void>;
   onRetirer: (siren: string) => Promise<void>;
   onFermer: () => void;
@@ -99,6 +103,7 @@ export function VoletFiche({
     return () => ctl.abort();
   }, [siren]);
 
+  const possibles = fiche ? envoisPossibles(fiche, liaisons) : null;
   const tete = fiche ? enteteFiche(fiche, nom) : { titre: nom, sous: "" };
   const basculer = async () => {
     setEnvoi(true);
@@ -118,6 +123,7 @@ export function VoletFiche({
             <Icone nom="dossier" />
             {envoi ? "…" : epingle ? "Dans le dossier · retirer" : "Ajouter au dossier"}
           </button>
+          {possibles && (possibles.crm || possibles.notifuse) && <EnvoisFiche siren={siren} nom={tete.titre} etat={{ ...liaisons, ...possibles }} />}
         </div>
       )}
       {erreur && (

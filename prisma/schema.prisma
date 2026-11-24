@@ -269,6 +269,7 @@ model User {
   accounts Account[]
   sessions Session[]
   ssoLoginTokens SsoLoginToken[]
+  sessionDelegations SessionDelegation[]
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
@@ -288,11 +289,29 @@ model SsoLoginToken {
   expiresAt DateTime  @map("expires_at") @db.Timestamptz
   usedAt    DateTime? @map("used_at") @db.Timestamptz
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  /// Poignée de délégation du Hub, chiffrée, jusqu'à l'ouverture de la session (src/lib/liaisons/poignee.ts).
+  delegation String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("sso_login_tokens")
+}
+
+/// Poignée de délégation du Hub (VER-246), chiffrée, liée à UNE session de navigateur. Elle meurt avec elle.
+model SessionDelegation {
+  sessionId   String   @id @map("session_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  /// Tenant Hub auquel la poignée est liée : elle ne sert que dans l'espace relié à ce tenant.
+  hubTenantId String?  @map("hub_tenant_id") @db.Uuid
+  poignee     String
+  expireLe    DateTime @map("expire_le") @db.Timestamptz
+  creeLe      DateTime @default(now()) @map("cree_le") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("session_delegations")
 }
 
 model Account {
@@ -637,11 +656,12 @@ model AtlasExport {
   tenantId       String   @map("tenant_id") @db.Uuid
   userId         String   @map("user_id") @db.Uuid
   client         String?
-  /// « ecran » (Excel, CSV) ou « mcp » (extraire_segment).
+  /// « ecran » (Excel, CSV), « mcp » (extraire_segment) ou « liaison » (envoi vers le CRM ou Mail).
   canal          String
   format         String
-  segmentId      String   @map("segment_id") @db.Uuid
-  segmentVersion Int      @map("segment_version")
+  /// Nuls pour l'envoi d'une seule fiche.
+  segmentId      String?  @map("segment_id") @db.Uuid
+  segmentVersion Int?     @map("segment_version")
   extractionId   String?  @map("extraction_id") @db.Uuid
   debut          Int?
   lignes         Int
@@ -650,6 +670,29 @@ model AtlasExport {
   @@unique([extractionId, debut])
   @@index([tenantId, canal, creeLe])
   @@map("atlas_exports")
+}
+
+/// Envoi vers une autre app Veridian (VER-246) : une ligne par geste et par étape. Un geste rejoué rend son premier
+/// résultat. Le résultat ne contient ni email ni téléphone.
+model AtlasEnvoi {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  geste     String   @db.Uuid
+  etape     String
+  cible     String
+  reference String
+  /// « en_cours », « fait » ou « echec ».
+  etat      String
+  /// Compté au quota et au journal des exports.
+  tracee    Boolean  @default(false)
+  resultat  Json?
+  creeLe    DateTime @default(now()) @map("cree_le") @db.Timestamptz
+  majLe     DateTime @default(now()) @map("maj_le") @db.Timestamptz
+
+  @@unique([tenantId, geste, etape])
+  @@index([tenantId, cible, creeLe])
+  @@map("atlas_envois")
 }
 
 /// Clé API Atlas d'un espace à accès avancé : seule l'empreinte SHA-256 est gardée, la clé n'est montrée

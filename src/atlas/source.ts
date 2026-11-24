@@ -44,6 +44,8 @@ export type LigneExtraite = {
   departement: string | null;
   telephone: string | null;
 };
+/** Une fiche pour le CRM : identité, et coordonnées seulement si elles sont utilisables (appel, email). */
+export type LigneCrm = Omit<LigneExtraite, "email"> & { email: string | null };
 /** Ligne de verifier_entreprises : ce qu'on sait d'une entreprise, en un coup d'œil. */
 export type Verification = {
   siren: string;
@@ -106,6 +108,8 @@ export interface SourceMarche {
   sirensEnvoyables(filtre: unknown, scoring: unknown, plafond: number): Promise<{ sirens: string[]; total: number; version: string }>;
   /** Coordonnées de ces SIREN, relues maintenant : ceux qui ne sont plus envoyables n'y sont pas. */
   extraire(sirens: readonly string[]): Promise<LigneExtraite[]>;
+  /** Fiche prospectable pour le CRM, null sinon. Sans email utilisable, elle reste envoyable (appel à froid). */
+  pourCrm(siren: string): Promise<LigneCrm | null>;
   /** Accès avancé : requête SQL déjà passée par verifierRequete (sql.ts). */
   sql(requete: string): Promise<{ colonnes: string[]; lignes: Ligne[] }>;
   /** Colonnes des tables autorisées au SQL. */
@@ -449,6 +453,25 @@ export class SourceClickHouse implements SourceMarche {
     }));
   }
 
+  async pourCrm(siren: string): Promise<LigneCrm | null> {
+    if (!/^\d{9}$/.test(siren)) throw new FiltreInvalide("SIREN à 9 chiffres");
+    const r = await this.requete<Record<string, unknown>>(
+      `SELECT siren, if(${ENVOYABLE_EMAIL}, email, '') AS email_utilisable, primary_domain AS domaine, legal_name AS raison_sociale, director_name AS dirigeant,
+        director_role AS role_dirigeant, activity_label AS activite, naf_code AS naf, postal_code AS code_postal, city AS commune,
+        department AS departement, if(${ENVOYABLE_TELEPHONE}, phone, '') AS telephone
+       FROM ${TABLE} WHERE siren = {s:String} AND is_deleted = 0 AND empty(blocking_reasons) LIMIT 1`,
+      { s: { type: "String", valeur: siren } },
+    );
+    const l = r[0];
+    if (!l) return null;
+    const v = (x: unknown) => (x === "" || x === null || x === undefined ? null : String(x));
+    return {
+      siren, email: v(l.email_utilisable), domaine: v(l.domaine), raison_sociale: String(l.raison_sociale ?? ""), dirigeant: v(l.dirigeant),
+      role_dirigeant: v(l.role_dirigeant), activite: v(l.activite), naf: v(l.naf), code_postal: v(l.code_postal), commune: v(l.commune),
+      departement: v(l.departement), telephone: v(l.telephone),
+    };
+  }
+
   async sql(requete: string) {
     const lignes = await this.requete<Ligne>(requete, {});
     return { colonnes: lignes[0] ? Object.keys(lignes[0]) : [], lignes };
@@ -736,7 +759,7 @@ export class SourceSimulee implements SourceMarche {
     if (!/^\d{9}$/.test(siren)) throw new FiltreInvalide("SIREN à 9 chiffres");
     const l = this.lignes.find((x) => x.siren === siren);
     if (!l) return null;
-    return { identite: { siren: l.siren, nom: l.nom, forme_juridique: l.forme_juridique, date_creation: l.date_creation }, lieu: { commune: l.commune, departement: l.departement }, contact: { email: l.email || null, telephone: l.telephone || null }, web: { site: l.site || null }, finances: { chiffre_affaires: l.chiffre_affaires }, qualite: { score_odh: l.score_odh } } as Fiche;
+    return { identite: { siren: l.siren, nom: l.nom, forme_juridique: l.forme_juridique, date_creation: l.date_creation }, lieu: { commune: l.commune, departement: l.departement }, contact: { email: l.email || null, telephone: l.telephone || null, email_envoyable: l.email_envoyable ? 1 : 0 }, web: { site: l.site || null }, finances: { chiffre_affaires: l.chiffre_affaires }, qualite: { score_odh: l.score_odh } } as Fiche;
   }
   async points(filtre: unknown, departement: string, limite = 400) {
     if (!/^(\d{2,3}|2A|2B)$/.test(departement)) throw new FiltreInvalide("département invalide");
@@ -768,6 +791,15 @@ export class SourceSimulee implements SourceMarche {
         siren: String(l.siren), email: String(l.email), domaine: l.site ? String(l.site) : null, raison_sociale: String(l.nom), dirigeant: null, role_dirigeant: null,
         activite: null, naf: String(l.naf), code_postal: String(l.code_postal), commune: String(l.commune), departement: String(l.departement), telephone: l.telephone ? String(l.telephone) : null,
       }));
+  }
+
+  async pourCrm(siren: string): Promise<LigneCrm | null> {
+    const l = this.lignes.find((x) => String(x.siren) === siren);
+    if (!l) return null;
+    return {
+      siren, email: l.email_envoyable ? String(l.email) : null, domaine: l.site ? String(l.site) : null, raison_sociale: String(l.nom), dirigeant: null, role_dirigeant: null,
+      activite: null, naf: String(l.naf), code_postal: String(l.code_postal), commune: String(l.commune), departement: String(l.departement), telephone: l.telephone ? String(l.telephone) : null,
+    };
   }
   async sql(_requete: string) {
     return { colonnes: ["siren", "nom"], lignes: this.lignes.slice(0, 3).map((l) => ({ siren: l.siren, nom: l.nom })) };
