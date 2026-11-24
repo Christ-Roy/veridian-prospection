@@ -184,6 +184,14 @@ describe("Atlas par le MCP", () => {
     expect((await appel(B, "lister_segments_atlas")).segments).toEqual([]);
   });
 
+  test("tools/list sert la mention « à nommer dans autoriser » sur les outils d'écriture seulement", async () => {
+    const r = await traiter({ jsonrpc: "2.0", id: 998, method: "tools/list" }, A);
+    const servis = new Map((r!.result as { tools: { name: string; description: string }[] }).tools.map((t) => [t.name, t.description]));
+    expect(servis.get("creer_segment")).toContain("à nommer dans autoriser");
+    expect(servis.get("extraire_segment")).toContain("à nommer dans autoriser");
+    expect(servis.get("explorer_marche")).not.toContain("autoriser");
+  });
+
   test("sans la vraie source ODH ni ATLAS_SIMULE, aucun outil Atlas n'est exposé", async () => {
     process.env.ATLAS_SIMULE = "";
     try {

@@ -40,3 +40,14 @@ export function outilsVisibles(c: ContexteOutil): Outil[] {
     (o) => (!o.visible || o.visible(c)) && (!o.acces || (o.acces === "avance" ? !!c.droits?.accesAvance : !!c.droits?.adminAtlas)),
   );
 }
+
+/** Le Hub refuse, dans un programme, un outil qui n'est pas en lecture seule s'il n'est pas nommé dans `autoriser` (24/11). */
+const MENTION_PROGRAMME = "Dans un programme : à nommer dans autoriser.";
+
+/** Description servie : la mention se déduit des annotations, un nouvel outil d'écriture l'a donc d'office. */
+export function descriptionServie(o: Pick<Outil, "description" | "annotations">): string {
+  const a = o.annotations;
+  if (a.readOnlyHint && !a.destructiveHint) return o.description;
+  const [premiere, ...reste] = o.description.split("\n");
+  return [`${premiere} ${MENTION_PROGRAMME}`, ...reste].join("\n");
+}

@@ -7,7 +7,7 @@ import { z } from "zod";
 import { enRestreint } from "@/atlas/restreint";
 
 import { refuserCoordonnees, retirerCoordonnees, sansCoordonnees } from "./coordonnees";
-import { ErreurOutil, outilsVisibles, type ContexteOutil } from "./outils";
+import { descriptionServie, ErreurOutil, outilsVisibles, type ContexteOutil } from "./outils";
 
 export const VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const PAGE_OUTILS = 50;
@@ -88,7 +88,7 @@ export async function traiter(m: Message, c: ContexteOutil, journal: Journal = (
         tools: page.map((o) => ({
           name: o.name,
           title: o.title,
-          description: o.description,
+          description: descriptionServie(o),
           inputSchema: schema(o.input),
           annotations: { title: o.title, ...o.annotations },
         })),

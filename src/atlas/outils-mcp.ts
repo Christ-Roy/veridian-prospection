@@ -313,7 +313,7 @@ const OUTILS_BRUTS: Outil[] = [
     title: "Créer une clé API (accès avancé)",
     description:
       "Crée une clé pour appeler les outils Atlas depuis un script : POST https://prospection.app.veridian.site/api/atlas/<outil> avec " +
-      "l'en-tête Authorization: Bearer <clé> et les arguments en JSON. La clé n'est affichée qu'une fois : la transmettre à l'utilisateur.",
+      "l'en-tête Authorization: Bearer <clé> et les arguments en JSON. Affichée une seule fois : la transmettre à l'utilisateur.",
     input: z.object({ nom: z.string().trim().min(1).max(80) }),
     annotations: { ...ECRITURE, idempotentHint: false },
     acces: "avance",
@@ -574,8 +574,8 @@ const OUTILS_BRUTS: Outil[] = [
     name: "extraire_segment",
     title: "Extraire un segment, page par page",
     description:
-      "Récupérer, extraire, exporter les contacts des prospects d'un segment (emails, entreprise, dirigeant, lieu) pour Notifuse, un CRM, un tableur. Sans curseur, puis " +
-      "curseur_suivant jusqu'à null. Plans payants, 5 000 lignes par jour. Segment à créer d'abord : creer_segment.",
+      "Récupérer, extraire, exporter les contacts des prospects d'un segment (emails, entreprise, dirigeant) pour Notifuse, un CRM, un tableur. Sans curseur, puis " +
+      "curseur_suivant jusqu'à null. Plans payants, 5 000 lignes/jour. Segment : creer_segment.",
     input: z.object({
       segment_id: SEGMENT,
       curseur: z.string().max(200).nullish().describe("curseur_suivant de la page précédente, tel quel. Absent : première page (liste figée, ni doublon ni trou ensuite)."),

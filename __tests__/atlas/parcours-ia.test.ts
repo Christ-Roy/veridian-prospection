@@ -9,6 +9,7 @@ vi.hoisted(() => {
 });
 import { OUTILS_ATLAS } from "@/atlas/outils-mcp";
 import { compilerFiltre } from "@/atlas/filtres";
+import { descriptionServie } from "@/lib/mcp/outils";
 
 const refus = (nom: string, args: object) => {
   const r = OUTILS_ATLAS.find((o) => o.name === nom)!.input.safeParse(args);
@@ -24,7 +25,14 @@ const filtre = (f: unknown) => {
 };
 
 test("descriptions : 300 caractères au plus sur la première ligne, jamais coupées par la porte", () => {
-  for (const o of OUTILS_ATLAS) expect(`${o.name} ${o.description.split("\n")[0].length <= 300}`).toBe(`${o.name} true`);
+  for (const o of OUTILS_ATLAS) expect(`${o.name} ${descriptionServie(o).split("\n")[0].length <= 300}`).toBe(`${o.name} true`);
+});
+
+test("programme : tout outil d'écriture dit, sur sa première ligne, qu'il est à nommer dans autoriser ; un outil de lecture ne le dit pas", () => {
+  const dit = (o: (typeof OUTILS_ATLAS)[number]) => descriptionServie(o).split("\n")[0].includes("à nommer dans autoriser");
+  for (const o of OUTILS_ATLAS) expect(`${o.name} ${dit(o)}`).toBe(`${o.name} ${!o.annotations.readOnlyHint || o.annotations.destructiveHint}`);
+  expect(OUTILS_ATLAS.filter(dit).map((o) => o.name)).toEqual(expect.arrayContaining(["extraire_segment", "creer_segment", "supprimer_segment", "creer_cle_api"]));
+  expect(OUTILS_ATLAS.filter(dit).length).toBeLessThan(OUTILS_ATLAS.length);
 });
 
 describe("chaque refus conduit à l'étape suivante", () => {
