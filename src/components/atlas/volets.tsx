@@ -201,7 +201,7 @@ export function VoletDossier({
                 <span>
                   <b>{e.nom}</b>
                   <small>
-                    Ajoutée par {estAuteurIA(e.auteur) ? nomAuteur(e.auteur) : "l'interface"} · {formaterHorodatage(e.date)}
+                    Ajoutée par {estAuteurIA(e.auteur) ? nomAuteur(e.auteur) : (e.auteur_nom ?? "l'interface")} · {formaterHorodatage(e.date)}
                   </small>
                   {e.note && <small style={{ color: "var(--fg2)" }}>{e.note}</small>}
                 </span>
@@ -319,7 +319,7 @@ export function VoletHistorique({
               >
                 <span className="b" />
                 <span>
-                  <b>v{v.version}</b> <span className={ia ? "tag claude" : "tag"}>{nomAuteur(v.auteur)}</span>
+                  <b>v{v.version}</b> <span className={ia ? "tag claude" : "tag"}>{v.auteur_nom ?? nomAuteur(v.auteur)}</span>
                   <small>
                     {v.via === "mcp" ? "Connecteur" : "Interface"} · {formaterHorodatage(v.date)}
                   </small>
@@ -346,7 +346,7 @@ export function VoletHistorique({
               <button key={v.version} type="button" className={compare ? "v cur" : "v"} aria-pressed={compare} onClick={() => onComparer(i === 0 ? null : v.version)}>
                 <span className="b" />
                 <span>
-                  <b>v{v.version}</b> <span className={estAuteurIA(v.auteur) ? "tag claude" : "tag"}>{nomAuteur(v.auteur)}</span>
+                  <b>v{v.version}</b> <span className={estAuteurIA(v.auteur) ? "tag claude" : "tag"}>{v.auteur_nom ?? nomAuteur(v.auteur)}</span>
                   <small>
                     {v.via === "mcp" ? "Connecteur" : "Interface"} · {formaterHorodatage(v.date)}
                     {i > 0 ? " · cliquer pour classer selon cette version" : " · en vigueur"}

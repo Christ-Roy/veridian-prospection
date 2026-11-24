@@ -198,9 +198,11 @@ export async function historique(tenantId: string, segmentId: string) {
     prisma.atlasSegmentVersion.findMany({ where: { segmentId: s.id }, orderBy: { numero: "desc" }, take: 50 }),
     prisma.atlasScoringVersion.findMany({ where: { segmentId: s.id }, orderBy: { numero: "desc" }, take: 50 }),
   ]);
+  const noms = await nomsAuteurs([...versions, ...scorings].map((v) => v.auteur));
   const ligne = (v: { numero: number; auteur: string; via: string; note: string | null; createdAt: Date }) => ({
     version: v.numero,
     auteur: v.auteur,
+    auteur_nom: noms.get(v.auteur) ?? null,
     via: v.via,
     note: v.note,
     date: v.createdAt.toISOString(),
@@ -262,7 +264,8 @@ export async function supprimerSegment(tenantId: string, segmentId: string, avec
 
 export async function listerEpingles(tenantId: string) {
   const l = await prisma.atlasEpingle.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" }, take: 500 });
-  return l.map((e) => ({ siren: e.siren, nom: e.nom, note: e.note, auteur: e.auteur, via: e.via, date: e.createdAt.toISOString() }));
+  const noms = await nomsAuteurs(l.map((e) => e.auteur));
+  return l.map((e) => ({ siren: e.siren, nom: e.nom, note: e.note, auteur: e.auteur, auteur_nom: noms.get(e.auteur) ?? null, via: e.via, date: e.createdAt.toISOString() }));
 }
 
 export async function epingler(tenantId: string, a: { siren: string; nom: string; note?: string }, auteur: Auteur) {
@@ -279,4 +282,14 @@ export async function retirerEpingle(tenantId: string, siren: string) {
   const r = await prisma.atlasEpingle.deleteMany({ where: { tenantId, siren } });
   if (!r.count) throw new Introuvable(`aucune épingle pour ${siren}`);
   return { siren, epingle: false };
+}
+
+const UUID_AUTEUR = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+
+/** Qui a fait quoi (VER-252) : nom d'un auteur humain, sinon le début de son adresse. Les IA gardent leur propre libellé. */
+async function nomsAuteurs(auteurs: readonly string[]): Promise<Map<string, string>> {
+  const ids = [...new Set(auteurs)].filter((a) => UUID_AUTEUR.test(a));
+  if (!ids.length) return new Map();
+  const l = await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, email: true } });
+  return new Map(l.map((u) => [u.id, u.name?.trim() || u.email.split("@")[0]]));
 }

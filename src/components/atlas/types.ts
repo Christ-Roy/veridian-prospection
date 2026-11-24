@@ -65,8 +65,8 @@ export type RepartitionMarche = {
   donnees_simulees?: boolean;
 };
 
-export type VersionFiltre = { version: number; auteur: string; via: string; note: string | null; date: string; filtre: Filtre };
-export type VersionScoring = { version: number; auteur: string; via: string; note: string | null; date: string; criteres: Critere[] };
+export type VersionFiltre = { version: number; auteur: string; auteur_nom?: string | null; via: string; note: string | null; date: string; filtre: Filtre };
+export type VersionScoring = { version: number; auteur: string; auteur_nom?: string | null; via: string; note: string | null; date: string; criteres: Critere[] };
 export type Historique = { filtre: VersionFiltre[]; scoring: VersionScoring[] };
 
 
@@ -114,6 +114,6 @@ export type ValeurFiche = string | number | boolean | null | string[];
 /** Fiche par thème (outil fiche_entreprise_atlas) : thème → clé → valeur. */
 export type Fiche = Record<string, Record<string, ValeurFiche>>;
 
-export type Epingle = { siren: string; nom: string; note: string | null; auteur: string; via: string; date: string };
+export type Epingle = { siren: string; nom: string; note: string | null; auteur: string; auteur_nom?: string | null; via: string; date: string };
 
 export type Boite = { x: number; y: number; width: number; height: number };

@@ -59,6 +59,13 @@ test("il choisit l'organisation : ses segments, son rôle, et pas ses droits d'a
   s.cookie = T.membre;
   expect((await getUserContext())!.isAdmin).toBe(true);
 });
+test("qui a fait quoi : le nom de la personne, à défaut le début de son adresse ; une IA garde son libellé", async () => {
+  const g = await seg.creerSegment(T.patron, { nom: "Auteurs", filtre: { conditions: [{ champ: "departement", op: "dans", valeur: ["42"] }] } }, { id: U.patron.id, via: "interface" });
+  await seg.modifierSegment(T.patron, g.id, { filtre: { conditions: [{ champ: "departement", op: "dans", valeur: ["43"] }] } }, { id: "ia:Claude", via: "mcp" });
+  expect((await seg.historique(T.patron, g.id)).filtre.map((v) => [v.auteur_nom, v.via])).toEqual([[null, "mcp"], [`esp-patron-${id}`, "interface"]]);
+  await prisma.user.update({ where: { id: U.patron.id }, data: { name: "Paule Martin" } });
+  expect((await seg.historique(T.patron, g.id)).filtre[1].auteur_nom).toBe("Paule Martin");
+});
 test("un cookie forgé, un espace inconnu ou celui d'un autre n'ouvrent rien", async () => {
   for (const c of [T.etranger, randomUUID(), "pas-un-uuid"]) {
     s.cookie = c;

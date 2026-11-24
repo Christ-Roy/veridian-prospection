@@ -184,7 +184,7 @@ NEXT_PUBLIC_SITE_URL=https://prospection.app.veridian.site
 NEXT_PUBLIC_HUB_URL=https://app.veridian.site
 HUB_API_URL=https://app.veridian.site
 # Liaisons vers le CRM et Mail (docs/LIAISONS.md). Vide = éteint, aucun bouton.
-ATLAS_LIAISONS=crm=a4f3e682-c75b-45e9-b32d-847c3b219f9a;notifuse=*
+ATLAS_LIAISONS=crm=359b76d5-bab7-4773-a889-cf4cf0248869,a4f3e682-c75b-45e9-b32d-847c3b219f9a;notifuse=*
 # Repli tant que le Hub ne rend pas l'adresse d'action dans sa réponse.
 LIAISON_URL_CRM=https://crm.app.veridian.site/mcp
 LIAISON_URL_NOTIFUSE=https://notifuse.app.veridian.site/api/veridian/actions
