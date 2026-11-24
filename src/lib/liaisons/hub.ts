@@ -29,30 +29,19 @@ export function adresseSure(url: unknown, env: NodeJS.ProcessEnv = process.env):
   return u.protocol === "https:" && u.port === "" && u.hostname.endsWith(".veridian.site") ? u.href : null;
 }
 
-export async function demanderJeton(
-  d: { poignee: string; cible: Cible; hubTenantId: string; motif: string },
-  o: Opts = {},
-): Promise<JetonAction> {
+async function appelerHub(chemin: string, contenu: object, o: Opts, delaiMs: number): Promise<{ res: Response; r: Record<string, unknown> | null }> {
   const env = o.env ?? process.env;
   const secret = env.HUB_API_SECRET || env.TENANT_API_SECRET;
   const hub = (env.HUB_API_URL || env.NEXT_PUBLIC_HUB_URL || "https://app.veridian.site").replace(/\/+$/, "");
   if (!secret) throw new RefusLiaison("config", "Les liaisons ne sont pas configurées sur ce serveur.", 503);
-
-  const corps = JSON.stringify({
-    grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
-    subject_grant: d.poignee,
-    audience: d.cible,
-    scope: PORTEES[d.cible],
-    motif: d.motif,
-  });
+  const corps = JSON.stringify(contenu);
   const ts = String((o.maintenant ?? Date.now)());
   const nonce = randomBytes(16).toString("hex");
-  let res: Response;
   try {
-    res = await (o.fetchImpl ?? fetch)(`${hub}/api/delegation/jeton`, {
+    const res = await (o.fetchImpl ?? fetch)(`${hub}${chemin}`, {
       method: "POST",
       redirect: "error",
-      signal: AbortSignal.timeout(DELAI_MS),
+      signal: AbortSignal.timeout(delaiMs),
       headers: {
         "Content-Type": "application/json",
         "X-Veridian-App": "prospection",
@@ -62,10 +51,47 @@ export async function demanderJeton(
       },
       body: corps,
     });
+    return { res, r: (await res.json().catch(() => null)) as Record<string, unknown> | null };
   } catch {
     throw new RefusLiaison("hub_injoignable", "Veridian ne répond pas : rien n'a été envoyé. Réessayez dans un instant.", 503);
   }
-  const r = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+}
+
+const memeEspace = (recu: unknown, voulu: string) => typeof recu === "string" && recu.toLowerCase() === voulu.toLowerCase();
+
+export type EtatPaire = "allumee" | "eteinte" | "indisponible" | "inconnu";
+
+/**
+ * État des liaisons de cette organisation, de quoi ne pas montrer un bouton qui refusera. Hub muet ou réponse illisible :
+ * « inconnu » partout, le clic dira. `null` : le Hub ne reconnaît plus cette poignée.
+ */
+export async function etatDesPaires(poignee: string, hubTenantId: string, o: Opts = {}): Promise<Record<Cible, EtatPaire> | null> {
+  const etats: Record<Cible, EtatPaire> = { crm: "inconnu", notifuse: "inconnu" };
+  try {
+    const { res, r } = await appelerHub("/api/delegation/paires", { subject_grant: poignee }, o, 2500);
+    if (res.status === 403 && r?.error === "grant_invalid") return null;
+    if (!res.ok || !memeEspace(r?.tenant_id, hubTenantId) || !Array.isArray(r?.paires)) return etats;
+    for (const p of r.paires as Record<string, unknown>[]) {
+      const etat = p?.etat;
+      if ((p?.audience === "crm" || p?.audience === "notifuse") && (etat === "allumee" || etat === "eteinte" || etat === "indisponible")) etats[p.audience] = etat;
+    }
+  } catch {
+    // Hub injoignable : inconnu.
+  }
+  return etats;
+}
+
+export async function demanderJeton(
+  d: { poignee: string; cible: Cible; hubTenantId: string; motif: string },
+  o: Opts = {},
+): Promise<JetonAction> {
+  const env = o.env ?? process.env;
+  const { res, r } = await appelerHub(
+    "/api/delegation/jeton",
+    { grant_type: "urn:ietf:params:oauth:grant-type:token-exchange", subject_grant: d.poignee, audience: d.cible, scope: PORTEES[d.cible], motif: d.motif },
+    o,
+    DELAI_MS,
+  );
   if (!res.ok) {
     const attendre = Number(res.headers.get("retry-after"));
     const code = res.status === 429 ? "rate_limited" : typeof r?.error === "string" ? r.error : `http_${res.status}`;
@@ -78,7 +104,7 @@ export async function demanderJeton(
     throw refusDuHub("reponse_invalide", d.cible);
   }
   // L'espace du jeton doit être celui où l'utilisateur travaille ici : jamais les prospects d'un espace dans un autre.
-  if (typeof r.tenant_id !== "string" || r.tenant_id.toLowerCase() !== d.hubTenantId.toLowerCase()) {
+  if (!memeEspace(r.tenant_id, d.hubTenantId)) {
     console.error(`[liaisons] confusion d'espace refusée cible=${d.cible}`);
     throw new RefusLiaison("autre_espace", "Votre connexion Veridian vise une autre organisation : rouvrez Atlas depuis la bonne.", 403);
   }

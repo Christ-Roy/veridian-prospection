@@ -10,6 +10,8 @@ Plan : `nomad-veridian/plan/INTEGRATIONS-NATIVES.md` (§2.1 à 2.3, F1, F2). Un 
 - **Jeton** : `src/lib/liaisons/hub.ts`, `POST <Hub>/api/delegation/jeton`, HMAC-SHA256 de `ts.nonce.corps`, 60 par minute et par
   organisation. Refusé si `tenant_id` n'est pas l'espace de l'utilisateur, ou si l'adresse n'est pas en https sous `.veridian.site`
   (`url` de la réponse, sinon `LIAISON_URL_*`). Un jeton par appel.
+- **État** : `POST <Hub>/api/delegation/paires` à l'ouverture de l'écran. Éteinte : une phrase, pas de bouton. Indisponible : rien. Hub muet : le
+  bouton reste, le clic dira.
 - **CRM** : `tools/call app_envoyer_au_crm` sur son MCP, lot de 20 (plugin liaisons 0.4), un résultat par SIREN. Non traité ou absent de
   la réponse : la page entière se reprend.
 - **Mail** : `POST <adresse>/<action>` (fiche 87 de Notifuse), `contacts.importer`, portée `notifuse:contacts.ecrire` ; attend de Mail

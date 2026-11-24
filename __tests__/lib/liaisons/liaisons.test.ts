@@ -15,7 +15,7 @@ import { RefusLiaison } from "@/lib/liaisons/erreurs";
 import { liaisonOuverte } from "@/lib/liaisons/drapeau";
 import { adresseSure, demanderJeton } from "@/lib/liaisons/hub";
 import { appelerCrm, appelerMail } from "@/lib/liaisons/action";
-import { adresseRebond, BILAN_MAIL_VIDE, cumulerMail, envoisPossibles, lireReprise, phrasesMail, preparerRebond } from "@/components/atlas/liaisons-logique";
+import { adresseRebond, BILAN_MAIL_VIDE, cumulerMail, envoisPossibles, lireReprise, phraseEteintes, phrasesMail, preparerRebond } from "@/components/atlas/liaisons-logique";
 
 const prod = { NODE_ENV: "production" } as NodeJS.ProcessEnv;
 const T = "0891ed5a-4ce1-49ff-be3c-91628b357f4f";
@@ -177,10 +177,17 @@ test("bilan Mail : les motifs s'additionnent d'une page à l'autre et se lisent"
 });
 
 test("fiche : seuls les envois qui peuvent aboutir se montrent", () => {
-  const etat = { crm: true, notifuse: true, payant: true, connexion: true };
+  const etat = { crm: true, notifuse: true, eteintes: [], payant: true, connexion: true };
   expect(envoisPossibles({ contact: { email_envoyable: 1 } }, etat)).toEqual({ crm: true, notifuse: true });
   expect(envoisPossibles({ contact: { email: "a@b.fr", email_envoyable: 0 } }, etat)).toEqual({ crm: true, notifuse: false });
   expect(envoisPossibles({ contact: { email_envoyable: 1 }, qualite: { blocages: ["cessee"] } }, etat)).toEqual({ crm: false, notifuse: false });
   expect(envoisPossibles({ contact: { email_connu: true, prospectable: true } }, etat)).toEqual({ crm: false, notifuse: false });
   expect(envoisPossibles({ contact: { email_envoyable: 1 } }, { ...etat, crm: false, notifuse: false })).toEqual({ crm: false, notifuse: false });
+});
+
+test("paire éteinte : une phrase, jamais un bouton", () => {
+  const e = { crm: false, notifuse: false, eteintes: [] as ("crm" | "notifuse")[], payant: true, connexion: true };
+  expect(phraseEteintes(e)).toBeNull();
+  expect(phraseEteintes({ ...e, eteintes: ["crm"] })).toBe("La liaison vers le CRM est éteinte dans votre organisation : un propriétaire ou un administrateur peut l'allumer dans Veridian.");
+  expect(phraseEteintes({ ...e, eteintes: ["crm", "notifuse"] })).toBe("Les liaisons vers le CRM et Mail sont éteintes dans votre organisation : un propriétaire ou un administrateur peut les allumer dans Veridian.");
 });

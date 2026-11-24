@@ -130,6 +130,13 @@ export function AtlasApp() {
     void lireEtat(ctl.signal).then((e) => !ctl.signal.aborted && setLiaisons(e));
     return () => ctl.abort();
   }, []);
+  // Éteinte, puis allumée dans un autre onglet : relue au retour sur celui-ci.
+  useEffect(() => {
+    if (!liaisons.eteintes.length) return;
+    const revenir = () => document.visibilityState === "visible" && void lireEtat().then(setLiaisons);
+    document.addEventListener("visibilitychange", revenir);
+    return () => document.removeEventListener("visibilitychange", revenir);
+  }, [liaisons.eteintes.length]);
 
   // ---- surfaces
   const [pop, setPop] = useState(false);

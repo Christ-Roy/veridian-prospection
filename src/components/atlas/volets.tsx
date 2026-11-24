@@ -5,7 +5,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { appeler, ErreurAtlas, estAnnulation, texteErreur } from "./api";
 import { enteteFiche, themesFiche } from "./fiche-logique";
 import { diffFiltres, estAuteurIA, formaterHorodatage, nomAuteur } from "./flux";
-import { EnvoisFiche } from "./envois";
+import { EnvoisFiche, LiaisonsEteintes } from "./envois";
 import { Chargement, Icone } from "./icones";
 import { envoisPossibles, type EtatLiaisons } from "./liaisons-logique";
 import { formaterNombre, libellePoints, phraseCondition } from "./logique";
@@ -124,6 +124,7 @@ export function VoletFiche({
             {envoi ? "…" : epingle ? "Dans le dossier · retirer" : "Ajouter au dossier"}
           </button>
           {possibles && (possibles.crm || possibles.notifuse) && <EnvoisFiche siren={siren} nom={tete.titre} etat={{ ...liaisons, ...possibles }} />}
+          {fiche && envoisPossibles(fiche, { ...liaisons, crm: true, notifuse: true }).crm && <LiaisonsEteintes etat={liaisons} />}
         </div>
       )}
       {erreur && (

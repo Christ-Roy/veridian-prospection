@@ -12,7 +12,7 @@ import { appelerCrm, appelerMail } from "@/lib/liaisons/action";
 import { liaisonOuverte } from "@/lib/liaisons/drapeau";
 import { uneFois } from "@/lib/liaisons/envois";
 import { RefusLiaison, type Cible } from "@/lib/liaisons/erreurs";
-import { demanderJeton } from "@/lib/liaisons/hub";
+import { demanderJeton, etatDesPaires } from "@/lib/liaisons/hub";
 import { oublierPoignee, poigneeDe } from "@/lib/liaisons/poignee";
 import { prisma } from "@/lib/prisma";
 
@@ -28,6 +28,7 @@ export const MAX_CRM_PAR_GESTE = 100;
 
 export type Appel = { ctx: UserContext; sessionId: string | null; hubTenantId: string | null; payant: boolean };
 
+const CIBLES: readonly Cible[] = ["crm", "notifuse"];
 const peutEcrire = (ctx: UserContext) => ctx.isAdmin || ctx.workspaces.some((w) => w.role !== "viewer");
 
 export async function appelDe(ctx: UserContext, sessionId: string | null): Promise<Appel> {
@@ -38,10 +39,21 @@ export async function appelDe(ctx: UserContext, sessionId: string | null): Promi
 /** Ce que l'écran peut montrer. Un bouton n'apparaît que si la liaison est ouverte ici et que l'utilisateur peut écrire. */
 export async function etatLiaisons(a: Appel) {
   const permis = peutEcrire(a.ctx);
-  const crm = permis && liaisonOuverte("crm", a.hubTenantId);
-  const notifuse = permis && liaisonOuverte("notifuse", a.hubTenantId);
-  const connexion = (crm || notifuse) && !!(await poigneeDe(a.sessionId, a.ctx.userId, a.hubTenantId!));
-  return { crm, notifuse, payant: a.payant, connexion };
+  const ouvertes = CIBLES.filter((c) => permis && liaisonOuverte(c, a.hubTenantId));
+  const rien = { crm: false, notifuse: false, eteintes: [] as Cible[], payant: a.payant, connexion: false };
+  if (!ouvertes.length) return rien;
+  const poignee = await poigneeDe(a.sessionId, a.ctx.userId, a.hubTenantId!);
+  const etats = poignee ? await etatDesPaires(poignee, a.hubTenantId!) : null;
+  if (poignee && !etats) await oublierPoignee(a.sessionId!, a.hubTenantId!).catch(() => undefined);
+  const etat = (c: Cible) => etats?.[c] ?? "inconnu";
+  return {
+    crm: ouvertes.includes("crm") && ["allumee", "inconnu"].includes(etat("crm")),
+    notifuse: ouvertes.includes("notifuse") && ["allumee", "inconnu"].includes(etat("notifuse")),
+    // Éteintes dans cette organisation : une phrase à la place du bouton.
+    eteintes: ouvertes.filter((c) => etat(c) === "eteinte"),
+    payant: a.payant,
+    connexion: !!etats,
+  };
 }
 
 type Pret = { hubTenantId: string; poignee: string; sessionId: string | null };

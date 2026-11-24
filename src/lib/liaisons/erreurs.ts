@@ -35,6 +35,8 @@ export function refusDuHub(code: string, cible: Cible, attendre?: number): Refus
     case "tenant_suspended":
     case "tenant_not_found":
       return new RefusLiaison("tenant_suspendu", "Votre organisation Veridian est suspendue : aucun envoi possible.", 403);
+    case "app_not_open":
+      return new RefusLiaison("app_non_ouverte", `Vous n'avez pas encore accès à ${c} dans Veridian.`, 403);
     case "rate_limited":
       return new RefusLiaison("plafond", "Trop d'envois en peu de temps : patientez avant de reprendre.", 429, attendre ?? 60);
     default:

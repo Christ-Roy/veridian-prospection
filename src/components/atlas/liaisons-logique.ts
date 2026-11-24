@@ -1,7 +1,14 @@
 import { formaterNombre } from "./logique";
 
-export type EtatLiaisons = { crm: boolean; notifuse: boolean; payant: boolean; connexion: boolean };
-export const LIAISONS_ETEINTES: EtatLiaisons = { crm: false, notifuse: false, payant: false, connexion: false };
+export type EtatLiaisons = { crm: boolean; notifuse: boolean; eteintes: ("crm" | "notifuse")[]; payant: boolean; connexion: boolean };
+export const LIAISONS_ETEINTES: EtatLiaisons = { crm: false, notifuse: false, eteintes: [], payant: false, connexion: false };
+
+/** Une phrase à la place d'un bouton qui refuserait. */
+export function phraseEteintes(e: EtatLiaisons): string | null {
+  if (!e.eteintes.length) return null;
+  const noms = e.eteintes.map((c) => (c === "crm" ? "le CRM" : "Mail")).join(" et ");
+  return `${e.eteintes.length > 1 ? "Les liaisons" : "La liaison"} vers ${noms} ${e.eteintes.length > 1 ? "sont éteintes" : "est éteinte"} dans votre organisation : un propriétaire ou un administrateur peut l${e.eteintes.length > 1 ? "es " : "'"}allumer dans Veridian.`;
+}
 
 /** Boutons qui aboutiront pour CETTE fiche : fermée, bloquée ou hors prospection, aucun ; sans email utilisable, pas de Mail. */
 export function envoisPossibles(fiche: Record<string, unknown>, etat: EtatLiaisons): { crm: boolean; notifuse: boolean } {

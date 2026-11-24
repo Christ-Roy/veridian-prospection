@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { messageExport } from "./api";
+import { LiaisonsEteintes } from "./envois";
 import { Icone } from "./icones";
 import type { EtatLiaisons } from "./liaisons-logique";
 
@@ -85,6 +86,7 @@ export function MenuExport({
               Envoyer vers Mail
             </button>
           )}
+          <LiaisonsEteintes etat={liaisons} />
           <p className="hint">{payant ? "5 000 entreprises au plus, classées par la priorité." : "Réservé aux plans payants."}</p>
           {!payant && (
             <a className="lnk" href={`${HUB}/dashboard/billing`} target="_blank" rel="noopener noreferrer">

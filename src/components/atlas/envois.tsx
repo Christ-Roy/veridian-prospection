@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 
 import { Icone } from "./icones";
 import {
-  adresseRebond, appelerLiaison, BILAN_CRM_VIDE, BILAN_MAIL_VIDE, cumulerCrm, cumulerMail, ErreurLiaison, phraseFicheCrm, phrasesCrm, phrasesMail, preparerRebond,
+  adresseRebond, appelerLiaison, BILAN_CRM_VIDE, BILAN_MAIL_VIDE, cumulerCrm, cumulerMail, ErreurLiaison, phraseFicheCrm, phrasesCrm, phrasesMail, phraseEteintes, preparerRebond,
   type BilanCrm, type BilanMail, type EtatLiaisons, type ListeMail, type PageCrm, type PageMail, type Reprise, type ResultatFicheCrm,
 } from "./liaisons-logique";
 import { formaterNombre } from "./logique";
@@ -56,6 +56,19 @@ function MessageErreur({ erreur }: { erreur: ErreurLiaison | null }) {
 }
 
 const PLAN = new ErreurLiaison("L'envoi vers une autre application est réservé aux plans payants Veridian, comme l'export.", "plan");
+
+export function LiaisonsEteintes({ etat }: { etat: EtatLiaisons }) {
+  const phrase = phraseEteintes(etat);
+  if (!phrase) return null;
+  return (
+    <p className="hint">
+      {phrase}{" "}
+      <a className="lnk" href={`${HUB}/dashboard`} target="_blank" rel="noopener noreferrer">
+        Ouvrir Veridian
+      </a>
+    </p>
+  );
+}
 
 // ---------------------------------------------------------------- fiche
 
