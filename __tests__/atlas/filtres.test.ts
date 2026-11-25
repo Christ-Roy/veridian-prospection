@@ -30,7 +30,12 @@ describe("compilerFiltre", () => {
     expect(where).toContain("creation_date >= {p3:Date}");
     expect(where).toContain("label_rge = 1");
     expect(where).toContain("primary_domain = ''");
-    expect(where).toContain("positionCaseInsensitiveUTF8(legal_name, {p4:String}) > 0");
+    // Le nom se cherche par les mots entiers de la base maître, comme le marché : le même mot rend le même nombre.
+    expect(where).toContain("siren IN (SELECT siren FROM odh.company_master_current WHERE hasAnyTokens(name_terms, {p4:Array(String)}))");
+    expect(params.p4.valeur).toContain("plomberie");
+    expect(compilerFiltre({ conditions: [{ champ: "nom", op: "contient", valeur: "3M" }] }).where).toContain("positionCaseInsensitiveUTF8(legal_name, {p0:String}) > 0");
+    expect(compilerFiltre({ conditions: [{ champ: "nom", op: "egal", valeur: "ATELIER" }] }).where).toContain("legal_name = {p0:String}");
+    expect(compilerFiltre({ conditions: [{ champ: "commune", op: "contient", valeur: "lyon" }] }).where).toContain("positionCaseInsensitiveUTF8(city, {p0:String}) > 0");
     expect(params.p0).toEqual({ type: "Array(String)", valeur: ["69", "38"] });
   });
 
@@ -115,7 +120,8 @@ describe("source ClickHouse : la requête envoyée", () => {
     const s = new SourceClickHouse({ url: "http://ch.test:28123/", user: "prospection_ro", password: "secret" }, fetchImpl);
     expect(await s.compter({ conditions: [{ champ: "nom", op: "contient", valeur: "l'atelier" }] })).toBe(155);
     const { url, init } = appels[0];
-    expect(url.searchParams.get("param_p0")).toBe("l'atelier");
+    expect(url.searchParams.get("param_p0")).toContain("'atelier'");
+    expect(url.search).not.toContain("l'atelier"); // l'apostrophe ne traverse pas
     expect([...url.searchParams.keys()].filter((k) => !k.startsWith("param_"))).toEqual([]);
     expect(url.toString()).not.toContain("secret");
     expect((init.headers as Record<string, string>)["X-ClickHouse-Key"]).toBe("secret");

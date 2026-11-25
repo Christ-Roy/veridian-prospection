@@ -33,9 +33,35 @@ export function cellules(ligne: string, sep: string): string[] {
   return r;
 }
 
-export function lireFichierClients(texte: string): { numeros: string[]; colonne: string | null; ecartes: number } {
+export type VenteLue = { numero: string; montant: number; date: string | null; reference: string | null };
+export type FichierLu = { numeros: string[]; colonne: string | null; ecartes: number; /** Ventes, si une colonne de montant est reconnue. */ ventes: VenteLue[] | null; colonneMontant: string | null; ventesEcartees: number };
+
+/** « 1 234,56 € », « 1,234.56 », « (120,00) », « -12 » ; null si ce n'est pas un montant. */
+export function lireMontant(brut: string): number | null {
+  let s = brut.replace(/[\s\u00a0\u202f€]|EUR/gi, "");
+  if (!s) return null;
+  const negatif = /^\(.*\)$/.test(s) || s.startsWith("-") || s.endsWith("-");
+  s = s.replace(/[()\-+]/g, "");
+  if (!/^\d[\d.,']*$/.test(s)) return null;
+  const dernier = Math.max(s.lastIndexOf(","), s.lastIndexOf("."));
+  // Le dernier séparateur est décimal s'il laisse un ou deux chiffres ; sinon ce sont des milliers.
+  const decimal = dernier >= 0 && s.length - dernier - 1 <= 2;
+  const n = Number(decimal ? `${s.slice(0, dernier).replace(/[.,']/g, "")}.${s.slice(dernier + 1)}` : s.replace(/[.,']/g, ""));
+  return Number.isFinite(n) ? (negatif ? -n : n) : null;
+}
+/** JJ/MM/AAAA, AAAA-MM-JJ (heure ignorée) → AAAA-MM-JJ ; null sinon. */
+export function lireDate(brut: string): string | null {
+  const s = brut.trim();
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s), fr = /^(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})/.exec(s);
+  const [a, m, j] = iso ? [iso[1], iso[2], iso[3]] : fr ? [fr[3], fr[2].padStart(2, "0"), fr[1].padStart(2, "0")] : [];
+  if (!a) return null;
+  const d = `${a}-${m}-${j}`;
+  return !Number.isNaN(Date.parse(d)) && new Date(d).toISOString().startsWith(d) ? d : null;
+}
+
+export function lireFichierClients(texte: string): FichierLu {
   const lignes = texte.replace(/^\uFEFF/, "").split(/\r?\n/).filter((l) => l.trim());
-  if (!lignes.length) return { numeros: [], colonne: null, ecartes: 0 };
+  if (!lignes.length) return { numeros: [], colonne: null, ecartes: 0, ventes: null, colonneMontant: null, ventesEcartees: 0 };
   const sep = [";", "\t", ",", "|"].map((s) => [s, lignes.slice(0, 20).reduce((n, l) => n + l.split(s).length - 1, 0)] as const).sort((a, b) => b[1] - a[1])[0];
   const table = sep[1] ? lignes.map((l) => cellules(l, sep[0])) : lignes.map((l) => [l.trim()]);
   const largeur = Math.max(...table.map((l) => l.length));
@@ -48,11 +74,25 @@ export function lireFichierClients(texte: string): { numeros: string[]; colonne:
   // Sans titre reconnu, la colonne qui contient le plus de numéros valides.
   if (k < 0) k = Array.from({ length: largeur }, (_, i) => table.reduce((n, l) => n + (lireNumero(l[i] ?? "") ? 1 : 0), 0)).reduce((m, n, i, t) => (n > t[m] ? i : m), 0);
   const titre = !lireNumero(table[0][k] ?? "") && /[a-z]/i.test(table[0][k] ?? "") ? table[0][k] : null;
-  return bilan((titre ? table.slice(1) : table).map((l) => l[k] ?? ""), largeur > 1 ? titre : null);
+  const corps = titre ? table.slice(1) : table;
+  const b = bilan(corps.map((l) => l[k] ?? ""), largeur > 1 ? titre : null);
+  // Un montant ne se devine jamais : il faut un titre qui le dise. « CA » n'en est pas un : c'est souvent celui du client, pas nos ventes.
+  const km = titre ? entete.findIndex((c, i) => i !== k && /(montant|total|vente|\bht\b|\bttc\b|amount)/.test(c) && corps.some((l) => lireMontant(l[i] ?? "") !== null)) : -1;
+  if (km < 0) return b;
+  const kd = entete.findIndex((c, i) => i !== k && i !== km && /date/.test(c));
+  const kr = entete.findIndex((c, i) => i !== k && i !== km && i !== kd && /(facture|r[ée]f[ée]rence|\br[ée]f\b|pi[èe]ce|invoice|n° ?de vente)/.test(c));
+  const ventes: VenteLue[] = [];
+  let ventesEcartees = 0;
+  for (const l of corps) {
+    const numero = lireNumero(l[k] ?? ""), montant = lireMontant(l[km] ?? "");
+    if (numero && montant !== null) ventes.push({ numero, montant, date: kd >= 0 ? lireDate(l[kd] ?? "") : null, reference: (kr >= 0 && l[kr]?.trim()) || null });
+    else ventesEcartees++;
+  }
+  return { ...b, ventes: ventes.length ? ventes : null, colonneMontant: table[0][km], ventesEcartees };
 }
-function bilan(valeurs: string[], colonne: string | null) {
+function bilan(valeurs: string[], colonne: string | null): FichierLu {
   const lus = valeurs.filter((v) => v.trim()).map(lireNumero);
-  return { numeros: [...new Set(lus.filter((x): x is string => !!x))], colonne, ecartes: lus.filter((x) => !x).length };
+  return { numeros: [...new Set(lus.filter((x): x is string => !!x))], colonne, ecartes: lus.filter((x) => !x).length, ventes: null, colonneMontant: null, ventesEcartees: 0 };
 }
 
 /** « 0,042 % » : un taux de pénétration est souvent petit, l'arrondir à 0 le ferait disparaître. */

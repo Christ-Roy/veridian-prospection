@@ -122,9 +122,80 @@ test("règles proposées : ce qui distingue vraiment les clients, avec ses deux 
   const p = await avecClients(C, () => proposerPriorite(C, m.id));
   expect(p.clients).toBe(l.length);
   const r = p.regles.find((x) => x.condition.champ === "taille")!;
-  expect(r).toMatchObject({ condition: { champ: "taille", op: "dans", valeur: [t.cle] }, part_clients_pct: 100 });
+  expect(r).toMatchObject({ condition: { champ: "taille", op: "dans", valeur: [t.cle] }, part_clients_pct: 100, part_segment_pct: expect.any(Number) });
   expect(r.part_segment_pct).toBeLessThan(50);
   expect(p.regles.some((r) => r.condition.champ === "departement" || r.condition.champ === "client")).toBe(false);
+  await prisma.atlasSegmentVersion.deleteMany({ where: { segmentId: m.id } });
+  await prisma.atlasSegment.deleteMany({ where: { tenantId: C } });
+  await prisma.atlasClient.deleteMany({ where: { tenantId: C } });
+});
+
+test("ventes : rejouables par référence, sans référence par contenu, avoirs déduits, refus par ligne, espace étanche", async () => {
+  const { importerVentes, totaux, retirerVentes, montantsParClient } = await import("@/atlas/ventes");
+  const V = randomUUID(), X = randomUUID();
+  const lot = [{ numero: "55203253400646", montant: 100.005, reference: "F1", date: "2026-03-05" }, { numero: "552032534", montant: -40 }, { numero: "542107651", montant: 10 }, { numero: "542107651", montant: 10 }];
+  expect(await importerVentes(V, "u", [...lot, { numero: "123", montant: 1 }, { numero: "552032534", montant: NaN }, { numero: "552032534", montant: 1, date: "2026-02-31" }])).toMatchObject({ recues: 7, ajoutees: 4, changees: 0, clients_ajoutes: 2, refusees: 3, exemples_refusees: [{ ligne: 5, raison: "numéro" }, { ligne: 6, raison: "montant" }, { ligne: 7, raison: "date" }], ventes: 4 });
+  expect(await importerVentes(V, "u", lot)).toMatchObject({ ajoutees: 0, changees: 0, inchangees: 4, clients_ajoutes: 0, ventes: 4 });
+  expect(await importerVentes(V, "u", [{ ...lot[0], montant: 250 }])).toMatchObject({ ajoutees: 0, changees: 1, ventes: 4, montant_total: 230, du: "2026-03-05" });
+  expect(Object.fromEntries(await montantsParClient(V))).toEqual({ "552032534": 210, "542107651": 20 });
+  expect((await sirensClients(V)).length).toBe(2);
+  expect(await totaux(X)).toMatchObject({ ventes: 0, montant_total: 0 });
+  // La même facture envoyée par deux appels en même temps : une seule.
+  await Promise.all([1, 2, 3].map(() => importerVentes(V, "u", [{ numero: "552032534", montant: 5, reference: "F9" }])));
+  expect((await totaux(V)).ventes).toBe(5);
+  expect(await retirerVentes(V, { tous: false, references: ["F9"] })).toMatchObject({ retirees: 1, ventes: 4 });
+  // Retirer le client emporte ses ventes, pas celles des autres.
+  await appel(V, "retirer_clients", { numeros: ["552032534"] });
+  expect(await totaux(V)).toMatchObject({ ventes: 2, montant_total: 20 });
+  expect((await appel(V, "importer_ventes", { ventes: lot }, "viewer")).erreur).toMatch(/outil inconnu/);
+  await appel(V, "retirer_clients", { tous: true });
+  expect((await totaux(V)).ventes).toBe(0);
+});
+test("règles d'après le montant : ce qui pèse dans les ventes, pas dans le nombre ; un seul gros client n'écrit pas la règle", async () => {
+  const { plafonner, proposerPriorite, taillePonderee } = await import("@/atlas/suggestion");
+  expect([taillePonderee([1, 1, 1, 1]), Math.round(taillePonderee([1000, 1, 1, 1]))]).toEqual([4, 1]);
+  expect(Math.max(...plafonner([...Array(40).fill(10), 100_000]))).toBe(10);
+  const C = randomUUID(), seg = await import("@/atlas/segments");
+  const DEP69 = { conditions: [{ champ: "departement", op: "dans", valeur: ["69"] }] };
+  const m = await seg.creerSegment(C, { nom: "69", filtre: DEP69 }, { id: "u", via: "interface" });
+  const rares = (await sourceMarche().repartition(DEP69, "taille")).at(-1)!;
+  const lire = async (op: string, n: number) => (await sourceMarche().apercu({ conditions: [...DEP69.conditions, { champ: "taille", op, valeur: [rares.cle] }] }, { colonnes: ["nom"], page: 1, parPage: n, tri: "score_odh" } as never)).lignes.map((l) => String(l.siren));
+  const gros = await lire("dans", 15), petits = await lire("hors", 60);
+  const vendre = (l: string[], montant: number, p: string) => prisma.atlasVente.createMany({ data: l.map((siren) => ({ tenantId: C, siren, montant, reference: `ref:${p}${siren}`, ajoutePar: "t" })) });
+  await poser(C, [...gros, ...petits]);
+  await vendre(gros, 5000, "g");
+  await vendre(petits, 100, "p");
+  (await import("@/atlas/clients")).oublierClients(C);
+  const jouer = (selon?: "clients" | "montant") => avecClients(C, () => proposerPriorite(C, m.id, selon));
+  const parMontant = await jouer();
+  expect(parMontant).toMatchObject({ selon: "montant", clients: 75, clients_avec_vente: 75, montant_total: 81_000 });
+  const regle = parMontant.regles.find((r) => r.condition.champ === "taille")!;
+  expect(regle).toMatchObject({ condition: { valeur: [rares.cle] }, part_clients_pct: 20, moyenne: 5000, moyenne_autres: 100 });
+  expect(regle.part_montant_pct).toBeGreaterThan(80);
+  const parNombre = await jouer("clients");
+  const n = parNombre.regles.find((r) => r.condition.champ === "taille" && (r.condition.valeur as string[])[0] === rares.cle);
+  expect(n?.points ?? 0).toBeLessThan(regle.points);
+  // Un seul client énorme parmi les petits : sa taille ne devient pas une règle.
+  await prisma.atlasVente.deleteMany({ where: { tenantId: C } });
+  await vendre([...gros, ...petits], 100, "e");
+  await prisma.atlasVente.updateMany({ where: { tenantId: C, siren: gros[0] }, data: { montant: 1_000_000 } });
+  const seul = await jouer("montant");
+  expect(seul.regles.find((r) => r.condition.champ === "taille" && (r.condition.valeur as string[])[0] === rares.cle)?.part_montant_pct ?? 0).toBeLessThan(40);
+  // Vingt clients valent vingt, pas leurs milliers d'euros : un écart que le hasard explique ne fait pas une règle.
+  const { juger } = await import("@/atlas/suggestion");
+  const total = await sourceMarche().compter(DEP69), k = [3, 4, 5, 6, 7, 8, 9, 10].find((x) => !juger(x, 20, rares.nombre, total) && juger(x * 100, 2000, rares.nombre, total))!;
+  expect(k).toBeDefined();
+  await prisma.atlasVente.deleteMany({ where: { tenantId: C } });
+  await prisma.atlasClient.deleteMany({ where: { tenantId: C } });
+  const vingt = [...gros.slice(0, k), ...petits.slice(0, 20 - k)];
+  await poser(C, vingt);
+  await vendre(vingt, 100, "v");
+  (await import("@/atlas/clients")).oublierClients(C);
+  const hasard = await jouer("montant");
+  expect([hasard.clients, hasard.regles.filter((x) => x.condition.champ === "taille" && (x.condition.valeur as string[])[0] === rares.cle)]).toEqual([20, []]);
+  await prisma.atlasVente.deleteMany({ where: { tenantId: C } });
+  expect(await jouer()).toMatchObject({ selon: "clients" });
+  expect(await jouer("montant")).toMatchObject({ regles: [], message: expect.stringMatching(/avec une vente/) });
   await prisma.atlasSegmentVersion.deleteMany({ where: { segmentId: m.id } });
   await prisma.atlasSegment.deleteMany({ where: { tenantId: C } });
   await prisma.atlasClient.deleteMany({ where: { tenantId: C } });

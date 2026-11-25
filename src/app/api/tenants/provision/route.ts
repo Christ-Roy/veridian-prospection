@@ -1,276 +1,71 @@
-import { NextRequest, NextResponse } from "next/server";
-import { randomBytes } from "crypto";
-import { prisma } from "@/lib/prisma";
-import { emettreJetonConnexion } from "@/lib/auth/jeton-connexion";
-import { secretCourant, verifierAppelHub } from "@/lib/hub/secrets";
-import { lierTenantHub, UUID_RE } from "@/lib/hub/link-tenant";
-import { generateApiKey, hashApiKey } from "@/lib/hub/apiKey";
-import { resolveOrCreateUserFromHub } from "@/lib/hub/identity";
-
 /**
- * Crée (idempotent) le User + Tenant local + workspace "default" + membership
- * owner côté Prisma à la suite d'un provisioning Hub.
+ * POST /api/tenants/provision — le Hub ouvre l'espace d'un client (CONTRAT-HUB §5.1, VER-263 ; src/lib/hub/ouvrir-espace.ts).
  *
- * @param userId  UUID Hub (utilisé tel quel comme id User Prospection).
- *                Le Hub doit le transmettre via `metadata.hub_user_id` ou
- *                `user_id` dans le body — sinon on skip avec un warn (le
- *                tenant existera côté Hub mais sans workspace local, le user
- *                ne pourra pas se connecter tant que le Hub n'aura pas
- *                migré au contrat v1.2).
- *
- * @returns api_key en clair (string) si une nouvelle api_key a été générée
- *          pour le workspace default — à retourner au Hub UNE SEULE FOIS.
- *          Retourne null si le workspace avait déjà une api_key (Hub déjà
- *          provisionné, on ne regénère pas pour pas casser son auth) ou
- *          si le user_id est absent (skip workspace setup).
- *
- * Best-effort : on log et on swallow les erreurs pour ne pas casser le flow
- * de provisioning principal (le Hub considère succès dès qu'on a renvoyé
- * api_key + login_url).
+ * Auth : HMAC §6.1 `{ts}.{body}`. Corps : { email, user_id, hub_tenant_id?, plan?, name?, email_proven? } (`metadata.hub_user_id` et
+ * `metadata.hub_tenant_id` lus aussi).
+ * 200 : tout est là, RELU. `created` et `cree` disent ce que cet appel a créé. Rejouer ne change rien, ni le plan ni le rôle.
+ * Refus, rien d'écrit : 400 email_required | hub_user_id_required | invalid_plan | invalid_payload, 401, 409 email_not_linkable | user_deleted |
+ * tenant_owned_by_other | tenant_soft_deleted | tenant_suspended | tenant_link_conflict, 429, 503 provision_failed.
  */
-async function ensureOwnerWorkspace(
-  userId: string,
-  email: string,
-  emailProven: boolean,
-): Promise<{ apiKey: string | null; localUserId: string } | "refused" | null> {
-  try {
-    // CONTRAT-HUB v1.5 §3.7 — `userId` reçu EST le hub_user_id.
-    // Le helper backfille hub_user_id + préserve la rétrocompat (legacy id PK).
-    const {
-      id: localUserId,
-      hubUserIdConflict,
-      emailUnproven,
-    } = await resolveOrCreateUserFromHub({
-      hubUserId: userId,
-      email,
-      emailProven,
-    });
-    // Compte local lié à une autre identité, ou adresse non prouvée : l'email ne
-    // suffit pas à l'ouvrir (§3.8).
-    if (hubUserIdConflict || emailUnproven) {
-      console.warn(
-        `[provision] refus : compte existant user=${localUserId} conflict=${hubUserIdConflict} unproven=${!!emailUnproven}`,
-      );
-      return "refused";
-    }
+import { randomBytes } from "node:crypto";
 
-    const slugBase = email.split("@")[0].toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40) || "tenant";
+import { NextRequest, NextResponse } from "next/server";
 
-    let tenant = await prisma.tenant.findFirst({
-      where: { userId: localUserId },
-      select: { id: true },
-    });
+import { emettreJetonConnexion } from "@/lib/auth/jeton-connexion";
+import { UUID_RE } from "@/lib/hub/link-tenant";
+import { ouvrirEspace, RefusOuverture } from "@/lib/hub/ouvrir-espace";
+import { secretCourant, verifierAppelHub } from "@/lib/hub/secrets";
+import { isRateLimited } from "@/lib/rate-limit";
 
-    if (!tenant) {
-      tenant = await prisma.tenant.create({
-        data: {
-          userId: localUserId,
-          name: `${email.split("@")[0]}'s Workspace`,
-          slug: `${slugBase}-${Date.now().toString(36)}`,
-          status: "active",
-        },
-        select: { id: true },
-      });
-    }
-
-    let workspace = await prisma.workspace.findFirst({
-      where: { tenantId: tenant.id, slug: "default" },
-      select: { id: true, apiKeyHash: true },
-    });
-    if (!workspace) {
-      workspace = await prisma.workspace.create({
-        data: {
-          tenantId: tenant.id,
-          name: "Default",
-          slug: "default",
-          createdBy: localUserId,
-        },
-        select: { id: true, apiKeyHash: true },
-      });
-    }
-
-    await prisma.workspaceMember.upsert({
-      where: {
-        workspaceId_userId: { workspaceId: workspace.id, userId: localUserId },
-      },
-      update: { role: "admin" },
-      create: {
-        workspaceId: workspace.id,
-        userId: localUserId,
-        role: "admin",
-        visibilityScope: "all",
-      },
-    });
-
-    // Contrat Hub §5.6 + §6.2 — Bearer api_key pour generateMagicLink.
-    // Idempotence stricte : si une api_key existe déjà pour ce workspace, on
-    // NE la regénère PAS (sinon on invalide la clé que le Hub a stockée
-    // après le premier provision). La rotation explicite passera par §5.15
-    // v1.2 quand câblée.
-    let apiKeyPlain: string | null = null;
-    if (!workspace.apiKeyHash) {
-      apiKeyPlain = generateApiKey();
-      await prisma.workspace.update({
-        where: { id: workspace.id },
-        data: {
-          apiKeyHash: hashApiKey(apiKeyPlain),
-          apiKeyCreatedAt: new Date(),
-        },
-      });
-    }
-
-    console.log(
-      `[provision] Auto-admin OK: hub_user=${userId} local_user=${localUserId} tenant=${tenant.id} workspace=${workspace.id} api_key_minted=${apiKeyPlain !== null}`,
-    );
-    return { apiKey: apiKeyPlain, localUserId };
-  } catch (err) {
-    console.error(`[provision] auto-admin upsert failed for ${email}: ${(err as Error).message}`);
-    return null;
-  }
-}
-
-// Simple in-memory rate limiter (10 requests per minute per IP)
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-
-function checkRateLimit(ip: string): boolean {
-  const now = Date.now();
-  const entry = rateLimitMap.get(ip);
-  if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + 60_000 });
-    return true;
-  }
-  if (entry.count >= 10) return false;
-  entry.count++;
-  return true;
-}
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const refus = (status: number, error: string, detail: Record<string, unknown> = {}) => NextResponse.json({ error, created: false, ...detail }, { status });
 
 export async function POST(request: NextRequest) {
-  // Rate limit
-  const ip = request.headers.get("x-forwarded-for")?.split(",")[0] || "unknown";
-  if (!checkRateLimit(ip)) {
-    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
-  }
-
-  if (!secretCourant()) {
-    return NextResponse.json({ error: "Server misconfigured" }, { status: 500 });
-  }
-
-  const rawBody = await request.text();
-
+  if (!secretCourant()) return NextResponse.json({ error: "Server misconfigured" }, { status: 500 });
+  const brut = await request.text();
   // La signature d'abord : un inconnu n'apprend rien de ce que la route attend.
-  // HMAC standard contrat §6.1 : signature dans les headers sur
-  // `${timestamp}.${rawBody}`. Seul mode accepté.
-  const headerSig = request.headers.get("x-veridian-hub-signature");
+  if (!request.headers.get("x-veridian-hub-signature")) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const v = verifierAppelHub(request, brut);
+  if (!v.ok) return NextResponse.json({ error: v.reason === "timestamp_drift" || v.reason === "invalid_timestamp" ? "Timestamp expired or invalid" : "Invalid signature" }, { status: 401 });
 
-  if (!headerSig) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  const v = verifierAppelHub(request, rawBody);
-  if (!v.ok) {
-    const error =
-      v.reason === "timestamp_drift" || v.reason === "invalid_timestamp"
-        ? "Timestamp expired or invalid"
-        : "Invalid signature";
-    return NextResponse.json({ error }, { status: 401 });
-  }
-
-  let body: {
-    email?: string;
-    plan?: string;
-    user_id?: string;
-    metadata?: { hub_user_id?: string; hub_tenant_id?: string };
-    hub_tenant_id?: string;
-    email_proven?: boolean;
-  };
+  let c: Record<string, unknown>;
   try {
-    body = rawBody ? JSON.parse(rawBody) : {};
+    c = brut ? JSON.parse(brut) : {};
   } catch {
-    return NextResponse.json({ error: "invalid_payload" }, { status: 400 });
+    return refus(400, "invalid_payload");
   }
-  const { email, plan } = body;
-  const hubUserId = body.user_id || body.metadata?.hub_user_id;
-  // Tenant côté Hub (racine ou metadata) : relie le tenant local au claim tenant_id du MCP.
-  const hubTenantIdRaw = body.hub_tenant_id ?? body.metadata?.hub_tenant_id;
-  const hubTenantId =
-    typeof hubTenantIdRaw === "string" && UUID_RE.test(hubTenantIdRaw) ? hubTenantIdRaw.toLowerCase() : null;
+  const meta = (c.metadata && typeof c.metadata === "object" ? c.metadata : {}) as Record<string, unknown>;
+  const texte = (x: unknown) => (typeof x === "string" && x.trim() ? x.trim() : null);
+  const email = texte(c.email);
+  const hubUserId = (texte(c.user_id) ?? texte(meta.hub_user_id))?.toLowerCase() ?? null;
+  const lien = texte(c.hub_tenant_id) ?? texte(meta.hub_tenant_id);
+  if (!email || email.length > 254 || !EMAIL_RE.test(email)) return refus(400, "email_required");
+  // Sans identité Hub, rien ne peut être ouvert pour personne : le dire, au lieu de rendre une fausse clé.
+  if (!hubUserId || !UUID_RE.test(hubUserId)) return refus(400, "hub_user_id_required");
+  if (lien && !UUID_RE.test(lien)) return refus(400, "invalid_payload", { field: "hub_tenant_id" });
+  if (isRateLimited(`provision:${hubUserId}`, 10, 60_000)) return refus(429, "Too many requests");
 
-  if (!email) {
-    return NextResponse.json({ error: "email is required" }, { status: 400 });
+  try {
+    const o = await ouvrirEspace({ hubUserId, email, emailProven: c.email_proven === true, hubTenantId: lien?.toLowerCase() ?? null, plan: typeof c.plan === "string" ? c.plan : undefined, nom: texte(c.name) });
+    const { jeton } = await emettreJetonConnexion(o.user_id, 24 * 3600 * 1000);
+    const { apiKey, cree, ...reste } = o;
+    console.log(`[provision] ouvert user=${o.user_id} tenant=${o.tenant_id} hub_tenant=${o.hub_tenant_id ?? "aucun"} plan=${o.plan} cree=${Object.entries(cree).filter(([, x]) => x).map(([k]) => k).join("+") || "rien"}`);
+    const app = process.env.APP_URL || process.env.NEXT_PUBLIC_SITE_URL || "";
+    return NextResponse.json({
+      ...reste,
+      created: cree.espace,
+      cree,
+      // Le Hub garde ce champ comme marque « app attachée ». Rejoué, la vraie clé ne se relit pas : une valeur sans usage, dite telle.
+      api_key: apiKey ?? randomBytes(32).toString("hex"),
+      api_key_minted: apiKey !== null,
+      login_url: `${app}/api/auth/token?t=${jeton}`,
+    });
+  } catch (e) {
+    if (e instanceof RefusOuverture) {
+      console.warn(`[provision] refus code=${e.code} hub_user=${hubUserId}`);
+      return refus(e.statut, e.code, e.detail);
+    }
+    console.error(`[provision] échec hub_user=${hubUserId} :`, e instanceof Error ? e.message : e);
+    return refus(503, "provision_failed");
   }
-
-  // Lien de connexion à usage unique (distinct de l'api_key §6.2) : jeton lié au propriétaire et haché
-  // (sso_login_tokens), plus en clair sur le tenant (audit 11/07, M6). Sans tenant, il n'est pas persisté.
-  let loginToken = randomBytes(32).toString("hex");
-  const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_SITE_URL || "";
-
-  console.log(`[provision] Generated token for ${email}, plan=${plan || "freemium"}`);
-
-  // api_key §6.2 — générée et persistée (hashée) par ensureOwnerWorkspace
-  // côté workspace default. Sur premier provision : on récupère le plain
-  // pour le retourner au Hub. Sur replay : workspace.apiKeyHash existe déjà,
-  // ensureOwnerWorkspace retourne null. Dans ce cas on retourne une clé
-  // éphémère placeholder (le Hub a déjà la vraie clé en stockage). Le Hub
-  // sait que sur replay sa propre copie reste valide (cf §5.1 idempotence).
-  let apiKey: string;
-
-  // Best-effort: create User + Tenant + Default workspace + admin membership.
-  // Requiert `user_id` (ou `metadata.hub_user_id`) dans le body — sinon on
-  // skip avec warning. Le Hub doit migrer vers le contrat v1.2 §5.1 pour
-  // débloquer ce flow (cf todo/2026-05-19-hub-contract-conformity.md).
-  if (hubUserId) {
-    const ensured = await ensureOwnerWorkspace(hubUserId, email, body.email_proven === true);
-    if (ensured === "refused") {
-      return NextResponse.json({ error: "email_not_linkable" }, { status: 409 });
-    }
-    if (ensured?.apiKey) {
-      apiKey = ensured.apiKey;
-    } else {
-      // Replay sur workspace existant — placeholder, Hub utilise sa propre copie.
-      apiKey = randomBytes(32).toString("hex");
-      console.log(
-        `[provision] Replay detected for ${email} — workspace already has api_key, returning placeholder`,
-      );
-    }
-
-    // Persiste le token autologin sur le tenant local de cet user. Sans ça,
-    // le GET /api/auth/token?t=... qui suit ne trouvera rien et redirigera
-    // sur /login → user pense que sa session ne marche pas (bug observé sur
-    // staging avant ce fix).
-    // Lookup tenant par localUserId (peut différer de hubUserId dans le cas
-    // legacy email-matched, cf helper §3.7).
-    const lookupUserId = ensured?.localUserId ?? hubUserId;
-    try {
-      const tenant = await prisma.tenant.findFirst({
-        where: { userId: lookupUserId, deletedAt: null },
-        select: { id: true, hubTenantId: true },
-      });
-      if (tenant) {
-        loginToken = (await emettreJetonConnexion(lookupUserId, 24 * 3600 * 1000)).jeton;
-        if (hubTenantId) await lierTenantHub(tenant, hubTenantId);
-      } else {
-        console.warn(
-          `[provision] No tenant found for hub_user_id=${hubUserId} → token not persisted, autologin will fail`,
-        );
-      }
-    } catch (err) {
-      console.error(
-        `[provision] Failed to persist login_token for ${email}: ${(err as Error).message}`,
-      );
-    }
-  } else {
-    console.warn(
-      `[provision] No user_id in body for ${email} — skipping workspace setup. Hub must send metadata.hub_user_id (contrat v1.2).`,
-    );
-    // Pas de hub_user_id → pas de workspace setup → on retourne un placeholder
-    // (le Hub legacy ne sait pas appeler generateMagicLink de toute façon).
-    apiKey = randomBytes(32).toString("hex");
-  }
-
-  return NextResponse.json({
-    tenant_id: email,
-    api_key: apiKey,
-    login_url: `${appUrl}/api/auth/token?t=${loginToken}`,
-    plan: plan || "freemium",
-    created: true,
-  });
 }

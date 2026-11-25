@@ -4,7 +4,7 @@
  * compte) : source simulée déterministe, signalée par `simulee: true` dans chaque réponse.
  */
 import { CHAMP, CHAMPS, type Champ } from "./champs";
-import { motifMot, type CodeActivite } from "./activites";
+import { motifMot, motsCles, type CodeActivite } from "./activites";
 import type { Arret } from "./parcours";
 import { clientsCourants } from "./clients-portee";
 import { COLONNES_MAITRE, TABLE_MAITRE, compilerMaitre, conditionNom } from "./maitre";
@@ -716,7 +716,9 @@ function vraie(c: Condition, l: Ligne): boolean {
   if (x === null || x === undefined) return false;
   switch (c.op) {
     case "egal": return x === v;
-    case "contient": return String(x).toLowerCase().includes(String(v).toLowerCase());
+    case "contient":
+      if (champ.id === "nom" && motsCles(String(v)).length) return motsCles(String(v)).every((m) => new RegExp(motifMot(m)).test(String(x).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()));
+      return String(x).toLowerCase().includes(String(v).toLowerCase());
     case "dans": return (Array.isArray(v) ? v.map(String) : [String(v)]).includes(String(x));
     case "hors": return !(Array.isArray(v) ? v.map(String) : [String(v)]).includes(String(x));
     case "min": return Number(x) >= Number(v);

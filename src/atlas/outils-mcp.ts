@@ -24,6 +24,7 @@ import { accorderAcces, creerCle, droits, listerAccesAvances, listerCles, RefusA
 import { LIGNES_MAX_SQL, TABLES_SQL, verifierRequete } from "./sql";
 import { FiltreInvalide } from "./filtres";
 import { proposerPriorite } from "./suggestion";
+import { importerVentes, retirerVentes, totaux, VENTES_PAR_APPEL, type VenteEntree } from "./ventes";
 import { sourceMarche } from "./source";
 import { liensIA } from "@/lib/hub/liens-ia-client";
 
@@ -461,6 +462,29 @@ const OUTILS_BRUTS: Outil[] = [
     }),
   },
   {
+    name: "importer_ventes",
+    title: "Importer ses ventes",
+    description:
+      `Enregistre des ventes par SIREN ou SIRET : montant en euros (avoir négatif), date AAAA-MM-JJ et référence facultatives (${VENTES_PAR_APPEL} par appel). ` +
+      "La même référence remplace, jamais ne double ; l'entreprise devient cliente. Sert à proposer_priorite.",
+    input: z.object({ ventes: z.array(z.object({ numero: z.string().max(40), montant: z.number(), date: z.string().max(10).nullish(), reference: z.string().max(120).nullish() }).strict()).min(1).max(VENTES_PAR_APPEL) }),
+    annotations: { ...ECRITURE, idempotentHint: true },
+    visible: peutEcrire,
+    run: lisible(async (a, c) => importerVentes(c.ctx.tenantId, auteur(c).id, a.ventes as VenteEntree[])),
+  },
+  {
+    name: "retirer_ventes",
+    title: "Retirer des ventes",
+    description: "Retire des ventes par référence, ou toutes avec tous = true (demandez d'abord à l'utilisateur). Les clients restent.",
+    input: z.object({ references: z.array(z.string().max(120)).max(5000).default([]), tous: z.boolean().default(false) }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    visible: peutEcrire,
+    run: lisible(async (a, c) => {
+      if (!a.tous && !(a.references as string[]).length) throw new ErreurOutil("Donnez des références, ou tous = true.");
+      return retirerVentes(c.ctx.tenantId, { tous: a.tous as boolean, references: a.references as string[] });
+    }),
+  },
+  {
     name: "penetration_marche",
     title: "Taux de pénétration",
     description:
@@ -476,7 +500,7 @@ const OUTILS_BRUTS: Outil[] = [
   {
     name: "clients_resume",
     title: "Clients et pénétration par marché",
-    description: "Nombre de clients importés et taux de pénétration de chacun des marchés de l'espace (12 au plus).",
+    description: "Nombre de clients importés, ventes (nombre, montant, période) et taux de pénétration de chacun des marchés de l'espace (12 au plus).",
     input: z.object({}),
     annotations: LECTURE,
     run: lisible(async (_a, c) => {
@@ -487,7 +511,7 @@ const OUTILS_BRUTS: Outil[] = [
         const p = await penetration(c.ctx.tenantId, await seg.filtreEffectif(c.ctx.tenantId, m.id));
         lignes.push({ segment_id: m.id, nom: m.nom, clients: p.clients_dans_le_marche, entreprises: p.entreprises_du_marche, taux_pct: p.taux_pct, conditions_ignorees: p.conditions_ignorees.length });
       }
-      return avecSource({ clients: total, maximum: CLIENTS_MAX, marches: lignes, peut_ecrire: peutEcrire(c) });
+      return avecSource({ clients: total, maximum: CLIENTS_MAX, ...(await totaux(c.ctx.tenantId)), marches: lignes, peut_ecrire: peutEcrire(c) });
     }),
   },
   {
@@ -593,11 +617,11 @@ const OUTILS_BRUTS: Outil[] = [
     name: "proposer_priorite",
     title: "Proposer des règles de priorité",
     description:
-      "Propose des règles de priorité d'après les clients importés (importer_clients) : ce qui est nettement plus fréquent chez eux que dans le segment, avec les deux " +
-      "pourcentages. À relire avec l'utilisateur puis à poser par definir_scoring.",
-    input: z.object({ segment_id: SEGMENT }),
+      "Propose des règles de priorité d'après les ventes (importer_ventes) ou les clients (importer_clients) : ce qui pèse nettement plus chez eux que dans le segment, " +
+      "parts à l'appui. Par défaut selon le montant s'il y a des ventes. À relire avec l'utilisateur puis à poser par definir_scoring.",
+    input: z.object({ segment_id: SEGMENT, selon: z.enum(["clients", "montant"]).optional() }),
     annotations: LECTURE,
-    run: lisible(async (a, c) => avecSource(await proposerPriorite(c.ctx.tenantId, a.segment_id as string))),
+    run: lisible(async (a, c) => avecSource(await proposerPriorite(c.ctx.tenantId, a.segment_id as string, a.selon as "clients" | "montant" | undefined))),
   },
   {
     name: "classer_segment",

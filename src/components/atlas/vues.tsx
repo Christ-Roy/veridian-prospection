@@ -502,14 +502,14 @@ export function VuePriorite({
   const proposer = async () => {
     setPropose({ busy: true, texte: null });
     try {
-      const r = await appeler<{ clients: number; message?: string; regles: { condition: Critere; libelle: string; points: number; part_clients_pct: number; part_segment_pct: number }[] }>("proposer_priorite", { segment_id: segmentId });
+      const r = await appeler<{ clients: number; message?: string; regles: { condition: Critere; libelle: string; points: number; part_clients_pct: number; part_segment_pct: number; part_montant_pct?: number; moyenne?: number; moyenne_autres?: number }[] }>("proposer_priorite", { segment_id: segmentId });
       // Une règle déjà dans la liste ne s'ajoute pas deux fois.
       const corps = (c: Critere) => JSON.stringify(lignesDepuis([c]).map(({ champ, op, saisie }) => [champ, op, saisie]));
       const deja = new Set(lignes.map(({ champ, op, saisie }) => JSON.stringify([[champ, op, saisie]])));
       const neuves = r.regles.filter((x) => !deja.has(corps({ ...x.condition, poids: x.points })));
       if (neuves.length) setLignes((l) => [...l, ...lignesDepuis(neuves.map((x) => ({ ...x.condition, poids: x.points })))]);
       const pct = (n: number) => n.toLocaleString("fr-FR", { maximumFractionDigits: 1 });
-      setPropose({ busy: false, texte: r.message ?? r.regles.map((x) => `${x.libelle} : ${pct(x.part_clients_pct)} % de vos clients, ${pct(x.part_segment_pct)} % de la cible`).join(" · ") });
+      setPropose({ busy: false, texte: r.message ?? r.regles.map((x) => `${x.libelle} : ${x.part_montant_pct !== undefined ? `${pct(x.part_montant_pct)} % de vos ventes (${pct(x.moyenne ?? 0)} € par client contre ${pct(x.moyenne_autres ?? 0)} €)` : `${pct(x.part_clients_pct)} % de vos clients`}, ${pct(x.part_segment_pct)} % de la cible`).join(" · ") });
     } catch (e) {
       setPropose({ busy: false, texte: texteErreur(e) });
     }
@@ -539,7 +539,7 @@ export function VuePriorite({
               {copie ? "Demande copiée" : "Copier la demande pour l'IA"}
             </button>
             <button type="button" className="btn" disabled={propose.busy} onClick={() => void proposer()}>
-              {propose.busy ? "Comparaison…" : "Proposer d'après mes clients"}
+              {propose.busy ? "Comparaison…" : "Proposer d'après mes clients et ventes"}
             </button>
             {propose.texte && <span role="status">{propose.texte}</span>}
           </div>

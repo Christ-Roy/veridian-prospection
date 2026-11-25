@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { appeler, estAnnulation, texteErreur } from "./api";
 import { lireFichierClients, pourcent } from "./clients-logique";
@@ -8,7 +8,8 @@ import { Chargement, Icone } from "./icones";
 import { formaterNombre } from "./logique";
 import { Volet } from "./volets";
 
-type Resume = { clients: number; maximum: number; peut_ecrire: boolean; marches: { segment_id: string; nom: string; clients: number; entreprises: number; taux_pct: number | null; conditions_ignorees: number }[] };
+type Resume = { clients: number; maximum: number; ventes: number; montant_total: number; du: string | null; au: string | null; peut_ecrire: boolean; marches: { segment_id: string; nom: string; clients: number; entreprises: number; taux_pct: number | null; conditions_ignorees: number }[] };
+type ImportVentes = { ajoutees: number; changees: number; inchangees: number; refusees: number; clients_ajoutes: number; ventes: number; montant_total: number };
 type Import = { recus: number; ajoutes: number; deja: number; invalides: number; exemples_invalides: string[]; total: number };
 
 const LOT = 5000;
@@ -20,7 +21,7 @@ export function VoletClients({ onChoisir, onChange, onFermer }: { onChoisir: (se
   const [fichier, setFichier] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
-  const [fait, setFait] = useState<Import | null>(null);
+  const [fait, setFait] = useState<string | null>(null);
   const lire = useCallback(
     (signal?: AbortSignal) =>
       appeler<Resume>("clients_resume", {}, signal).then((r) => {
@@ -35,7 +36,8 @@ export function VoletClients({ onChoisir, onChange, onFermer }: { onChoisir: (se
     return () => ctl.abort();
   }, [lire]);
 
-  const { numeros, colonne, ecartes } = lireFichierClients(texte);
+  const { numeros, colonne, ecartes, ventes, colonneMontant, ventesEcartees } = useMemo(() => lireFichierClients(texte), [texte]);
+  const euros = (n: number) => n.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
   const charger = async (f: File | undefined) => {
     if (!f) return;
     setErreur(null);
@@ -52,6 +54,23 @@ export function VoletClients({ onChoisir, onChange, onFermer }: { onChoisir: (se
     setBusy(true);
     setErreur(null);
     try {
+      if (ventes) {
+        const v = { ajoutees: 0, changees: 0, inchangees: 0, clients_ajoutes: 0, total: 0, montant: 0 };
+        for (let i = 0; i < ventes.length; i += LOT) {
+          const r = await appeler<ImportVentes>("importer_ventes", { ventes: ventes.slice(i, i + LOT) });
+          v.ajoutees += r.ajoutees;
+          v.changees += r.changees;
+          v.inchangees += r.inchangees;
+          v.clients_ajoutes += r.clients_ajoutes;
+          v.total = r.ventes;
+          v.montant = r.montant_total;
+        }
+        setFait(`${formaterNombre(v.ajoutees)} vente${v.ajoutees > 1 ? "s" : ""} ajoutée${v.ajoutees > 1 ? "s" : ""}${v.changees ? `, ${formaterNombre(v.changees)} corrigée${v.changees > 1 ? "s" : ""}` : ""}${v.inchangees ? `, ${formaterNombre(v.inchangees)} déjà là` : ""}, ${formaterNombre(v.clients_ajoutes)} nouveau${v.clients_ajoutes > 1 ? "x" : ""} client${v.clients_ajoutes > 1 ? "s" : ""}. ${formaterNombre(v.total)} ventes en tout, ${euros(v.montant)}.`);
+        setTexte("");
+        setFichier(null);
+        await lire();
+        return;
+      }
       const somme: Import = { recus: 0, ajoutes: 0, deja: 0, invalides: 0, exemples_invalides: [], total: 0 };
       for (let i = 0; i < numeros.length; i += LOT) {
         const r = await appeler<Import>("importer_clients", { numeros: numeros.slice(i, i + LOT) });
@@ -60,7 +79,7 @@ export function VoletClients({ onChoisir, onChange, onFermer }: { onChoisir: (se
         somme.deja += r.deja;
         somme.total = r.total;
       }
-      setFait(somme);
+      setFait(`${formaterNombre(somme.ajoutes)} ajouté${somme.ajoutes > 1 ? "s" : ""}${somme.deja ? `, ${formaterNombre(somme.deja)} déjà là` : ""}. ${formaterNombre(somme.total)} clients en tout.`);
       setTexte("");
       setFichier(null);
       await lire();
@@ -71,7 +90,7 @@ export function VoletClients({ onChoisir, onChange, onFermer }: { onChoisir: (se
     }
   };
   const vider = async () => {
-    if (!window.confirm(`Retirer les ${formaterNombre(resume?.clients ?? 0)} clients importés ? Vos marchés ne changent pas.`)) return;
+    if (!window.confirm(`Retirer les ${formaterNombre(resume?.clients ?? 0)} clients importés et leurs ventes ? Vos marchés ne changent pas.`)) return;
     try {
       await appeler("retirer_clients", { tous: true });
       setFait(null);
@@ -86,7 +105,8 @@ export function VoletClients({ onChoisir, onChange, onFermer }: { onChoisir: (se
     <Volet titre="Mes clients" sous={resume ? `${formaterNombre(resume.clients)} client${resume.clients > 1 ? "s" : ""} importé${resume.clients > 1 ? "s" : ""}` : undefined} large onFermer={onFermer}>
       <p className="hint">
         Importez vos clients par SIREN ou SIRET : Atlas mesure votre part de chaque marché, les signale dans les listes, et le filtre « Est déjà
-        client » les écarte de vos cibles. Seul le numéro est gardé.
+        client » les écarte de vos cibles. Un fichier de ventes (avec une colonne de montant, et si possible de date et de facture) sert aussi à
+        proposer des règles de priorité. On garde le numéro, le montant, la date et la référence, rien d&apos;autre.
       </p>
       {erreur && (
         <p className="err" role="alert">
@@ -105,14 +125,16 @@ export function VoletClients({ onChoisir, onChange, onFermer }: { onChoisir: (se
           {!fichier && <textarea className="saisie-liste" rows={4} aria-label="Ou collez vos numéros" value={texte} onChange={(e) => (setTexte(e.target.value), setFait(null))} placeholder={"Ou collez vos SIREN ou SIRET, un par ligne"} />}
           {texte && (
             <p className="callout">
-              {numeros.length
+              {ventes
+                ? `${formaterNombre(ventes.length)} vente${ventes.length > 1 ? "s" : ""} lue${ventes.length > 1 ? "s" : ""}, ${euros(ventes.reduce((a, v) => a + v.montant, 0))} (colonne « ${colonneMontant} »), chez ${formaterNombre(numeros.length)} entreprise${numeros.length > 1 ? "s" : ""}${ventesEcartees ? ` · ${formaterNombre(ventesEcartees)} ligne${ventesEcartees > 1 ? "s" : ""} écartée${ventesEcartees > 1 ? "s" : ""} (numéro ou montant illisible)` : ""}`
+                : numeros.length
                 ? `${formaterNombre(numeros.length)} entreprise${numeros.length > 1 ? "s" : ""} reconnue${numeros.length > 1 ? "s" : ""}${colonne ? ` dans la colonne « ${colonne} »` : ""}${ecartes ? ` · ${formaterNombre(ecartes)} valeur${ecartes > 1 ? "s" : ""} écartée${ecartes > 1 ? "s" : ""} (numéro incomplet ou faux)` : ""}`
                 : "Aucun SIREN ni SIRET valide reconnu."}
             </p>
           )}
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             <button type="button" className="btn pri" disabled={busy || !numeros.length} onClick={() => void importer()}>
-              {busy ? "Import…" : `Importer ${numeros.length ? formaterNombre(numeros.length) : ""} client${numeros.length > 1 ? "s" : ""}`}
+              {busy ? "Import…" : ventes ? `Importer ${formaterNombre(ventes.length)} vente${ventes.length > 1 ? "s" : ""}` : `Importer ${numeros.length ? formaterNombre(numeros.length) : ""} client${numeros.length > 1 ? "s" : ""}`}
             </button>
             {texte && !busy && (
               <button type="button" className="btn ghost" onClick={() => (setTexte(""), setFichier(null))}>
@@ -129,12 +151,17 @@ export function VoletClients({ onChoisir, onChange, onFermer }: { onChoisir: (se
       )}
       {fait && (
         <p className="callout" role="status">
-          {formaterNombre(fait.ajoutes)} ajouté{fait.ajoutes > 1 ? "s" : ""}
-          {fait.deja ? `, ${formaterNombre(fait.deja)} déjà là` : ""}. {formaterNombre(fait.total)} clients en tout.
+          {fait}
         </p>
       )}
       {resume && resume.clients > 0 && (
         <div className="block">
+          {resume.ventes > 0 && (
+            <p className="hint">
+              {formaterNombre(resume.ventes)} ventes, {euros(resume.montant_total)}
+              {resume.du ? `, du ${new Date(resume.du).toLocaleDateString("fr-FR")} au ${new Date(resume.au!).toLocaleDateString("fr-FR")}` : ""}.
+            </p>
+          )}
           <h3>Part de vos marchés</h3>
           {resume.marches.length === 0 && <p className="empty">Créez un marché pour voir votre part.</p>}
           <div className="hbars">

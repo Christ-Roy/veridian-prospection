@@ -10,6 +10,7 @@ import { z } from "zod";
 
 import { CHAMP, OPERATEURS, type Champ } from "./champs";
 import { clientsCourants } from "./clients-portee";
+import { formesFamille, motsCles } from "./activites";
 import { devine } from "./restreint";
 
 const ConditionSchema = z
@@ -134,6 +135,11 @@ function compilerCondition(c: Condition, i: number, p: (type: string, v: unknown
   switch (champ.type) {
     case "texte":
       if (typeof v !== "string" || !v.trim()) throw err("un texte");
+      if (champ.id === "nom" && c.op === "contient") {
+        // Même recherche que le marché (mots entiers de la famille, enseigne comprise) : un même mot rend le même nombre partout.
+        const mots = motsCles(v);
+        if (mots.length) return `siren IN (SELECT siren FROM odh.company_master_current WHERE ${mots.map((m) => `hasAnyTokens(name_terms, ${p("Array(String)", formesFamille(m))})`).join(" AND ")})`;
+      }
       return c.op === "egal" ? `${col} = ${p("String", v)}` : `positionCaseInsensitiveUTF8(${col}, ${p("String", v)}) > 0`;
     case "liste": {
       const l = Array.isArray(v) ? v.map(String) : typeof v === "string" ? [v] : null;

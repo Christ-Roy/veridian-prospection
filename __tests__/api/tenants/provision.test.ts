@@ -1,484 +1,98 @@
 /**
- * Tests de la route POST /api/tenants/provision (callable par le Hub).
- *
- * Couvre l'authentification :
- *  - HMAC standard `{ts}.{body}` dans les headers (contrat §6.1), seul mode accepté
- *  - Anciens chemins refusés même avec le bon secret : HMAC `email:ts` dans le
- *    body, `Authorization: Bearer <secret>`
- *
- * Plus :
- *  - 400 si email manquant
- *  - 500 si secret non configuré
- *  - 401 si signature invalide / timestamp drift / body modifié
- *  - 429 si rate limit atteint (10/min/IP)
+ * POST /api/tenants/provision : la porte seulement (signature, lecture du corps, refus). L'ouverture elle-même est éprouvée sur vraie base :
+ * e2e/integration/provision.test.ts.
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { describe, expect, test, vi, beforeEach } from "vitest";
-import { createHmac } from "crypto";
+import { createHmac } from "node:crypto";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 vi.hoisted(() => {
   process.env.HUB_API_SECRET = "test-secret-xyz";
-  process.env.TENANT_API_SECRET = "test-secret-xyz";
 });
-
-const { prismaCtorMock } = vi.hoisted(() => ({
-  prismaCtorMock: vi.fn(),
-}));
-
-vi.mock("@/lib/prisma", () => {
-  class PrismaClient {
-    user = { upsert: vi.fn() };
-    tenant = {
-      findFirst: vi.fn().mockResolvedValue(null),
-      create: vi.fn().mockResolvedValue({ id: "tenant-id" }),
-      // Update appelé pour persister prospectionLoginToken (2026-05-20 fix
-      // autologin Hub→Prospection). Le ensureOwnerWorkspace fait findFirst→null
-      // puis create, ensuite le bloc de persistance token refait findFirst pour
-      // récupérer l'id. Premier appel à findFirst dans le test = null (cas
-      // create), 2e = celui qui sera utilisé pour l'update token.
-      update: vi.fn().mockResolvedValue({ id: "tenant-id" }),
-    };
-    workspace = {
-      findFirst: vi.fn().mockResolvedValue(null),
-      create: vi.fn().mockResolvedValue({ id: "ws-id", apiKeyHash: null }),
-      update: vi.fn().mockResolvedValue({ id: "ws-id" }),
-    };
-    workspaceMember = { upsert: vi.fn() };
-    ssoLoginToken = { deleteMany: vi.fn().mockResolvedValue({ count: 0 }), create: vi.fn().mockResolvedValue({}) };
-    constructor() {
-      prismaCtorMock();
+const m = vi.hoisted(() => ({ ouvrir: vi.fn() }));
+vi.mock("@/lib/hub/ouvrir-espace", () => {
+  class RefusOuverture extends Error {
+    constructor(readonly code: string, readonly statut: number, readonly detail: Record<string, unknown> = {}) {
+      super(code);
     }
   }
-  return { prisma: new PrismaClient() };
+  return { RefusOuverture, ouvrirEspace: m.ouvrir };
 });
-
-// CONTRAT-HUB v1.5 §3.7 — le helper d'identité est testé séparément
-// (__tests__/lib/hub/identity.test.ts). Ici on mocke pour isoler la route.
-const { resolveOrCreateUserFromHubMock } = vi.hoisted(() => ({
-  resolveOrCreateUserFromHubMock: vi.fn(),
-}));
-vi.mock("@/lib/hub/identity", () => ({
-  resolveOrCreateUserFromHub: resolveOrCreateUserFromHubMock,
-}));
-
+vi.mock("@/lib/auth/jeton-connexion", () => ({ emettreJetonConnexion: async () => ({ jeton: "jeton-unique" }) }));
 
 import { POST } from "@/app/api/tenants/provision/route";
+import { RefusOuverture } from "@/lib/hub/ouvrir-espace";
 import { makeRequest, readJson } from "../_helpers";
 
-const SECRET = "test-secret-xyz";
-
-/** Ancien format `email:ts` dans le body : doit être refusé. */
-function legacySignedBody(email: string) {
-  const ts = Date.now();
-  return {
-    email,
-    timestamp: ts,
-    signature: createHmac("sha256", SECRET).update(`${email}:${ts}`).digest("hex"),
-  };
+const HUB = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", ORG = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+let n = 0;
+const hubNeuf = () => `aaaaaaaa-aaaa-4aaa-8aaa-${String(++n).padStart(12, "0")}`;
+function entetes(corps: string, o: { driftMs?: number; badSig?: boolean } = {}) {
+  const ts = Date.now() + (o.driftMs ?? 0);
+  return { "x-veridian-timestamp": String(ts), "x-veridian-hub-signature": o.badSig ? "00".repeat(32) : createHmac("sha256", "test-secret-xyz").update(`${ts}.${corps}`).digest("hex") };
 }
-
-/** Standard HMAC : signature `{ts}.{rawBody}` dans les headers `X-Veridian-*`. */
-function standardHeaders(
-  rawBody: string,
-  extras: { driftMs?: number; badSig?: boolean } = {},
-): Record<string, string> {
-  const ts = Date.now() + (extras.driftMs ?? 0);
-  const sig = extras.badSig
-    ? "00".repeat(32)
-    : createHmac("sha256", SECRET).update(`${ts}.${rawBody}`).digest("hex");
-  return {
-    "x-veridian-timestamp": String(ts),
-    "x-veridian-hub-signature": sig,
-  };
+async function poster(corps: unknown, o: { driftMs?: number; badSig?: boolean; headers?: Record<string, string> } = {}) {
+  const brut = typeof corps === "string" ? corps : JSON.stringify(corps);
+  const r = await POST(makeRequest("/api/tenants/provision", { method: "POST", headers: o.headers ?? entetes(brut, o), body: brut }));
+  return { s: r.status, j: (await readJson(r)) as Record<string, unknown> };
 }
+beforeEach(() => {
+  m.ouvrir.mockReset();
+  m.ouvrir.mockResolvedValue({ user_id: "u", tenant_id: "t", hub_tenant_id: ORG, workspace_id: "w", role: "admin", plan: "freemium", status: "active", name: "N", cree: { compte: true, espace: true, atelier: true, membre: true, lien: true }, apiKey: "cle-tiree" });
+});
 
-describe("POST /api/tenants/provision", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    // Default : le helper renvoie le hubUserId reçu en localUserId (rétrocompat).
-    resolveOrCreateUserFromHubMock.mockImplementation(
-      async ({ hubUserId }: { hubUserId: string; email: string }) => ({
-        id: hubUserId,
-        createdByHub: true,
-        hubUserIdConflict: false,
-      }),
-    );
-  });
-
-  test("returns 400 when email missing", async () => {
-    const req = makeRequest("/api/tenants/provision", {
-      method: "POST",
-      headers: {
-        ...standardHeaders("{}"),
-        "x-forwarded-for": `10.0.0.${Math.floor(Math.random() * 250)}`,
-      },
-      body: "{}",
-    });
-    const res = await POST(req);
-    expect(res.status).toBe(400);
-  });
-
-  test("returns 401 on invalid HMAC signature", async () => {
-    const req = makeRequest("/api/tenants/provision", {
-      method: "POST",
-      headers: {
-        ...standardHeaders(JSON.stringify({ email: "client@example.com" }), { badSig: true }),
-        "x-forwarded-for": `10.0.1.${Math.floor(Math.random() * 250)}`,
-      },
-      body: JSON.stringify({ email: "client@example.com" }),
-    });
-    const res = await POST(req);
-    expect(res.status).toBe(401);
-    const body = (await readJson(res)) as { error: string };
-    expect(body.error).toBe("Invalid signature");
-  });
-
-  test("returns 401 when timestamp drift > 5min", async () => {
-    const req = makeRequest("/api/tenants/provision", {
-      method: "POST",
-      headers: {
-        // 6 min in the past
-        ...standardHeaders(JSON.stringify({ email: "client@example.com" }), { driftMs: -6 * 60 * 1000 }),
-        "x-forwarded-for": `10.0.2.${Math.floor(Math.random() * 250)}`,
-      },
-      body: JSON.stringify({ email: "client@example.com" }),
-    });
-    const res = await POST(req);
-    expect(res.status).toBe(401);
-    const body = (await readJson(res)) as { error: string };
-    expect(body.error).toBe("Timestamp expired or invalid");
-  });
-
-  test("returns 401 on legacy Bearer, même avec le bon secret", async () => {
-    const req = makeRequest("/api/tenants/provision", {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${SECRET}`,
-        "x-forwarded-for": `10.0.3.${Math.floor(Math.random() * 250)}`,
-      },
-      body: { email: "client@example.com" },
-    });
-    const res = await POST(req);
-    expect(res.status).toBe(401);
-    expect(resolveOrCreateUserFromHubMock).not.toHaveBeenCalled();
-  });
-
-  test("returns 401 on legacy HMAC email:ts, même bien signé", async () => {
-    const req = makeRequest("/api/tenants/provision", {
-      method: "POST",
-      headers: { "x-forwarded-for": `10.0.5.${Math.floor(Math.random() * 250)}` },
-      body: legacySignedBody("client@example.com"),
-    });
-    const res = await POST(req);
-    expect(res.status).toBe(401);
-    expect(resolveOrCreateUserFromHubMock).not.toHaveBeenCalled();
-  });
-
-  test("returns 200 + credentials on valid HMAC", async () => {
-    const req = makeRequest("/api/tenants/provision", {
-      method: "POST",
-      headers: {
-        ...standardHeaders(JSON.stringify({ email: "client@example.com", plan: "pro" })),
-        "x-forwarded-for": `10.0.4.${Math.floor(Math.random() * 250)}`,
-      },
-      body: JSON.stringify({ email: "client@example.com", plan: "pro" }),
-    });
-    const res = await POST(req);
-    expect(res.status).toBe(200);
-
-    const body = (await readJson(res)) as {
-      tenant_id: string;
-      api_key: string;
-      login_url: string;
-      plan: string;
-      created: boolean;
-    };
-    expect(body.tenant_id).toBe("client@example.com");
-    expect(body.api_key).toMatch(/^[a-f0-9]{64}$/);
-    expect(body.login_url).toContain("/api/auth/token?t=");
-    expect(body.plan).toBe("pro");
-    expect(body.created).toBe(true);
-  });
-
-  test("defaults to freemium when no plan provided", async () => {
-    const raw = JSON.stringify({ email: "client@example.com" });
-    const req = makeRequest("/api/tenants/provision", {
-      method: "POST",
-      headers: {
-        ...standardHeaders(raw),
-        "x-forwarded-for": `10.0.6.${Math.floor(Math.random() * 250)}`,
-      },
-      body: raw,
-    });
-    const res = await POST(req);
-    expect(res.status).toBe(200);
-    const body = (await readJson(res)) as { plan: string };
-    expect(body.plan).toBe("freemium");
-  });
-
-  // === Pattern A — HMAC standard contrat §6.1 ===
-
-  test("returns 200 on standard HMAC {ts}.{body} dans les headers", async () => {
-    const bodyObj = { email: "client@example.com", plan: "pro" };
-    const raw = JSON.stringify(bodyObj);
-    const req = makeRequest("/api/tenants/provision", {
-      method: "POST",
-      headers: {
-        ...standardHeaders(raw),
-        "x-forwarded-for": `10.0.10.${Math.floor(Math.random() * 250)}`,
-      },
-      body: raw,
-    });
-    const res = await POST(req);
-    expect(res.status).toBe(200);
-    const body = (await readJson(res)) as { plan: string };
-    expect(body.plan).toBe("pro");
-  });
-
-  test("returns 401 si standard HMAC signe mal le body", async () => {
-    const raw = JSON.stringify({ email: "client@example.com" });
-    const req = makeRequest("/api/tenants/provision", {
-      method: "POST",
-      headers: {
-        ...standardHeaders(raw, { badSig: true }),
-        "x-forwarded-for": `10.0.11.${Math.floor(Math.random() * 250)}`,
-      },
-      body: raw,
-    });
-    const res = await POST(req);
-    expect(res.status).toBe(401);
-  });
-
-  test("returns 401 si standard HMAC en drift > 5min", async () => {
-    const raw = JSON.stringify({ email: "client@example.com" });
-    const req = makeRequest("/api/tenants/provision", {
-      method: "POST",
-      headers: {
-        ...standardHeaders(raw, { driftMs: -6 * 60 * 1000 }),
-        "x-forwarded-for": `10.0.12.${Math.floor(Math.random() * 250)}`,
-      },
-      body: raw,
-    });
-    const res = await POST(req);
-    expect(res.status).toBe(401);
-    const body = (await readJson(res)) as { error: string };
-    expect(body.error).toBe("Timestamp expired or invalid");
-  });
-
-  test("returns 401 si body modifié après signature (replay-proof)", async () => {
-    const original = JSON.stringify({ email: "client@example.com" });
-    const tampered = JSON.stringify({ email: "attacker@example.com" });
-    const req = makeRequest("/api/tenants/provision", {
-      method: "POST",
-      headers: {
-        ...standardHeaders(original),
-        "x-forwarded-for": `10.0.13.${Math.floor(Math.random() * 250)}`,
-      },
-      body: tampered,
-    });
-    const res = await POST(req);
-    expect(res.status).toBe(401);
-  });
-
-  test("persiste le lien de connexion du propriétaire (haché, sso_login_tokens) quand hub_user_id fourni", async () => {
-    // Le token retourné dans login_url doit être stocké côté Prisma local
-    // pour que GET /api/auth/token?t=... puisse le valider. Avant ce fix,
-    // le token n'était jamais persisté → autologin Hub→Prosp cassé.
-    const uid = "11111111-1111-4111-8111-111111111111";
-    // Pour ce test, on fait croire qu'un tenant existe déjà (pour que le
-    // second findFirst dans le bloc de persistance le retrouve).
-    // Client partagé mocké (cf vi.mock("@/lib/prisma") du haut du fichier) : celui qu'utilise la route.
-    const inst = ((await import("@/lib/prisma")) as unknown as {
-      prisma: { tenant: { findFirst: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> } };
-    }).prisma;
-    inst.tenant.findFirst.mockResolvedValueOnce(null); // 1er appel = ensureOwnerWorkspace
-    inst.tenant.findFirst.mockResolvedValueOnce({ id: "tenant-id-42" }); // 2e appel = persistance token
-
-    const raw = JSON.stringify({ email: "test-autologin@example.com", user_id: uid });
-    const req = makeRequest("/api/tenants/provision", {
-      method: "POST",
-      headers: {
-        ...standardHeaders(raw),
-        "x-forwarded-for": `10.0.7.${Math.floor(Math.random() * 250)}`,
-      },
-      body: raw,
-    });
-    const res = await POST(req);
-    expect(res.status).toBe(200);
-    const body = (await readJson(res)) as { login_url: string };
-    expect(body.login_url).toMatch(/\/api\/auth\/token\?t=[a-f0-9]{64}$/);
-    // Audit 11/07 (M6) : jeton haché, lié au propriétaire, jamais posé en clair sur le tenant.
-    const sso = (inst as unknown as { ssoLoginToken: { create: ReturnType<typeof vi.fn> } }).ssoLoginToken;
-    expect(sso.create).toHaveBeenCalledWith({ data: expect.objectContaining({ userId: uid, tokenHash: expect.stringMatching(/^[a-f0-9]{64}$/) }) });
-    expect(JSON.stringify(sso.create.mock.calls)).not.toContain(body.login_url.split("t=")[1]);
-    expect(JSON.stringify(inst.tenant.update.mock.calls)).not.toContain("prospectionLoginToken");
-  });
-
-  test("mint api_key §6.2 sur workspace default au premier provision", async () => {
-    // On vérifie via un nouveau provision standard HMAC que le mécanisme
-    // §5.6+§6.2 (api_key sur workspace.apiKeyHash) est câblé. Le mock
-    // workspace.create retourne apiKeyHash:null → ensureOwnerWorkspace
-    // détecte qu'il faut mint, appelle workspace.update avec un hash sha256.
-    const hubUserId = "00000000-0000-0000-0000-0000000abcde";
-    const bodyObj = {
-      email: "mint-test@example.com",
-      plan: "freemium",
-      user_id: hubUserId,
-    };
-    const raw = JSON.stringify(bodyObj);
-    const req = makeRequest("/api/tenants/provision", {
-      method: "POST",
-      headers: {
-        ...standardHeaders(raw),
-        "x-forwarded-for": `10.0.50.${Math.floor(Math.random() * 250)}`,
-      },
-      body: raw,
-    });
-    const res = await POST(req);
-    expect(res.status).toBe(200);
-    const body = (await readJson(res)) as { api_key: string };
-    // api_key retournée = 64 chars hex (token mint frais, pas le placeholder)
-    expect(body.api_key).toMatch(/^[a-f0-9]{64}$/);
-  });
-
+describe("signature : seule porte, et lue avant le corps", () => {
   test.each([
-    ["adresse non prouvée", { hubUserIdConflict: false, emailUnproven: true }],
-    ["compte lié à une autre identité", { hubUserIdConflict: true }],
-  ])("§3.8 — 409 sans jeton : %s", async (_label, flags) => {
-    resolveOrCreateUserFromHubMock.mockResolvedValueOnce({
-      id: "local-existant",
-      createdByHub: false,
-      ...flags,
-    });
-    const raw = JSON.stringify({ email: "victime@example.com", user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
-    const res = await POST(
-      makeRequest("/api/tenants/provision", {
-        method: "POST",
-        headers: {
-          ...standardHeaders(raw),
-          "x-forwarded-for": `10.0.61.${Math.floor(Math.random() * 250)}`,
-        },
-        body: raw,
-      }),
-    );
-    expect(res.status).toBe(409);
-    const body = (await readJson(res)) as Record<string, unknown>;
-    expect(body.login_url).toBeUndefined();
-    const warnOnly = body.error;
-    expect(warnOnly).toBe("email_not_linkable");
+    ["absente", { headers: {} }, "Unauthorized"],
+    ["fausse", { badSig: true }, "Invalid signature"],
+    ["vieille de 6 min", { driftMs: -360_000 }, "Timestamp expired or invalid"],
+    ["en avance de 6 min", { driftMs: 360_000 }, "Timestamp expired or invalid"],
+    ["Bearer, même avec le bon secret", { headers: { authorization: "Bearer test-secret-xyz" } }, "Unauthorized"],
+  ])("%s : 401", async (_n, o, erreur) => {
+    for (const corps of [{ email: "a@b.fr", user_id: HUB }, "pas du json"]) expect(await poster(corps, o)).toMatchObject({ s: 401, j: { error: erreur } });
+    expect(m.ouvrir).not.toHaveBeenCalled();
   });
-
-  test("CONTRAT-HUB v1.5 §3.7 — résout l'user via resolveOrCreateUserFromHub quand hub_user_id fourni", async () => {
-    const hubUserId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-    const email = "v15-identity@example.com";
-    resolveOrCreateUserFromHubMock.mockResolvedValueOnce({
-      id: hubUserId,
-      createdByHub: true,
-      hubUserIdConflict: false,
-    });
-
-    const bodyObj = { email, plan: "freemium", user_id: hubUserId };
-    const raw = JSON.stringify(bodyObj);
-    const req = makeRequest("/api/tenants/provision", {
-      method: "POST",
-      headers: {
-        ...standardHeaders(raw),
-        "x-forwarded-for": `10.0.60.${Math.floor(Math.random() * 250)}`,
-      },
-      body: raw,
-    });
-    const res = await POST(req);
-    expect(res.status).toBe(200);
-    expect(resolveOrCreateUserFromHubMock).toHaveBeenCalledWith({
-      hubUserId,
-      email,
-      emailProven: false,
-    });
-  });
-
-  test("rate-limits to 10 requests/min/IP (11th returns 429)", async () => {
-    const ip = `10.0.99.${Math.floor(Math.random() * 250)}`;
-    const send = () => {
-      const raw = JSON.stringify({ email: `client-${Math.random()}@example.com` });
-      return POST(
-        makeRequest("/api/tenants/provision", {
-          method: "POST",
-          headers: { ...standardHeaders(raw), "x-forwarded-for": ip },
-          body: raw,
-        }),
-      );
-    };
-
-    for (let i = 0; i < 10; i++) {
-      const r = await send();
-      expect(r.status).toBe(200);
-    }
-    const r11 = await send();
-    expect(r11.status).toBe(429);
+  test("corps changé après signature, ancien format email:ts : 401", async () => {
+    expect((await poster({ email: "b@b.fr" }, { headers: entetes(JSON.stringify({ email: "a@b.fr" })) })).s).toBe(401);
+    const ts = Date.now();
+    expect((await poster({ email: "a@b.fr", timestamp: ts, signature: createHmac("sha256", "test-secret-xyz").update(`a@b.fr:${ts}`).digest("hex") }, { headers: {} })).s).toBe(401);
   });
 });
 
-/**
- * Atlas (15/11) : l'ancienne app et son pipeline sont retirés. Créer l'espace ne crée plus aucune étape
- * de pipeline (la table workspace_pipeline_stages disparaît).
- */
-describe("provision — plus de pipeline de l'ancienne app", () => {
-  const source = readFileSync(join(process.cwd(), "src/app/api/tenants/provision/route.ts"), "utf8");
-  test("n'importe plus rien de l'ancienne app (outreach, pipeline)", () => {
-    expect(source).not.toMatch(/@\/lib\/outreach|seedDefaultPipelineStages|pipelineStage/);
+describe("corps", () => {
+  test("refus nommés, rien d'ouvert", async () => {
+    for (const [c, code] of [["pas du json", "invalid_payload"], [{}, "email_required"], [{ email: "a@b.fr" }, "hub_user_id_required"], [{ email: "a@b.fr", user_id: HUB, hub_tenant_id: "x" }, "invalid_payload"]] as const) expect(await poster(c)).toMatchObject({ s: 400, j: { error: code, created: false } });
+    expect(m.ouvrir).not.toHaveBeenCalled();
+  });
+  test("identifiants à la racine ou dans metadata, en minuscules ; le plan et le nom suivent", async () => {
+    const h = hubNeuf();
+    await poster({ email: " A@b.fr ", plan: "pro", name: "Martin", email_proven: true, metadata: { hub_user_id: h.toUpperCase(), hub_tenant_id: ORG.toUpperCase() } });
+    expect(m.ouvrir).toHaveBeenCalledWith({ hubUserId: h, email: "A@b.fr", emailProven: true, hubTenantId: ORG, plan: "pro", nom: "Martin" });
+    await poster({ email: "a@b.fr", user_id: hubNeuf(), email_proven: "true" });
+    expect(m.ouvrir.mock.calls[1][0]).toMatchObject({ emailProven: false, hubTenantId: null });
   });
 });
 
-describe("POST /api/tenants/provision : hub_tenant_id (CONTRAT-MCP §2)", () => {
-  const H = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
-  const uid = "22222222-2222-4222-8222-222222222222";
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    resolveOrCreateUserFromHubMock.mockImplementation(async ({ hubUserId }: { hubUserId: string }) => ({
-      id: hubUserId,
-      createdByHub: true,
-      hubUserIdConflict: false,
-    }));
+describe("réponse : ce qui a été fait, rien d'autre", () => {
+  test("ouvert ; rejoué : created faux, clé dite non tirée", async () => {
+    expect(await poster({ email: "a@b.fr", user_id: hubNeuf() })).toMatchObject({ s: 200, j: { created: true, tenant_id: "t", plan: "freemium", api_key: "cle-tiree", api_key_minted: true, login_url: expect.stringContaining("t=jeton-unique") } });
+    m.ouvrir.mockResolvedValue({ ...(await m.ouvrir()), apiKey: null, cree: { compte: false, espace: false, atelier: false, membre: false, lien: false } });
+    expect((await poster({ email: "a@b.fr", user_id: hubNeuf() })).j).toMatchObject({ created: false, api_key_minted: false });
   });
-
-  async function provisionner(corps: Record<string, unknown>, tenantExistant: { id: string; hubTenantId: string | null }) {
-    const { prisma } = (await import("@/lib/prisma")) as unknown as {
-      prisma: { tenant: { findFirst: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> } };
-    };
-    prisma.tenant.findFirst.mockResolvedValueOnce(null); // ensureOwnerWorkspace
-    prisma.tenant.findFirst.mockResolvedValueOnce(tenantExistant); // persistance du jeton
-    const raw = JSON.stringify({ email: "hub-tenant@example.com", user_id: uid, ...corps });
-    const res = await POST(
-      makeRequest("/api/tenants/provision", {
-        method: "POST",
-        headers: { ...standardHeaders(raw), "x-forwarded-for": `10.0.9.${Math.floor(Math.random() * 250)}` },
-        body: raw,
-      }),
-    );
-    expect(res.status).toBe(200);
-    return prisma.tenant.update.mock.calls.filter((c) => (c[0] as { data: Record<string, unknown> }).data.hubTenantId !== undefined);
-  }
-
-  test("à la racine du corps : relié au tenant local", async () => {
-    const liens = await provisionner({ hub_tenant_id: H }, { id: "t-42", hubTenantId: null });
-    expect(liens).toEqual([[{ where: { id: "t-42" }, data: { hubTenantId: H } }]]);
-  });
-
-  test("dans metadata : relié aussi", async () => {
-    const liens = await provisionner({ metadata: { hub_tenant_id: H.toUpperCase() } }, { id: "t-42", hubTenantId: null });
-    expect(liens).toEqual([[{ where: { id: "t-42" }, data: { hubTenantId: H } }]]);
-  });
-
-  test("un lien existant différent n'est jamais écrasé", async () => {
+  test("refus et panne : jamais un 200, jamais un lien de connexion", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    const liens = await provisionner({ hub_tenant_id: H }, { id: "t-42", hubTenantId: "99999999-9999-4999-8999-999999999999" });
-    expect(liens).toEqual([]);
+    m.ouvrir.mockRejectedValueOnce(new RefusOuverture("tenant_soft_deleted", 409, { tenant_id: "t9" }));
+    const r = await poster({ email: "a@b.fr", user_id: hubNeuf() });
+    expect([r.s, r.j]).toEqual([409, { error: "tenant_soft_deleted", created: false, tenant_id: "t9" }]);
+    m.ouvrir.mockRejectedValueOnce(new Error("base muette, secret xyz"));
+    const p = await poster({ email: "a@b.fr", user_id: hubNeuf() });
+    expect([p.s, p.j]).toEqual([503, { error: "provision_failed", created: false }]);
   });
-
-  test("une valeur qui n'est pas un identifiant est ignorée", async () => {
-    const liens = await provisionner({ hub_tenant_id: "mon-espace" }, { id: "t-42", hubTenantId: null });
-    expect(liens).toEqual([]);
+  test("10 par minute et par personne, pas par machine : une autre personne passe", async () => {
+    const h = hubNeuf();
+    const s = [];
+    for (let i = 0; i < 11; i++) s.push((await poster({ email: "a@b.fr", user_id: h })).s);
+    expect([s.filter((x) => x === 200).length, s[10]]).toEqual([10, 429]);
+    expect((await poster({ email: "c@b.fr", user_id: hubNeuf() })).s).toBe(200);
   });
 });

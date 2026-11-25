@@ -616,6 +616,21 @@ model AtlasClient {
   @@map("atlas_clients")
 }
 
+/// Vente d'un espace, rattachée au SIREN du client (src/atlas/ventes.ts). `reference` : « ref:… » donnée, ou « auto:… » calculée.
+model AtlasVente {
+  tenantId  String    @map("tenant_id") @db.Uuid
+  reference String
+  siren     String
+  montant   Decimal   @db.Decimal(14, 2)
+  date      DateTime? @db.Date
+  ajoutePar String    @map("ajoute_par")
+  creeLe    DateTime  @default(now()) @map("cree_le") @db.Timestamptz
+
+  @@id([tenantId, reference])
+  @@index([tenantId, siren])
+  @@map("atlas_ventes")
+}
+
 /// Rapport PDF d'un marché : le texte et son auteur ; les chiffres se relisent à chaque ouverture (src/atlas/rapport.ts).
 model AtlasRapport {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid

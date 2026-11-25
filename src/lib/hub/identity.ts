@@ -1,3 +1,5 @@
+import type { Prisma } from "@prisma/client";
+
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -29,7 +31,7 @@ export async function resolveOrCreateUserFromHub(params: {
   hubUserId: string;
   email: string;
   emailProven?: boolean;
-}): Promise<{
+}, db: Pick<Prisma.TransactionClient, "user"> = prisma): Promise<{
   id: string;
   createdByHub: boolean;
   hubUserIdConflict: boolean;
@@ -37,7 +39,7 @@ export async function resolveOrCreateUserFromHub(params: {
 }> {
   const { hubUserId, email, emailProven = true } = params;
 
-  const byHubId = await prisma.user.findUnique({
+  const byHubId = await db.user.findUnique({
     where: { hubUserId },
     select: { id: true },
   });
@@ -45,13 +47,13 @@ export async function resolveOrCreateUserFromHub(params: {
     return { id: byHubId.id, createdByHub: false, hubUserIdConflict: false };
   }
 
-  const byLegacyId = await prisma.user.findUnique({
+  const byLegacyId = await db.user.findUnique({
     where: { id: hubUserId },
     select: { id: true, hubUserId: true },
   });
   if (byLegacyId) {
     if (!byLegacyId.hubUserId) {
-      await prisma.user.update({
+      await db.user.update({
         where: { id: byLegacyId.id },
         data: { hubUserId },
       });
@@ -59,7 +61,7 @@ export async function resolveOrCreateUserFromHub(params: {
     return { id: byLegacyId.id, createdByHub: false, hubUserIdConflict: false };
   }
 
-  const byEmail = await prisma.user.findUnique({
+  const byEmail = await db.user.findUnique({
     where: { email },
     select: { id: true, hubUserId: true },
   });
@@ -73,7 +75,7 @@ export async function resolveOrCreateUserFromHub(params: {
       };
     }
     if (!byEmail.hubUserId) {
-      await prisma.user.update({
+      await db.user.update({
         where: { id: byEmail.id },
         data: { hubUserId },
       });
@@ -93,7 +95,7 @@ export async function resolveOrCreateUserFromHub(params: {
     return { id: byEmail.id, createdByHub: false, hubUserIdConflict: true };
   }
 
-  const created = await prisma.user.create({
+  const created = await db.user.create({
     data: {
       id: hubUserId,
       email,

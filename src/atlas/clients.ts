@@ -36,6 +36,8 @@ export function lireNumero(brut: string): string | null {
 const cache = new Map<string, { t: number; v: string[] }>();
 const DUREE = 30_000;
 
+export const oublierClients = (tenantId: string) => void cache.delete(tenantId);
+
 export async function sirensClients(tenantId: string): Promise<string[]> {
   const c = cache.get(tenantId);
   if (c && Date.now() - c.t < DUREE) return c.v;
@@ -77,7 +79,9 @@ export async function importerClients(tenantId: string, auteur: string, entrees:
 }
 
 export async function retirerClients(tenantId: string, sirens: readonly string[] | "tous") {
-  const r = await prisma.atlasClient.deleteMany({ where: { tenantId, ...(sirens === "tous" ? {} : { siren: { in: sirens.map((s) => lireNumero(s) ?? s) } }) } });
+  const ou = { tenantId, ...(sirens === "tous" ? {} : { siren: { in: sirens.map((s) => lireNumero(s) ?? s) } }) };
+  // Une vente sans client n'aurait plus de sens : elle part avec lui.
+  const [r] = await prisma.$transaction([prisma.atlasClient.deleteMany({ where: ou }), prisma.atlasVente.deleteMany({ where: ou })]);
   cache.delete(tenantId);
   return { retires: r.count, total: await prisma.atlasClient.count({ where: { tenantId } }) };
 }
