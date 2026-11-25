@@ -20,6 +20,7 @@ import { requireHubHmac } from "@/lib/hub/auth";
 import { resolveTenantByIdOrEmail } from "@/lib/hub/tenant-lookup";
 import { logAudit } from "@/lib/audit";
 import { enqueueEvent } from "@/lib/hub-webhook/outbox";
+import { revoquerClesDe } from "@/atlas/acces";
 import { invalidateAllUserContexts } from "@/lib/auth/cache-contexte";
 
 const RemoveMemberSchema = z
@@ -98,12 +99,16 @@ export async function POST(
   });
   const wsIds = workspaces.map((w) => w.id);
 
+  // Avant la coupure de l'appartenance, et même si elle est déjà faite : une clé créée par un retiré ne revient jamais.
+  const clesRevoquees = await revoquerClesDe(user.id, tenantId);
+
   if (wsIds.length === 0) {
     return NextResponse.json({
       tenant_id: tenantId,
       user_email: user.email,
       removed: true,
       affected_workspaces: 0,
+      revoked_api_keys: clesRevoquees,
     });
   }
 
@@ -147,7 +152,7 @@ export async function POST(
   });
 
   console.log(
-    `[remove-member] tenant=${tenantId} user=${user.id} affected=${result.count}`,
+    `[remove-member] tenant=${tenantId} user=${user.id} affected=${result.count} cles=${clesRevoquees}`,
   );
 
   // Effet immédiat : le contexte gardé 30 s ne laisse pas un membre retiré, ni un nouveau dehors.
@@ -157,5 +162,6 @@ export async function POST(
     user_email: user.email,
     removed: true,
     affected_workspaces: result.count,
+    revoked_api_keys: clesRevoquees,
   });
 }

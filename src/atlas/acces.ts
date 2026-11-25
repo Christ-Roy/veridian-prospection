@@ -9,6 +9,7 @@
  */
 import { createHash, randomBytes } from "node:crypto";
 
+import { isUserFrozen } from "@/lib/auth/freeze";
 import type { UserContext } from "@/lib/auth/user-context";
 import { peutExporter } from "./export";
 import { prisma } from "@/lib/prisma";
@@ -82,11 +83,17 @@ export async function revoquerCle(tenantId: string, id: string) {
   return { id, revoquee: true };
 }
 
+/** Membre retiré ou compte supprimé : ses clés meurent pour de bon, le remettre dans l'espace ne les ranime pas. */
+export async function revoquerClesDe(userId: string, tenantId?: string): Promise<number> {
+  const r = await prisma.atlasCleApi.updateMany({ where: { userId, ...(tenantId ? { tenantId } : {}), revoqueeLe: null }, data: { revoqueeLe: new Date() } });
+  return r.count;
+}
+
 const vues = new Map<string, number>();
 
 /**
  * Contexte d'une requête signée par une clé (`Authorization: Bearer atl_…`), ou null si la clé est inconnue,
- * révoquée, ou si son espace a perdu l'accès avancé.
+ * révoquée, si son espace a perdu l'accès avancé, est suspendu ou fermé, ou si son créateur est supprimé, gelé ou retiré.
  */
 export async function contexteDepuisCle(entete: string | null): Promise<UserContext | null> {
   const m = entete?.match(/^Bearer\s+(atl_[A-Za-z0-9_-]{20,})$/);
@@ -94,8 +101,12 @@ export async function contexteDepuisCle(entete: string | null): Promise<UserCont
   const c = await prisma.atlasCleApi.findUnique({ where: { empreinte: empreinte(m[1]) } });
   if (!c || c.revoqueeLe) return null;
   if (!(await droits(c.userId, c.tenantId)).accesAvance) return null;
-  const u = await prisma.user.findUnique({ where: { id: c.userId }, select: { id: true, email: true } });
-  if (!u) return null;
+  const [u, t, gel] = await Promise.all([
+    prisma.user.findFirst({ where: { id: c.userId, deletedAt: null }, select: { id: true, email: true } }),
+    prisma.tenant.findFirst({ where: { id: c.tenantId, deletedAt: null, status: { not: "suspended" } }, select: { id: true } }),
+    isUserFrozen(c.userId, c.tenantId),
+  ]);
+  if (!u || !t || gel) return null;
   // Import tardif : le contexte tire l'authentification (next-auth), inutile aux outils et à leurs tests.
   const { buildUserContext } = await import("@/lib/auth/user-context");
   const ctx = await buildUserContext(u, null, c.tenantId);

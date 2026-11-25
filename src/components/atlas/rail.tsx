@@ -1,11 +1,12 @@
 "use client";
 
-import { signOut, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
 
 import { ciblesDe, marcheDe, sectionsRail, type IAVue } from "./flux";
 import { Icone } from "./icones";
 import type { Arbre, SegmentArbre } from "./types";
 import { ChoixEspace } from "./choix-espace";
+import { seDeconnecter } from "./menu-compte";
 
 const HUB = process.env.NEXT_PUBLIC_HUB_URL || "https://app.veridian.site";
 /** Page du Hub où l'on branche Claude, ChatGPT, Cursor… (une seule connexion pour toutes les apps). */
@@ -156,8 +157,8 @@ export function Rail({ arbre, erreur, selection, ouvert, peutEcrire, ias, onBran
           <Icone nom="plus" />
           <span className="lbl">{ias.length ? "Brancher une autre IA" : "Brancher une IA"}</span>
         </button>
-        <button type="button" className="conn" style={{ width: "100%", textAlign: "left" }} title={email ? `Se déconnecter (${email})` : "Se déconnecter"} onClick={() => void signOut({ callbackUrl: "/login", redirect: true })}>
-          <Icone nom="retour" />
+        <button type="button" className="conn" style={{ width: "100%", textAlign: "left" }} title={email ? `Se déconnecter (${email})` : "Se déconnecter"} onClick={seDeconnecter}>
+          <Icone nom="sortie" />
           <span className="lbl">{email ? `Se déconnecter · ${email}` : "Se déconnecter"}</span>
         </button>
       </div>

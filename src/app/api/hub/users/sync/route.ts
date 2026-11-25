@@ -17,6 +17,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { invalidateActiveUser } from "@/lib/auth/active-user";
 import { invalidateUserContext } from "@/lib/auth/user-context";
+import { revoquerClesDe } from "@/atlas/acces";
 import { requireHubHmac } from "@/lib/hub/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -91,6 +92,9 @@ export async function POST(request: NextRequest) {
       throw err;
     }
   }
+
+  // Un compte supprimé perd ses clés ; couper ses sessions ne les touche pas.
+  if (deleted === true) await revoquerClesDe(user.id);
 
   if (deleted === true || revoke === true) {
     // Le JWT reste signé : c'est `applyActiveUser` qui le refuse désormais. On

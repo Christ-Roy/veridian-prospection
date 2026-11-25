@@ -49,7 +49,7 @@ function LoginForm({ localAuth }: { localAuth: boolean }) {
       }
       clearBounceCookies();
       const redirectTo =
-        safeReturnPath(searchParams.get("redirect"), window.location.origin) ?? "/prospects";
+        safeReturnPath(searchParams.get("redirect"), window.location.origin) ?? "/";
       router.push(redirectTo);
       router.refresh();
     } catch {
@@ -73,10 +73,10 @@ function LoginForm({ localAuth }: { localAuth: boolean }) {
     <div className="max-w-sm w-full p-8 bg-white rounded-xl shadow-lg space-y-6">
       <div className="text-center">
         <div className="h-12 w-12 rounded-xl bg-indigo-600 flex items-center justify-center mx-auto mb-3">
-          <span className="text-white font-bold text-xl">V</span>
+          <span className="text-white font-bold text-xl">A</span>
         </div>
-        <h1 className="text-xl font-bold">Prospection</h1>
-        <p className="text-sm text-muted-foreground">Connectez-vous a votre compte</p>
+        <h1 className="text-xl font-bold">Atlas</h1>
+        <p className="text-sm text-muted-foreground">Connectez-vous à votre compte</p>
       </div>
 
       {status === "authenticated" && session?.user?.email && (
@@ -88,7 +88,7 @@ function LoginForm({ localAuth }: { localAuth: boolean }) {
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={() => router.push(searchParams.get("redirect") || "/prospects")}
+              onClick={() => router.push(safeReturnPath(searchParams.get("redirect"), window.location.origin) ?? "/")}
               className="flex-1 py-2 text-xs font-medium text-amber-900 bg-white border border-amber-300 rounded-md hover:bg-amber-100 transition"
             >
               Continuer
@@ -209,7 +209,7 @@ function LoginForm({ localAuth }: { localAuth: boolean }) {
           </p>
         )}
         <p>
-          <a href={hubUrl + "/signup"} className="text-indigo-600 hover:underline">Creer un compte</a>
+          <a href={hubUrl + "/signup"} className="text-indigo-600 hover:underline">Créer un compte</a>
           {" "}sur le Hub Veridian
         </p>
       </div>

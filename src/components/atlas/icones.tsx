@@ -17,6 +17,7 @@ const TRACES = {
   plus: "M8 3v10M3 8h10",
   chev: "M6 4l4 4-4 4",
   retour: "M10 4L6 8l4 4",
+  sortie: "M6.5 2.5h-4v11h4M10 5l3 3-3 3M13 8H6",
   menu: "M2.5 4.5h11M2.5 8h11M2.5 11.5h11",
   colonnes: "M2.5 3h11v10h-11zM6.2 3v10M9.8 3v10",
   envoi: "M2.5 4.5l5.5 4 5.5-4M2.5 4h11v8.5h-11z",

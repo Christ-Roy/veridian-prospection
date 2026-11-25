@@ -52,6 +52,9 @@ export function safeReturnPath(raw: unknown, origin: string): string | null {
 const secureFlag = () =>
   typeof window !== "undefined" && window.location.protocol === "https:" ? "; Secure" : "";
 
+/** Posé par le serveur sur toute déconnexion (POST /api/auth/signout), quel que soit le bouton. Lisible côté client : le formulaire le lève. */
+export const cookieDeconnexion = () => `${LOGGED_OUT_COOKIE}=1; Path=/; Max-Age=31536000; SameSite=Lax${process.env.NODE_ENV === "production" ? "; Secure" : ""}`;
+
 /** Côté client, avant `signOut`. */
 export function markLoggedOut() {
   document.cookie = `${LOGGED_OUT_COOKIE}=1; Path=/; Max-Age=31536000; SameSite=Lax${secureFlag()}`;

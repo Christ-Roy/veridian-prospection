@@ -92,10 +92,10 @@ function json(segment: string): Record<string, unknown> {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export async function verifierJetonHub(
-  jeton: string,
-  opts: { env?: NodeJS.ProcessEnv; fetchImpl?: Fetch; maintenant?: number } = {},
-): Promise<IdentiteHub> {
+export type OptsJeton = { env?: NodeJS.ProcessEnv; fetchImpl?: Fetch; maintenant?: number };
+
+/** Signature, émetteur, audience, dates, sujet et adresse prouvée : le socle commun aux jetons MCP et aux jetons d'action. */
+export async function verifierJwtHub(jeton: string, audience: string, opts: OptsJeton = {}): Promise<Record<string, unknown> & { sub: string; email: string; exp: number }> {
   const env = opts.env ?? process.env;
   const fetchImpl = opts.fetchImpl ?? fetch;
   const maintenant = opts.maintenant ?? Date.now();
@@ -121,13 +121,19 @@ export async function verifierJetonHub(
   const sec = Math.floor(maintenant / 1000);
   if (c.iss !== hubIssuer(env)) throw new JetonRefuse("émetteur inattendu");
   const aud = Array.isArray(c.aud) ? c.aud : [c.aud];
-  if (!aud.includes(mcpAudience(env))) throw new JetonRefuse("jeton destiné à une autre app");
+  if (!aud.includes(audience)) throw new JetonRefuse("jeton destiné à une autre app");
   if (typeof c.exp !== "number" || c.exp + DERIVE_S < sec) throw new JetonRefuse("jeton expiré");
   if (typeof c.nbf === "number" && c.nbf - DERIVE_S > sec) throw new JetonRefuse("jeton pas encore valide");
   if (typeof c.iat === "number" && c.iat - DERIVE_S > sec) throw new JetonRefuse("jeton émis dans le futur");
   if (typeof c.sub !== "string" || !UUID.test(c.sub)) throw new JetonRefuse("sujet invalide");
   if (c.email_verified !== true || typeof c.email !== "string") throw new JetonRefuse("adresse non prouvée");
+  return c as Record<string, unknown> & { sub: string; email: string; exp: number };
+}
 
+export async function verifierJetonHub(jeton: string, opts: OptsJeton = {}): Promise<IdentiteHub> {
+  const c = await verifierJwtHub(jeton, mcpAudience(opts.env ?? process.env), opts);
+  // Un jeton d'action (une autre app agit pour l'utilisateur) n'ouvre jamais les 36 outils, même adressé ici par erreur.
+  if (c.act !== undefined) throw new JetonRefuse("jeton d'action refusé ici");
   return {
     hubUserId: c.sub.toLowerCase(),
     email: c.email,

@@ -364,6 +364,13 @@
 .atlas .mexport .menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 240px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 12px 32px rgb(0 0 0 / 0.1); padding: 6px; display: flex; flex-direction: column; gap: 2px; }
 .atlas .mexport .menu button { text-align: left; font-size: 13px; padding: 8px 10px; border-radius: 6px; background: transparent; border: 0; color: var(--fg); cursor: pointer; font-family: inherit; }
 .atlas .mexport .menu button:hover:not(:disabled) { background: var(--soft); }
+.atlas .mcompte { flex: none; }
+.atlas .compte { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--border); background: var(--soft); color: var(--fg); font: 600 12.5px var(--f-sans); display: grid; place-items: center; cursor: pointer; }
+.atlas .compte:hover { background: var(--soft2); }
+.atlas .mcompte .menu a { font-size: 13px; padding: 8px 10px; border-radius: 6px; color: var(--fg); }
+.atlas .mcompte .menu a:hover { background: var(--soft); }
+.atlas .mcompte .menu .qui { display: flex; flex-direction: column; padding: 8px 10px; font-size: 12.5px; border-bottom: 1px solid var(--border); margin-bottom: 4px; overflow-wrap: anywhere; }
+.atlas .mcompte .menu .qui span { color: var(--muted); }
 .atlas .mexport .menu .hint { padding: 4px 10px 2px; }
 .atlas .mexport .menu .lnk { padding: 2px 10px 6px; font-size: 12.5px; }
 .atlas .marche .metier { margin-bottom: 18px; display: flex; flex-direction: column; gap: 10px; max-width: 900px; }

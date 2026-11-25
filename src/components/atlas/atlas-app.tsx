@@ -12,6 +12,7 @@ import { departementsFiltre, titreZone } from "./carte-logique";
 import { Accueil, DialogueIA } from "./brancher-ia";
 import { DialogueCrm, DialogueMail } from "./envois";
 import { LIAISONS_ETEINTES, lireEtat, lireReprise, type EtatLiaisons } from "./liaisons-logique";
+import { MenuCompte } from "./menu-compte";
 import { MenuExport } from "./menu-export";
 import { DialogueCreation, type Creation } from "./dialogues";
 import { montrerAccueil, type LiensIA } from "./ia";
@@ -545,6 +546,13 @@ export function AtlasApp() {
       /* idem */
     }
   }, []);
+  // Lien d'une autre app vers une fiche : /?siren=…
+  useEffect(() => {
+    const siren = new URLSearchParams(window.location.search).get("siren");
+    if (!siren || !/^\d{9}$/.test(siren)) return;
+    setVolet({ type: "fiche", siren, nom: `SIREN ${siren}` });
+    window.history.replaceState(null, "", "/");
+  }, []);
   // Retour d'un rebond par le Hub : on rouvre ce que l'utilisateur faisait, il confirme lui-même l'envoi.
   const repris = useRef(false);
   useEffect(() => {
@@ -760,6 +768,7 @@ export function AtlasApp() {
               <span className="hide-s">Envoyer vers Mail</span>
             </button>
           )}
+          <MenuCompte />
         </header>
 
         <main className="page">

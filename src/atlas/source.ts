@@ -46,6 +46,12 @@ export type LigneExtraite = {
 };
 /** Une fiche pour le CRM : identité, et coordonnées seulement si elles sont utilisables (appel, email). */
 export type LigneCrm = Omit<LigneExtraite, "email"> & { email: string | null };
+/** Recherche d'une entreprise, sans aucune coordonnée. */
+export type Recherche = ({ siren: string } | { domaine: string } | { mots: string[] }) & { codePostal: string | null; limite: number };
+export type Trouvee = {
+  siren: string; nom: string; enseigne: string | null; commune: string | null; code_postal: string | null; departement: string | null;
+  naf: string | null; activite: string | null; effectif: string | null; date_creation: string | null; active: boolean; prospectable: boolean; site: string | null;
+};
 /** Ligne de verifier_entreprises : ce qu'on sait d'une entreprise, en un coup d'œil. */
 export type Verification = {
   siren: string;
@@ -110,6 +116,8 @@ export interface SourceMarche {
   extraire(sirens: readonly string[]): Promise<LigneExtraite[]>;
   /** Fiche prospectable pour le CRM, null sinon. Sans email utilisable, elle reste envoyable (appel à froid). */
   pourCrm(siren: string): Promise<LigneCrm | null>;
+  /** Toutes les entreprises de France par nom, SIREN ou domaine : actives et prospectables d'abord. */
+  chercher(r: Recherche): Promise<Trouvee[]>;
   /** Accès avancé : requête SQL déjà passée par verifierRequete (sql.ts). */
   sql(requete: string): Promise<{ colonnes: string[]; lignes: Ligne[] }>;
   /** Colonnes des tables autorisées au SQL. */
@@ -472,6 +480,50 @@ export class SourceClickHouse implements SourceMarche {
     };
   }
 
+  async chercher(r: Recherche): Promise<Trouvee[]> {
+    const n = Math.min(20, Math.max(1, Math.trunc(r.limite)));
+    const params: Record<string, SqlParam> = {};
+    const where: string[] = [];
+    let sirens: string[] | null = null;
+    if ("domaine" in r) {
+      const l = await this.requete<{ siren: string }>(
+        `SELECT siren FROM ${TABLE} WHERE is_deleted = 0 AND empty(blocking_reasons) AND (primary_domain = {d:String} OR has(domains, {d:String})) ORDER BY primary_domain = {d:String} DESC, siren LIMIT ${n}`,
+        { d: { type: "String", valeur: r.domaine } },
+      );
+      sirens = l.map((x) => String(x.siren));
+      if (!sirens.length) return [];
+    } else if ("siren" in r) sirens = [r.siren];
+    if (sirens) {
+      where.push("siren IN {s:Array(String)}");
+      params.s = { type: "Array(String)", valeur: sirens };
+    } else {
+      where.push("hasAllTokens(name_terms, {m:Array(String)})");
+      params.m = { type: "Array(String)", valeur: (r as { mots: string[] }).mots };
+    }
+    if (r.codePostal) {
+      where.push("postal_code = {cp:String}");
+      params.cp = { type: "String", valeur: r.codePostal };
+    }
+    const lignes = await this.requete<Record<string, unknown>>(
+      `SELECT siren, legal_name, trade_name, city, postal_code, department, naf_code, tranche_effectif, creation_date, administrative_status, prospectable
+       FROM ${TABLE_MAITRE} WHERE ${where.join(" AND ")} ORDER BY administrative_status = 'A' DESC, prospectable DESC, length(legal_name), siren LIMIT ${n}`,
+      params,
+    );
+    const web = lignes.length
+      ? await this.requete<Record<string, unknown>>(
+          `SELECT siren, primary_domain AS site, activity_label AS activite FROM ${TABLE} WHERE siren IN {s:Array(String)} AND is_deleted = 0 AND empty(blocking_reasons)`,
+          { s: { type: "Array(String)", valeur: lignes.map((l) => String(l.siren)) } },
+        )
+      : [];
+    const par = new Map(web.map((w) => [String(w.siren), w]));
+    const v = (x: unknown) => (x === "" || x === null || x === undefined ? null : String(x));
+    return lignes.map((l) => ({
+      siren: String(l.siren), nom: String(l.legal_name ?? ""), enseigne: v(l.trade_name), commune: v(l.city), code_postal: v(l.postal_code), departement: v(l.department),
+      naf: v(l.naf_code), activite: v(par.get(String(l.siren))?.activite), effectif: v(l.tranche_effectif), date_creation: v(l.creation_date),
+      active: l.administrative_status === "A", prospectable: Number(l.prospectable) === 1, site: v(par.get(String(l.siren))?.site),
+    }));
+  }
+
   async sql(requete: string) {
     const lignes = await this.requete<Ligne>(requete, {});
     return { colonnes: lignes[0] ? Object.keys(lignes[0]) : [], lignes };
@@ -800,6 +852,12 @@ export class SourceSimulee implements SourceMarche {
       siren, email: l.email_envoyable ? String(l.email) : null, domaine: l.site ? String(l.site) : null, raison_sociale: String(l.nom), dirigeant: null, role_dirigeant: null,
       activite: null, naf: String(l.naf), code_postal: String(l.code_postal), commune: String(l.commune), departement: String(l.departement), telephone: l.telephone ? String(l.telephone) : null,
     };
+  }
+  async chercher(r: Recherche): Promise<Trouvee[]> {
+    return this.lignes
+      .filter((l) => ("siren" in r ? String(l.siren) === r.siren : "domaine" in r ? l.site === r.domaine : r.mots.every((m) => String(l.nom).toLowerCase().includes(m))) && (!r.codePostal || String(l.code_postal) === r.codePostal))
+      .slice(0, r.limite)
+      .map((l) => ({ siren: String(l.siren), nom: String(l.nom), enseigne: null, commune: String(l.commune), code_postal: String(l.code_postal), departement: String(l.departement), naf: String(l.naf), activite: null, effectif: null, date_creation: null, active: true, prospectable: true, site: l.site ? String(l.site) : null }));
   }
   async sql(_requete: string) {
     return { colonnes: ["siren", "nom"], lignes: this.lignes.slice(0, 3).map((l) => ({ siren: l.siren, nom: l.nom })) };

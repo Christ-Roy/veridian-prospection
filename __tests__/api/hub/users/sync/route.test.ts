@@ -23,6 +23,7 @@ vi.mock("@/lib/prisma", () => ({
     ssoLoginToken: { deleteMany: mocks.tokenDeleteMany },
     sessionDelegation: { deleteMany: mocks.delegationDeleteMany },
     tenant: { updateMany: mocks.tenantUpdateMany },
+    atlasCleApi: { updateMany: async () => ({ count: 0 }) },
   },
 }));
 vi.mock("@/lib/auth/active-user", () => ({ invalidateActiveUser: mocks.invalidateActive }));

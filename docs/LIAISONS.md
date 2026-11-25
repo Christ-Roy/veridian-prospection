@@ -24,3 +24,19 @@ Plan : `nomad-veridian/plan/INTEGRATIONS-NATIVES.md` (§2.1 à 2.3, F1, F2). Un 
 - **Session sans poignée** : un seul rebond silencieux par 5 min, puis l'écran rouvre la fiche ou le segment ; l'utilisateur confirme.
 - **Épreuves** : `e2e/integration/liaisons.test.ts` (Hub, CRM et Mail simulés, vrais serveurs HTTP, PostgreSQL),
   `__tests__/lib/liaisons/`.
+
+## Sens inverse : les autres apps vers Atlas (`/api/veridian/actions/{action}`)
+
+Même enveloppe et mêmes codes que Mail (fiche 87 de Notifuse). `src/lib/actions/jeton-action.ts`, `src/atlas/actions.ts`.
+
+- **Jeton** du Hub : ES256, `aud` = `https://prospection.app.veridian.site/api/veridian/actions`, `act.sub = app:crm` sans chaîne, `tenant_id`,
+  `jti` à usage unique (même refusé), 120 s au plus, portée `prospection:entreprise.lire`. Un jeton à `act` est refusé sur `/api/mcp`.
+- **`entreprises.chercher`** `{q, code_postal?, limite (1 à 20)}` : nom, SIREN, SIRET ou domaine, dans toutes les entreprises de France.
+  Aucune coordonnée, à aucun plan.
+- **`entreprises.enrichir`** `{siren}` + `Idempotency-Key` (8 à 128) : identité, activité, lieu, dirigeant, web, finances, signaux, `url` de la fiche
+  (`/?siren=`). `coordonnees` : `jointes` (plan payant, `contact {email, telephone}`, comptées dans les 5 000 par jour et tracées, une fois par
+  clé), `plan`, `aucune`, `non_prospectable` (identité publique seule). Rien n'est gardé : un rejeu relit sans recompter.
+- **Refus** : 401 `jeton_refuse`, `jeton_deja_vu` ; 403 `portee_insuffisante`, `app_non_autorisee`, `utilisateur_inconnu`, `non_membre`,
+  `espace_suspendu` ; 409 `espace_non_relie`, `en_cours` ; 400 `cle_requise`, `demande_invalide` ; 422 `cle_reutilisee` ; 404 `action_inconnue`,
+  `entreprise_inconnue` ; 429 `quota`, `trop_de_demandes` (60 par minute) ; 503 `echec`.
+- **Épreuve** : `e2e/integration/actions.test.ts`.

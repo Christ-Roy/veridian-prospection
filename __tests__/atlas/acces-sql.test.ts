@@ -15,8 +15,9 @@ const db = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    tenant: { findUnique: async ({ where }: { where: { id: string } }) => db.tenants.get(where.id) ?? null },
-    user: { findUnique: async ({ where }: { where: { id: string } }) => db.users.get(where.id) ?? null },
+    tenant: { findUnique: async ({ where }: { where: { id: string } }) => db.tenants.get(where.id) ?? null, findFirst: async ({ where }: { where: { id: string } }) => db.tenants.get(where.id) ?? null },
+    workspaceMember: { findFirst: async () => null },
+    user: { findUnique: async ({ where }: { where: { id: string } }) => db.users.get(where.id) ?? null, findFirst: async ({ where }: { where: { id: string } }) => db.users.get(where.id) ?? null },
     atlasCleApi: {
       count: async () => db.cles.filter((c) => !c.revoqueeLe).length,
       create: async ({ data }: { data: Record<string, unknown> }) => {
