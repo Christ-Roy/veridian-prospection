@@ -129,7 +129,7 @@
 .atlas .switch button { width: 34px; height: 28px; border-radius: 7px; display: grid; place-items: center; color: var(--muted); }
 .atlas .switch button:hover { color: var(--fg); }
 .atlas .switch button.on { background: var(--bg); color: var(--fg); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); }
-.atlas .kpis { display: flex; gap: 40px; flex-wrap: wrap; transition: opacity 0.2s; }
+.atlas .kpis { display: flex; gap: 18px 24px; justify-content: flex-start; flex-wrap: wrap; transition: opacity 0.2s; }
 .atlas .kpis[hidden] { display: none; }
 .atlas .kpis.busy { opacity: 0.55; }
 .atlas .kpi b { display: block; font-size: 24px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; }
@@ -394,7 +394,7 @@
 .atlas .marche .dossier-marche .hb { grid-template-columns: 150px minmax(0, 1fr) 64px; gap: 10px; margin-bottom: 8px; font-size: 12.5px; }
 @media (max-width: 900px) { .atlas .marche .dossier-marche { grid-template-columns: 1fr; } }
 .atlas .badge-client { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; background: var(--blue-soft); color: hsl(217 70% 35%); font-size: 11px; line-height: 17px; font-weight: 500; vertical-align: 1px; }
-.atlas .kpi-lien { display: flex; flex-direction: column; text-align: left; background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+.atlas .kpi-lien { display: block; text-align: left; background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; }
 .atlas .kpi-lien:hover span { text-decoration: underline; }
 .atlas .hb.lien { background: none; border: 0; padding: 0; font: inherit; font-size: 13px; color: inherit; text-align: left; cursor: pointer; grid-template-columns: 150px minmax(0, 1fr) 110px; }
 .atlas .hb.lien:hover > span:first-child { text-decoration: underline; }

@@ -111,7 +111,14 @@ const OUTILS_BRUTS: Outil[] = [
       const { entree, ignorees } = entreeDepuisFiltre(a.filtre);
       const entier = await s
         .marche(entree)
-        .then((m) => ({ entreprises_actives: m.total.entreprises, contactables: m.total.prospectables, email_envoyable: m.total.email_envoyable, conditions_non_comptees: ignorees }))
+        .then(async (m) => {
+          // Le cube ignore une condition que la base maître sait lire (le nom) : « chasseurs » rendait 15,9 M d'entreprises, celles de toute la France.
+          const complet = ignorees.length ? compilerMaitre(a.filtre) : null;
+          const n = complet?.filtre && complet.ignorees.length < ignorees.length ? await s.compterMaitre(a.filtre).catch(() => null) : null;
+          return n === null
+            ? { entreprises_actives: m.total.entreprises, contactables: m.total.prospectables, email_envoyable: m.total.email_envoyable, conditions_non_comptees: ignorees }
+            : { entreprises_actives: n, conditions_non_comptees: complet!.ignorees };
+        })
         .catch(() => null);
       return avecSource({ total, page_suivante: suivante, ...apercu, lignes: await marquer(c, apercu.lignes), ...(entier ? { marche_entier: entier } : {}) });
     }),

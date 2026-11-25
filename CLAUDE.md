@@ -62,9 +62,9 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
   Tenants existants : `POST /api/tenants/link-hub` (HMAC, `{hub_user_id, hub_tenant_id}`) ne pose que ce lien.
   Jamais `provision` rejoué sur un vrai client : il remet le propriétaire `admin`.
   `by-email` rend `workspaces[].hub_tenant_id` pour `hub reconcile`.
-- Outils : `src/atlas/outils-mcp.ts` (36), les mêmes que l'écran appelle par `/api/atlas/[outil]` avec la session.
+- Outils : `src/atlas/outils-mcp.ts` (43), les mêmes que l'écran appelle par `/api/atlas/[outil]` avec la session.
   Espace déduit de l'utilisateur, un `viewer` ne voit pas les outils d'écriture, fiche limitée à 60/min.
-  Ajouter un outil = une entrée dans `OUTILS_ATLAS`, le Hub le relit seul.
+  Un outil = une entrée dans `OUTILS_ATLAS`, relue seule par le Hub.
 - ClickHouse (`src/atlas/source.ts`) : compte `prospection_ro`, 12 requêtes simultanées pour toute l'app, aucun
   réglage par requête (profil readonly). File de 3 par conteneur et rejeu du code 202 : ne pas les retirer.
   Champs = liste blanche `src/atlas/champs.ts`, filtres compilés en paramètres typés (`src/atlas/filtres.ts`).
@@ -85,7 +85,7 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
   Le Hub ne garde que 300 caractères de la 1re ligne des descriptions.
 - Quota ou porte de connexion : `src/lib/compteurs.ts` (en base). `isRateLimited` = confort, par instance.
 - Journaux : `obs search '\[mcp\] outil='` ; l'écran n'en écrit aucun, sauf `[liaisons]`.
-- Envoi vers le CRM et Mail (VER-246) : `docs/LIAISONS.md`, drapeau `ATLAS_LIAISONS`.
+- Envoi vers le CRM et Mail (VER-246) : `docs/LIAISONS.md`, drapeau `ATLAS_LIAISONS`. Clients, API par marché, pages publiques : `docs/CLIENTS-ET-MARCHES.md`.
 
 ## Déploiement et promotion
 
@@ -127,8 +127,8 @@ Staging (branche `staging`) : divergé et à l'arrêt, workflows retirés. Ne pa
 - **Suppression de colonne en deux temps** : d'abord le code sans la colonne (Prisma lit tout le modèle),
   puis la migration de DROP au déploiement suivant ; la CI migre avant de déployer (fait le 09/11, 0035).
 - **Pas d'invitation locale** (retirée le 09/11) : inviter crée un utilisateur, c'est le Hub (`/dashboard/workspace/members`).
-- **Un déploiement remplace toute l'allocation** du groupe `stack` : l'id d'alloc change.
-- **Après déploiement, lire l'image dans le conteneur** ; `/api/status` ne prouve rien.
+- **Un déploiement remplace toute l'allocation** (groupe `stack`).
+- **Après déploiement, lire l'image dans le conteneur.**
 - **Un compte de test a une adresse prouvée au Hub**, sinon il revient sur `/dashboard` (voulu).
 - **Jamais de test sur le compte d'un vrai client.** Sur le compte de Robert, un parcours ne clique ni filtre
   ni barre d'un marché enregistré : un clic crée une version (16/11, « Marché animalier » réécrit puis restauré).
@@ -171,6 +171,6 @@ Tests et builds : `lourd <commande>` (rise), jamais en local.
 
 ## Dette
 
-- `audit_log` n'existe pas en prod : audits ignorés.
+- `audit_log` absent en prod.
 - `prospection-ci.yml` sur `ubuntu-latest` (dépôt public).
 - `check-test-mapping.sh` ne voit rien sur un push vers `main`, et le pre-push ne le lance pas.

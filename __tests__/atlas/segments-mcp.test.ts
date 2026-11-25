@@ -384,3 +384,15 @@ describe("appel d'un programme : aucune coordonnée hors extraire_segment", () =
     }
   }, 60_000);
 });
+
+test("le marché entier suit le nom cherché : jamais le total de la France (chasseurs d'Hugo, 14/11)", async () => {
+  const s = sourceMarche();
+  const nom = String((await s.apercu(DEP69, { colonnes: ["nom"], page: 1, parPage: 1 })).lignes[0].nom); // le nom entier : un seul mot commun prendrait toute la base simulée
+  const f = { conditions: [{ champ: "nom", op: "contient", valeur: nom }] };
+  const r = await appel(A, "explorer_marche", { filtre: f });
+  expect(r.marche_entier).toEqual({ entreprises_actives: await s.compterMaitre(f), conditions_non_comptees: [] });
+  expect(r.marche_entier.entreprises_actives).toBeLessThan((await appel(A, "analyser_marche", {})).total.entreprises);
+  // Une condition que personne ne compte reste dite.
+  const e = await appel(A, "explorer_marche", { filtre: { conditions: [{ champ: "email", op: "renseigne", valeur: true }] } });
+  expect(e.marche_entier.conditions_non_comptees).toHaveLength(0 + (e.marche_entier.contactables === undefined ? 0 : 1));
+});
