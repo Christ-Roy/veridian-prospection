@@ -3,6 +3,7 @@
  *
  * Auth : HMAC §6.1 `{ts}.{body}`. Corps : { email, user_id, hub_tenant_id?, plan?, name?, email_proven? } (`metadata.hub_user_id` et
  * `metadata.hub_tenant_id` lus aussi).
+ * `plan` absent : aucun plan posé (`plan: null` rendu), ni gratuit ni autre.
  * 200 : tout est là, RELU. `created` et `cree` disent ce que cet appel a créé. Rejouer ne change rien, ni le plan ni le rôle.
  * Refus, rien d'écrit : 400 email_required | hub_user_id_required | invalid_plan | invalid_payload, 401, 409 email_not_linkable | user_deleted |
  * tenant_owned_by_other | tenant_soft_deleted | tenant_suspended | tenant_link_conflict, 429, 503 provision_failed.
@@ -46,7 +47,7 @@ export async function POST(request: NextRequest) {
   if (isRateLimited(`provision:${hubUserId}`, 10, 60_000)) return refus(429, "Too many requests");
 
   try {
-    const o = await ouvrirEspace({ hubUserId, email, emailProven: c.email_proven === true, hubTenantId: lien?.toLowerCase() ?? null, plan: typeof c.plan === "string" ? c.plan : undefined, nom: texte(c.name) });
+    const o = await ouvrirEspace({ hubUserId, email, emailProven: c.email_proven === true, hubTenantId: lien?.toLowerCase() ?? null, plan: typeof c.plan === "string" ? c.plan : c.plan === undefined || c.plan === null ? undefined : "illisible", nom: texte(c.name) });
     const { jeton } = await emettreJetonConnexion(o.user_id, 24 * 3600 * 1000);
     const { apiKey, cree, ...reste } = o;
     console.log(`[provision] ouvert user=${o.user_id} tenant=${o.tenant_id} hub_tenant=${o.hub_tenant_id ?? "aucun"} plan=${o.plan} cree=${Object.entries(cree).filter(([, x]) => x).map(([k]) => k).join("+") || "rien"}`);

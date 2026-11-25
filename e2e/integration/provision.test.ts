@@ -129,4 +129,21 @@ test("l'adresse en majuscules désigne la même personne", async () => {
   const a = await ouvrir({ email: email.toUpperCase() });
   expect(await ouvrir()).toMatchObject({ s: 200, j: { tenant_id: a.j.tenant_id, created: false } });
 });
-test("plans", () => expect(["freemium", "free", undefined, "pro", "business", "enterprise", "platine", "Pro"].map(planLocal)).toEqual(["freemium", "freemium", "freemium", "pro", "business", "business", null, null]));
+test("plans", () => expect(["freemium", "free", "pro", "business", "enterprise", "platine", "Pro", undefined, null, ""].map(planLocal)).toEqual(["freemium", "freemium", "pro", "business", "business", undefined, undefined, null, null, null]));
+test("plan absent : aucun plan posé, rendu nul, absent de by-email ; aucun droit payant ; update-plan reste libre de le poser", async () => {
+  for (const plan of [undefined, null, ""]) {
+    hub = randomUUID();
+    org = randomUUID();
+    email = `ouv-${randomUUID().slice(0, 8)}@exemple.invalid`;
+    vus.push(email);
+    const r = await ouvrir({ plan });
+    expect(r).toMatchObject({ s: 200, j: { created: true, plan: null } });
+    expect(await prisma.tenant.findUniqueOrThrow({ where: { id: r.j.tenant_id as string }, select: { plan: true, planSource: true } })).toEqual({ plan: null, planSource: null });
+    const q = await (await parEmail(new NextRequest(`https://x/api/users/by-email?email=${encodeURIComponent(email)}`, { headers: signe("") }))).json();
+    expect(q.found).toBe(true);
+    expect(q.workspaces[0]).not.toHaveProperty("plan");
+    const { droits } = await import("@/atlas/acces");
+    expect(await droits(r.j.user_id as string, r.j.tenant_id as string, true)).toMatchObject({ plan: null, payant: false, accesAvance: false });
+  }
+  expect(await ouvrir({ plan: 42 })).toMatchObject({ s: 400, j: { error: "invalid_plan" } });
+});

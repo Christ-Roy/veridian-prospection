@@ -26,7 +26,8 @@ export type Ouverture = {
   hub_tenant_id: string | null;
   workspace_id: string;
   role: string;
-  plan: string;
+  /** Nul : aucun plan posé. Jamais un plan par défaut (Robert, 22/11) : il vient du Hub, par la suite, ou pas. */
+  plan: string | null;
   status: string;
   name: string;
   /** Ce que CET appel a créé. */
@@ -35,10 +36,11 @@ export type Ouverture = {
   apiKey: string | null;
 };
 
-/** Nom du plan local, ou null s'il n'existe pas : un plan inconnu ne devient jamais « gratuit » en silence. */
-export function planLocal(plan: string | undefined): string | null {
-  if (plan === undefined || plan === "" || plan === "freemium") return "freemium";
-  return isCanonicalPlan(plan) ? mapCanonicalPlanToLocal(plan).localPlan : null;
+/** Nom du plan local ; null si aucun n'est demandé ; undefined s'il n'existe pas : un plan inconnu ne devient jamais « gratuit » en silence. */
+export function planLocal(plan: string | null | undefined): string | null | undefined {
+  if (plan === undefined || plan === null || plan === "") return null;
+  if (plan === "freemium") return "freemium";
+  return isCanonicalPlan(plan) ? mapCanonicalPlanToLocal(plan).localPlan : undefined;
 }
 
 const slugDe = (email: string) => email.split("@")[0].toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "espace";
@@ -46,7 +48,7 @@ const slugDe = (email: string) => email.split("@")[0].toLowerCase().replace(/[^a
 export async function ouvrirEspace(e: { hubUserId: string; email: string; emailProven: boolean; hubTenantId: string | null; plan?: string; nom?: string | null }): Promise<Ouverture> {
   const email = e.email.trim().toLowerCase();
   const plan = planLocal(e.plan);
-  if (!plan) throw new RefusOuverture("invalid_plan", 400, { plan: e.plan });
+  if (plan === undefined) throw new RefusOuverture("invalid_plan", 400, { plan: e.plan });
 
   const r = await prisma.$transaction(
     async (tx) => {
@@ -83,10 +85,10 @@ export async function ouvrirEspace(e: { hubUserId: string; email: string; emailP
     prisma.workspaceMember.findFirst({ where: { userId: r.userId, workspaceId: r.workspaceId, deletedAt: null, workspace: { tenantId: r.tenantId, deletedAt: null } }, select: { role: true } }),
   ]);
   if (!t || !m || (e.hubTenantId && t.hubTenantId !== e.hubTenantId)) throw new RefusOuverture("not_verified", 500);
-  return { user_id: r.userId, tenant_id: t.id, hub_tenant_id: t.hubTenantId, workspace_id: r.workspaceId, role: m.role, plan: t.plan ?? "freemium", status: t.status, name: t.name, cree: r.cree, apiKey: r.apiKey };
+  return { user_id: r.userId, tenant_id: t.id, hub_tenant_id: t.hubTenantId, workspace_id: r.workspaceId, role: m.role, plan: t.plan, status: t.status, name: t.name, cree: r.cree, apiKey: r.apiKey };
 }
 
-async function espaceDe(tx: Prisma.TransactionClient, userId: string, e: { hubTenantId: string | null; nom?: string | null }, plan: string, email: string) {
+async function espaceDe(tx: Prisma.TransactionClient, userId: string, e: { hubTenantId: string | null; nom?: string | null }, plan: string | null, email: string) {
   const champs = { id: true, userId: true, hubTenantId: true, status: true, deletedAt: true } as const;
   const parLien = e.hubTenantId ? await tx.tenant.findUnique({ where: { hubTenantId: e.hubTenantId }, select: champs }) : null;
   if (parLien && parLien.userId !== userId) throw new RefusOuverture("tenant_owned_by_other", 409, { tenant_id: parLien.id });
@@ -102,6 +104,6 @@ async function espaceDe(tx: Prisma.TransactionClient, userId: string, e: { hubTe
     return { tenant: vivant, espace: false, lien };
   }
   const nom = e.nom?.trim().slice(0, 120) || email.split("@")[0];
-  const tenant = await tx.tenant.create({ data: { userId, name: nom, slug: `${slugDe(email)}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, status: "active", plan, hubTenantId: e.hubTenantId }, select: champs });
+  const tenant = await tx.tenant.create({ data: { userId, name: nom, slug: `${slugDe(email)}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, status: "active", plan, ...(plan === null ? { planSource: null } : {}), hubTenantId: e.hubTenantId }, select: champs });
   return { tenant, espace: true, lien: !!e.hubTenantId };
 }

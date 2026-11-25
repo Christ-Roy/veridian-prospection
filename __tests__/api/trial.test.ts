@@ -29,10 +29,10 @@ describe("GET /api/trial", () => {
     expect(m.tenant).toHaveBeenCalledWith({ where: { id: "t1" }, select: { plan: true } });
   });
 
-  test("plan absent : freemium ; sans session : 401 en JSON", async () => {
+  test("plan absent : nul, jamais freemium par défaut ; sans session : 401 en JSON", async () => {
     m.ctx.mockResolvedValue({ userId: "u", tenantId: "t1" });
     m.tenant.mockResolvedValue({ plan: null });
-    expect((await (await GET()).json()).plan).toBe("freemium");
+    expect((await (await GET()).json()).plan).toBeNull();
     m.ctx.mockResolvedValue(null);
     const r = await GET();
     expect(r.status).toBe(401);

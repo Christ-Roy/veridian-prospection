@@ -126,13 +126,13 @@ export async function GET(
   // Plan : source de vérité = colonne Prisma `plan` (model Tenant).
   // Backfill historique migration 0004 : plan ← COALESCE(plan, prospection_plan).
   // Fallback "freemium" si raw query échoue (DB de test sans la colonne).
-  let plan: string | null = "freemium";
+  let plan: string | null = null;
   try {
     const rows = await prisma.$queryRawUnsafe<{ plan: string | null }[]>(
       `SELECT plan FROM tenants WHERE id = $1::uuid LIMIT 1`,
       tenantId,
     );
-    plan = rows[0]?.plan ?? "freemium";
+    plan = rows[0]?.plan ?? null;
   } catch {
     // colonne absente (test/local) → on garde "freemium"
   }

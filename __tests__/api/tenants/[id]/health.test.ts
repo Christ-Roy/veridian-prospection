@@ -10,7 +10,7 @@
  *  - 200 + magic_link_capable=false si tenant soft-deleted
  *  - 200 + status=suspended si tenant.status='suspended'
  *  - members_count cohérent avec le nombre de membres workspace default
- *  - plan rempli depuis tenant.plan (fallback freemium si raw query échoue)
+ *  - plan rempli depuis tenant.plan (nul si la lecture échoue : jamais un plan par défaut)
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
 import { createHmac } from "crypto";
@@ -247,7 +247,7 @@ describe("GET /api/tenants/{id}/health", () => {
     expect(mocks.workspaceFindFirst.mock.calls[0][0].where.tenantId).toBe(TENANT_ID);
   });
 
-  test("fallback plan=freemium si raw query échoue", async () => {
+  test("plan nul si la lecture échoue, jamais freemium par défaut", async () => {
     mocks.tenantFindUnique.mockResolvedValue({
       id: TENANT_ID,
       userId: "owner-uid",
@@ -262,6 +262,6 @@ describe("GET /api/tenants/{id}/health", () => {
     mocks.queryRawUnsafe.mockRejectedValueOnce(new Error("column missing"));
     const { req, params } = signedGet(TENANT_ID);
     const body = (await readJson(await GET(req, { params }))) as { plan: string };
-    expect(body.plan).toBe("freemium");
+    expect(body.plan).toBeNull();
   });
 });

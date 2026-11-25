@@ -240,7 +240,7 @@ describe("GET /api/users/by-email — Hub Discovery", () => {
     expect(body.workspaces[0].hub_tenant_id).toBe("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
   });
 
-  test("plan fallback freemium si tenant.plan null", async () => {
+  test("aucun plan posé : champ absent, jamais « gratuit » par défaut (22/11)", async () => {
     mocks.userFindFirst.mockResolvedValue({ id: "u1", email: "x@y.com" });
     mocks.memberFindMany.mockResolvedValue([
       { role: "owner", workspace: { id: "w1", name: "W", tenantId: "t1" } },
@@ -251,7 +251,8 @@ describe("GET /api/users/by-email — Hub Discovery", () => {
 
     const res = await GET(req({ email: "x@y.com" }, signedHeaders()));
     const body = (await readJson(res)) as { workspaces: Array<{ plan: string }> };
-    expect(body.workspaces[0].plan).toBe("freemium");
+    expect(body.workspaces).toHaveLength(1);
+    expect(body.workspaces[0]).not.toHaveProperty("plan");
   });
 
   test("email normalisé en lowercase + trim avant lookup (anti-bypass cache Hub)", async () => {

@@ -35,7 +35,7 @@ type WorkspaceCard = {
   hub_tenant_id: string | null;
   workspace_name: string;
   role: string;
-  plan: string;
+  plan?: string;
   /** Statut d'essai posé par le Hub (`metadata.hub_trial`), `null` tant qu'il n'en a envoyé aucun. Jamais omis. */
   trial_status: string | null;
   status: "active" | "suspended" | "deleted";
@@ -135,7 +135,8 @@ export async function GET(request: NextRequest) {
         hub_tenant_id: tenant.hubTenantId ?? null,
         workspace_name: m.workspace.name,
         role: m.role,
-        plan: tenant.plan ?? "freemium",
+        // Aucun plan posé : le champ est absent, jamais « gratuit » par défaut.
+        ...(tenant.plan ? { plan: tenant.plan } : {}),
         trial_status: hubTrialStatus(tenant.metadata),
         status: "active",
         // Prospection supporte l'autologin via /api/auth/token (cf

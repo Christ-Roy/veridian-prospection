@@ -15,5 +15,5 @@ export async function GET() {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
   const t = await prisma.tenant.findUnique({ where: { id: ctx.tenantId }, select: { plan: true } });
-  return NextResponse.json({ plan: t?.plan ?? "freemium", isExpired: false }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({ plan: t?.plan ?? null, isExpired: false }, { headers: { "Cache-Control": "no-store" } });
 }
