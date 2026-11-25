@@ -167,7 +167,7 @@ export function versXlsx(ids: readonly string[], lignes: readonly Ligne[], nomFe
 }
 
 /** Nom de fichier sûr : « atlas-eleveurs-rhone-2026-11-10.xlsx ». */
-export function nomFichier(nomSegment: string, format: FormatExport, jour = new Date()): string {
+export function nomFichier(nomSegment: string, format: FormatExport | "pdf", jour = new Date()): string {
   const base = nomSegment
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")

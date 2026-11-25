@@ -616,6 +616,20 @@ model AtlasClient {
   @@map("atlas_clients")
 }
 
+/// Rapport PDF d'un marché : le texte et son auteur ; les chiffres se relisent à chaque ouverture (src/atlas/rapport.ts).
+model AtlasRapport {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  segmentId String   @map("segment_id") @db.Uuid
+  titre     String
+  texte     String
+  auteur    String
+  creeLe    DateTime @default(now()) @map("cree_le") @db.Timestamptz
+
+  @@index([tenantId, creeLe])
+  @@map("atlas_rapports")
+}
+
 /// IA qui ont appelé Prospection par la porte MCP du Hub (une ligne par utilisateur et client OAuth).
 model AtlasPresenceIa {
   id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid

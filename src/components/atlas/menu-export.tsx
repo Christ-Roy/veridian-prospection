@@ -76,6 +76,9 @@ export function MenuExport({
           <button type="button" role="menuitem" disabled={!!envoi} onClick={() => void exporter("csv")}>
             {envoi === "csv" ? "Préparation…" : "Fichier CSV"}
           </button>
+          <a role="menuitem" href={`/api/atlas/rapport?segment_id=${encodeURIComponent(segmentId)}`} target="_blank" rel="noopener noreferrer" onClick={() => setOuvert(false)}>
+            Rapport PDF
+          </a>
           {liaisons.crm && (
             <button type="button" role="menuitem" onClick={() => (setOuvert(false), onEnvoi("crm"))}>
               Envoyer au CRM

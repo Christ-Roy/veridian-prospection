@@ -234,6 +234,8 @@ export function VoletAcces({ droits, onFermer }: { droits: DroitsAtlas; onFermer
           <div className="callout">
             Votre espace a l&apos;accès avancé : votre IA peut lire la base ODH en SQL (outils <code>schema_odh</code> et <code>requete_sql</code>), et
             vos scripts appellent tous les outils Atlas avec une clé API, par <code>POST /api/atlas/&lt;outil&gt;</code>.
+            Chaque marché enregistré a aussi sa route : <code>GET /api/v1/marches</code> les liste, <code>/api/v1/marches/openapi.json</code> les décrit
+            (taille, pénétration, répartition, entreprises).
           </div>
           {erreur && (
             <p className="err" role="alert">

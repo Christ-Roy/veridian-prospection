@@ -698,6 +698,22 @@ const OUTILS_BRUTS: Outil[] = [
     }),
   },
   {
+    name: "creer_rapport",
+    title: "Créer un rapport PDF",
+    description:
+      "Crée un rapport PDF d'un marché ou d'une cible : ton titre et ton analyse (texte simple), suivis des chiffres et graphiques d'Atlas (taille, départements, " +
+      "activités, effectifs, créations, clients). Rend le lien à ouvrir par l'utilisateur connecté.",
+    input: z.object({ segment_id: SEGMENT, titre: z.string().trim().min(1).max(120), texte: z.string().trim().max(6000).default("") }),
+    annotations: ECRITURE,
+    visible: peutEcrire,
+    run: lisible(async (a, c) => {
+      const s = await seg.lireSegment(c.ctx.tenantId, a.segment_id as string);
+      const r = await prisma.atlasRapport.create({ data: { tenantId: c.ctx.tenantId, segmentId: s.id, titre: a.titre as string, texte: a.texte as string, auteur: auteur(c).id }, select: { id: true } });
+      const base = (process.env.NEXTAUTH_URL || "https://prospection.app.veridian.site").replace(/\/$/, "");
+      return { rapport_id: r.id, segment: s.nom, pdf: `${base}/api/atlas/rapport?id=${r.id}`, lecture: "Lien à ouvrir par l'utilisateur, connecté à Atlas. Les chiffres se relisent à chaque ouverture." };
+    }),
+  },
+  {
     name: "supprimer_segment",
     title: "Supprimer un segment",
     description:
