@@ -72,8 +72,9 @@ export async function POST(request: NextRequest) {
     const [l] = await tx.$queryRaw<{ metadata: unknown }[]>`SELECT metadata FROM tenants WHERE id = ${tenant.id}::uuid FOR UPDATE`;
     const v = versionDe(l?.metadata);
     if (v !== null && doc.version <= v) return false; // une version plus récente est passée entre-temps
+    // `nom` est celui du compte au Hub ; seul `nom_affiche`, choisi par le propriétaire, renomme. Nul : le nom reste.
     const organisation: Organisation = { version: doc.version, nom: doc.nom, type: doc.type, marque: doc.marque };
-    await tx.tenant.update({ where: { id: tenant.id }, data: { name: doc.nom, metadata: { ...objet(l?.metadata), organisation } as Prisma.InputJsonValue } });
+    await tx.tenant.update({ where: { id: tenant.id }, data: { ...(doc.marque.nom_affiche ? { name: doc.marque.nom_affiche } : {}), metadata: { ...objet(l?.metadata), organisation } as Prisma.InputJsonValue } });
     return true;
   });
   invalidateAllUserContexts();

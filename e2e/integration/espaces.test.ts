@@ -109,25 +109,30 @@ test("le document s'applique, se relit, ne recule pas ; membres ajoutés, jamais
   expect(await pousser()).toEqual([200, { applied: true, version: 100, refuses: 0 }]);
   expect(await version()).toEqual([200, 100]);
   const t = await prisma.tenant.findUniqueOrThrow({ where: { id: T.etranger } });
-  expect([t.name, (t.metadata as { hub_trial: unknown }).hub_trial]).toEqual(["Boulangerie Martin", { status: "x" }]);
+  expect([t.name, (t.metadata as { hub_trial: unknown }).hub_trial]).toEqual(["Martin", { status: "x" }]);
   expect(await pousser()).toEqual([200, { applied: false, reason: "unchanged" }]);
+  // Sans nom choisi (nul, vide ou absent), l'organisation garde le sien : le nom du compte ne renomme jamais.
+  for (const [i, nom_affiche] of [null, "", "  ", undefined].entries()) {
+    expect((await pousser({ version: 1000 + i, nom: "robert's Workspace", marque: { nom_affiche } }))[1]).toMatchObject({ applied: true });
+    expect((await prisma.tenant.findUniqueOrThrow({ where: { id: T.etranger } })).name).toBe("Martin");
+  }
   expect(await pousser({ version: 99, nom: "Vieux" })).toEqual([200, { applied: false, reason: "stale" }]);
   const neuf = await prisma.user.findFirstOrThrow({ where: { hubUserId: HN } });
   U.neuf = { id: neuf.id, email: neuf.email };
   const fiche = () => prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId: W.etranger, userId: neuf.id } } });
   expect((await fiche())?.role).toBe("member");
-  await pousser({ version: 101, membres: [] });
+  await pousser({ version: 2001, membres: [] });
   expect((await fiche())?.deletedAt).toBeNull();
   await prisma.workspaceMember.updateMany({ where: { userId: neuf.id }, data: { deletedAt: new Date() } });
-  await pousser({ version: 102, membres: [{ ...doc().membres[0], joined_at: new Date(Date.now() - 3600_000).toISOString() }] });
+  await pousser({ version: 2002, membres: [{ ...doc().membres[0], joined_at: new Date(Date.now() - 3600_000).toISOString() }] });
   expect((await fiche())?.deletedAt).not.toBeNull();
-  await pousser({ version: 103, membres: [{ ...doc().membres[0], joined_at: new Date(Date.now() + 3600_000).toISOString(), role: "inconnu" }] });
+  await pousser({ version: 2003, membres: [{ ...doc().membres[0], joined_at: new Date(Date.now() + 3600_000).toISOString(), role: "inconnu" }] });
   expect([(await fiche())?.deletedAt, (await fiche())?.role]).toEqual([null, "viewer"]);
 });
 test("une adresse liée à une autre identité du Hub, ou un compte supprimé, n'entre pas : refusé et dit", async () => {
   vi.stubEnv("HUB_API_SECRET", SECRET);
   const m = { email_proven: true, name: null, role: "admin", joined_at: new Date().toISOString() };
-  expect((await pousser({ version: 110, membres: [{ ...m, hub_user_id: randomUUID(), email: U.neuf.email }] }))[1]).toMatchObject({ applied: true, refuses: 1 });
+  expect((await pousser({ version: 2010, membres: [{ ...m, hub_user_id: randomUUID(), email: U.neuf.email }] }))[1]).toMatchObject({ applied: true, refuses: 1 });
   expect(await prisma.workspaceMember.count({ where: { workspaceId: W.etranger, role: "admin", userId: { not: U.etranger.id } } })).toBe(0);
 });
 test("le rebond pose l'organisation active du Hub si l'on en est membre, sinon on entre comme avant", async () => {
