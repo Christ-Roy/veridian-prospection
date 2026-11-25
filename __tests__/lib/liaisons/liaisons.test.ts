@@ -16,7 +16,7 @@ import { RefusLiaison } from "@/lib/liaisons/erreurs";
 import { liaisonOuverte } from "@/lib/liaisons/drapeau";
 import { adresseSure, demanderJeton } from "@/lib/liaisons/hub";
 import { appelerCrm, appelerMail } from "@/lib/liaisons/action";
-import { adresseRebond, BILAN_MAIL_VIDE, cumulerMail, envoisPossibles, lireReprise, MOTIFS, PAGE_MAIL, phraseEteintes, phraseFicheCrm, phrasesMail, preparerRebond } from "@/components/atlas/liaisons-logique";
+import { adresseRebond, BILAN_MAIL_VIDE, cumulerMail, envoisPossibles, lireReprise, MOTIFS, PAGE_MAIL, phraseEteintes, phraseFicheCrm, phrasesMail, preparerRebond, appelerLiaison, repriseReseau } from "@/components/atlas/liaisons-logique";
 
 const prod = { NODE_ENV: "production" } as NodeJS.ProcessEnv;
 const T = "0891ed5a-4ce1-49ff-be3c-91628b357f4f";
@@ -226,4 +226,23 @@ test("une étape n'est reprise comme morte qu'après la fin possible de l'appel 
 test("un téléphone refusé par le CRM se dit, la société est là", () => {
   expect(phraseFicheCrm({ sort: "cree", sansTelephone: true })).toBe("Société ajoutée à votre CRM. Le téléphone a été refusé, il reste dans la note de la tâche.");
   expect(phraseFicheCrm({ sort: "cree" })).toBe("Société ajoutée à votre CRM.");
+});
+
+test("réponse perdue en route : le même geste est rejoué une fois ; deux pertes se disent ; un refus ne se rejoue jamais", async () => {
+  repriseReseau.ms = 0;
+  const corps = { geste: "g-1" };
+  const jouer = async (...suite: (Response | Error)[]) => {
+    const f = vi.fn(async () => {
+      const x = suite.shift()!;
+      if (x instanceof Error) throw x;
+      return x;
+    });
+    vi.stubGlobal("fetch", f);
+    const r = await appelerLiaison("mail-segment", corps).catch((e) => e.code as string);
+    vi.unstubAllGlobals();
+    return [r, f.mock.calls.map((c) => (c as unknown as [string, { body: string }])[1].body)];
+  };
+  expect(await jouer(new TypeError("perdu"), Response.json({ crees: 1 }))).toEqual([{ crees: 1 }, [JSON.stringify(corps), JSON.stringify(corps)]]);
+  expect((await jouer(new TypeError("a"), new TypeError("b")))[0]).toBe("reseau");
+  expect((await jouer(Response.json({ error: "non", code: "plan" }, { status: 402 })))[1]).toHaveLength(1);
 });

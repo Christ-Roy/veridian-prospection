@@ -36,11 +36,19 @@ export class ErreurLiaison extends Error {
   }
 }
 
+/** Réglable par les tests. */
+export const repriseReseau = { ms: 1500 };
+
 /** Réponse illisible ou réseau coupé : jamais présentée comme un succès. */
 export async function appelerLiaison<T>(action: string, corps: object): Promise<T> {
   let res: Response;
+  const demander = () => fetch(`/api/liaisons/${action}`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
   try {
-    res = await fetch(`/api/liaisons/${action}`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
+    // Réponse perdue en route (vu en prod le 25/11 alors que le serveur avait abouti) : le même geste, une fois. Il n'écrit rien deux fois.
+    res = await demander().catch(async () => {
+      await new Promise((r) => setTimeout(r, repriseReseau.ms));
+      return demander();
+    });
   } catch {
     throw new ErreurLiaison("Réseau indisponible. Vous pouvez réessayer, rien ne sera créé deux fois.", "reseau");
   }
