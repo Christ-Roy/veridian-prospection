@@ -4,6 +4,7 @@
  */
 import { z } from "zod";
 
+import { selonPlan } from "@/atlas/gratuit";
 import { enRestreint } from "@/atlas/restreint";
 
 import { refuserCoordonnees, retirerCoordonnees, sansCoordonnees } from "./coordonnees";
@@ -111,7 +112,7 @@ export async function traiter(m: Message, c: ContexteOutil, journal: Journal = (
         const a = args.data as Record<string, unknown>;
         const sans = sansCoordonnees(outil, c, restreint);
         if (sans) refuserCoordonnees(outil, a);
-        const valeur = sans ? retirerCoordonnees(await enRestreint(() => outil.run(a, c))) : await outil.run(a, c);
+        const valeur = sans ? retirerCoordonnees(await enRestreint(() => outil.run(a, c))) : await selonPlan(outil, a, c);
         journal({ outil: outil.name, issue: "ok", ms: Date.now() - t0 });
         return resultat(id, valeur, programme);
       } catch (e) {

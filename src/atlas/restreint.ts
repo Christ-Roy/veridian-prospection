@@ -10,6 +10,7 @@ export const CHAMPS_COORDONNEES = new Set(["email", "telephone"]);
 export const ORIENTATION =
   "Dans un programme, les coordonnées (email, téléphone) ne sortent que par extraire_segment (plan payant, 5 000 lignes par jour) : creer_segment avec ce filtre, puis extraire_segment.";
 
-const portee = new AsyncLocalStorage<true>();
-export const enRestreint = <T>(f: () => Promise<T>): Promise<T> => portee.run(true, f);
-export const devine = (champ: string, op: string): boolean => portee.getStore() === true && CHAMPS_COORDONNEES.has(champ) && op !== "renseigne";
+const portee = new AsyncLocalStorage<string>();
+export const enRestreint = <T>(f: () => Promise<T>, orientation = ORIENTATION): Promise<T> => portee.run(orientation, f);
+/** L'orientation à rendre si ce filtre ferait deviner une coordonnée, null sinon. */
+export const devine = (champ: string, op: string): string | null => (CHAMPS_COORDONNEES.has(champ) && op !== "renseigne" ? (portee.getStore() ?? null) : null);

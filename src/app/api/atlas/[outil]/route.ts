@@ -11,6 +11,7 @@ import { isRateLimited } from "@/lib/rate-limit";
 import { ErreurOutil } from "@/lib/mcp/erreur";
 import { outilsVisibles } from "@/lib/mcp/outils";
 import { contexteDepuisCle, droits } from "@/atlas/acces";
+import { selonPlan } from "@/atlas/gratuit";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: args.error.issues.map((i) => `${i.path.join(".") || "arguments"} : ${i.message}`).join(" ; ") }, { status: 400 });
   }
   try {
-    return NextResponse.json(await outil.run(args.data as Record<string, unknown>, c), { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(await selonPlan(outil, args.data as Record<string, unknown>, c), { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     if (e instanceof ErreurOutil) return NextResponse.json({ error: e.message }, { status: 400 });
     console.error(`[atlas] ${nom} :`, e);

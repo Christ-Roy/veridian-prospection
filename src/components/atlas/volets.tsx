@@ -91,14 +91,19 @@ export function VoletFiche({
   onFermer: () => void;
 }) {
   const [fiche, setFiche] = useState<Fiche | null>(null);
+  const [reserve, setReserve] = useState<string | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [envoi, setEnvoi] = useState(false);
   useEffect(() => {
     const ctl = new AbortController();
     setFiche(null);
     setErreur(null);
-    appeler<{ fiche: Fiche }>("fiche_entreprise_atlas", { siren }, ctl.signal)
-      .then((r) => setFiche(r.fiche))
+    setReserve(null);
+    appeler<{ fiche: Fiche; coordonnees_retirees?: string }>("fiche_entreprise_atlas", { siren }, ctl.signal)
+      .then((r) => {
+        setFiche(r.fiche);
+        setReserve(r.coordonnees_retirees ?? null);
+      })
       .catch((e) => !estAnnulation(e) && setErreur(texteErreur(e)));
     return () => ctl.abort();
   }, [siren]);
@@ -131,6 +136,14 @@ export function VoletFiche({
         <p className="err" role="alert">
           <Icone nom="alerte" />
           {erreur}
+        </p>
+      )}
+      {reserve && (
+        <p className="banner">
+          {reserve}{" "}
+          <a className="lnk" href={`${process.env.NEXT_PUBLIC_HUB_URL || "https://app.veridian.site"}/dashboard/billing`} target="_blank" rel="noopener noreferrer">
+            Voir les plans
+          </a>
         </p>
       )}
       {!fiche && !erreur && <Chargement texte="Lecture de la fiche…" />}

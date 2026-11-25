@@ -5,7 +5,7 @@
  * Exception : l'accès avancé, qui lit déjà la base en SQL.
  *
  * L'en-tête du programme ne donne donc aucun droit ici, il en retire. Son absence ne prouve pas un humain : rien de
- * plus n'est ouvert sans lui. L'appel direct n'est pas concerné (VER-249, décision de Robert).
+ * plus n'est ouvert sans lui. L'appel direct : src/atlas/gratuit.ts (VER-249).
  *
  * On traite la classe : le retrait lit la sortie de TOUT outil, un outil ajouté demain est couvert sans y penser.
  */
@@ -35,7 +35,7 @@ export function refuserCoordonnees(outil: Outil, args: Record<string, unknown>):
 }
 
 /** Copie de la valeur sans ses coordonnées ; un avis est ajouté si quelque chose a été retiré. */
-export function retirerCoordonnees(valeur: unknown): unknown {
+export function retirerCoordonnees(valeur: unknown, orientation = ORIENTATION): unknown {
   let retire = false;
   const passer = (v: unknown): unknown => {
     if (typeof v === "string") {
@@ -56,5 +56,5 @@ export function retirerCoordonnees(valeur: unknown): unknown {
     return o;
   };
   const propre = passer(valeur);
-  return retire && propre && typeof propre === "object" && !Array.isArray(propre) ? { ...propre, coordonnees_retirees: ORIENTATION } : propre;
+  return retire && propre && typeof propre === "object" && !Array.isArray(propre) ? { ...propre, coordonnees_retirees: orientation } : propre;
 }

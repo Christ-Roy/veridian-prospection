@@ -309,6 +309,30 @@ describe("appel d'un programme : aucune coordonnée hors extraire_segment", () =
       expect((await prog("avance", nom, ap[nom])).brut, nom).toMatch(COORDONNEE);
     }
     expect((await prog("gratuit", "explorer_marche", { filtre: TOUT, colonnes: COLONNES }, false)).brut).toMatch(COORDONNEE);
+
+    // VER-249, éteint par défaut : allumé, un compte gratuit n'en lit plus par aucun outil, en appel direct ; les autres ne bougent pas.
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("hors ligne"); }));
+    for (const valeur of ["masque", "fiches:0"]) {
+      vi.stubEnv("ATLAS_GRATUIT_COORDONNEES", valeur);
+      for (const plan of ["gratuit", "absents"] as Plan[]) {
+        for (const [nom, args] of Object.entries(ap)) {
+          const r = await prog(plan, nom, args, false);
+          expect(r.erreur, `${valeur} ${plan} ${nom}`).toBeNull();
+          expect(r.brut, `${valeur} ${plan} ${nom}`).not.toMatch(COORDONNEE);
+        }
+        const fiche = await prog(plan, "fiche_entreprise_atlas", { siren }, false);
+        expect(fiche.brut).toContain("réservés aux plans payants");
+        expect(fiche.brut).toContain("identite");
+        expect((await prog(plan, "explorer_marche", { filtre: { conditions: [{ champ: "email", op: "contient", valeur: "contact@" }] } }, false)).erreur).toMatch(/plans payants/);
+      }
+      for (const plan of ["payant", "avance"] as Plan[]) for (const nom of ["classer_segment", "fiche_entreprise_atlas"]) expect((await prog(plan, nom, ap[nom], false)).brut, `${valeur} ${plan}`).toMatch(COORDONNEE);
+    }
+    for (const illisible of ["", "oui", "fiches:", "masque,fiches:2"]) {
+      vi.stubEnv("ATLAS_GRATUIT_COORDONNEES", illisible);
+      expect((await prog("gratuit", "fiche_entreprise_atlas", { siren }, false)).brut, illisible).toMatch(COORDONNEE);
+    }
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
   });
 
   test("demander la colonne est refusé avec une orientation ; hors programme, accepté", async () => {

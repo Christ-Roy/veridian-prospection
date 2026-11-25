@@ -9,7 +9,7 @@
 import { z } from "zod";
 
 import { CHAMP, OPERATEURS, type Champ } from "./champs";
-import { devine, ORIENTATION } from "./restreint";
+import { devine } from "./restreint";
 
 const ConditionSchema = z
   .object({
@@ -96,7 +96,8 @@ function compilerCondition(c: Condition, i: number, p: (type: string, v: unknown
   if (!OPERATEURS[champ.type].includes(c.op)) {
     throw new FiltreInvalide(`conditions.${i} : opérateur « ${c.op} » impossible sur ${champ.libelle} (${OPERATEURS[champ.type].join(", ")})`);
   }
-  if (devine(champ.id, c.op)) throw new FiltreInvalide(`conditions.${i} : ${champ.libelle} ne se filtre ici que par « renseigne ». ${ORIENTATION}`);
+  const devinee = devine(champ.id, c.op);
+  if (devinee) throw new FiltreInvalide(`conditions.${i} : ${champ.libelle} ne se filtre ici que par « renseigne ». ${devinee}`);
   const col = champ.sql;
   const err = (attendu: string) => new FiltreInvalide(`conditions.${i} : ${champ.libelle} « ${c.op} » attend ${attendu}`);
   const v = c.valeur;

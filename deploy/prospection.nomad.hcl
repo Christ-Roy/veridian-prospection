@@ -185,6 +185,9 @@ NEXT_PUBLIC_HUB_URL=https://app.veridian.site
 HUB_API_URL=https://app.veridian.site
 # Liaisons vers le CRM et Mail (docs/LIAISONS.md). Vide = éteint, aucun bouton.
 ATLAS_LIAISONS=crm=359b76d5-bab7-4773-a889-cf4cf0248869;notifuse=*
+# VER-249, décision de Robert : vide = un compte gratuit lit emails et téléphones (état d'avant). « masque » = aucun ;
+# « fiches:20 » = ceux de 20 fiches ouvertes par jour, jamais dans une liste. Voir src/atlas/gratuit.ts.
+ATLAS_GRATUIT_COORDONNEES=
 # Repli tant que le Hub ne rend pas l'adresse d'action dans sa réponse.
 LIAISON_URL_CRM=https://crm.app.veridian.site/mcp
 LIAISON_URL_NOTIFUSE=https://notifuse.app.veridian.site/api/veridian/actions
