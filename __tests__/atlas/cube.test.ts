@@ -6,7 +6,7 @@
 import { describe, expect, test } from "vitest";
 
 import { CHAMPS } from "@/atlas/champs";
-import { COLONNES_MESURES, compilerCube, entreeDepuisFiltre, libelleCube } from "@/atlas/cube";
+import { COLONNES_MESURES, mesures, compilerCube, entreeDepuisFiltre, libelleCube } from "@/atlas/cube";
 import { KPIS_MARCHE } from "@/components/atlas/flux";
 import { FiltreInvalide } from "@/atlas/filtres";
 import { NAF_LIBELLES, normaliserNaf } from "@/atlas/naf";
@@ -144,4 +144,24 @@ describe("source simulée : marche()", () => {
     expect(r.lignes.reduce((a, l) => a + l.entreprises, 0)).toBe(r.total.entreprises);
     await expect(s.marche({ naf: ["01-49"] })).rejects.toThrow(FiltreInvalide);
   });
+});
+
+test("un marché défini par un nom : base maître, mots en paramètres, mêmes filtres, sans signaux", () => {
+  const { entree, ignorees } = entreeDepuisFiltre({ conditions: [{ champ: "nom", op: "contient", valeur: "Chasseurs" }, { champ: "departement", op: "dans", valeur: ["69"] }, { champ: "date_creation", op: "apres", valeur: "2020-01-01" }, { champ: "email", op: "renseigne", valeur: true }] });
+  expect([entree.noms, ignorees.map((c) => c.champ)]).toEqual([["chass"], ["email"]]);
+  const c = compilerCube({ ...entree, axe: "annee_creation" });
+  for (const q of [c.total, c.repartition!]) {
+    expect(q).toContain("FROM odh.company_master_current");
+    expect(q).toContain("hasAnyTokens(name_terms, {nom0:Array(String)})");
+    expect(q).toContain("department IN {dep:Array(String)}");
+    expect(q).toContain("ifNull(toYear(creation_date), 0) >= {amin:UInt16}");
+    expect(q).not.toMatch(/chass|market_cube|signal_|naf_rev2|annee_creation >=/i);
+  }
+  expect((c.params.nom0.valeur as string[])).toContain("chasseurs");
+  expect(compilerCube({ ...entree, naf: ["0170Z"] }).total).toContain("naf_rev2 = 1");
+  // Sans nom, rien ne change : le cube. Un nom trop court reste dit, jamais ignoré en silence.
+  expect(compilerCube({ departements: ["69"] }).total).toContain("market_cube");
+  expect(entreeDepuisFiltre({ conditions: [{ champ: "nom", op: "contient", valeur: "ab" }] }).ignorees).toHaveLength(1);
+  expect(() => compilerCube({ noms: ["x'); DROP"] })).toThrow();
+  expect(Object.keys(mesures({ entreprises: 3 })).some((k) => k.startsWith("signal_"))).toBe(false);
 });

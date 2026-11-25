@@ -385,14 +385,11 @@ describe("appel d'un programme : aucune coordonnée hors extraire_segment", () =
   }, 60_000);
 });
 
-test("le marché entier suit le nom cherché : jamais le total de la France (chasseurs d'Hugo, 14/11)", async () => {
-  const s = sourceMarche();
-  const nom = String((await s.apercu(DEP69, { colonnes: ["nom"], page: 1, parPage: 1 })).lignes[0].nom); // le nom entier : un seul mot commun prendrait toute la base simulée
-  const f = { conditions: [{ champ: "nom", op: "contient", valeur: nom }] };
-  const r = await appel(A, "explorer_marche", { filtre: f });
-  expect(r.marche_entier).toEqual({ entreprises_actives: await s.compterMaitre(f), conditions_non_comptees: [] });
-  expect(r.marche_entier.entreprises_actives).toBeLessThan((await appel(A, "analyser_marche", {})).total.entreprises);
-  // Un filtre de cible n'entre pas dans la définition du marché, et se dit.
-  const e = await appel(A, "explorer_marche", { filtre: { conditions: [...f.conditions, { champ: "site", op: "renseigne", valeur: true }] } });
-  expect(e.marche_entier).toEqual({ entreprises_actives: r.marche_entier.entreprises_actives, conditions_non_comptees: [{ champ: "site", op: "renseigne", valeur: true }] });
+test("un marché défini par un nom se compte partout pareil : IA, écran, carte, pénétration ; jamais le total de la France (chasseurs d'Hugo)", async () => {
+  const F = { conditions: [{ champ: "nom", op: "contient", valeur: "zzqx introuvable" }] };
+  for (const [outil, args, lire] of [
+    ["explorer_marche", { filtre: F }, (r: { marche_entier: { entreprises_actives: number; conditions_non_comptees: unknown[] } }) => [r.marche_entier.entreprises_actives, r.marche_entier.conditions_non_comptees]],
+    ["analyser_marche", { filtre: F }, (r: { total: { entreprises: number }; conditions_ignorees: unknown[] }) => [r.total.entreprises, r.conditions_ignorees]],
+    ["analyser_marche", { filtre: F, axe: "departement" }, (r: { lignes: unknown[]; conditions_ignorees: unknown[] }) => [r.lignes.length, r.conditions_ignorees]],
+  ] as [string, object, (r: never) => unknown][]) expect([outil, lire((await appel(A, outil, args as Record<string, unknown>)) as never)]).toEqual([outil, [0, []]]);
 });

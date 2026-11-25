@@ -10,6 +10,8 @@
  */
 import { z } from "zod";
 
+import { motsCles } from "./activites";
+import { conditionNom, TABLE_MAITRE } from "./maitre";
 import { FiltreInvalide, FiltreSchema, type Condition, type SqlParam } from "./filtres";
 import { DEPARTMENT_NAMES } from "@/components/dashboard/france-map-data";
 
@@ -41,6 +43,7 @@ export const EntreeCubeSchema = z.object({
   effectifs: z.array(z.string().regex(/^(NN|\d{2})$/)).max(20).optional().describe("Tranches d'effectif SIRENE (NN, 00, 01…53)"),
   creation_min: z.number().int().min(1800).max(2100).optional(),
   creation_max: z.number().int().min(1800).max(2100).optional(),
+  noms: z.array(z.string().regex(/^[a-z0-9]{2,40}$/)).max(5).optional().describe("Radicaux de mots du nom (chass, veterin) : tous présents ; compté sur la base complète, sans signaux"),
   statut: z.enum(["actif", "ferme", "tous"]).default("actif"),
   axe: z.enum(Object.keys(AXES_CUBE) as [AxeCube, ...AxeCube[]]).optional(),
   limite: z.number().int().min(1).max(500).default(120),
@@ -60,7 +63,20 @@ export const COLONNES_MESURES = [
   "entreprises", "email_connu", "telephone_connu", "site_connu", "un_canal_connu", "prospectables", "email_envoyable", "telephone_envoyable",
   "signal_90j", "signal_365j", "signal_dirigeant_90j", "signal_etablissement_90j", "signal_siege_90j", "signal_capital_90j", "signal_ca_hausse_365j",
 ] as const;
-export type Mesures = Record<(typeof COLONNES_MESURES)[number], number>;
+type Signal = Extract<(typeof COLONNES_MESURES)[number], `signal_${string}`>;
+/** Les signaux n'existent que dans le cube : absents d'un marché défini par le nom, jamais rendus à zéro. */
+export type Mesures = Record<Exclude<(typeof COLONNES_MESURES)[number], Signal>, number> & Partial<Record<Signal, number>>;
+
+/**
+ * Le cube n'a pas les noms : un marché défini par un nom se compte sur la base maître (30 M, index de mots). Même colonnes,
+ * trois expressions près.
+ */
+const MESURES_MAITRE = `count() AS entreprises, countIf(has_email = 1) AS email_connu, countIf(has_phone = 1) AS telephone_connu,
+  countIf(has_site = 1) AS site_connu, countIf(has_email = 1 OR has_phone = 1) AS un_canal_connu, countIf(prospectable = 1) AS prospectables,
+  countIf(email_envoyable = 1 AND prospectable = 1) AS email_envoyable, countIf(telephone_envoyable = 1 AND prospectable = 1) AS telephone_envoyable`;
+const ANNEE_MAITRE = "ifNull(toYear(creation_date), 0)";
+const STATUT_MAITRE = "if(administrative_status = 'A', 'actif', 'ferme')";
+const AXES_MAITRE: Record<string, string> = { ...AXES_CUBE, annee_creation: ANNEE_MAITRE, statut: STATUT_MAITRE };
 
 /** Requêtes paramétrées du cube : total (avec provenance) et, si un axe est demandé, la répartition. */
 export function compilerCube(brut: unknown): { total: string; repartition: string | null; params: Record<string, SqlParam>; entree: z.output<typeof EntreeCubeSchema> } {
@@ -68,7 +84,10 @@ export function compilerCube(brut: unknown): { total: string; repartition: strin
   if (!r.success) throw new FiltreInvalide(r.error.issues.map((i) => `${i.path.join(".") || "entrée"} : ${i.message}`).join(" ; "));
   const e = r.data;
   const params: Record<string, SqlParam> = {};
-  const where = ["naf_rev2 = 1"];
+  const parNom = !!e.noms?.length;
+  const ANNEE = parNom ? ANNEE_MAITRE : "annee_creation";
+  // Sans code NAF demandé, une entreprise à l'ancienne nomenclature porte le nom cherché tout autant.
+  const where = parNom && !e.naf && !e.divisions ? [] : ["naf_rev2 = 1"];
   const liste = (nom: string, col: string, v?: string[]) => {
     if (!v) return;
     // Une liste vide (deux conditions sans valeur commune) ne sélectionne rien, jamais tout le marché.
@@ -91,17 +110,26 @@ export function compilerCube(brut: unknown): { total: string; repartition: strin
   liste("eff", "tranche_effectif", e.effectifs);
   if (e.creation_min !== undefined) {
     params.amin = { type: "UInt16", valeur: e.creation_min };
-    where.push("annee_creation >= {amin:UInt16}");
+    where.push(`${ANNEE} >= {amin:UInt16}`);
   }
   if (e.creation_max !== undefined) {
     params.amax = { type: "UInt16", valeur: e.creation_max };
-    where.push("annee_creation <= {amax:UInt16}");
+    where.push(`${ANNEE} <= {amax:UInt16}`);
   }
   if (e.statut !== "tous") {
     params.statut = { type: "String", valeur: e.statut };
-    where.push("statut = {statut:String}");
+    where.push(`${parNom ? STATUT_MAITRE : "statut"} = {statut:String}`);
   }
+  e.noms?.forEach((m, i) => where.push(conditionNom(m, `nom${i}`, params)));
   const w = where.join(" AND ");
+  if (parNom) {
+    return {
+      total: `SELECT ${MESURES_MAITRE} FROM ${TABLE_MAITRE} WHERE ${w}`,
+      repartition: e.axe ? `SELECT toString(${AXES_MAITRE[e.axe]}) AS cle, ${MESURES_MAITRE} FROM ${TABLE_MAITRE} WHERE ${w} GROUP BY cle ORDER BY entreprises DESC, cle LIMIT ${e.limite}` : null,
+      params,
+      entree: e,
+    };
+  }
   const total = `SELECT ${MESURES}, max(cube_version) AS cube_version, max(built_at) AS calcule_le, max(src_prospection_version) AS version_prospection FROM ${TABLE_CUBE} WHERE ${w}`;
   const repartition = e.axe
     ? `SELECT toString(${AXES_CUBE[e.axe]}) AS cle, ${MESURES} FROM ${TABLE_CUBE} WHERE ${w} GROUP BY cle ORDER BY entreprises DESC, cle LIMIT ${e.limite}`
@@ -149,6 +177,11 @@ export function entreeDepuisFiltre(brut: unknown): { entree: EntreeCube; ignoree
       if (c.champ === "forme_juridique") { entree.formes_juridiques = intersecter(entree.formes_juridiques, v); continue; }
       if (c.champ === "effectif") { entree.effectifs = intersecter(entree.effectifs, v); continue; }
     }
+    if (c.champ === "nom" && c.op === "contient" && typeof c.valeur === "string") {
+      const r = motsCles(c.valeur);
+      const tous = [...new Set([...(entree.noms ?? []), ...r])];
+      if (r.length && tous.length <= 5) { entree.noms = tous; continue; }
+    }
     if (c.champ === "date_creation" && typeof c.valeur === "string" && /^\d{4}-01-01$/.test(c.valeur)) {
       const an = Number(c.valeur.slice(0, 4));
       if (c.op === "apres") { entree.creation_min = Math.max(entree.creation_min ?? an, an); continue; }
@@ -167,4 +200,4 @@ export type ResultatCube = {
 };
 
 export const mesures = (l: Record<string, unknown>): Mesures =>
-  Object.fromEntries(COLONNES_MESURES.map((m) => [m, Number(l[m] ?? 0)])) as Mesures;
+  Object.fromEntries(COLONNES_MESURES.filter((m) => !m.startsWith("signal_") || l[m] !== undefined).map((m) => [m, Number(l[m] ?? 0)])) as Mesures;

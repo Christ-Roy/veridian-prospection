@@ -111,17 +111,7 @@ const OUTILS_BRUTS: Outil[] = [
       const { entree, ignorees } = entreeDepuisFiltre(a.filtre);
       const entier = await s
         .marche(entree)
-        .then(async (m) => {
-          // Le cube ignore une condition que la base maître sait lire (le nom) : « chasseurs » rendait 15,9 M d'entreprises, celles de toute la France.
-          // Le nom seul : un site ou un email est un filtre de cible, il ne définit pas le marché.
-          const parNom = ignorees.filter((c) => c.champ === "nom" && c.op === "contient");
-          const reste = ignorees.filter((c) => !parNom.includes(c));
-          const conditions = ((a.filtre as { conditions?: unknown[] }).conditions ?? []).filter((c) => !reste.some((r) => JSON.stringify(r) === JSON.stringify(c)));
-          const n = parNom.length ? await s.compterMaitre({ conditions }).catch(() => null) : null;
-          return n === null
-            ? { entreprises_actives: m.total.entreprises, contactables: m.total.prospectables, email_envoyable: m.total.email_envoyable, conditions_non_comptees: ignorees }
-            : { entreprises_actives: n, conditions_non_comptees: reste };
-        })
+        .then((m) => ({ entreprises_actives: m.total.entreprises, contactables: m.total.prospectables, email_envoyable: m.total.email_envoyable, conditions_non_comptees: ignorees }))
         .catch(() => null);
       return avecSource({ total, page_suivante: suivante, ...apercu, lignes: await marquer(c, apercu.lignes), ...(entier ? { marche_entier: entier } : {}) });
     }),

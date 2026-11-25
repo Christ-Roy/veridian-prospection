@@ -826,7 +826,8 @@ export class SourceSimulee implements SourceMarche {
     const garde = (l: Ligne) =>
       (!e.naf || e.naf.map((c) => c.replace(".", "").toUpperCase()).includes(String(l.naf))) &&
       (!e.divisions || e.divisions.includes(String(l.naf_division))) &&
-      (!e.departements || e.departements.includes(String(l.departement)));
+      (!e.departements || e.departements.includes(String(l.departement))) &&
+      (e.noms ?? []).every((m) => new RegExp(motifMot(m)).test(String(l.nom).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()));
     const compte = (ls: Ligne[]) =>
       mesures({
         entreprises: ls.length, email_connu: ls.filter((l) => l.email).length, telephone_connu: ls.filter((l) => l.telephone).length,
