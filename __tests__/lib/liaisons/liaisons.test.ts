@@ -16,7 +16,7 @@ import { RefusLiaison } from "@/lib/liaisons/erreurs";
 import { liaisonOuverte } from "@/lib/liaisons/drapeau";
 import { adresseSure, demanderJeton } from "@/lib/liaisons/hub";
 import { appelerCrm, appelerMail } from "@/lib/liaisons/action";
-import { adresseRebond, BILAN_MAIL_VIDE, cumulerMail, envoisPossibles, lireReprise, MOTIFS, PAGE_MAIL, phraseEteintes, phrasesMail, preparerRebond } from "@/components/atlas/liaisons-logique";
+import { adresseRebond, BILAN_MAIL_VIDE, cumulerMail, envoisPossibles, lireReprise, MOTIFS, PAGE_MAIL, phraseEteintes, phraseFicheCrm, phrasesMail, preparerRebond } from "@/components/atlas/liaisons-logique";
 
 const prod = { NODE_ENV: "production" } as NodeJS.ProcessEnv;
 const T = "0891ed5a-4ce1-49ff-be3c-91628b357f4f";
@@ -221,4 +221,9 @@ test("paire éteinte : une phrase, jamais un bouton", () => {
 test("une étape n'est reprise comme morte qu'après la fin possible de l'appel le plus long", () => {
   expect(DELAI_LOT_MS).toBeGreaterThanOrEqual(120_000);
   expect(EN_COURS_MAX_MS).toBeGreaterThan(3 * (DELAI_LOT_MS + 8000));
+});
+
+test("un téléphone refusé par le CRM se dit, la société est là", () => {
+  expect(phraseFicheCrm({ sort: "cree", sansTelephone: true })).toBe("Société ajoutée à votre CRM. Le téléphone a été refusé, il reste dans la note de la tâche.");
+  expect(phraseFicheCrm({ sort: "cree" })).toBe("Société ajoutée à votre CRM.");
 });

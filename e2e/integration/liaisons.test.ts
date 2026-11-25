@@ -49,7 +49,7 @@ const id = randomUUID().slice(0, 8);
 
 type Etat = { poignees: Map<string, { user: string; tenant: string }>; nonces: Set<string>; jetons: Map<string, { tenant: string; cible: string; scope: string }>; paire: Record<string, boolean>; forcer: null | { status: number; corps: unknown }; tenantRendu: string | null; etats: Record<string, string> | "panne"; demandes: { cible: string; motif: string; headers: IncomingMessage["headers"] }[] };
 const hub: Etat = { poignees: new Map(), nonces: new Set(), jetons: new Map(), paire: {}, forcer: null, tenantRendu: null, etats: {}, demandes: [] };
-const crm = { fiches: new Map<string, string>(), appels: 0, corbeille: new Set<string>(), tenants: new Set<string>(), panne: 0, lenteur: 0, refus: [] as [number, string][], oubli: false, droits: false, cles: [] as string[], sse: false };
+const crm = { fiches: new Map<string, string>(), appels: 0, corbeille: new Set<string>(), tenants: new Set<string>(), panne: 0, lenteur: 0, refus: [] as [number, string][], echecs: new Map<string, string>(), oubli: false, droits: false, cles: [] as string[], sse: false };
 const mail = { contacts: new Map<string, Record<string, unknown>>(), listes: new Map<string, string>(), appels: [] as { outil: string; args: Record<string, unknown>; cle: string }[], mails: 0, desinscrits: new Set<string>(), sequence: new Set<string>(), sautePage: 0, ment: "" as "" | "dry_run" | "http", tenants: new Set<string>() };
 
 const lire = (r: IncomingMessage) => new Promise<string>((ok) => { let s = ""; r.on("data", (d) => (s += d)); r.on("end", () => ok(s)); });
@@ -92,6 +92,8 @@ beforeAll(async () => {
     if (params.name !== "app_envoyer_au_crm") return { status: 200, corps: outil({ error: "Tool not found" }, true) };
     const a = params.arguments;
     const un = (e: { siren: string }) => {
+      const ech = crm.echecs.get(e.siren);
+      if (ech) return { ok: false, erreur: "echec", raison: ech, message: "Cet envoi a échoué." };
       if (crm.corbeille.has(e.siren)) return { ok: false, erreur: "corbeille", message: "Cette société est dans la corbeille du CRM." };
       const neuf = !crm.fiches.has(e.siren);
       crm.fiches.set(e.siren, j.tenant);
@@ -184,7 +186,7 @@ beforeEach(async () => {
   await prisma.sessionDelegation.deleteMany({ where: { userId: { in: Object.values(T).map((x) => x.u) } } });
   await prisma.compteur.deleteMany({ where: { cle: { in: Object.values(T).map((x) => `sso:issue-magic-link:${x.hubUser}`) } } });
   Object.assign(hub, { poignees: new Map(), jetons: new Map(), paire: {}, forcer: null, tenantRendu: null, etats: {}, demandes: [] });
-  Object.assign(crm, { fiches: new Map(), appels: 0, corbeille: new Set(), tenants: new Set(Object.values(T).map((x) => x.hub)), panne: 0, lenteur: 0, refus: [], oubli: false, droits: false, cles: [], sse: false });
+  Object.assign(crm, { fiches: new Map(), appels: 0, corbeille: new Set(), tenants: new Set(Object.values(T).map((x) => x.hub)), panne: 0, lenteur: 0, refus: [], echecs: new Map(), oubli: false, droits: false, cles: [], sse: false });
   Object.assign(mail, { contacts: new Map(), listes: new Map([["reserve", "Réserve"]]), appels: [], desinscrits: new Set(), sequence: new Set(), sautePage: 0, ment: "" });
   odh.n = 45;
   odh.bloques.clear();
@@ -460,6 +462,17 @@ describe("segment vers le CRM", () => {
   test("le CRM oublie une société dans sa réponse : jamais lu comme un succès", async () => {
     crm.oubli = true;
     await expect(li.segmentVersCrm(await appel(), { geste: randomUUID(), segmentId: await segment() })).rejects.toEqual(refus("a_reprendre"));
+  });
+  test("échec définitif d'une société : dit, les autres passent ; échec passager : la page se reprend", async () => {
+    const a = await appel();
+    const s = await segment();
+    crm.echecs.set("100000003", "coordonnee_refusee");
+    const p = await li.segmentVersCrm(a, { geste: randomUUID(), segmentId: s });
+    expect([p.creees, p.refusees]).toEqual([19, [{ siren: "100000003", message: "Le CRM a refusé une coordonnée de cette société." }]]);
+    for (const r of ["crm_injoignable", "crm_en_mise_a_jour", "interne", "raison_neuve"]) {
+      crm.echecs.set("100000003", r);
+      await expect(li.segmentVersCrm(a, { geste: randomUUID(), segmentId: s })).rejects.toEqual(refus("a_reprendre"));
+    }
   });
   test("société en corbeille : les autres passent ; rôle CRM insuffisant : tout s'arrête", async () => {
     const a = await appel();

@@ -145,12 +145,17 @@ const REPRISES = 3;
 /** Réglable par les tests. */
 export const attenteReprise = { ms: 8000 };
 
-type SortCrm = { siren: string; sort: "cree" | "complete" | "deja" | "refuse"; message?: string; url?: string };
+type SortCrm = { siren: string; sort: "cree" | "complete" | "deja" | "refuse"; message?: string; url?: string; sansTelephone?: boolean };
 
 /** Un refus de droits, de jeton ou de rôle vaut pour tout l'envoi ; les autres sont propres à une société (corbeille, donnée). */
 const REFUS_GENERAUX = ["droits", "act_requis", "membre_requis", "lot_invalide"];
-const A_REPRENDRE = ["non_traite", "echec"];
-const message = (r: Record<string, unknown>) => (typeof r.message === "string" ? r.message.slice(0, 300) : "Refusé par le CRM.");
+/** Échecs propres à une société, que reprendre ne changerait pas : les autres passent, celle-ci est dite. */
+const RAISONS_DEFINITIVES: Record<string, string> = {
+  coordonnee_refusee: "Le CRM a refusé une coordonnée de cette société.",
+  valeur_refusee: "Le CRM a refusé une valeur de cette société.",
+};
+const aReprendre = (r: Record<string, unknown> | undefined) => !r || r.erreur === "non_traite" || (r.erreur === "echec" && !(String(r.raison) in RAISONS_DEFINITIVES));
+const message = (r: Record<string, unknown>) => RAISONS_DEFINITIVES[String(r.raison)] ?? (typeof r.message === "string" ? r.message.slice(0, 300) : "Refusé par le CRM.");
 
 function sortCrm(siren: string, r: Record<string, unknown>): SortCrm {
   if (r.ok !== true) {
@@ -159,7 +164,7 @@ function sortCrm(siren: string, r: Record<string, unknown>): SortCrm {
   }
   const societe = (r.societe ?? {}) as { etat?: string; url?: unknown };
   const url = typeof societe.url === "string" && /^https:\/\/[a-z0-9.-]+\.veridian\.site\//.test(societe.url) ? societe.url : undefined;
-  return { siren, sort: r.rejoue === true ? "deja" : societe.etat === "creee" ? "cree" : "complete", ...(url ? { url } : {}) };
+  return { siren, sort: r.rejoue === true ? "deja" : societe.etat === "creee" ? "cree" : "complete", ...(url ? { url } : {}), ...(Array.isArray(r.avertissements) && r.avertissements.includes("telephone_refuse") ? { sansTelephone: true } : {}) };
 }
 
 async function lotPourCrm(p: Pret, lignes: readonly LigneExtraite[], cle: string): Promise<SortCrm[]> {
@@ -169,11 +174,11 @@ async function lotPourCrm(p: Pret, lignes: readonly LigneExtraite[], cle: string
     sortCrm("", r); // refus de tout le lot : lève s'il est général
     throw new RefusLiaison("reponse_invalide", `Le CRM n'a pas traité ce lot : ${message(r)}`, 502);
   }
-  const erreurs = (r.resultats as Record<string, unknown>[]).filter((x) => x?.ok !== true).map((x) => String(x?.erreur ?? "?").slice(0, 30));
+  const erreurs = (r.resultats as Record<string, unknown>[]).filter((x) => x?.ok !== true).map((x) => `${String(x?.erreur ?? "?")}${x?.raison ? `:${String(x.raison)}` : ""}`.slice(0, 50));
   if (erreurs.length) console.warn(`[liaisons] lot CRM : ${erreurs.length} non aboutis (${[...new Set(erreurs)].join(", ")})`);
   // Par SIREN, jamais par position seule : une réponse incomplète ou mélangée ne se lit pas comme un succès.
   const par = new Map((r.resultats as Record<string, unknown>[]).map((x) => [String(x?.siren ?? ""), x]));
-  const reste = lignes.filter((l) => A_REPRENDRE.includes(String(par.get(l.siren)?.erreur)) || !par.has(l.siren));
+  const reste = lignes.filter((l) => aReprendre(par.get(l.siren)));
   // La page entière échoue et se reprend : ce qui est déjà créé sera rendu « déjà dans le CRM ».
   if (reste.length) throw new RefusLiaison("a_reprendre", `Le CRM n'a pas eu le temps de tout traiter (${reste.length} restante${reste.length > 1 ? "s" : ""}). Reprenez, rien ne sera créé deux fois.`, 503, 5);
   return lignes.map((l) => sortCrm(l.siren, par.get(l.siren)!));

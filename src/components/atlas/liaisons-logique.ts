@@ -21,7 +21,7 @@ export function envoisPossibles(fiche: Record<string, unknown>, etat: EtatLiaiso
 export type PageCrm = { traitees: number; creees: number; completees: number; deja: number; retirees: number; refusees: { siren: string; message: string }[]; total: number; curseur_suivant: string | null };
 export type PageMail = { recus: number; crees: number; existants: number; inscrits: number; ecartes: Record<string, number>; declenche: boolean; total: number; retirees: number; curseur_page?: string; curseur_suivant: string | null; quota_restant_aujourdhui?: number };
 export type ListeMail = { id: string; nom: string; sequence: boolean };
-export type ResultatFicheCrm = { sort: "cree" | "complete" | "deja" | "refuse"; message?: string; url?: string };
+export type ResultatFicheCrm = { sort: "cree" | "complete" | "deja" | "refuse"; message?: string; url?: string; sansTelephone?: boolean };
 
 export class ErreurLiaison extends Error {
   constructor(
@@ -60,7 +60,8 @@ export async function lireEtat(signal?: AbortSignal): Promise<EtatLiaisons> {
 export function phraseFicheCrm(r: ResultatFicheCrm): string {
   if (r.sort === "refuse") return r.message || "Refusé par le CRM.";
   if (r.sort === "deja") return "Déjà dans votre CRM.";
-  return r.sort === "cree" ? "Société ajoutée à votre CRM." : "Société complétée dans votre CRM.";
+  const suite = r.sansTelephone ? " Le téléphone a été refusé, il reste dans la note de la tâche." : "";
+  return (r.sort === "cree" ? "Société ajoutée à votre CRM." : "Société complétée dans votre CRM.") + suite;
 }
 
 export type BilanCrm = { traitees: number; creees: number; completees: number; deja: number; retirees: number; refusees: { siren: string; message: string }[] };
