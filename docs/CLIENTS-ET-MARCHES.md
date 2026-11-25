@@ -13,3 +13,15 @@
 - **API par marché** : `GET /api/v1/marches[/{marche}[/repartition|/entreprises]]`, `openapi.json` par espace, clé `atl_`. Jamais une coordonnée.
 - **Pages publiques** : `/marches`, `/marche/{naf}`. Que des comptes du cube, une page par code NAF, gardées 24 h. Non indexées tant que
   `ATLAS_PUBLIC_INDEX=1` n'est pas posé (décision de Robert).
+
+## Brancher un ERP (vision du 15/11, état au 25/11)
+
+Ce qui marche aujourd'hui, sans développement chez nous, avec une clé `atl_` (accès avancé de l'espace, accordé par un administrateur) :
+
+1. l'ERP pousse ses clients, à chaque nouvelle facture s'il veut (rejouer ne crée rien) :
+   `POST /api/atlas/importer_clients` `{"numeros": ["55203253400646", …]}` (5 000 par appel, 20 000 en tout) ; un client perdu : `retirer_clients` ;
+2. il lit sa part de chaque marché : `GET /api/v1/marches/{marche}` (`penetration.taux_pct`), les entreprises par `/entreprises`, sans coordonnée ;
+3. `GET /api/v1/marches/openapi.json` décrit les routes de l'espace, pour générer un client.
+
+Épreuve : `prospection-banc-ecran/banc-api.mjs` (build de production, HTTP réel, 24 contrôles). Pas fait : aucun connecteur propre à un ERP
+(Dolibarr d'ASD est la seule instance, jamais mesurée, plan INTEGRATIONS-NATIVES : CRM vers ERP), ni SDK, ni montants de vente (seul le numéro est gardé).
