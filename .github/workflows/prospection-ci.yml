@@ -71,6 +71,9 @@ jobs:
       - name: contrat image_tag (aucun défaut figé dans le jobspec prod)
         run: python3 scripts/ci/check-image-tag-sans-defaut.py deploy/prospection.nomad.hcl
 
+      - name: Le contrôle de secrets voit, refuse, et n'affiche jamais ce qu'il trouve
+        run: bash scripts/ci/check-secrets.epreuve.sh
+
   audit:
     name: CVE audit (high+critical bloquant)
     uses: ./.github/workflows/_audit-cve.yml

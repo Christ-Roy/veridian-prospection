@@ -52,8 +52,16 @@ EXCLUDE_PATHSPECS=(
   ':!docs/**/*.md'
   ':!todo/**/*.md'
 )
-DIFF_PUSHED=$(git diff "$BASE_REF"...HEAD --no-color -U0 -- . "${EXCLUDE_PATHSPECS[@]}" 2>/dev/null | grep -E '^\+' | grep -vE '^\+\+\+' || true)
-DIFF_STAGED=$(git diff --cached --no-color -U0 -- . "${EXCLUDE_PATHSPECS[@]}" 2>/dev/null | grep -E '^\+' | grep -vE '^\+\+\+' || true)
+# --no-renames : un fichier renommé et modifié se lit en entier. Un diff impossible est NON ABOUTI (2), jamais vert.
+lire_diff() {
+  local brut
+  brut=$(git diff "$@" --no-renames --no-color -U0 -- . "${EXCLUDE_PATHSPECS[@]}") || return 2
+  printf '%s\n' "$brut" | grep -E '^\+' | grep -vE '^\+\+\+ ' || true
+}
+if ! DIFF_PUSHED=$(lire_diff "$BASE_REF"...HEAD) || ! DIFF_STAGED=$(lire_diff --cached); then
+  echo "${YELLOW}⚪ NON ABOUTI : diff illisible depuis $BASE_REF, rien n'a été vérifié${NC}" >&2
+  exit 2
+fi
 DIFF_ADDED=$(printf '%s\n%s' "$DIFF_PUSHED" "$DIFF_STAGED" | grep -v '^$' || true)
 
 if [ -z "$DIFF_ADDED" ]; then
@@ -98,7 +106,14 @@ for entry in "${PATTERNS[@]}"; do
   SEVERITY="${REST##*|}"
 
   # Match sur le diff. On exclut les lignes contenant `pragma: allowlist secret`.
-  MATCHES=$(echo "$DIFF_ADDED" | grep -E "$REGEX" 2>/dev/null | grep -v "pragma: allowlist secret" || true)
+  # `-e` : plusieurs motifs commencent par un tiret (clés privées), que grep prenait pour une option (25/11).
+  rc=0
+  MATCHES=$(grep -E -e "$REGEX" <<<"$DIFF_ADDED") || rc=$?
+  if [ "$rc" -gt 1 ]; then
+    echo "${YELLOW}⚪ NON ABOUTI : motif « ${NAME} » illisible${NC}" >&2
+    exit 2
+  fi
+  MATCHES=$(grep -v "pragma: allowlist secret" <<<"$MATCHES" || true)
   if [ -z "$MATCHES" ]; then continue; fi
 
   COUNT=$(echo "$MATCHES" | grep -c . || true)
@@ -106,10 +121,7 @@ for entry in "${PATTERNS[@]}"; do
     VIOLATIONS_RED=$((VIOLATIONS_RED + COUNT))
     VIOLATIONS_DETAIL="${VIOLATIONS_DETAIL}${RED}🚨 ${NAME} (${COUNT})${NC}
 "
-    # Affiche les 3 premières lignes (tronquées pour pas leak en stdout)
-    SAMPLE=$(echo "$MATCHES" | head -3 | sed 's/\(.\{80\}\).*/\1.../')
-    VIOLATIONS_DETAIL="${VIOLATIONS_DETAIL}${SAMPLE}
-"
+    # Le motif et le compte, jamais la ligne : elle contient la clé, et le dépôt est public.
   else
     VIOLATIONS_YELLOW=$((VIOLATIONS_YELLOW + COUNT))
     VIOLATIONS_DETAIL="${VIOLATIONS_DETAIL}${YELLOW}⚠ ${NAME} (${COUNT}) — vérifier manuellement${NC}
