@@ -13,8 +13,10 @@ import {
   chaleur,
   deplacerCadre,
   interpolerCadre,
+  ECART_RONDS,
   placerPoints,
   rang,
+  rayonGroupe,
   regrouper,
   valeurCommune,
   valeursCarte,
@@ -367,8 +369,7 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
   const horsZone = (points?.length ?? 0) - projetes.length;
   // Taille constante à l'écran : zoomer sépare les points qui se chevauchent.
   const rayon = largeur / 150;
-  // Réunis quand leurs ronds se toucheraient : 2,4 rayons.
-  const groupes = useMemo(() => regrouper(projetes, (largeur / 150) * 2.4), [projetes, largeur]);
+  const groupes = useMemo(() => regrouper(projetes, (largeur / 150) * ECART_RONDS), [projetes, largeur]);
   useEffect(() => setPile(null), [cle, descente, codesZone]);
 
   // ---------------------------------------------------------------- navigation
@@ -615,7 +616,7 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
                   data-s={g.cle}
                   cx={g.x.toFixed(4)}
                   cy={g.y.toFixed(4)}
-                  r={(g.points.length > 1 ? rayon * Math.min(3.2, 1.5 + Math.log10(g.points.length)) : rayon).toFixed(4)}
+                  r={(rayon * rayonGroupe(g.points.length)).toFixed(4)}
                   fill={g.email ? "hsl(217 90% 55%)" : "#64748b"}
                   fillOpacity={0.85}
                   stroke="#fff"
@@ -623,7 +624,7 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
                   vectorEffect="non-scaling-stroke"
                 />
                 {g.points.length > 1 && (
-                  <text x={g.x} y={g.y} fontSize={rayon * 1.5} fill="#fff" textAnchor="middle" dominantBaseline="central" pointerEvents="none" fontWeight={600}>
+                  <text x={g.x} y={g.y} fontSize={rayon * 1.9} fill="#fff" textAnchor="middle" dominantBaseline="central" pointerEvents="none" fontWeight={600}>
                     {g.points.length}
                   </text>
                 )}

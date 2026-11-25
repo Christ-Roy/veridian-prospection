@@ -1,7 +1,7 @@
 /** Points qui se chevauchent sur la carte : réunis, séparés au zoom, listés quand ils sont à la même adresse. */
 import { expect, test } from "vitest";
 
-import { cadreGroupe, LARGEUR_MIN, regrouper, type PointProjete } from "@/components/atlas/carte-logique";
+import { cadreGroupe, ECART_RONDS, LARGEUR_MIN, rayonGroupe, regrouper, type PointProjete } from "@/components/atlas/carte-logique";
 
 const p = (siren: string, x: number, y: number, email = false): PointProjete => ({ siren, nom: siren, commune: "X", lat: 0, lon: 0, email, site: false, x, y });
 
@@ -20,6 +20,9 @@ test("seul, un point reste seul ; l'email compte ; zoomer sépare", () => {
   const proches = [p("a", 0, 0), p("b", 0.5, 0)];
   expect([regrouper(proches, 1).length, regrouper(proches, 0.4).length]).toEqual([1, 2]);
 });
+test("deux ronds à la distance minimale ne se recouvrent pas, même les plus gros", () => {
+  for (const n of [1, 2, 10, 400, 100_000]) for (const m of [1, 2, 10, 400, 100_000]) expect(rayonGroupe(n) + rayonGroupe(m)).toBeLessThanOrEqual(ECART_RONDS);
+});
 test("même adresse : pas de zoom inutile, la liste ; sinon un cadre qui les contient et rapproche", () => {
   const [meme] = regrouper([p("a", 10, 10), p("b", 10.001, 10)], 1);
   expect(cadreGroupe(meme, 100)).toBeNull();
@@ -28,6 +31,6 @@ test("même adresse : pas de zoom inutile, la liste ; sinon un cadre qui les con
   expect(c[0]).toBeLessThan(10);
   expect(c[0] + c[2]).toBeGreaterThan(12);
   expect(c[2]).toBeLessThan(100);
-  expect(regrouper(g.points, (c[2] / 150) * 2.4)).toHaveLength(2);
+  expect(regrouper(g.points, (c[2] / 150) * ECART_RONDS)).toHaveLength(2);
   expect(cadreGroupe(g, LARGEUR_MIN)).toBeNull();
 });

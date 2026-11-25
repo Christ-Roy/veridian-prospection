@@ -105,6 +105,10 @@ export function placerPoints(points: readonly PointCarte[]): PointProjete[] {
 
 export type GroupePoints = { cle: string; x: number; y: number; points: PointProjete[]; email: number };
 
+/** Rayon d'un rond, en rayons d'un point seul. Deux ronds à ECART_RONDS l'un de l'autre ne se recouvrent jamais. */
+export const rayonGroupe = (n: number): number => (n > 1 ? Math.min(2.8, 1.5 + Math.log10(n) * 0.6) : 1);
+export const ECART_RONDS = 5.6;
+
 /**
  * Points plus proches que `seuil` (unités de la carte) réunis en un seul rond : à la même adresse, aucun zoom ne les séparerait.
  * Chaque point rejoint le groupe le plus proche à sa portée ; l'ordre d'arrivée (les mieux notés d'abord) est gardé.
