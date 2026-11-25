@@ -210,7 +210,7 @@ EOH
         cpu        = 500
         # 08/11 : reserve = memoire non reprenable mesuree (143 Mio) + 55 %, plafond = pointe (203 Mio) x 5. Avant : 7000 Mio,
         # une fuite de Prospection pouvait avaler ovh-prod et toutes les apps qui y tournent.
-        memory     = 224
+        memory     = 112
         memory_max = 1024
       }
     }
