@@ -103,6 +103,55 @@ export function placerPoints(points: readonly PointCarte[]): PointProjete[] {
     });
 }
 
+export type GroupePoints = { cle: string; x: number; y: number; points: PointProjete[]; email: number };
+
+/**
+ * Points plus proches que `seuil` (unités de la carte) réunis en un seul rond : à la même adresse, aucun zoom ne les séparerait.
+ * Chaque point rejoint le groupe le plus proche à sa portée ; l'ordre d'arrivée (les mieux notés d'abord) est gardé.
+ */
+export function regrouper(points: readonly PointProjete[], seuil: number): GroupePoints[] {
+  const groupes: GroupePoints[] = [];
+  const cases = new Map<string, GroupePoints[]>();
+  const s = Math.max(seuil, 1e-9);
+  const i = (v: number) => Math.floor(v / s);
+  for (const p of points) {
+    let proche: GroupePoints | null = null;
+    let d = s;
+    for (let a = -1; a <= 1; a++)
+      for (let b = -1; b <= 1; b++)
+        for (const g of cases.get(`${i(p.x) + a}:${i(p.y) + b}`) ?? []) {
+          const e = Math.hypot(g.x - p.x, g.y - p.y);
+          if (e < d) {
+            d = e;
+            proche = g;
+          }
+        }
+    if (proche) {
+      proche.points.push(p);
+      if (p.email) proche.email++;
+      continue;
+    }
+    const g: GroupePoints = { cle: p.siren, x: p.x, y: p.y, points: [p], email: p.email ? 1 : 0 };
+    groupes.push(g);
+    const k = `${i(p.x)}:${i(p.y)}`;
+    cases.set(k, [...(cases.get(k) ?? []), g]);
+  }
+  return groupes;
+}
+
+/** Cadre qui sépare les points d'un groupe, ou null s'ils sont au même endroit (la liste s'ouvre alors). */
+export function cadreGroupe(g: GroupePoints, largeur: number): [number, number, number, number] | null {
+  const xs = g.points.map((p) => p.x);
+  const ys = g.points.map((p) => p.y);
+  const x = Math.min(...xs), y = Math.min(...ys);
+  const w = Math.max(...xs) - x, h = Math.max(...ys) - y;
+  const etendue = Math.max(w, h);
+  // Le zoom le plus fin doit les séparer, et rapprocher vraiment.
+  if (etendue < LARGEUR_MIN / 25 || largeur <= LARGEUR_MIN * 1.05) return null;
+  const cote = Math.max(etendue, LARGEUR_MIN / 1.3);
+  return cadrageDescente({ x: x + w / 2 - cote / 2, y: y + h / 2 - cote / 2, width: cote, height: cote });
+}
+
 /** Cadrage d'une commune : sa boîte, jamais plus petite que `min` unités (un village resterait illisible). */
 export function cadrageCommune(b: Boite, min: number): [number, number, number, number] {
   const w = Math.max(b.width, min);

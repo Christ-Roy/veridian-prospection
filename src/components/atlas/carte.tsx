@@ -8,20 +8,23 @@ import { appeler, contoursCommunes, estAnnulation, texteErreur } from "./api";
 import {
   bornes,
   cadrageCommune,
+  cadreGroupe,
   cadrageDescente,
   chaleur,
   deplacerCadre,
   interpolerCadre,
   placerPoints,
   rang,
+  regrouper,
   valeurCommune,
   valeursCarte,
   VUE_FRANCE,
   zoomerCadre,
   type Mesure,
+  type PointProjete,
 } from "./carte-logique";
 import { avecCondition } from "./flux";
-import { Chargement } from "./icones";
+import { Chargement, Icone } from "./icones";
 import { formaterNombre } from "./logique";
 import type { AnalyseMarche, Boite, ChampInfo, CommuneGeo, CommunesMarche, EpciGeo, Filtre, PointCarte, RepartitionMarche, ZoneLocale } from "./types";
 
@@ -84,6 +87,8 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
   const [toutes, setToutes] = useState(false);
   const [chargement, setChargement] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
+  const [pile, setPile] = useState<PointProjete[] | null>(null);
+  const doigts = useRef(new Map<number, { x: number; y: number }>());
   const [bulle, setBulle] = useState<{ x: number; y: number; texte: string } | null>(null);
   const cle = JSON.stringify(filtre);
   const mesures = source === "marche" ? MESURES_MARCHE : MESURES.filter((m) => !m.champ || index.has(m.champ));
@@ -257,12 +262,31 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
   // Glisser pour se déplacer ; un glisser n'est pas un clic.
   const appui = (e: PointerEvent<SVGSVGElement>) => {
     if (e.button !== 0) return;
+    doigts.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (doigts.current.size === 2) {
+      // Deux doigts : on pince, ce n'est plus un glisser.
+      glisse.current = { x: e.clientX, y: e.clientY, bouge: true };
+      return;
+    }
     glisse.current = { x: e.clientX, y: e.clientY, bouge: false };
   };
   const deplacement = (e: PointerEvent<SVGSVGElement>) => {
     const g = glisse.current;
     const svg = svgRef.current;
     if (!g || !svg) return;
+    const avant = doigts.current.get(e.pointerId);
+    if (avant && doigts.current.size === 2) {
+      const autre = [...doigts.current].find(([id]) => id !== e.pointerId)![1];
+      const d0 = Math.hypot(avant.x - autre.x, avant.y - autre.y), d1 = Math.hypot(e.clientX - autre.x, e.clientY - autre.y);
+      doigts.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (d0 < 1 || d1 < 1) return;
+      const [x, y] = versCarte((e.clientX + autre.x) / 2, (e.clientY + autre.y) / 2);
+      cancelAnimationFrame(anim.current);
+      cadre.current = zoomerCadre(cadre.current, d1 / d0, x, y);
+      svg.setAttribute("viewBox", cadre.current.join(" "));
+      setLargeur(cadre.current[2]);
+      return;
+    }
     const dxp = e.clientX - g.x;
     const dyp = e.clientY - g.y;
     if (!g.bouge && Math.hypot(dxp, dyp) < 4) return;
@@ -277,7 +301,14 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
     setBulle(null);
   };
   const relache = (e: PointerEvent<SVGSVGElement>) => {
-    if (glisse.current?.bouge) svgRef.current?.releasePointerCapture(e.pointerId);
+    doigts.current.delete(e.pointerId);
+    if (doigts.current.size) {
+      // Reste un doigt après un pincement : il reprend le glisser d'où il est.
+      const [d] = [...doigts.current.values()];
+      glisse.current = { x: d.x, y: d.y, bouge: true };
+      return;
+    }
+    if (glisse.current?.bouge && svgRef.current?.hasPointerCapture(e.pointerId)) svgRef.current.releasePointerCapture(e.pointerId);
     // Le clic qui suit un glisser est ignoré (voir clic).
     setTimeout(() => (glisse.current = null), 0);
   };
@@ -336,6 +367,9 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
   const horsZone = (points?.length ?? 0) - projetes.length;
   // Taille constante à l'écran : zoomer sépare les points qui se chevauchent.
   const rayon = largeur / 150;
+  // Réunis quand leurs ronds se toucheraient : 2,4 rayons.
+  const groupes = useMemo(() => regrouper(projetes, (largeur / 150) * 2.4), [projetes, largeur]);
+  useEffect(() => setPile(null), [cle, descente, codesZone]);
 
   // ---------------------------------------------------------------- navigation
   const ouvrirEpci = (code: string) => {
@@ -360,8 +394,8 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
     const pos = { x: e.clientX - wrap.left, y: e.clientY - wrap.top };
     const dot = el.closest<SVGCircleElement>("circle[data-s]");
     if (dot) {
-      const p = projetes.find((x) => x.siren === dot.dataset.s);
-      if (p) return setBulle({ ...pos, texte: `${p.nom} · ${p.commune}` });
+      const g = groupes.find((x) => x.cle === dot.dataset.s);
+      if (g) return setBulle({ ...pos, texte: g.points.length > 1 ? `${formaterNombre(g.points.length)} entreprises · ${g.points[0].nom}, ${g.points[1].nom}${g.points.length > 2 ? "…" : ""}` : `${g.points[0].nom} · ${g.points[0].commune}` });
     }
     const ep = el.closest<SVGPathElement>("path[data-e]");
     if (ep) {
@@ -389,8 +423,13 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
     const el = e.target as Element;
     const dot = el.closest<SVGCircleElement>("circle[data-s]");
     if (dot) {
-      const p = projetes.find((x) => x.siren === dot.dataset.s);
-      if (p) onFiche(p.siren, p.nom);
+      const g = groupes.find((x) => x.cle === dot.dataset.s);
+      if (!g) return;
+      if (g.points.length === 1) return onFiche(g.points[0].siren, g.points[0].nom);
+      const c = cadreGroupe(g, cadre.current[2]);
+      if (c) return allerA(c, 420);
+      setBulle(null);
+      setPile(g.points);
       return;
     }
     const ep = el.closest<SVGPathElement>("path[data-e]")?.dataset.e;
@@ -569,20 +608,26 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
             ))}
           </g>
           <g>
-            {projetes.map((p) => (
-              <circle
-                key={p.siren}
-                className="dot"
-                data-s={p.siren}
-                cx={p.x.toFixed(4)}
-                cy={p.y.toFixed(4)}
-                r={rayon.toFixed(4)}
-                fill={p.email ? "hsl(217 90% 55%)" : "#64748b"}
-                fillOpacity={0.85}
-                stroke="#fff"
-                strokeWidth={0.8}
-                vectorEffect="non-scaling-stroke"
-              />
+            {groupes.map((g) => (
+              <g key={g.cle}>
+                <circle
+                  className="dot"
+                  data-s={g.cle}
+                  cx={g.x.toFixed(4)}
+                  cy={g.y.toFixed(4)}
+                  r={(g.points.length > 1 ? rayon * Math.min(3.2, 1.5 + Math.log10(g.points.length)) : rayon).toFixed(4)}
+                  fill={g.email ? "hsl(217 90% 55%)" : "#64748b"}
+                  fillOpacity={0.85}
+                  stroke="#fff"
+                  strokeWidth={0.8}
+                  vectorEffect="non-scaling-stroke"
+                />
+                {g.points.length > 1 && (
+                  <text x={g.x} y={g.y} fontSize={rayon * 1.5} fill="#fff" textAnchor="middle" dominantBaseline="central" pointerEvents="none" fontWeight={600}>
+                    {g.points.length}
+                  </text>
+                )}
+              </g>
             ))}
           </g>
         </svg>
@@ -597,6 +642,24 @@ export function Carte({ base: source = "prospection", filtre, index, descente, o
             ⤢
           </button>
         </div>
+        {pile && (
+          <div className="pile" role="dialog" aria-label="Entreprises à cette adresse">
+            <div className="ptete">
+              <b>{formaterNombre(pile.length)} entreprises à cette adresse</b>
+              <button type="button" className="x" aria-label="Fermer la liste" onClick={() => setPile(null)}>
+                <Icone nom="x" />
+              </button>
+            </div>
+            <div className="rows liste-longue">
+              {pile.map((p) => (
+                <button key={p.siren} type="button" onClick={() => onFiche(p.siren, p.nom)}>
+                  <span>{p.nom}</span>
+                  <span>{p.email ? "email" : ""}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {bulle && (
           <div className="tip" style={{ left: bulle.x, top: bulle.y }}>
             {bulle.texte}

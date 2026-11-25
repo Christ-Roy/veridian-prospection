@@ -23,6 +23,9 @@ export function phrase(c: Condition): string {
   return `${champ?.libelle ?? c.champ} : ${OPS[c.op] ?? ""}${l.slice(0, 6).join(", ")}${l.length > 6 ? ` et ${l.length - 6} autres` : ""}`;
 }
 
+/** Du plus petit au plus grand : un objet rangerait « 11 » avant « 00 ». */
+const TAILLES = ["NN", "00", "01", "02", "03", "11", "12", "21", "22", "31", "32", "41", "42", "51", "52", "53"];
+
 type Barre = { libelle: string; valeur: number; texte?: string };
 function barres(p: Pdf, titre: string, l: Barre[]) {
   const utiles = l.filter((b) => b.valeur > 0);
@@ -83,7 +86,7 @@ export async function rapportPdf(tenantId: string, segmentId: string, r: { titre
   }
   barres(p, "Départements en tête", dep.lignes.filter((x) => x.cle && x.cle !== "99").slice(0, 12).map((x) => ({ libelle: x.libelle, valeur: x.entreprises, texte: `${n(x.entreprises)} (${pc(x.entreprises, t.entreprises)})` })));
   if (naf.lignes.length > 1) barres(p, "Activités", naf.lignes.map((x) => ({ libelle: x.libelle, valeur: x.entreprises })));
-  barres(p, "Taille (salariés)", Object.keys(TRANCHES).map((k) => ({ libelle: TRANCHES[k], valeur: eff.lignes.find((x) => x.cle === k)?.entreprises ?? 0 })));
+  barres(p, "Taille (salariés)", TAILLES.map((k) => ({ libelle: TRANCHES[k], valeur: eff.lignes.find((x) => x.cle === k)?.entreprises ?? 0 })));
   const annee = r.date.getFullYear();
   barres(p, "Créations par année", Array.from({ length: 12 }, (_, i) => annee - 11 + i).map((a) => ({ libelle: String(a), valeur: an.lignes.find((x) => Number(x.cle) === a)?.entreprises ?? 0 })));
   if (pen.clients_dans_le_marche) barres(p, "Vos clients par département", (pen.lignes ?? []).slice(0, 10).map((x) => ({ libelle: x.libelle || "Inconnu", valeur: x.clients, texte: `${n(x.clients)}${x.entreprises ? ` sur ${n(x.entreprises)}` : ""}` })));
