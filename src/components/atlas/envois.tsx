@@ -12,6 +12,8 @@ import { formaterNombre } from "./logique";
 const HUB = process.env.NEXT_PUBLIC_HUB_URL || "https://app.veridian.site";
 /** Page du Hub où un propriétaire allume ou coupe une liaison, sans IA. */
 const HUB_LIAISONS = `${HUB}/dashboard/liaisons`;
+/** Ouvrir une application (CRM, Mail) dans son organisation. */
+const HUB_APPS = `${HUB}/dashboard`;
 const geste = () => crypto.randomUUID();
 
 /** Erreur lisible ; `rebond` repasse une fois par le Hub, puis l'écran rouvre ce qu'on faisait. */
@@ -67,6 +69,9 @@ export function LiaisonsEteintes({ etat }: { etat: EtatLiaisons }) {
       {phrase}{" "}
       <a className="lnk" href={HUB_LIAISONS} target="_blank" rel="noopener noreferrer">
         Ouvrir les liaisons
+      </a>{" "}
+      <a className="lnk" href={HUB_APPS} target="_blank" rel="noopener noreferrer">
+        Mes applications
       </a>
     </p>
   );

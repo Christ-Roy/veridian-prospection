@@ -214,8 +214,8 @@ test("fiche : seuls les envois qui peuvent aboutir se montrent", () => {
 test("paire éteinte : une phrase, jamais un bouton", () => {
   const e = { crm: false, notifuse: false, eteintes: [] as ("crm" | "notifuse")[], payant: true, connexion: true };
   expect(phraseEteintes(e)).toBeNull();
-  expect(phraseEteintes({ ...e, eteintes: ["crm"] })).toBe("La liaison vers le CRM est éteinte dans votre organisation : un propriétaire ou un administrateur peut l'allumer dans Veridian.");
-  expect(phraseEteintes({ ...e, eteintes: ["crm", "notifuse"] })).toBe("Les liaisons vers le CRM et Mail sont éteintes dans votre organisation : un propriétaire ou un administrateur peut les allumer dans Veridian.");
+  expect(phraseEteintes({ ...e, eteintes: ["crm"] })).toBe("Envoi vers le CRM indisponible : cette application n'est pas ouverte dans votre organisation, ou sa liaison a été coupée.");
+  expect(phraseEteintes({ ...e, eteintes: ["crm", "notifuse"] })).toBe("Envoi vers le CRM et Mail indisponible : ces applications ne sont pas ouvertes dans votre organisation, ou leurs liaisons ont été coupées.");
 });
 
 test("une étape n'est reprise comme morte qu'après la fin possible de l'appel le plus long", () => {

@@ -113,6 +113,13 @@ function LoginForm({ localAuth }: { localAuth: boolean }) {
         <button
           type="button"
           onClick={bounceToHub}
+          className="w-full py-2.5 px-3 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition"
+        >
+          Se connecter avec Veridian
+        </button>
+        <button
+          type="button"
+          onClick={bounceToHub}
           className="w-full flex items-center justify-center gap-2 py-2.5 px-3 border border-gray-300 bg-white rounded-lg text-sm font-medium hover:bg-gray-50 transition"
           aria-label="Continuer avec Google via le Hub Veridian"
         >

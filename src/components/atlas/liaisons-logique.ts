@@ -6,8 +6,11 @@ export const LIAISONS_ETEINTES: EtatLiaisons = { crm: false, notifuse: false, et
 /** Une phrase à la place d'un bouton qui refuserait. */
 export function phraseEteintes(e: EtatLiaisons): string | null {
   if (!e.eteintes.length) return null;
-  const noms = e.eteintes.map((c) => (c === "crm" ? "le CRM" : "Mail")).join(" et ");
-  return `${e.eteintes.length > 1 ? "Les liaisons" : "La liaison"} vers ${noms} ${e.eteintes.length > 1 ? "sont éteintes" : "est éteinte"} dans votre organisation : un propriétaire ou un administrateur peut l${e.eteintes.length > 1 ? "es " : "'"}allumer dans Veridian.`;
+  const noms = e.eteintes.map((c) => (c === "crm" ? "le CRM" : "Mail"));
+  // Le Hub les allume par défaut dès que les deux apps sont ouvertes (25/11) : éteinte veut dire app pas ouverte, ou coupée.
+  return noms.length > 1
+    ? `Envoi vers ${noms.join(" et ")} indisponible : ces applications ne sont pas ouvertes dans votre organisation, ou leurs liaisons ont été coupées.`
+    : `Envoi vers ${noms[0]} indisponible : cette application n'est pas ouverte dans votre organisation, ou sa liaison a été coupée.`;
 }
 
 /** Boutons qui aboutiront pour CETTE fiche : fermée, bloquée ou hors prospection, aucun ; sans email utilisable, pas de Mail. */

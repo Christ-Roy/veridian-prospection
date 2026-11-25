@@ -387,7 +387,7 @@ describe("fiche vers le CRM", () => {
   });
   test("paire éteinte dans l'organisation : dit à qui s'adresser", async () => {
     hub.paire.crm = false;
-    await expect(li.ficheVersCrm(await appel(), { geste: randomUUID(), siren: "100000001" })).rejects.toThrow(/éteinte.*propriétaire ou un administrateur/);
+    await expect(li.ficheVersCrm(await appel(), { geste: randomUUID(), siren: "100000001" })).rejects.toThrow(/pas ouverte.*administrateur a coupé/);
   });
   test("le Hub rend un jeton d'un autre espace : refusé avant tout appel", async () => {
     hub.tenantRendu = T.autre.hub;

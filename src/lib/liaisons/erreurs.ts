@@ -22,7 +22,7 @@ export function refusDuHub(code: string, cible: Cible, attendre?: number): Refus
   const c = NOM_CIBLE[cible];
   switch (code) {
     case "integration_off":
-      return new RefusLiaison("paire_eteinte", `La liaison entre Atlas et ${c} est éteinte dans votre organisation. Un propriétaire ou un administrateur peut l'allumer dans Veridian.`, 403);
+      return new RefusLiaison("paire_eteinte", `L'envoi vers ${c} est indisponible dans votre organisation : l'application n'y est pas ouverte, ou un administrateur a coupé la liaison dans Veridian.`, 403);
     case "pair_not_allowed":
     case "target_not_served":
     case "target_not_registered":

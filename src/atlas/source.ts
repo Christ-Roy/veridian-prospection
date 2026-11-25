@@ -498,15 +498,19 @@ export class SourceClickHouse implements SourceMarche {
       params.s = { type: "Array(String)", valeur: sirens };
     } else {
       where.push("hasAllTokens(name_terms, {m:Array(String)})");
-      params.m = { type: "Array(String)", valeur: (r as { mots: string[] }).mots };
+      const { mots } = r as { mots: string[] };
+      params.m = { type: "Array(String)", valeur: mots };
+      // Trouvée par son nom avant celle qui ne porte le mot que dans son enseigne.
+      params.p = { type: "String", valeur: mots.reduce((a, b) => (b.length > a.length ? b : a)) };
     }
+    const parNom = params.p ? "positionCaseInsensitiveUTF8(legal_name, {p:String}) > 0 DESC, " : "";
     if (r.codePostal) {
       where.push("postal_code = {cp:String}");
       params.cp = { type: "String", valeur: r.codePostal };
     }
     const lignes = await this.requete<Record<string, unknown>>(
       `SELECT siren, legal_name, trade_name, city, postal_code, department, naf_code, tranche_effectif, creation_date, administrative_status, prospectable
-       FROM ${TABLE_MAITRE} WHERE ${where.join(" AND ")} ORDER BY administrative_status = 'A' DESC, prospectable DESC, length(legal_name), siren LIMIT ${n}`,
+       FROM ${TABLE_MAITRE} WHERE ${where.join(" AND ")} ORDER BY administrative_status = 'A' DESC, ${parNom}prospectable DESC, length(legal_name), siren LIMIT ${n}`,
       params,
     );
     const web = lignes.length
