@@ -105,3 +105,27 @@ test("un lecteur voit le taux, il n'importe ni ne retire", async () => {
   expect(await appel(A, "retirer_clients", { numeros: [clients[0]] })).toMatchObject({ retires: 1, total: 6 });
   expect(await appel(A, "retirer_clients", { tous: true })).toMatchObject({ total: 0 });
 });
+
+test("règles proposées : ce qui distingue vraiment les clients, avec ses deux pourcentages ; trop peu de clients = dit", async () => {
+  const { juger, proposerPriorite } = await import("@/atlas/suggestion");
+  expect(juger(20, 40, 1000, 10_000)).toMatchObject({ pc: 0.5, pt: 0.1 });
+  for (const x of [[2, 40, 10, 10_000], [12, 100, 1000, 10_000], [40, 40, 10_000, 10_000], [0, 0, 5, 10], [5, 12, 3000, 10_000]] as const) expect([x, juger(x[0], x[1], x[2], x[3])]).toEqual([x, null]);
+  const C = randomUUID(), aut = { id: "u", via: "interface" as const };
+  const m = await (await import("@/atlas/segments")).creerSegment(C, { nom: "Tout le 69", filtre: { conditions: [{ champ: "departement", op: "dans", valeur: ["69"] }] } }, aut);
+  expect(await avecClients(C, () => proposerPriorite(C, m.id))).toMatchObject({ clients: 0, regles: [], message: expect.stringMatching(/au moins 10 clients/) });
+  // Clients choisis tous de la même taille : elle doit ressortir, avec ses deux parts.
+  const t = (await sourceMarche().repartition({ conditions: [{ champ: "departement", op: "dans", valeur: ["69"] }] }, "taille")).at(-1)!; // la moins fréquente
+  const l = (await sourceMarche().apercu({ conditions: [{ champ: "departement", op: "dans", valeur: ["69"] }, { champ: "taille", op: "dans", valeur: [t.cle] }] }, { colonnes: ["nom"], page: 1, parPage: 40 } as never)).lignes;
+  await poser(C, l.map((x) => String(x.siren)));
+  (await import("@/atlas/clients")).importerClients(C, "u", []).catch(() => undefined);
+  await new Promise((r) => setTimeout(r, 200));
+  const p = await avecClients(C, () => proposerPriorite(C, m.id));
+  expect(p.clients).toBe(l.length);
+  const r = p.regles.find((x) => x.condition.champ === "taille")!;
+  expect(r).toMatchObject({ condition: { champ: "taille", op: "dans", valeur: [t.cle] }, part_clients_pct: 100 });
+  expect(r.part_segment_pct).toBeLessThan(50);
+  expect(p.regles.some((r) => r.condition.champ === "departement" || r.condition.champ === "client")).toBe(false);
+  await prisma.atlasSegmentVersion.deleteMany({ where: { segmentId: m.id } });
+  await prisma.atlasSegment.deleteMany({ where: { tenantId: C } });
+  await prisma.atlasClient.deleteMany({ where: { tenantId: C } });
+});

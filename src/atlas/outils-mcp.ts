@@ -23,6 +23,7 @@ import { geometrieCommunes, rapprocher } from "./communes";
 import { accorderAcces, creerCle, droits, listerAccesAvances, listerCles, RefusAcces, revoquerCle } from "./acces";
 import { LIGNES_MAX_SQL, TABLES_SQL, verifierRequete } from "./sql";
 import { FiltreInvalide } from "./filtres";
+import { proposerPriorite } from "./suggestion";
 import { sourceMarche } from "./source";
 import { liensIA } from "@/lib/hub/liens-ia-client";
 
@@ -587,6 +588,16 @@ const OUTILS_BRUTS: Outil[] = [
       const top = await sourceMarche().apercu(await seg.filtreEffectif(c.ctx.tenantId, r.id), { colonnes: s.colonnes, page: 1, parPage: 10, scoring: a.scoring });
       return avecSource({ ...r, top });
     }),
+  },
+  {
+    name: "proposer_priorite",
+    title: "Proposer des règles de priorité",
+    description:
+      "Propose des règles de priorité d'après les clients importés (importer_clients) : ce qui est nettement plus fréquent chez eux que dans le segment, avec les deux " +
+      "pourcentages. À relire avec l'utilisateur puis à poser par definir_scoring.",
+    input: z.object({ segment_id: SEGMENT }),
+    annotations: LECTURE,
+    run: lisible(async (a, c) => avecSource(await proposerPriorite(c.ctx.tenantId, a.segment_id as string))),
   },
   {
     name: "classer_segment",
