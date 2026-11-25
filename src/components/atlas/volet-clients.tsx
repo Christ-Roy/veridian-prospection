@@ -44,7 +44,7 @@ export function VoletClients({ onChoisir, onChange, onFermer }: { onChoisir: (se
     if (/\.xlsx?$/i.test(f.name)) return setErreur("Enregistrez d'abord votre tableau en CSV (Fichier, Enregistrer sous, CSV).");
     const octets = await f.arrayBuffer();
     let t = new TextDecoder("utf-8").decode(octets);
-    if (t.includes("�")) t = new TextDecoder("windows-1252").decode(octets);
+    if (t.includes("\uFFFD")) t = new TextDecoder("windows-1252").decode(octets);
     setTexte(t);
     setFichier(f.name);
   };

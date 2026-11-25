@@ -27,7 +27,7 @@ export function sirenValide(s: string): boolean {
 
 /** SIREN ou SIRET, espaces et points permis ; un tableur qui a mangé les zéros de tête se répare si la clé tombe juste. */
 export function lireNumero(brut: string): string | null {
-  const c = brut.replace(/[\s.  -]/g, "").replace(/^FR\d{2}(?=\d{9}$)/i, "");
+  const c = brut.replace(/[\s.\u00a0\u202f-]/g, "").replace(/^FR\d{2}(?=\d{9}$)/i, "");
   if (!/^\d{7,14}$/.test(c)) return null;
   const s = c.length <= 9 ? c.padStart(9, "0") : c.length >= 13 ? c.padStart(14, "0").slice(0, 9) : "";
   return sirenValide(s) ? s : null;

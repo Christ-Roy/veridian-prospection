@@ -11,7 +11,7 @@ export function sirenValide(s: string): boolean {
   return t % 10 === 0;
 }
 export function lireNumero(brut: string): string | null {
-  const c = brut.replace(/[\s.  -]/g, "").replace(/^FR\d{2}(?=\d{9}$)/i, "");
+  const c = brut.replace(/[\s.\u00a0\u202f-]/g, "").replace(/^FR\d{2}(?=\d{9}$)/i, "");
   if (!/^\d{7,14}$/.test(c)) return null;
   const s = c.length <= 9 ? c.padStart(9, "0") : c.length >= 13 ? c.padStart(14, "0").slice(0, 9) : "";
   return sirenValide(s) ? s : null;
@@ -34,7 +34,7 @@ export function cellules(ligne: string, sep: string): string[] {
 }
 
 export function lireFichierClients(texte: string): { numeros: string[]; colonne: string | null; ecartes: number } {
-  const lignes = texte.replace(/^﻿/, "").split(/\r?\n/).filter((l) => l.trim());
+  const lignes = texte.replace(/^\uFEFF/, "").split(/\r?\n/).filter((l) => l.trim());
   if (!lignes.length) return { numeros: [], colonne: null, ecartes: 0 };
   const sep = [";", "\t", ",", "|"].map((s) => [s, lignes.slice(0, 20).reduce((n, l) => n + l.split(s).length - 1, 0)] as const).sort((a, b) => b[1] - a[1])[0];
   const table = sep[1] ? lignes.map((l) => cellules(l, sep[0])) : lignes.map((l) => [l.trim()]);
