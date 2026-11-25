@@ -9,6 +9,7 @@ import { getUserContext } from "@/lib/auth/user-context";
 import { RefusLiaison } from "@/lib/liaisons/erreurs";
 import { sessionId } from "@/lib/liaisons/session";
 import { isRateLimited } from "@/lib/rate-limit";
+import { avecClients } from "@/atlas/clients";
 import { RefusExtraction } from "@/atlas/extraction";
 import { FiltreInvalide } from "@/atlas/filtres";
 import * as li from "@/atlas/liaisons";
@@ -55,7 +56,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const t0 = Date.now();
   const journal = (issue: string) => console.log(`[liaisons] action=${nom} tenant=${ctx.tenantId} user=${ctx.userId} issue=${issue} ms=${Date.now() - t0}`);
   try {
-    const r = await action.run(await li.appelDe(ctx, await sessionId(request)), e.data as never);
+    const appel = await li.appelDe(ctx, await sessionId(request));
+    const r = await avecClients(ctx.tenantId, () => action.run(appel, e.data as never));
     journal("ok");
     return rendre(r);
   } catch (err) {

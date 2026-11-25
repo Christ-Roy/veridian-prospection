@@ -393,3 +393,8 @@
 .atlas .marche .dossier-marche .col span { font-size: 10.5px; color: var(--muted); }
 .atlas .marche .dossier-marche .hb { grid-template-columns: 150px minmax(0, 1fr) 64px; gap: 10px; margin-bottom: 8px; font-size: 12.5px; }
 @media (max-width: 900px) { .atlas .marche .dossier-marche { grid-template-columns: 1fr; } }
+.atlas .badge-client { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; background: var(--blue-soft); color: hsl(217 70% 35%); font-size: 11px; line-height: 17px; font-weight: 500; vertical-align: 1px; }
+.atlas .kpi-lien { display: flex; flex-direction: column; text-align: left; background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+.atlas .kpi-lien:hover span { text-decoration: underline; }
+.atlas .hb.lien { background: none; border: 0; padding: 0; font: inherit; font-size: 13px; color: inherit; text-align: left; cursor: pointer; grid-template-columns: 150px minmax(0, 1fr) 110px; }
+.atlas .hb.lien:hover > span:first-child { text-decoration: underline; }

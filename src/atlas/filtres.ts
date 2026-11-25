@@ -9,6 +9,7 @@
 import { z } from "zod";
 
 import { CHAMP, OPERATEURS, type Champ } from "./champs";
+import { clientsCourants } from "./clients-portee";
 import { devine } from "./restreint";
 
 const ConditionSchema = z
@@ -98,6 +99,7 @@ function compilerCondition(c: Condition, i: number, p: (type: string, v: unknown
   }
   const devinee = devine(champ.id, c.op);
   if (devinee) throw new FiltreInvalide(`conditions.${i} : ${champ.libelle} ne se filtre ici que par « renseigne ». ${devinee}`);
+  if (champ.espace) return clauseClients(c.valeur, p);
   const col = champ.sql;
   const err = (attendu: string) => new FiltreInvalide(`conditions.${i} : ${champ.libelle} « ${c.op} » attend ${attendu}`);
   const v = c.valeur;
@@ -157,11 +159,26 @@ function compilerCondition(c: Condition, i: number, p: (type: string, v: unknown
   }
 }
 
+/** Taille d'un paramètre : ClickHouse refuse un champ d'URL de plus de 128 Ko. */
+const LOT_SIREN = 5000;
+/** `siren IN (…)` sur une longue liste, en plusieurs paramètres. */
+export function parmiSirens(sirens: readonly string[], p: (type: string, v: unknown) => string): string {
+  const lots = Array.from({ length: Math.ceil(sirens.length / LOT_SIREN) }, (_, i) => `siren IN ${p("Array(String)", sirens.slice(i * LOT_SIREN, (i + 1) * LOT_SIREN))}`);
+  return lots.length ? `(${lots.join(" OR ")})` : "0";
+}
+/** Clients de l'espace : la liste vient de l'espace de l'appel (clients-portee.ts), jamais du filtre. */
+export function clauseClients(v: unknown, p: (type: string, v: unknown) => string): string {
+  if (typeof v !== "boolean") throw new FiltreInvalide("Est déjà client : attend oui ou non (true/false)");
+  const sirens = clientsCourants();
+  if (!sirens) throw new FiltreInvalide("Le filtre « Est déjà client » n'est pas disponible ici.");
+  return v ? parmiSirens(sirens, p) : sirens.length ? `NOT ${parmiSirens(sirens, p)}` : "1";
+}
+
 /** Expressions SELECT pour les colonnes choisies (ids du catalogue), alias = id. */
 export function colonnesSql(ids: readonly string[]): { sql: string; champs: Champ[]; jointures: string } {
   const champs = [...new Set(["siren", ...ids])].map((id) => {
     const c = CHAMP.get(id);
-    if (!c) throw new FiltreInvalide(`colonne inconnue « ${id} »`);
+    if (!c || c.espace) throw new FiltreInvalide(`colonne inconnue « ${id} »`);
     return c;
   });
   if (champs.length > 25) throw new FiltreInvalide("25 colonnes au plus");

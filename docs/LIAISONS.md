@@ -35,7 +35,7 @@ Même enveloppe et mêmes codes que Mail (fiche 87 de Notifuse). `src/lib/action
   Aucune coordonnée, à aucun plan.
 - **`entreprises.enrichir`** `{siren}` + `Idempotency-Key` (8 à 128) : identité, activité, lieu, dirigeant, web, finances, signaux, `url` de la fiche
   (`/?siren=`). `coordonnees` : `jointes` (plan payant, `contact {email, telephone}`, comptées dans les 5 000 par jour et tracées, une fois par
-  clé), `plan`, `aucune`, `non_prospectable` (identité publique seule). Rien n'est gardé : un rejeu relit sans recompter.
+  clé), `plan` (`masque` dit ce qui existe), `aucune`, `non_prospectable` (identité publique seule). Rien n'est gardé : un rejeu relit sans recompter.
 - **Refus** : 401 `jeton_refuse`, `jeton_deja_vu` ; 403 `portee_insuffisante`, `app_non_autorisee`, `utilisateur_inconnu`, `non_membre`,
   `espace_suspendu` ; 409 `espace_non_relie`, `en_cours` ; 400 `cle_requise`, `demande_invalide` ; 422 `cle_reutilisee` ; 404 `action_inconnue`,
   `entreprise_inconnue` ; 429 `quota`, `trop_de_demandes` (60 par minute) ; 503 `echec`.

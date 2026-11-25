@@ -11,6 +11,8 @@ export type ChampInfo = {
   repartition: boolean;
   /** Axe du marché total (cube d'ODH). */
   marche?: boolean;
+  /** Faux : filtre et priorité seulement, jamais une colonne. */
+  colonne?: boolean;
 };
 
 export type ValeurCondition = string | number | boolean | (string | number)[];

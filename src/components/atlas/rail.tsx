@@ -24,6 +24,8 @@ type Props = {
   onBrancherIA: () => void;
   /** Vérifier une liste de SIREN (tout le monde). */
   onVerifier: () => void;
+  /** Mes clients : import et taux de pénétration. */
+  onClients: () => void;
   /** API et accès avancé : seulement pour un espace à accès avancé ou un administrateur Atlas. */
   onAcces?: () => void;
   clignote: string | null;
@@ -35,7 +37,7 @@ type Props = {
  * Rail de la maquette : 56 px d'icônes, 268 px au survol ou au focus, libellés en fondu. Les marchés
  * sont rangés par dossier ; le marché actif déploie ses cibles. Sous 720 px, c'est un menu.
  */
-export function Rail({ arbre, erreur, selection, ouvert, peutEcrire, ias, onBrancherIA, onVerifier, onAcces, clignote, onSelection, onCreer }: Props) {
+export function Rail({ arbre, erreur, selection, ouvert, peutEcrire, ias, onBrancherIA, onVerifier, onClients, onAcces, clignote, onSelection, onCreer }: Props) {
   const { data: session } = useSession();
   const email = session?.user?.email ?? null;
   const marcheActif = arbre && selection ? marcheDe(arbre, selection) : null;
@@ -123,6 +125,10 @@ export function Rail({ arbre, erreur, selection, ouvert, peutEcrire, ias, onBran
         <ChoixEspace />
         <div className="rsec">
           <div className="rhead lbl">Outils</div>
+          <button type="button" className="ritem" title="Importer mes clients, voir ma part de chaque marché" onClick={onClients}>
+            <Icone nom="clients" />
+            <span className="lbl">Mes clients</span>
+          </button>
           <button type="button" className="ritem" title="Vérifier une liste de SIREN : site, email, téléphone" onClick={onVerifier}>
             <Icone nom="verifier" />
             <span className="lbl">Vérifier une liste</span>

@@ -24,7 +24,7 @@ function valider(filtre: unknown): Filtre {
 }
 function validerColonnes(colonnes: unknown): string[] {
   if (colonnes === undefined) return COLONNES_DEFAUT;
-  if (!Array.isArray(colonnes) || colonnes.length > 25 || colonnes.some((c) => typeof c !== "string" || !CHAMP.has(c))) {
+  if (!Array.isArray(colonnes) || colonnes.length > 25 || colonnes.some((c) => typeof c !== "string" || !CHAMP.has(c) || CHAMP.get(c)!.espace)) {
     throw new FiltreInvalide("colonnes : 25 ids du catalogue au plus (outil lister_champs)");
   }
   return colonnes as string[];

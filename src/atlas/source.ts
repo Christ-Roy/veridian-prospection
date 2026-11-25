@@ -5,12 +5,14 @@
  */
 import { CHAMP, CHAMPS, type Champ } from "./champs";
 import { motifMot, type CodeActivite } from "./activites";
+import type { Arret } from "./parcours";
+import { clientsCourants } from "./clients-portee";
 import { COLONNES_MAITRE, TABLE_MAITRE, compilerMaitre, conditionNom } from "./maitre";
 import { compilerCube, libelleCube, mesures, TABLE_CUBE, type ResultatCube } from "./cube";
 import { libelleValeur } from "./libelles";
 import { NAF_LIBELLES } from "./naf";
 import { TABLES_SQL } from "./sql";
-import { FiltreInvalide, FiltreSchema, ScoringSchema, colonnesSql, compilerFiltre, type Condition, type SqlParam } from "./filtres";
+import { parmiSirens, FiltreInvalide, FiltreSchema, ScoringSchema, colonnesSql, compilerFiltre, type Condition, type SqlParam } from "./filtres";
 
 export type Ligne = Record<string, string | number | boolean | null>;
 export type Apercu = { colonnes: string[]; page: number; parPage: number; tri: string; lignes: Ligne[] };
@@ -118,6 +120,10 @@ export interface SourceMarche {
   pourCrm(siren: string): Promise<LigneCrm | null>;
   /** Toutes les entreprises de France par nom, SIREN ou domaine : actives et prospectables d'abord. */
   chercher(r: Recherche): Promise<Trouvee[]>;
+  /** Parmi ces SIREN, combien d'entreprises actives d'un filtre de marché (base maître), au total ou par axe. */
+  compterParmi(filtre: unknown, sirens: readonly string[], axe?: "departement" | "naf"): Promise<{ total: number; lignes: { cle: string; n: number }[] }>;
+  /** Position des entreprises d'une tournée : celles qui n'en ont pas n'y sont pas. */
+  positions(sirens: readonly string[]): Promise<Arret[]>;
   /** Accès avancé : requête SQL déjà passée par verifierRequete (sql.ts). */
   sql(requete: string): Promise<{ colonnes: string[]; lignes: Ligne[] }>;
   /** Colonnes des tables autorisées au SQL. */
@@ -480,6 +486,29 @@ export class SourceClickHouse implements SourceMarche {
     };
   }
 
+  async positions(sirens: readonly string[]): Promise<Arret[]> {
+    const r = await this.requete<Record<string, unknown>>(
+      `SELECT siren, legal_name AS nom, latitude AS lat, longitude AS lon FROM ${TABLE} WHERE siren IN {s:Array(String)} AND latitude IS NOT NULL AND longitude IS NOT NULL`,
+      { s: { type: "Array(String)", valeur: [...sirens] } },
+    );
+    return r.map((l) => ({ siren: String(l.siren), nom: String(l.nom), lat: Number(l.lat), lon: Number(l.lon) }));
+  }
+
+  async compterParmi(filtre: unknown, sirens: readonly string[], axe?: "departement" | "naf") {
+    if (!sirens.length) return { total: 0, lignes: [] };
+    const c = compilerMaitre(filtre);
+    let n = 0;
+    const dans = parmiSirens(sirens, (type, valeur) => {
+      const k = `cl${n++}`;
+      c.params[k] = { type, valeur };
+      return `{${k}:${type}}`;
+    });
+    const col = axe === "departement" ? "department" : axe === "naf" ? "naf_code" : "''";
+    const r = await this.requete<{ cle: string; n: string }>(`SELECT ${col} AS cle, count() AS n FROM ${TABLE_MAITRE} WHERE ${c.where} AND ${dans} GROUP BY cle ORDER BY n DESC, cle LIMIT 200`, c.params);
+    const lignes = r.map((l) => ({ cle: String(l.cle), n: Number(l.n) }));
+    return { total: lignes.reduce((a, l) => a + l.n, 0), lignes: axe ? lignes : [] };
+  }
+
   async chercher(r: Recherche): Promise<Trouvee[]> {
     const n = Math.min(20, Math.max(1, Math.trunc(r.limite)));
     const params: Record<string, SqlParam> = {};
@@ -682,6 +711,7 @@ function vraie(c: Condition, l: Ligne): boolean {
   const champ = CHAMP.get(c.champ)!;
   const x = l[champ.id];
   const v = c.valeur;
+  if (champ.espace) return (clientsCourants() ?? []).includes(String(l.siren)) === v;
   if (c.op === "renseigne") return (x !== null && x !== "" && x !== undefined) === v;
   if (x === null || x === undefined) return false;
   switch (c.op) {
@@ -856,6 +886,16 @@ export class SourceSimulee implements SourceMarche {
       siren, email: l.email_envoyable ? String(l.email) : null, domaine: l.site ? String(l.site) : null, raison_sociale: String(l.nom), dirigeant: null, role_dirigeant: null,
       activite: null, naf: String(l.naf), code_postal: String(l.code_postal), commune: String(l.commune), departement: String(l.departement), telephone: l.telephone ? String(l.telephone) : null,
     };
+  }
+  async positions(sirens: readonly string[]): Promise<Arret[]> {
+    return this.lignes.filter((l) => sirens.includes(String(l.siren))).map((l, i) => ({ siren: String(l.siren), nom: String(l.nom), lat: 45 + i / 50, lon: 5 + (i % 3) / 50 }));
+  }
+  async compterParmi(filtre: unknown, sirens: readonly string[], axe?: "departement" | "naf") {
+    const { conditions } = this.traduisibles(filtre);
+    const ls = this.filtrer({ conditions }).filter((l) => sirens.includes(String(l.siren)));
+    const par = new Map<string, number>();
+    if (axe) for (const l of ls) par.set(String(l[axe]), (par.get(String(l[axe])) ?? 0) + 1);
+    return { total: ls.length, lignes: [...par].map(([cle, n]) => ({ cle, n })).sort((a, b) => b.n - a.n) };
   }
   async chercher(r: Recherche): Promise<Trouvee[]> {
     return this.lignes

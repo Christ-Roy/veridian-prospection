@@ -605,6 +605,17 @@ model AtlasEpingle {
   @@map("atlas_epingles")
 }
 
+/// Clients de l'espace, importés par SIREN ou SIRET (src/atlas/clients.ts). Aucune coordonnée : le numéro seul.
+model AtlasClient {
+  tenantId  String   @map("tenant_id") @db.Uuid
+  siren     String
+  ajoutePar String   @map("ajoute_par")
+  creeLe    DateTime @default(now()) @map("cree_le") @db.Timestamptz
+
+  @@id([tenantId, siren])
+  @@map("atlas_clients")
+}
+
 /// IA qui ont appelé Prospection par la porte MCP du Hub (une ligne par utilisateur et client OAuth).
 model AtlasPresenceIa {
   id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid

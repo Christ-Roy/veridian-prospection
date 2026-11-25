@@ -92,6 +92,7 @@ export function VoletFiche({
 }) {
   const [fiche, setFiche] = useState<Fiche | null>(null);
   const [reserve, setReserve] = useState<string | null>(null);
+  const [client, setClient] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [envoi, setEnvoi] = useState(false);
   useEffect(() => {
@@ -99,10 +100,12 @@ export function VoletFiche({
     setFiche(null);
     setErreur(null);
     setReserve(null);
-    appeler<{ fiche: Fiche; coordonnees_retirees?: string }>("fiche_entreprise_atlas", { siren }, ctl.signal)
+    setClient(false);
+    appeler<{ fiche: Fiche; coordonnees_retirees?: string; client?: boolean }>("fiche_entreprise_atlas", { siren }, ctl.signal)
       .then((r) => {
         setFiche(r.fiche);
         setReserve(r.coordonnees_retirees ?? null);
+        setClient(r.client === true);
       })
       .catch((e) => !estAnnulation(e) && setErreur(texteErreur(e)));
     return () => ctl.abort();
@@ -121,7 +124,7 @@ export function VoletFiche({
   };
 
   return (
-    <Volet titre={tete.titre} sous={tete.sous || `SIREN ${siren}`} onFermer={onFermer}>
+    <Volet titre={tete.titre} sous={<>{tete.sous || `SIREN ${siren}`}{client && <span className="badge-client">Client</span>}</>} onFermer={onFermer}>
       {peutEcrire && (
         <div className="sact">
           <button type="button" className={epingle ? "btn" : "btn pri"} onClick={basculer} disabled={envoi} aria-pressed={epingle}>
@@ -176,6 +179,52 @@ export function VoletFiche({
 
 // ---------------------------------------------------------------- dossier de travail
 
+type TourneeVue = { arrets: { siren: string; nom: string }[]; vol_oiseau_km: number; liens: { url: string; arrets: string[] }[]; sans_position: string[] };
+
+/** Tournée Google Maps du dossier : des liens à ouvrir, rien n'est envoyé à Google avant le clic. */
+function Tournee() {
+  const [t, setT] = useState<TourneeVue | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const preparer = async () => {
+    setBusy(true);
+    setErreur(null);
+    try {
+      setT(await appeler<TourneeVue>("tournee_maps"));
+    } catch (e) {
+      setErreur(texteErreur(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="sact" style={{ flexDirection: "column", alignItems: "flex-start" }}>
+      <button type="button" className="btn" disabled={busy} onClick={() => void preparer()}>
+        <Icone nom="itineraire" />
+        {busy ? "Préparation…" : "Préparer une tournée Google Maps"}
+      </button>
+      {erreur && (
+        <p className="err" role="alert">
+          <Icone nom="alerte" />
+          {erreur}
+        </p>
+      )}
+      {t && t.liens.length === 0 && <p className="hint">Aucune de ces entreprises n&apos;a de position connue.</p>}
+      {t && t.liens.length > 0 && (
+        <p className="callout" role="status">
+          {formaterNombre(t.arrets.length)} arrêt{t.arrets.length > 1 ? "s" : ""}, environ {formaterNombre(t.vol_oiseau_km)} km à vol d&apos;oiseau.{" "}
+          {t.liens.map((l, i) => (
+            <a key={l.url} className="lnk" href={l.url} target="_blank" rel="noopener noreferrer" title={l.arrets.join(", ")}>
+              {t.liens.length > 1 ? `Ouvrir la partie ${i + 1} (${l.arrets.length}) ` : "Ouvrir dans Google Maps"}
+            </a>
+          ))}
+          {t.sans_position.length > 0 && ` ${formaterNombre(t.sans_position.length)} sans position connue, laissée${t.sans_position.length > 1 ? "s" : ""} de côté.`}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function VoletDossier({
   epingles,
   erreur,
@@ -202,6 +251,7 @@ export function VoletDossier({
         </p>
       )}
       {!epingles && !erreur && <Chargement />}
+      {n > 0 && <Tournee />}
       {epingles && epingles.length === 0 && <p className="empty">Dossier vide. Ouvrez une fiche et « Ajouter au dossier ».</p>}
       {epingles && epingles.length > 0 && (
         <div>

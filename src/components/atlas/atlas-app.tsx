@@ -43,6 +43,8 @@ import { PopoverFiltres } from "./popover-filtres";
 import { VueMarche } from "./vue-marche";
 import { HUB_IA, Rail, type IAVue } from "./rail";
 import type { AnalyseMarche, ApercuMarche, Arbre, ChampInfo, Condition, Epingle, Filtre, Historique, SegmentArbre, SegmentDetail, Vue, ZoneLocale } from "./types";
+import { VoletClients } from "./volet-clients";
+import { pourcent } from "./clients-logique";
 import { VoletDossier, VoletFiche, VoletHistorique } from "./volets";
 import { VoletAcces, VoletVerifier, type DroitsAtlas } from "./volet-outils";
 import { VueBarres, VueEntonnoir, VuePriorite, VueTableau } from "./vues";
@@ -51,7 +53,7 @@ const COLONNES_LIBRES = ["nom", "commune", "departement", "naf", "taille", "chif
 const FILTRE_VIDE: Filtre = { conditions: [] };
 const SONDE_MS = 15_000;
 
-type Volet = { type: "fiche"; siren: string; nom: string } | { type: "dossier" } | { type: "historique" } | { type: "verifier" } | { type: "acces" } | null;
+type Volet = { type: "fiche"; siren: string; nom: string } | { type: "dossier" } | { type: "historique" } | { type: "verifier" } | { type: "clients" } | { type: "acces" } | null;
 type Apercu = { version: number; filtre: Filtre } | null;
 
 const VUES: { id: Vue; libelle: string; icone: NomIcone }[] = [
@@ -121,6 +123,18 @@ export function AtlasApp() {
     appeler<DroitsAtlas>("mes_droits")
       .then(setDroits)
       .catch(() => setDroits(null));
+  }, []);
+
+  // ---- clients importés : leur part du marché affiché
+  const [nbClients, setNbClients] = useState(0);
+  const [part_, setPart] = useState<{ cle: string; clients: number; taux: number | null } | null>(null);
+  const majClients = useCallback((n: number) => setNbClients(n), []);
+  useEffect(() => {
+    const ctl = new AbortController();
+    appeler<{ clients_importes: number }>("penetration_marche", {}, ctl.signal)
+      .then((r) => setNbClients(r.clients_importes))
+      .catch(() => undefined);
+    return () => ctl.abort();
   }, []);
 
   // ---- liaisons vers le CRM et Mail : éteintes tant que le serveur ne dit pas le contraire
@@ -358,6 +372,19 @@ export function AtlasApp() {
       .finally(() => !ctl.signal.aborted && setKpisBusy(false));
     return () => ctl.abort();
   }, [attente, champs, cleChiffres, listeKpis, rafraichir, baseMarche, heritees, communeKpis]);
+
+  // Taux de pénétration du marché affiché (la zone et les filtres compris), dès qu'il y a des clients importés.
+  useEffect(() => {
+    if (attente || !nbClients || !baseMarche) {
+      setPart(null);
+      return;
+    }
+    const ctl = new AbortController();
+    appeler<{ clients_dans_le_marche: number; taux_pct: number | null }>("penetration_marche", { filtre: JSON.parse(cleChiffres) as Filtre }, ctl.signal)
+      .then((r) => setPart({ cle: cleChiffres, clients: r.clients_dans_le_marche, taux: r.taux_pct }))
+      .catch(() => setPart(null));
+    return () => ctl.abort();
+  }, [attente, nbClients, baseMarche, cleChiffres]);
 
   // ---------------------------------------------------------------- écriture
   const ecritureRefusee = useCallback(() => {
@@ -656,6 +683,7 @@ export function AtlasApp() {
         peutEcrire={peutEcrire}
         ias={toutesIAs}
         onBrancherIA={() => setDialogueIA(true)}
+        onClients={() => (setRailOuvert(false), setVolet({ type: "clients" }))}
         onVerifier={() => (setRailOuvert(false), setVolet({ type: "verifier" }))}
         onAcces={droits?.acces_avance || droits?.admin_atlas ? () => (setRailOuvert(false), setVolet({ type: "acces" })) : undefined}
         clignote={clignote}
@@ -884,6 +912,14 @@ export function AtlasApp() {
                 </span>
               </div>
             ))}
+            {baseMarche && !communeKpis && part_ && part_.cle === cleChiffres && (
+              <button type="button" className="kpi kpi-lien" title="Vos clients importés dans ce marché" onClick={() => setVolet({ type: "clients" })}>
+                <b className="num">{pourcent(part_.taux)}</b>
+                <span>
+                  de pénétration · {formaterNombre(part_.clients)} client{part_.clients > 1 ? "s" : ""}
+                </span>
+              </button>
+            )}
             {!baseMarche && kpis && kpis.marche !== undefined && kpis.total !== undefined && (
               <div className="kpi">
                 <b className="num">{part(kpis.total, kpis.marche)}</b>
@@ -968,6 +1004,7 @@ export function AtlasApp() {
       {volet?.type === "fiche" && (
         <VoletFiche siren={volet.siren} nom={volet.nom} epingle={epingle(volet.siren)} peutEcrire={peutEcrire} liaisons={liaisons} onEpingler={epingler} onRetirer={retirer} onFermer={fermerVolet} />
       )}
+      {volet?.type === "clients" && <VoletClients onChange={majClients} onChoisir={(id) => (setVolet(null), choisir(id))} onFermer={fermerVolet} />}
       {volet?.type === "verifier" && <VoletVerifier droits={droits} onFiche={ouvrirFiche} onFermer={fermerVolet} />}
       {volet?.type === "acces" && droits && <VoletAcces droits={droits} onFermer={fermerVolet} />}
       {volet?.type === "dossier" && <VoletDossier epingles={epingles} erreur={erreurEpingles} peutEcrire={peutEcrire} onOuvrir={ouvrirFiche} onRetirer={retirer} onFermer={fermerVolet} />}

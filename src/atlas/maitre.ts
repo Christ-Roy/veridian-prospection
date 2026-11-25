@@ -9,7 +9,7 @@
  * Limites du compte : 15 M lignes lues et 10 s ; un comptage sans filtre passe par le cube.
  */
 import { formesFamille, motsCles } from "./activites";
-import { FiltreInvalide, FiltreSchema, type Condition, type SqlParam } from "./filtres";
+import { clauseClients, FiltreInvalide, FiltreSchema, type Condition, type SqlParam } from "./filtres";
 
 export const TABLE_MAITRE = "odh.company_master_current";
 
@@ -92,6 +92,10 @@ export function compilerMaitre(brut: unknown, actives = true): CompileMaitre {
     }
     if (DRAPEAUX[c.champ] && ((c.op === "renseigne" && typeof v === "boolean") || (c.op === "est" && typeof v === "boolean"))) {
       where.push(`${DRAPEAUX[c.champ]} = ${v ? 1 : 0}`);
+      continue;
+    }
+    if (c.champ === "client" && c.op === "est") {
+      where.push(clauseClients(v, p));
       continue;
     }
     if (c.champ === "nom" && c.op === "contient" && typeof v === "string") {

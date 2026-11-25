@@ -14,6 +14,7 @@ import { isRateLimited } from "@/lib/rate-limit";
 
 import { CHAMPS, OPERATEURS } from "./champs";
 import { EntreeActivitesSchema, codesParLibelle, validerActivites } from "./activites";
+import { CLIENTS_MAX, importerClients, marquerClients, penetration, retirerClients, sirensClients } from "./clients";
 import { EntreeCubeSchema, entreeDepuisFiltre } from "./cube";
 import { peutExporter } from "./export";
 import { extraireSegment, PAGE_DEFAUT, PAGE_MAX, RefusExtraction } from "./extraction";
@@ -26,6 +27,7 @@ import { sourceMarche } from "./source";
 import { liensIA } from "@/lib/hub/liens-ia-client";
 
 import { listerPresences } from "./presence-ia";
+import { tournee } from "./parcours";
 import * as seg from "./segments";
 
 const LECTURE = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
@@ -46,6 +48,10 @@ function lisible<T>(f: (a: Record<string, unknown>, c: ContexteOutil) => Promise
   };
 }
 const avecSource = <T extends object>(r: T) => ({ ...r, ...(sourceMarche().simulee ? { donnees_simulees: true } : {}) });
+
+/** Un client se voit, sans jamais faire échouer la lecture qui le porte. */
+const marquer = <T extends { siren?: unknown }>(c: ContexteOutil, lignes: T[]) => marquerClients(c.ctx.tenantId, lignes).catch(() => lignes);
+const estClient = async (c: ContexteOutil, siren: string): Promise<{ client?: true }> => ((await marquer(c, [{ siren } as { siren: string; client?: true }]))[0].client ? { client: true } : {});
 
 const EXEMPLE_FILTRE = '{"conditions":[{"champ":"naf","op":"dans","valeur":["7500Z"]},{"champ":"departement","op":"dans","valeur":["69"]}]}';
 const FILTRE = z
@@ -73,7 +79,7 @@ const OUTILS_BRUTS: Outil[] = [
     input: z.object({}),
     annotations: LECTURE,
     run: async () => ({
-      champs: CHAMPS.map((c) => ({ id: c.id, libelle: c.libelle, type: c.type, groupe: c.groupe, operateurs: OPERATEURS[c.type], repartition: !!c.repartition, marche: !!c.marche })),
+      champs: CHAMPS.map((c) => ({ id: c.id, libelle: c.libelle, type: c.type, groupe: c.groupe, operateurs: OPERATEURS[c.type], repartition: !!c.repartition, marche: !!c.marche, ...(c.espace ? { colonne: false } : {}) })),
       // Un marché (segment racine) se définit sur les champs `marche` et se compte sur toutes les entreprises
       // (analyser_marche) ; ses cibles ajoutent les autres champs, sur les fiches prospectables.
       regle: "Marché = champs « marche » (toutes les entreprises, outil analyser_marche). Cible = segment enfant, avec les autres champs (fiches prospectables).",
@@ -93,7 +99,7 @@ const OUTILS_BRUTS: Outil[] = [
       par_page: z.number().int().min(1).max(50).default(10),
     }),
     annotations: LECTURE,
-    run: lisible(async (a) => {
+    run: lisible(async (a, c) => {
       const s = sourceMarche();
       const [total, apercu] = await Promise.all([
         s.compter(a.filtre),
@@ -106,7 +112,7 @@ const OUTILS_BRUTS: Outil[] = [
         .marche(entree)
         .then((m) => ({ entreprises_actives: m.total.entreprises, contactables: m.total.prospectables, email_envoyable: m.total.email_envoyable, conditions_non_comptees: ignorees }))
         .catch(() => null);
-      return avecSource({ total, page_suivante: suivante, ...apercu, ...(entier ? { marche_entier: entier } : {}) });
+      return avecSource({ total, page_suivante: suivante, ...apercu, lignes: await marquer(c, apercu.lignes), ...(entier ? { marche_entier: entier } : {}) });
     }),
   },
   {
@@ -145,7 +151,7 @@ const OUTILS_BRUTS: Outil[] = [
       "Toujours filtrer par NAF, nom, ou département + NAF. Les autres champs sont rendus dans conditions_ignorees.",
     input: z.object({ filtre: FILTRE, page: z.number().int().min(1).max(200).default(1), par_page: z.number().int().min(1).max(50).default(20) }),
     annotations: LECTURE,
-    run: lisible(async (a) => {
+    run: lisible(async (a, c) => {
       const s = sourceMarche();
       const { ignorees } = compilerMaitre(a.filtre);
       const [total, liste] = await Promise.all([s.compterMaitre(a.filtre), s.listerMaitre(a.filtre, a.page as number, a.par_page as number)]);
@@ -157,6 +163,7 @@ const OUTILS_BRUTS: Outil[] = [
         page_suivante: plein && (total === null || (a.page as number) * (a.par_page as number) < total) ? (a.page as number) + 1 : null,
         conditions_ignorees: ignorees,
         ...liste,
+        lignes: await marquer(c, liste.lignes),
       });
     }),
   },
@@ -195,11 +202,12 @@ const OUTILS_BRUTS: Outil[] = [
       // Anti-aspiration : 60 fiches par minute et par utilisateur, écran et IA confondus.
       if (isRateLimited(`atlas-fiche:${c.ctx.userId}`, 60, 60_000)) throw new ErreurOutil("Trop de fiches ouvertes cette minute (60 au plus).");
       const f = await sourceMarche().fiche(a.siren as string);
-      if (f) return avecSource({ fiche: f, base: "prospectable" });
+      const deja = await estClient(c, a.siren as string);
+      if (f) return avecSource({ fiche: f, base: "prospectable", ...deja });
       // Pas dans la vue prospectable : l'identité vient de la base maître, sans coordonnée.
       const m = await sourceMarche().ficheMaitre(a.siren as string);
       if (!m) throw new ErreurOutil(`Aucune entreprise avec le SIREN ${a.siren}.`);
-      return avecSource({ fiche: m, base: "maitre", note: "Entreprise hors fiches prospectables : identité seulement, aucune coordonnée." });
+      return avecSource({ fiche: m, base: "maitre", ...deja, note: "Entreprise hors fiches prospectables : identité seulement, aucune coordonnée." });
     }),
   },
   {
@@ -412,6 +420,76 @@ const OUTILS_BRUTS: Outil[] = [
     run: lisible(async (a, c) => seg.retirerEpingle(c.ctx.tenantId, a.siren as string)),
   },
   {
+    name: "tournee_maps",
+    title: "Tournée Google Maps",
+    description:
+      "Ordonne des entreprises en tournée et rend les liens Google Maps à ouvrir (10 arrêts par lien, sans clé ni coût). Par défaut celles du dossier de travail, " +
+      "sinon 50 SIREN au plus (par exemple les intéressés lus dans le CRM).",
+    input: z.object({ sirens: z.array(z.string().regex(/^\d{9}$/)).min(1).max(50).optional() }),
+    annotations: LECTURE,
+    run: lisible(async (a, c) => {
+      const ep = a.sirens ? null : await seg.listerEpingles(c.ctx.tenantId);
+      const sirens = (a.sirens as string[] | undefined) ?? ep!.map((e) => e.siren).slice(0, 50);
+      if (!sirens.length) throw new ErreurOutil("Dossier de travail vide : épinglez des entreprises, ou donnez des SIREN.");
+      const arrets = await sourceMarche().positions(sirens);
+      const vus = new Set(arrets.map((x) => x.siren));
+      return avecSource({ ...tournee(arrets), sans_position: sirens.filter((s) => !vus.has(s)), ...(ep && ep.length > 50 ? { avertissement: "Les 50 premières du dossier seulement." } : {}) });
+    }),
+  },
+  {
+    name: "importer_clients",
+    title: "Importer ses clients",
+    description:
+      `Marque des entreprises comme clientes de l'espace, par SIREN ou SIRET (5 000 par appel, ${CLIENTS_MAX} en tout). Sert au taux de pénétration ` +
+      "(penetration_marche) et au filtre client (est true ou false). Rien n'est envoyé aux entreprises.",
+    input: z.object({ numeros: z.array(z.string().max(40)).min(1).max(5000) }),
+    annotations: { ...ECRITURE, idempotentHint: true },
+    visible: peutEcrire,
+    run: lisible(async (a, c) => importerClients(c.ctx.tenantId, auteur(c).id, a.numeros as string[])),
+  },
+  {
+    name: "retirer_clients",
+    title: "Retirer des clients",
+    description: "Retire des entreprises de la liste des clients de l'espace : des numéros, ou tous avec tous = true (demandez d'abord à l'utilisateur).",
+    input: z.object({ numeros: z.array(z.string().max(40)).max(5000).default([]), tous: z.boolean().default(false) }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    visible: peutEcrire,
+    run: lisible(async (a, c) => {
+      if (!a.tous && !(a.numeros as string[]).length) throw new ErreurOutil("Donnez des numéros, ou tous = true.");
+      return retirerClients(c.ctx.tenantId, a.tous ? "tous" : (a.numeros as string[]));
+    }),
+  },
+  {
+    name: "penetration_marche",
+    title: "Taux de pénétration",
+    description:
+      "Part des entreprises actives d'un marché qui sont déjà clientes (importer_clients), au total et par département ou code NAF. Donner un filtre ou un " +
+      "segment_id ; sans rien, la France entière. Rend conditions_ignorees (hors NAF, département, forme, effectif, création).",
+    input: z.object({ filtre: FILTRE.optional(), segment_id: SEGMENT.optional(), axe: z.enum(["departement", "naf"]).optional() }),
+    annotations: LECTURE,
+    run: lisible(async (a, c) => {
+      const f = a.segment_id ? await seg.filtreEffectif(c.ctx.tenantId, a.segment_id as string) : (a.filtre ?? {});
+      return avecSource(await penetration(c.ctx.tenantId, f, a.axe as "departement" | "naf" | undefined));
+    }),
+  },
+  {
+    name: "clients_resume",
+    title: "Clients et pénétration par marché",
+    description: "Nombre de clients importés et taux de pénétration de chacun des marchés de l'espace (12 au plus).",
+    input: z.object({}),
+    annotations: LECTURE,
+    run: lisible(async (_a, c) => {
+      const total = (await sirensClients(c.ctx.tenantId)).length;
+      const marches = total ? (await seg.listerArbre(c.ctx.tenantId)).segments.filter((s) => !s.parent_id).slice(0, 12) : [];
+      const lignes = [];
+      for (const m of marches) {
+        const p = await penetration(c.ctx.tenantId, await seg.filtreEffectif(c.ctx.tenantId, m.id));
+        lignes.push({ segment_id: m.id, nom: m.nom, clients: p.clients_dans_le_marche, entreprises: p.entreprises_du_marche, taux_pct: p.taux_pct, conditions_ignorees: p.conditions_ignorees.length });
+      }
+      return avecSource({ clients: total, maximum: CLIENTS_MAX, marches: lignes, peut_ecrire: peutEcrire(c) });
+    }),
+  },
+  {
     name: "lister_segments_atlas",
     title: "Lister les dossiers et segments",
     description: "Arbre des dossiers et segments de l'espace, avec le numéro de version courant et le droit d'écriture.",
@@ -532,7 +610,7 @@ const OUTILS_BRUTS: Outil[] = [
         src.compter(filtre),
         src.apercu(filtre, { colonnes: s.colonnes, page: a.page as number, parPage: a.par_page as number, tri: a.tri as string, ...(scoring ? { scoring } : {}) }),
       ]);
-      return avecSource({ total, page_suivante: (a.page as number) * (a.par_page as number) < total ? (a.page as number) + 1 : null, ...apercu });
+      return avecSource({ total, page_suivante: (a.page as number) * (a.par_page as number) < total ? (a.page as number) + 1 : null, ...apercu, lignes: await marquer(c, apercu.lignes) });
     }),
   },
   {

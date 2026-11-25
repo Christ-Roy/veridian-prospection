@@ -102,7 +102,7 @@ describe("enrichir", () => {
   });
   test("gratuit : l'identité, jamais une coordonnée, rien de compté", async () => {
     const r = await appel("entreprises.enrichir", { siren }, { claims: { sub: T.gratuit.hubUser, tenant_id: T.gratuit.hub } });
-    expect(r).toMatchObject({ s: 200, resultat: { coordonnees: "plan", nom: expect.any(String) } });
+    expect(r).toMatchObject({ s: 200, resultat: { coordonnees: "plan", masque: expect.arrayContaining(["email"]), nom: expect.any(String) } });
     expect(JSON.stringify(r)).not.toContain("@");
     expect(await exports_(T.gratuit.t)).toBe(0);
   });

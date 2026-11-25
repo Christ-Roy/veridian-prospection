@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUserContext } from "@/lib/auth/user-context";
 import { prisma } from "@/lib/prisma";
 import { isRateLimited } from "@/lib/rate-limit";
+import { avecClients } from "@/atlas/clients";
 import { colonnesExport, LIGNES_MAX_EXPORT, nomFichier, peutExporter, versCsv, versXlsx, type FormatExport } from "@/atlas/export";
 import { FiltreInvalide } from "@/atlas/filtres";
 import * as seg from "@/atlas/segments";
@@ -40,7 +41,7 @@ export async function GET(request: NextRequest) {
     const s = await seg.lireSegment(ctx.tenantId, segmentId);
     const [filtre, scoring] = await Promise.all([seg.filtreEffectif(ctx.tenantId, s.id), seg.scoringCourant(ctx.tenantId, s.id)]);
     const colonnes = colonnesExport(s.colonnes);
-    const r = await sourceMarche().apercu(filtre, { colonnes, page: 1, parPage: LIGNES_MAX_EXPORT, plafond: LIGNES_MAX_EXPORT, livrablesSeuls: true, ...(scoring ? { scoring } : {}) });
+    const r = await avecClients(ctx.tenantId, () => sourceMarche().apercu(filtre, { colonnes, page: 1, parPage: LIGNES_MAX_EXPORT, plafond: LIGNES_MAX_EXPORT, livrablesSeuls: true, ...(scoring ? { scoring } : {}) }));
     const corps = format === "csv" ? versCsv(r.colonnes, r.lignes) : versXlsx(r.colonnes, r.lignes, s.nom);
     // Tracé avant de rendre le fichier : un export sans trace n'est pas servi.
     await prisma.atlasExport.create({

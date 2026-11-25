@@ -221,7 +221,7 @@ export function SelecteurColonnes({ champs, colonnes, onChange }: { champs: Cham
           <p className="hint">
             {colonnes.length} sur {MAX_COLONNES} colonnes au plus.
           </p>
-          {grouperChamps(champs).map((g) => (
+          {grouperChamps(champs.filter((c) => c.colonne !== false)).map((g) => (
             <fieldset key={g.groupe}>
               <legend>{g.groupe}</legend>
               {g.champs.map((c) => (
@@ -307,6 +307,7 @@ function Tableau({
                     ) : (
                       texte
                     )}
+                    {c === "nom" && l.client === true && <span className="badge-client">Client</span>}
                   </td>
                 );
               })}

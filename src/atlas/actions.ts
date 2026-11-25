@@ -16,6 +16,7 @@ import { RefusLiaison } from "@/lib/liaisons/erreurs";
 import { peutExporter } from "./export";
 import { RefusExtraction, reserverFiche } from "./extraction";
 import { telephoneInternational } from "./liaisons";
+import { NAF_LIBELLES } from "./naf";
 import { sourceMarche } from "./source";
 
 export class RefusAction extends Error {
@@ -71,12 +72,13 @@ const enrichir: Action = {
       nom: bloc("identite").nom ?? null,
       url: `${process.env.NEXT_PUBLIC_SITE_URL || "https://prospection.app.veridian.site"}/?siren=${e.siren}`,
       prospectable: !!contact,
+      naf_libelle: NAF_LIBELLES[String(bloc("activite").naf ?? "")] ?? null,
       ...Object.fromEntries((contact ? SECTIONS : (["identite", "activite", "lieu"] as const)).map((k) => [k, sansAdresse(bloc(k))])),
     };
     if (!contact) return { ...socle, coordonnees: "non_prospectable" };
     const email = contact.email, telephone = telephoneInternational(contact.telephone);
     if (!email && !telephone) return { ...socle, coordonnees: "aucune" };
-    if (!peutExporter(a.plan)) return { ...socle, coordonnees: "plan" };
+    if (!peutExporter(a.plan)) return { ...socle, coordonnees: "plan", masque: [email && "email", telephone && "telephone"].filter(Boolean) };
     const geste = uuidDe(`${a.app}:${a.ctx.userId}:${a.cle!}`);
     const { rejoue } = await uneFois({ tenantId: a.ctx.tenantId, userId: a.ctx.userId, geste, etape: "enrichir", cible: "crm", reference: e.siren }, async (id) => {
       await reserverFiche({ tenantId: a.ctx.tenantId, userId: a.ctx.userId, client: `app:${a.app}`, canal: "liaison" }, "enrichir", id);

@@ -25,6 +25,8 @@ export type Champ = {
   ensemble?: { table: string };
   /** Colonne tableau de la même vue (ex. sig_types_90d) : filtrée par hasAny, affichée jointe par des virgules. */
   tableau?: boolean;
+  /** Propre à l'espace (ses clients importés) : filtre et priorité seulement, jamais une colonne d'ODH. */
+  espace?: boolean;
 };
 
 export const CHAMPS: readonly Champ[] = [
@@ -75,6 +77,7 @@ export const CHAMPS: readonly Champ[] = [
   { id: "qualiopi", libelle: "Qualiopi", type: "oui_non", sql: "label_qualiopi", groupe: "Signaux" },
   { id: "marches_publics", libelle: "Marchés publics remportés", type: "nombre", sql: "public_contracts_count", groupe: "Signaux" },
   { id: "permis_3_ans", libelle: "Permis de construire (3 ans)", type: "nombre", sql: "pub_permits_3y_count", groupe: "Signaux" },
+  { id: "client", libelle: "Est déjà client", type: "oui_non", sql: "siren", groupe: "Qualité", espace: true },
   { id: "score_odh", libelle: "Score", type: "nombre", sql: "priority_score_v2", groupe: "Qualité" },
   { id: "grade", libelle: "Grade", type: "liste", sql: "lead_grade", groupe: "Qualité", repartition: true },
 ];
