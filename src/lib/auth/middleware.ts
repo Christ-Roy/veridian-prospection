@@ -12,6 +12,7 @@ import {
   isFullNavigation,
   safeReturnPath,
 } from "@/lib/auth/auto-bounce";
+import { isPublicPath } from "@/lib/auth/chemins-publics";
 import { isLocalAuthEnabled } from "@/lib/auth/local-auth";
 
 const { auth: edgeAuth } = NextAuth(authConfig);
@@ -66,6 +67,7 @@ export async function updateSession(request: NextRequest) {
     path.startsWith("/login") ||
     path.startsWith("/signup") ||
     path.startsWith("/auth/") ||
+    isPublicPath(path) ||
     path.startsWith("/api/auth/") ||
     path.startsWith("/api/tenants/provision") ||
     path.startsWith("/api/auth/token") ||

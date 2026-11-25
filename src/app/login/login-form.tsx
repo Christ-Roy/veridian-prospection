@@ -207,6 +207,9 @@ function LoginForm({ localAuth }: { localAuth: boolean }) {
       )}
 
       <div className="text-center text-xs text-muted-foreground space-y-2">
+        <p>
+          <a href="/marches" className="text-indigo-600 hover:underline">Voir les marchés français</a>, sans compte
+        </p>
         {!localAuth && (
           <p>
             La connexion passe désormais par votre compte Veridian.{" "}
