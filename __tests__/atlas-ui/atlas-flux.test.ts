@@ -404,3 +404,14 @@ describe("messages d'erreur de l'écran", () => {
     expect(messageExport(402, { error: "export_reserve_plan_payant" })).toMatch(/plans payants/);
   });
 });
+
+describe("accueil d'un compte neuf", () => {
+  test("la fenêtre laisse le rail (« Se déconnecter ») et la barre du haut au-dessus d'elle, et n'est pas modale", async () => {
+    const { readFileSync } = await import("node:fs");
+    const css = readFileSync(`${process.cwd()}/src/components/atlas/atlas.css`, "utf8");
+    const z = (sel: string) => Number(new RegExp(`${sel.replace(/[.()]/g, "\\$&")}[^{]*\\{[^}]*z-index:\\s*(\\d+)`).exec(css)?.[1]);
+    expect(z(".atlas:has(.dlg-box.accueil) .rail")).toBeGreaterThan(z(".atlas .dlg"));
+    expect(css).toMatch(/\.atlas \.dlg:has\(\.dlg-box\.accueil\) \{ left: var\(--rail\); \}/);
+    expect(readFileSync(`${process.cwd()}/src/components/atlas/brancher-ia.tsx`, "utf8")).toMatch(/dlg-box accueil" role="dialog" aria-modal="false"/);
+  });
+});

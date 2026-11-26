@@ -83,7 +83,7 @@ export function DialogueIA({ liens, pageHub, onFermer }: { liens: LiensIA | null
 export function Accueil({ onIA, onManuel, onFermer }: { onIA: () => void; onManuel: () => void; onFermer: () => void }) {
   return (
     <div className="dlg" onMouseDown={(e) => e.target === e.currentTarget && onFermer()}>
-      <div className="dlg-box accueil" role="dialog" aria-modal="true" aria-labelledby="atlas-accueil-titre">
+      <div className="dlg-box accueil" role="dialog" aria-modal="false" aria-labelledby="atlas-accueil-titre">
         <h2 id="atlas-accueil-titre">Bienvenue dans Atlas</h2>
         <p>Trouvez votre marché parmi toutes les entreprises de France, découpez-le en cibles, puis classez les prospects à contacter en premier.</p>
         <button type="button" className="choix reco" onClick={onIA}>

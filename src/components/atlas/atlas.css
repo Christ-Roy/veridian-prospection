@@ -305,6 +305,11 @@
 .atlas .dossier:hover { background: var(--soft); }
 .atlas .dossier b { font-weight: 500; background: var(--primary); color: var(--primary-fg); border-radius: 999px; font-size: 11.5px; min-width: 20px; height: 20px; display: grid; place-items: center; padding: 0 6px; }
 .atlas .dlg { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 16px; background: rgb(15 23 42 / 0.2); animation: atlas-fade 0.15s ease; }
+/* Accueil d'un compte neuf : le rail (navigation, « Se déconnecter ») et la barre du haut (menu du compte) restent
+   au-dessus, le voile commence après le rail. 26/11 : la fenêtre couvrait tout, un nouvel utilisateur ne pouvait pas
+   se déconnecter avant d'avoir répondu (mesuré en prod par le Hub). */
+.atlas:has(.dlg-box.accueil) .rail, .atlas:has(.dlg-box.accueil) .top { z-index: 41; }
+.atlas .dlg:has(.dlg-box.accueil) { left: var(--rail); }
 .atlas .dlg form, .atlas .dlg .dlg-box { background: var(--bg); border-radius: 14px; border: 1px solid var(--border); padding: 22px; width: min(440px, 100%); display: flex; flex-direction: column; gap: 14px; box-shadow: 0 16px 40px rgb(0 0 0 / 0.12); }
 .atlas .dlg h2 { margin: 0; font-size: 17px; font-weight: 600; }
 .atlas .dlg p { margin: 0; color: var(--muted); font-size: 13px; }
