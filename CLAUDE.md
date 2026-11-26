@@ -31,6 +31,7 @@ Flux (Robert, 09/11) : **analyse du marché → définition de la cible → prio
    prospectables ; sa part contactable et sa part du marché s'affichent tout de suite. Rangés en dossiers.
 3. **Priorité** : des règles simples « si … alors +N points », suggestions neutres, IA hautement recommandée.
 4. **Export** : Excel ou CSV (`/api/atlas/export`, plans payants, 5 000 lignes, comptées dans le quota du jour), ou `extraire_segment` par l'IA ; tracés.
+4b. **Phrase → vue** (VER-130) : `src/atlas/phrase.ts`, outil `vue_depuis_phrase`, sans LLM (zéro coût).
 5. **IA** : boutons pour brancher son IA dans l'app (liens lus au Hub), accueil « avec l'IA / à la main ».
 Pilotage par IA via le MCP (Claude, ChatGPT en OAuth par le Hub), jamais d'IA payée par l'app.
 
@@ -66,12 +67,12 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
   Tenants existants : `POST /api/tenants/link-hub` (HMAC, `{hub_user_id, hub_tenant_id}`) ne pose que ce lien.
   Jamais `provision` rejoué sur un vrai client : il remet le propriétaire `admin`.
   `by-email` rend `workspaces[].hub_tenant_id` pour `hub reconcile`.
-- Outils : `src/atlas/outils-mcp.ts` (45), les mêmes que l'écran appelle par `/api/atlas/[outil]` avec la session.
+- Outils : `src/atlas/outils-mcp.ts` (46), les mêmes que l'écran appelle par `/api/atlas/[outil]` avec la session.
   Espace déduit de l'utilisateur, un `viewer` ne voit pas les outils d'écriture, fiche limitée à 60/min.
   Un outil = une entrée dans `OUTILS_ATLAS`, relue seule par le Hub.
 - ClickHouse (`src/atlas/source.ts`) : compte `prospection_ro`, 12 requêtes simultanées pour toute l'app, aucun
   réglage par requête (profil readonly). File de 3 par conteneur et rejeu du code 202 : ne pas les retirer.
-  Champs = liste blanche `src/atlas/champs.ts`, filtres compilés en paramètres typés (`src/atlas/filtres.ts`).
+  Champs : liste blanche `src/atlas/champs.ts`, filtres en paramètres typés (`filtres.ts`).
   Envoyable : `email_envoyable = 1 AND deliverable = 1` (base maître : `prospectable`).
 - Cube de marché ODH-0245 (`odh.market_cube_current`, `src/atlas/cube.ts`, outil `analyser_marche`, vue « Taille du
   marché ») : le marché ENTIER, pas que les fiches prospectables. Sélection par LISTE de codes NAF avec

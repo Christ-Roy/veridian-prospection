@@ -26,6 +26,7 @@ import { FiltreInvalide } from "./filtres";
 import { proposerPriorite } from "./suggestion";
 import { importerVentes, retirerVentes, totaux, VENTES_PAR_APPEL, type VenteEntree } from "./ventes";
 import { sourceMarche } from "./source";
+import { proposerVue } from "./phrase";
 import { liensIA } from "@/lib/hub/liens-ia-client";
 
 import { listerPresences } from "./presence-ia";
@@ -183,6 +184,34 @@ const OUTILS_BRUTS: Outil[] = [
       const e = validerActivites(a);
       const codes = await sourceMarche().activites(e.radicaux, codesParLibelle(e.radicaux), e.limite);
       return avecSource({ mots: e.radicaux, codes, lecture: "par_nom : fiches lisibles par Atlas dont le nom ou l'activité contient les mots ; entreprises_actives : tout le marché (cube)." });
+    }),
+  },
+  {
+    name: "vue_depuis_phrase",
+    title: "Proposer une vue d'après une phrase",
+    description:
+      "Propose un filtre d'après une phrase (« plombiers de 10 à 49 salariés en Isère joignables par email ») : métier en NAF, zone, taille, création, " +
+      "joignabilité, avec le compte et ce qui n'est pas compris. N'écrit rien : corrigez, puis creer_segment.",
+    input: z.object({ phrase: z.string().trim().min(3, "une phrase de 3 lettres au moins").max(300) }),
+    annotations: LECTURE,
+    run: lisible(async (a) => {
+      const s = sourceMarche();
+      const p = await proposerVue(a.phrase as string, (r, l, n) => s.activites(r, l, n));
+      const [total, entier] = await Promise.all([
+        s.compter(p.filtre),
+        s
+          .marche(entreeDepuisFiltre({ conditions: p.marche }).entree)
+          .then((m) => ({ entreprises_actives: m.total.entreprises, contactables: m.total.prospectables, email_envoyable: m.total.email_envoyable }))
+          .catch(() => null),
+      ]);
+      return avecSource({
+        ...p,
+        total,
+        ...(entier ? { marche_entier: entier } : {}),
+        suite: p.cible.length
+          ? "creer_segment avec `marche` pour le marché, puis creer_segment avec `cible` et parent_id pour sa cible ; ou tout `filtre` en un segment."
+          : "creer_segment avec `filtre` ; corrigez d'abord une condition fausse.",
+      });
     }),
   },
   {

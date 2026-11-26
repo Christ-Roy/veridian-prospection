@@ -287,7 +287,7 @@ describe("appel d'un programme : aucune coordonnée hors extraire_segment", () =
       creer_segment: { nom: "x", filtre: TOUT, colonnes: COLONNES }, modifier_segment: { segment_id, colonnes: COLONNES },
       definir_scoring: { segment_id, scoring: { criteres: [{ champ: "site", op: "renseigne", valeur: true, poids: 1 }] } },
       classer_segment: { segment_id, par_page: 50 }, historique_segment: { segment_id }, restaurer_version_segment: { segment_id, version: 1 },
-      creer_dossier: { nom: "d" }, retirer_epingle: { siren }, preparer_export: { segment_id },
+      creer_dossier: { nom: "d" }, retirer_epingle: { siren }, preparer_export: { segment_id }, vue_depuis_phrase: { phrase: "conseil dans le 69 joignables par email" },
     };
     // Ne lisent aucune fiche, ou réservés à l'accès avancé ou à l'administration, ou seul outil qui rend des coordonnées.
     const hors = new Set(["importer_ventes", "retirer_ventes", "proposer_priorite", "creer_rapport", "tournee_maps", "importer_clients", "retirer_clients", "penetration_marche", "clients_resume", "extraire_segment", "schema_odh", "requete_sql", "lister_cles_api", "creer_cle_api", "revoquer_cle_api", "accorder_acces_avance", "lister_acces_avances", "connexions_ia", "mes_droits", "verifier_entreprises", "renommer_dossier", "supprimer_dossier", "supprimer_segment"]);
