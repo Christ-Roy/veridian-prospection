@@ -5,6 +5,7 @@
  * 2. Espace suspendu, membre gelé : lecture seule (402 sur écriture, extraction et export), lecture servie.
  * 3. Un autre site ne déclenche pas d'outil Atlas par la session.
  * 4. L'ancien jeton en clair du tenant n'ouvre plus de session.
+ * 5. L'export d'écran compte dans les 5 000 lignes du jour de l'espace, avec l'extraction et les envois (Robert, 26/11).
  */
 import { createHmac, randomUUID } from "node:crypto";
 import { NextRequest } from "next/server";
@@ -25,6 +26,7 @@ import { POST as attachOwner } from "@/app/api/tenants/attach-owner/route";
 import { POST as syncMember } from "@/app/api/tenants/[id]/sync-member/route";
 import { POST as attachMember } from "@/app/api/veridian/workspaces/[workspaceId]/attach-member/route";
 import { oublierDroits } from "@/atlas/acces";
+import { QUOTA_EXTRACTION_JOUR, RefusExtraction, reserverExport } from "@/atlas/extraction";
 import { invalidateAllUserContexts } from "@/lib/auth/cache-contexte";
 import { prisma } from "@/lib/prisma";
 
@@ -62,6 +64,7 @@ beforeEach(async () => {
 });
 afterAll(async () => {
   await prisma.ssoLoginToken.deleteMany({ where: { userId: { in: crees.u } } });
+  await prisma.atlasExport.deleteMany({ where: { tenantId: { in: crees.t } } });
   await prisma.atlasSegment.deleteMany({ where: { tenantId: { in: crees.t } } }).catch(() => undefined);
   await prisma.workspaceMember.deleteMany({ where: { workspace: { tenantId: { in: crees.t } } } });
   await prisma.workspace.deleteMany({ where: { tenantId: { in: crees.t } } });
@@ -152,4 +155,25 @@ test("l'ancien jeton en clair du tenant, même sans date, n'ouvre plus de sessio
   const r = await jeton(new NextRequest(`https://x/api/auth/token?t=${brut}`));
   expect(r.headers.get("location")).toContain("error=invalid_token");
   expect(r.headers.get("set-cookie") ?? "").not.toMatch(/session-token/);
+});
+
+test("export d'écran : compté dans le quota du jour, deux exports simultanés ne le dépassent pas", async () => {
+  const a = { tenantId: T, userId: patron.id, client: null, format: "csv", segmentId: randomUUID(), segmentVersion: 1 };
+  // Le reste du jour déjà pris par l'extraction et un envoi.
+  await prisma.atlasExport.createMany({ data: [
+    { tenantId: T, userId: patron.id, canal: "mcp", format: "json", lignes: QUOTA_EXTRACTION_JOUR - 3000 },
+    { tenantId: T, userId: patron.id, canal: "liaison", format: "json", lignes: 1000 },
+  ] });
+  const [x, y] = await Promise.all([reserverExport(a, 5000), reserverExport(a, 5000).catch((e) => e)]);
+  expect(x.taille).toBe(2000);
+  expect(y).toBeInstanceOf(RefusExtraction);
+  await x.ajuster(1500); // servi moins que réservé : le reste revient
+  const z = await reserverExport(a, 5000);
+  expect(z.taille).toBe(500);
+  await expect(reserverExport(a, 5000)).rejects.toBeInstanceOf(RefusExtraction);
+  await z.annuler();
+  expect((await reserverExport(a, 5000)).taille).toBe(500);
+  const somme = await prisma.atlasExport.aggregate({ _sum: { lignes: true }, where: { tenantId: T } });
+  expect(somme._sum.lignes).toBe(QUOTA_EXTRACTION_JOUR);
+  await prisma.atlasExport.deleteMany({ where: { tenantId: T } });
 });

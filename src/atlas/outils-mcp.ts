@@ -718,7 +718,7 @@ const OUTILS_BRUTS: Outil[] = [
     name: "preparer_export",
     title: "Préparer un export",
     description:
-      "Donne les liens de téléchargement Excel et CSV d'un segment (5 000 entreprises au plus, classées par sa priorité), à cliquer par " +
+      "Donne les liens de téléchargement Excel et CSV d'un segment (5 000 entreprises au plus, classées par sa priorité, dans le quota du jour), à cliquer par " +
       "l'utilisateur connecté : aucune donnée n'est rendue ici (pour les lire toi-même : extraire_segment). Indique si le plan de l'espace le permet.",
     input: z.object({ segment_id: SEGMENT }),
     annotations: LECTURE,

@@ -1,7 +1,9 @@
 /**
  * GET /api/atlas/export?segment_id=…&format=xlsx|csv — export d'un segment, réservé aux plans payants
  * (Robert, 09/11). Espace de la session, jamais un argument ; 5 000 lignes au plus, classées par la
- * priorité du segment ; 20 exports par heure et par utilisateur ; chaque export est tracé dans atlas_exports.
+ * priorité du segment ; 20 exports par heure et par utilisateur ; chaque export est tracé dans atlas_exports et
+ * compte dans le quota de 5 000 lignes par jour et par espace, avec l'extraction et les envois (Robert, 26/11).
+ * Les lignes sont réservées avant la lecture d'ODH ; un export qui dépasse le reste du jour est coupé à ce reste.
  * Par une IA, l'extraction paginée est l'outil MCP extraire_segment (src/atlas/extraction.ts).
  */
 import { NextRequest, NextResponse } from "next/server";
@@ -11,6 +13,7 @@ import { prisma } from "@/lib/prisma";
 import { isRateLimited } from "@/lib/rate-limit";
 import { avecClients } from "@/atlas/clients";
 import { colonnesExport, LIGNES_MAX_EXPORT, nomFichier, peutExporter, versCsv, versXlsx, type FormatExport } from "@/atlas/export";
+import { RefusExtraction, reserverExport } from "@/atlas/extraction";
 import { FiltreInvalide } from "@/atlas/filtres";
 import * as seg from "@/atlas/segments";
 import { sourceMarche } from "@/atlas/source";
@@ -42,12 +45,18 @@ export async function GET(request: NextRequest) {
     const s = await seg.lireSegment(ctx.tenantId, segmentId);
     const [filtre, scoring] = await Promise.all([seg.filtreEffectif(ctx.tenantId, s.id), seg.scoringCourant(ctx.tenantId, s.id)]);
     const colonnes = colonnesExport(s.colonnes);
-    const r = await avecClients(ctx.tenantId, () => sourceMarche().apercu(filtre, { colonnes, page: 1, parPage: LIGNES_MAX_EXPORT, plafond: LIGNES_MAX_EXPORT, livrablesSeuls: true, ...(scoring ? { scoring } : {}) }));
+    // Réservé avant de lire ODH : un export sans trace n'est pas servi, et le quota du jour borne le fichier.
+    const res = await reserverExport({ tenantId: ctx.tenantId, userId: ctx.userId, client: null, format, segmentId: s.id, segmentVersion: s.version }, LIGNES_MAX_EXPORT);
+    let r;
+    try {
+      r = await avecClients(ctx.tenantId, () => sourceMarche().apercu(filtre, { colonnes, page: 1, parPage: res.taille, plafond: res.taille, livrablesSeuls: true, ...(scoring ? { scoring } : {}) }));
+      if (r.lignes.length !== res.taille) await res.ajuster(r.lignes.length);
+    } catch (e) {
+      await res.annuler().catch(() => undefined);
+      throw e;
+    }
     const corps = format === "csv" ? versCsv(r.colonnes, r.lignes) : versXlsx(r.colonnes, r.lignes, s.nom);
-    // Tracé avant de rendre le fichier : un export sans trace n'est pas servi.
-    await prisma.atlasExport.create({
-      data: { tenantId: ctx.tenantId, userId: ctx.userId, canal: "ecran", format, segmentId: s.id, segmentVersion: s.version, lignes: r.lignes.length },
-    });
+    const coupe = res.taille < LIGNES_MAX_EXPORT && r.lignes.length === res.taille;
     console.info(`[atlas] export user=${ctx.userId} tenant=${ctx.tenantId} segment=${s.id} format=${format} lignes=${r.lignes.length}`);
     return new NextResponse(new Uint8Array(corps), {
       headers: {
@@ -55,9 +64,12 @@ export async function GET(request: NextRequest) {
         "Content-Disposition": `attachment; filename="${nomFichier(s.nom, format)}"`,
         "Cache-Control": "no-store",
         "X-Atlas-Lignes": String(r.lignes.length),
+        "X-Atlas-Quota-Restant": String(res.reste - r.lignes.length),
+        ...(coupe ? { "X-Atlas-Coupe-Quota": "1" } : {}),
       },
     });
   } catch (e) {
+    if (e instanceof RefusExtraction) return NextResponse.json({ error: e.message, code: "quota_jour" }, { status: 429 });
     if (e instanceof seg.Introuvable) return NextResponse.json({ error: "segment introuvable" }, { status: 404 });
     if (e instanceof FiltreInvalide) return NextResponse.json({ error: e.message }, { status: 400 });
     console.error("[atlas] export :", e);

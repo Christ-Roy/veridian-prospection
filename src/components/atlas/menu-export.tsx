@@ -42,8 +42,9 @@ export function MenuExport({
     try {
       const r = await fetch(`/api/atlas/export?segment_id=${encodeURIComponent(segmentId)}&format=${format}`);
       if (!r.ok) {
-        if (r.status === 402) setPayant(false);
-        notifier(messageExport(r.status, await r.json().catch(() => null)), true);
+        const corps = await r.json().catch(() => null);
+        if (r.status === 402 && corps?.error === "export_reserve_plan_payant") setPayant(false);
+        notifier(messageExport(r.status, corps), true);
         return;
       }
       const nom = /filename="([^"]+)"/.exec(r.headers.get("content-disposition") ?? "")?.[1] ?? `atlas.${format}`;
@@ -53,7 +54,8 @@ export function MenuExport({
       a.download = nom;
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
-      notifier(`${r.headers.get("x-atlas-lignes") ?? ""} entreprises exportées`.trim());
+      const coupe = r.headers.get("x-atlas-coupe-quota") === "1" ? " : quota du jour atteint, la suite demain (5 000 lignes par jour pour l'espace)" : "";
+      notifier(`${r.headers.get("x-atlas-lignes") ?? ""} entreprises exportées${coupe}`.trim());
       setOuvert(false);
     } catch {
       notifier("Export impossible : réseau indisponible.", true);

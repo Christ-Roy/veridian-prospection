@@ -43,9 +43,12 @@ export type PageExtraite = {
   tronque?: { total_segment: number };
 };
 
-/** `canal` : « mcp » (extraire_segment, par défaut) ou « liaison » (envoi vers le CRM ou Mail). Un seul quota pour les deux. */
-export type Appelant = { tenantId: string; userId: string; client: string | null; canal?: "mcp" | "liaison" };
-const CANAUX = ["mcp", "liaison"];
+/**
+ * `canal` : « mcp » (extraire_segment, par défaut), « liaison » (envoi vers le CRM ou Mail) ou « ecran » (export
+ * Excel ou CSV, Robert 26/11). Un seul quota pour les trois.
+ */
+export type Appelant = { tenantId: string; userId: string; client: string | null; canal?: "mcp" | "liaison" | "ecran" };
+const CANAUX = ["mcp", "liaison", "ecran"];
 
 export const encoderCurseur = (extractionId: string, debut: number) => Buffer.from(`${extractionId}.${debut}`).toString("base64url");
 export function decoderCurseur(c: string): { extractionId: string; debut: number } | null {
@@ -68,7 +71,7 @@ async function consommeAujourdhui(tx: Tx, tenantId: string): Promise<number> {
   return r._sum.lignes ?? 0;
 }
 
-const messageQuota = `Quota du jour atteint : ${QUOTA_EXTRACTION_JOUR} lignes extraites ou envoyées pour cet espace. Reprenez après minuit (heure de Paris) avec le même curseur.`;
+const messageQuota = `Quota du jour atteint : ${QUOTA_EXTRACTION_JOUR} lignes extraites, exportées ou envoyées pour cet espace. Reprenez après minuit (heure de Paris) avec le même curseur.`;
 
 /** L'extraction du jour de cette définition de segment, sinon une nouvelle, figée maintenant. */
 async function extractionCourante(a: Appelant, segmentId: string) {
@@ -140,6 +143,33 @@ export async function reserverFiche(a: Appelant, format: string, envoiId: string
     await tx.atlasExport.create({ data: { tenantId: a.tenantId, userId: a.userId, client: a.client, canal: "liaison", format, lignes: 1 } });
     await tx.atlasEnvoi.update({ where: { id: envoiId }, data: { tracee: true } });
   });
+}
+
+/**
+ * Réserve les lignes d'un export d'écran AVANT de lire ODH : sous le verrou de l'espace, la trace est posée avec
+ * le plafond accordé (le reste du jour, 5 000 au plus), donc deux exports simultanés ne dépassent pas le quota.
+ * `ajuster` ramène la trace au nombre de lignes servies ; `annuler` la retire si l'export échoue.
+ */
+export async function reserverExport(
+  a: Appelant & { format: string; segmentId: string; segmentVersion: number },
+  plafond: number,
+): Promise<{ taille: number; reste: number; ajuster: (lignes: number) => Promise<unknown>; annuler: () => Promise<unknown> }> {
+  const r = await prisma.$transaction(async (tx) => {
+    await verrouiller(tx, a.tenantId);
+    const reste = Math.max(0, QUOTA_EXTRACTION_JOUR - (await consommeAujourdhui(tx, a.tenantId)));
+    const taille = Math.min(plafond, reste);
+    if (taille <= 0) throw new RefusExtraction(messageQuota);
+    const t = await tx.atlasExport.create({
+      data: { tenantId: a.tenantId, userId: a.userId, client: a.client, canal: "ecran", format: a.format, segmentId: a.segmentId, segmentVersion: a.segmentVersion, lignes: taille },
+    });
+    return { id: t.id, taille, reste };
+  });
+  return {
+    taille: r.taille,
+    reste: r.reste,
+    ajuster: (lignes) => prisma.atlasExport.update({ where: { id: r.id }, data: { lignes } }),
+    annuler: () => prisma.atlasExport.delete({ where: { id: r.id } }),
+  };
 }
 
 export async function extraireSegment(a: Appelant, p: { segmentId: string; curseur?: string | null; limite: number }): Promise<PageExtraite> {

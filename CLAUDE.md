@@ -30,7 +30,7 @@ Flux (Robert, 09/11) : **analyse du marché → définition de la cible → prio
 2. **Cible** : segment enfant qui hérite et ajoute les filtres de prospection (contact, web, signaux), sur les fiches
    prospectables ; sa part contactable et sa part du marché s'affichent tout de suite. Rangés en dossiers.
 3. **Priorité** : des règles simples « si … alors +N points », suggestions neutres, IA hautement recommandée.
-4. **Export** : Excel ou CSV (`/api/atlas/export`, plans payants, 5 000 lignes), ou `extraire_segment` par l'IA ; tracés.
+4. **Export** : Excel ou CSV (`/api/atlas/export`, plans payants, 5 000 lignes, comptées dans le quota du jour), ou `extraire_segment` par l'IA ; tracés.
 5. **IA** : boutons pour brancher son IA dans l'app (liens lus au Hub), accueil « avec l'IA / à la main ».
 Pilotage par IA via le MCP (Claude, ChatGPT en OAuth par le Hub), jamais d'IA payée par l'app.
 
