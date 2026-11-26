@@ -241,7 +241,7 @@ jobs:
         run: |
           ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes \
             "${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}" \
-            "put-job prod" < deploy/prospection.nomad.hcl
+            "put-job prod $IMAGE_TAG" < deploy/prospection.nomad.hcl
 
       - name: plan prod (lecture seule)
         run: |
@@ -256,10 +256,10 @@ jobs:
         run: |
           tar czf - prisma | ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes \
             "${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}" \
-            "put-migrations prod"
+            "put-migrations prod $IMAGE_TAG"
           ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes \
             "${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}" \
-            "migrate prod"
+            "migrate prod $IMAGE_TAG"
 
       - name: deploy prod (canari, suivi jusqu'à terminal)
         run: |
@@ -283,5 +283,5 @@ jobs:
         if: always()
         run: |
           ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes \
-            "${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}" "cleanup prod" || true
+            "${{ secrets.NOMAD_BASTION_USER }}@${{ secrets.NOMAD_BASTION_HOST }}" "cleanup prod $IMAGE_TAG" || true
           rm -f ~/.ssh/id_ed25519

@@ -45,7 +45,7 @@ describe("requireHubHmac", () => {
     const req = makeRequest("/api/tenants/suspend", {
       method: "POST",
       headers: {
-        "x-veridian-timestamp": String(ts),
+        "x-veridian-timestamp": String(Date.now()),
         "x-veridian-hub-signature": "00".repeat(32),
       },
       body: raw,
