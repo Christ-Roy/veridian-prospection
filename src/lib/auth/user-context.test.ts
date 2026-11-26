@@ -717,3 +717,26 @@ describe("getWorkspaceScope — bundle ctx + filtres", () => {
     expect(r.insertId).toBe("ws-A");
   });
 });
+
+describe("cache court : une instance qui n'a pas reçu l'appel du Hub suit en 3 s", () => {
+  it("retiré sur une autre instance : servi depuis le cache 2,9 s, fermé à 3,1 s", async () => {
+    vi.useFakeTimers({ now: 1_000_000, toFake: ["Date"] });
+    try {
+      mockAuth.mockResolvedValue({ user: { id: "user-c", email: "c@veridian.site" } });
+      mockTenantFindFirst.mockResolvedValueOnce(null);
+      mockWorkspaceMemberFindFirst.mockResolvedValueOnce({ workspace: { tenantId: "tenant-c" } });
+      mockTenantFindUnique.mockResolvedValueOnce({ id: "tenant-c", userId: "proprio", deletedAt: null, status: "active" });
+      mockWorkspaceMemberFindMany.mockResolvedValueOnce([{ workspaceId: "w-c", role: "member", visibilityScope: "all", workspace: { tenantId: "tenant-c", name: "W", slug: "w" } }]);
+      expect((await getUserContext())?.workspaces.map((w) => w.id)).toEqual(["w-c"]);
+      // Le retrait arrive à l'AUTRE instance : rien n'est vidé ici, la base dit « plus membre ».
+      mockTenantFindFirst.mockResolvedValue(null);
+      mockWorkspaceMemberFindFirst.mockResolvedValue(null);
+      vi.setSystemTime(1_000_000 + 2_900);
+      expect((await getUserContext())?.workspaces.map((w) => w.id)).toEqual(["w-c"]);
+      vi.setSystemTime(1_000_000 + 3_100);
+      expect(await getUserContext()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

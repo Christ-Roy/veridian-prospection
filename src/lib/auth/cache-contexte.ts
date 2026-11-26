@@ -1,4 +1,4 @@
-/** Cache des contextes utilisateur (30 s), à part pour qu'une route du Hub l'oublie sans charger l'authentification. */
+/** Cache des contextes utilisateur (3 s, CACHE_TTL_MS de user-context), à part pour qu'une route du Hub l'oublie sans charger l'authentification. */
 import type { UserContext } from "./user-context";
 
 /** Clé : `userId`, ou `userId:espace` quand un espace est choisi. */

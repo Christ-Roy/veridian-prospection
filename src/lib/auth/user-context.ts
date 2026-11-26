@@ -1,6 +1,6 @@
 /**
  * Résolution du UserContext (user + tenant + workspaces + role) via
- * Auth.js v5 (session JWT) et Prisma. Cache mémoire 30s par userId.
+ * Auth.js v5 (session JWT) et Prisma. Cache mémoire 3 s par userId (voir CACHE_TTL_MS).
  */
 import { auth } from "@/lib/auth-config";
 import { cookies } from "next/headers";
@@ -35,7 +35,12 @@ export type UserContext = {
 
 export type AuthFailure = { error: NextResponse };
 
-const CACHE_TTL_MS = 30_000;
+/**
+ * 3 s, pas plus : vider le cache (retrait, suspension) ne vaut que pour l'instance qui reçoit l'appel du Hub. Pendant un
+ * déploiement canari, deux allocations servent ensemble et l'autre gardait 30 s l'ancien état (mesuré le 26/11 : retrait
+ * lu ouvert 6 à 10 s par la recette du Hub, seuil 5 s). La durée borne donc le retard sur TOUTES les instances.
+ */
+export const CACHE_TTL_MS = 3_000;
 
 async function getAuthUser(): Promise<{ id: string; email: string } | null> {
   const session = await auth();

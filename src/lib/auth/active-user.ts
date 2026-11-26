@@ -7,7 +7,8 @@
  */
 import { prisma } from "@/lib/prisma";
 
-const CACHE_TTL_MS = 60_000;
+/** 3 s : invalidé seulement sur l'instance qui reçoit /api/hub/users/sync ; la durée borne le retard des autres (canari). */
+export const CACHE_TTL_MS = 3_000;
 
 type ActiveUser = { email: string; name: string | null; sessionsValidAfter: Date | null };
 
