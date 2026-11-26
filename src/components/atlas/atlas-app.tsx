@@ -13,7 +13,7 @@ import { Accueil, DialogueIA } from "./brancher-ia";
 import { DialogueCrm, DialogueMail } from "./envois";
 import { LIAISONS_ETEINTES, lireEtat, lireReprise, type EtatLiaisons } from "./liaisons-logique";
 import { MenuCompte } from "./menu-compte";
-import { FenetreMonIA } from "./mon-ia";
+import { BoutonMonIA, FenetreMonIA } from "./mon-ia";
 import type { AffichageMonIA } from "@/lib/hub/ia-etat";
 import { MenuExport } from "./menu-export";
 import { DialogueCreation, type Creation } from "./dialogues";
@@ -759,11 +759,7 @@ export function AtlasApp() {
               <span>Brancher une IA</span>
             </button>
           )}
-          {organisationHub && affichageMonIA && (
-            <button type="button" className={monIA ? "btn ghost on" : "btn ghost"} title="Discuter avec votre IA, qui agit dans Atlas" aria-expanded={monIA} aria-controls="atlas-mon-ia" onClick={() => setMonIA((o) => !o)}>
-              Mon IA
-            </button>
-          )}
+          {organisationHub && <BoutonMonIA affichage={affichageMonIA} ouvert={monIA} onBasculer={() => setMonIA((o) => !o)} />}
           {segment && <MenuExport segmentId={segment.id} liaisons={liaisons} onEnvoi={(cible) => setEnvoiSegment({ cible, id: segment.id, nom: segment.nom })} notifier={notifier} />}
           {segment && peutEcrire && (
             <button
