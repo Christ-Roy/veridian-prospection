@@ -68,6 +68,17 @@ test("PUT puis GET du même triplet : mêmes messages ; un PUT remplace le fil e
   expect((await (await GET(lire(s, patron.hub)(), ctx(s))).json()).messages).toEqual(FIL.slice(0, 1));
 });
 
+test("appel du Hub par le fetch de Node (il pose sec-fetch-mode: cors) : accepté, PUT puis GET", async () => {
+  // En-têtes mesurés le 26/11 sur Node 22 : le Hub les envoie tous, un garde qui les refuse coupe le contrat entier.
+  const node = { "sec-fetch-mode": "cors", accept: "*/*", "accept-language": "*", "user-agent": "node" };
+  const s = randomUUID();
+  const corps = JSON.stringify({ hub_user_id: patron.hub, tenant_id: HUB_T, messages: FIL });
+  expect((await PUT(signee("PUT", `${BASE}/api/hub/ia/fils/${s}`, corps, node)(), ctx(s))).status).toBe(200);
+  const r = await GET(signee("GET", `${BASE}/api/hub/ia/fils/${s}?hub_user_id=${patron.hub}&tenant_id=${HUB_T}`, "", node)(), ctx(s));
+  expect(r.status).toBe(200);
+  expect((await r.json()).messages).toEqual(FIL);
+});
+
 test("non signé 401, rejeu v2 401, appel de navigateur 401", async () => {
   const s = randomUUID();
   expect((await GET(new NextRequest(`${BASE}/api/hub/ia/fils/${s}?hub_user_id=${patron.hub}&tenant_id=${HUB_T}`), ctx(s))).status).toBe(401);
@@ -75,6 +86,8 @@ test("non signé 401, rejeu v2 401, appel de navigateur 401", async () => {
   expect((await GET(une(), ctx(s))).status).toBe(404);
   expect((await GET(une(), ctx(s))).status).toBe(401);
   expect((await GET(signee("GET", `${BASE}/api/hub/ia/fils/${s}?hub_user_id=${patron.hub}&tenant_id=${HUB_T}`, "", { origin: BASE })(), ctx(s))).status).toBe(401);
+  // Un navigateur pose toujours sec-fetch-site, même sans origin (GET de même origine) : refusé avant la signature.
+  expect((await GET(signee("GET", `${BASE}/api/hub/ia/fils/${s}?hub_user_id=${patron.hub}&tenant_id=${HUB_T}`, "", { "sec-fetch-site": "same-origin", "sec-fetch-mode": "cors" })(), ctx(s))).status).toBe(401);
 });
 
 test("le fil d'un autre : 404 en lecture (jamais 403), 409 fil_autre_auteur en écriture, sans rien écrire", async () => {

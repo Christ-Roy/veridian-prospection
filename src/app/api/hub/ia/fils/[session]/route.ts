@@ -22,8 +22,11 @@ const CorpsPut = z.object({
 });
 
 const refus = (status: number, error: string) => NextResponse.json({ error }, { status });
-/** Ces routes ne sont jamais appelées par un navigateur : un en-tête de navigateur suffit à refuser. */
-const parNavigateur = (r: NextRequest) => r.headers.has("sec-fetch-mode") || r.headers.has("origin");
+/**
+ * Ces routes ne sont jamais appelées par un navigateur : un en-tête que SEUL un navigateur pose suffit à refuser.
+ * Pas `sec-fetch-mode` : le fetch de Node (undici) le pose à chaque appel serveur (`cors`), il coupait le Hub (26/11).
+ */
+const parNavigateur = (r: NextRequest) => r.headers.has("sec-fetch-site") || r.headers.has("origin");
 const inconnu = () => refus(404, "fil_inconnu");
 
 export async function GET(request: NextRequest, { params }: Ctx) {
