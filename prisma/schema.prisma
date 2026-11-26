@@ -270,6 +270,7 @@ model User {
   sessions Session[]
   ssoLoginTokens SsoLoginToken[]
   sessionDelegations SessionDelegation[]
+  iaFils IaFil[]
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
@@ -450,6 +451,7 @@ model Tenant {
   @@index([status])
   @@index([deletedAt])
   @@index([purgeEligibleAt])
+  iaFils IaFil[]
   @@map("tenants")
 }
 
@@ -751,4 +753,22 @@ model AtlasCleApi {
 
   @@index([tenantId])
   @@map("atlas_cles_api")
+}
+
+/// Fil de l'assistant « Mon IA » (VER-203, CONTRAT-HUB §5.24) : rangé ici, lu et écrit par le Hub seul. Un fil = une session du Hub,
+/// pour UN membre d'UN espace ; il disparaît avec l'espace (purge) et avec le membre (retrait).
+model IaFil {
+  sessionId   String   @id @map("session_id") @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  /// UIMessage[] du SDK `ai`, tel quel ; jamais interprété ici.
+  messages    Json
+  creeLe      DateTime @default(now()) @map("cree_le") @db.Timestamptz
+  majLe       DateTime @updatedAt @map("maj_le") @db.Timestamptz
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId])
+  @@map("ia_fils")
 }

@@ -32,7 +32,7 @@ describe("politique", () => {
   });
   test("ni plugin, ni cadre, rien vers l'extérieur, rapport vers /api/csp", () => {
     const p = politique("n", false);
-    for (const d of ["object-src 'none'", "frame-ancestors 'none'", "frame-src 'none'", "connect-src 'self'", "base-uri 'self'", "report-uri /api/csp", "upgrade-insecure-requests"]) expect(p).toContain(d);
+    for (const d of ["object-src 'none'", "frame-ancestors 'none'", "frame-src https://app.veridian.site", "connect-src 'self'", "base-uri 'self'", "report-uri /api/csp", "upgrade-insecure-requests"]) expect(p).toContain(d);
     // Pas de report-to : Chrome passerait par la Reporting API, dont aucun rapport n'est arrivé en 90 s (contrôle positif du 26/11).
     expect(p).not.toContain("report-to");
   });

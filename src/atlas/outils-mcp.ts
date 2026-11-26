@@ -221,8 +221,19 @@ const OUTILS_BRUTS: Outil[] = [
     input: z.object({}),
     annotations: LECTURE,
     run: async (_a, c) => {
-      const [connexions, liens] = await Promise.all([listerPresences(c.ctx.userId), liensIA()]);
-      return { connexions, liens };
+      const [connexions, liens, t] = await Promise.all([
+        listerPresences(c.ctx.userId),
+        liensIA(),
+        (async () => {
+          try {
+            return await prisma.tenant.findUnique({ where: { id: c.ctx.tenantId }, select: { hubTenantId: true } });
+          } catch {
+            return null; // l'indicateur des IA ne tombe pas pour cela
+          }
+        })(),
+      ]);
+      // Organisation du Hub de l'espace : la fenêtre « Mon IA » (servie par le Hub) en a besoin ; null si l'espace n'y est pas relié.
+      return { connexions, liens, organisation_hub: t?.hubTenantId ?? null };
     },
   },
   {

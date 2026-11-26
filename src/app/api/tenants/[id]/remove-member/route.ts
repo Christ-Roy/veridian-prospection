@@ -13,6 +13,7 @@
  * Identité user : on accepte `user_email` OU `hub_user_id` (défense). On
  * essaie hub_user_id en priorité s'il est fourni (clé stable cross-app).
  */
+import { oublierFils } from "@/lib/hub/ia-fils";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -101,6 +102,8 @@ export async function POST(
 
   // Avant la coupure de l'appartenance, et même si elle est déjà faite : une clé créée par un retiré ne revient jamais.
   const clesRevoquees = await revoquerClesDe(user.id, tenantId);
+  // §5.24 : les fils « Mon IA » de la personne dans cet espace partent avec elle, même chemin que les clés.
+  const fils = await oublierFils(tenantId, user.id);
   // Ce que le Hub montre à l'auteur du geste (avisCles) : les clés de l'espace qui restent actives, et où les gérer.
   const clesActives = () => prisma.atlasCleApi.count({ where: { tenantId, revoqueeLe: null } });
   const lienCles = `${process.env.APP_URL || "https://prospection.app.veridian.site"}/`;
@@ -158,7 +161,7 @@ export async function POST(
   });
 
   console.log(
-    `[remove-member] tenant=${tenantId} user=${user.id} affected=${result.count} cles=${clesRevoquees}`,
+    `[remove-member] tenant=${tenantId} user=${user.id} affected=${result.count} cles=${clesRevoquees} fils=${fils}`,
   );
 
   // Effet immédiat sur cette instance ; les autres suivent en 3 s (CACHE_TTL_MS).

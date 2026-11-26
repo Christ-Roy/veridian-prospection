@@ -3,7 +3,7 @@
  * aucun script inline ni externe sans lui, aucun plugin, aucune page de Prospection dans un cadre, violations remontées à `/api/csp`
  * (journal `csp_violation`). Les styles gardent 'unsafe-inline' : React pose des attributs `style` qu'aucun nonce ne couvre.
  * Prospection n'appelle rien d'autre qu'elle-même depuis le navigateur (polices servies par next/font, carte calculée au serveur) ;
- * le Hub n'est qu'une destination de lien ou de formulaire.
+ * le Hub n'est qu'une destination de lien ou de formulaire, et le seul cadre permis (fenêtre « Mon IA »).
  *
  * Imposée le 26/11 après Report-Only : parcours complet relu en prod (SSO, recherche, listes, fiche, export, CRM, Mail,
  * déconnexion, retrait, pages publiques, connexion) sans aucune violation ; contrôle positif (gestionnaire inline injecté)
@@ -24,7 +24,8 @@ export function politique(nonce: string, dev = process.env.NODE_ENV === "develop
     "font-src 'self'",
     "img-src 'self' data: blob:",
     "connect-src 'self'",
-    "frame-src 'none'",
+    // La fenêtre « Mon IA » (VER-203, CONTRAT-HUB §5.24) est servie par le Hub : seul cadre permis.
+    `frame-src ${HUB}`,
     "worker-src 'self' blob:",
     "object-src 'none'",
     "frame-ancestors 'none'",

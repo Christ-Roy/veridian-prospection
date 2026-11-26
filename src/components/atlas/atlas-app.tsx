@@ -41,7 +41,7 @@ import { cheminDossier, combiner, conditionsHeritees, formaterNombre, indexerCha
 import { part } from "./marche";
 import { PopoverFiltres } from "./popover-filtres";
 import { VueMarche } from "./vue-marche";
-import { HUB_IA, Rail, type IAVue } from "./rail";
+import { HUB, HUB_IA, Rail, type IAVue } from "./rail";
 import type { AnalyseMarche, ApercuMarche, Arbre, ChampInfo, Condition, Epingle, Filtre, Historique, SegmentArbre, SegmentDetail, Vue, ZoneLocale } from "./types";
 import { VoletClients } from "./volet-clients";
 import { pourcent } from "./clients-logique";
@@ -169,6 +169,9 @@ export function AtlasApp() {
   const [ias, setIas] = useState<IAVue[]>([]);
   const [connexions, setConnexions] = useState<ConnexionIA[]>([]);
   const [liensIA, setLiensIA] = useState<LiensIA | null>(null);
+  // Fenêtre « Mon IA » (VER-203) : servie par le Hub, fils rangés ici (/api/hub/ia/fils, CONTRAT-HUB §5.24).
+  const [organisationHub, setOrganisationHub] = useState<string | null>(null);
+  const [monIA, setMonIA] = useState(false);
   const [dialogueIA, setDialogueIA] = useState(false);
   const [accueil, setAccueil] = useState(false);
   const [clignote, setClignote] = useState<string | null>(null);
@@ -195,11 +198,12 @@ export function AtlasApp() {
   useEffect(() => {
     let vivant = true;
     const lire = () =>
-      appeler<{ connexions: ConnexionIA[]; liens: LiensIA | null }>("connexions_ia")
+      appeler<{ connexions: ConnexionIA[]; liens: LiensIA | null; organisation_hub?: string | null }>("connexions_ia")
         .then((r) => {
           if (!vivant) return;
           setConnexions(r.connexions);
           setLiensIA(r.liens);
+          setOrganisationHub(r.organisation_hub ?? null);
         })
         .catch(() => {}); // un échec garde la dernière liste : l'indicateur n'est pas une donnée critique
     void lire();
@@ -751,6 +755,11 @@ export function AtlasApp() {
               <span>Brancher une IA</span>
             </button>
           )}
+          {organisationHub && (
+            <button type="button" className={monIA ? "btn ghost on" : "btn ghost"} title="Discuter avec votre IA, qui agit dans Atlas" aria-expanded={monIA} aria-controls="atlas-mon-ia" onClick={() => setMonIA((o) => !o)}>
+              Mon IA
+            </button>
+          )}
           {segment && <MenuExport segmentId={segment.id} liaisons={liaisons} onEnvoi={(cible) => setEnvoiSegment({ cible, id: segment.id, nom: segment.nom })} notifier={notifier} />}
           {segment && peutEcrire && (
             <button
@@ -1035,6 +1044,17 @@ export function AtlasApp() {
       )}
       {envoiSegment?.cible === "crm" && <DialogueCrm segmentId={envoiSegment.id} nom={envoiSegment.nom} payant={liaisons.payant} onFermer={() => setEnvoiSegment(null)} />}
       {envoiSegment?.cible === "notifuse" && <DialogueMail objet={{ type: "segment", segmentId: envoiSegment.id, nom: envoiSegment.nom, payant: liaisons.payant }} onFermer={() => setEnvoiSegment(null)} />}
+      {monIA && organisationHub && (
+        <aside id="atlas-mon-ia" className="mon-ia" aria-label="Mon IA">
+          <div className="mon-ia-tete">
+            <b>Mon IA</b>
+            <button type="button" className="x" aria-label="Fermer Mon IA" onClick={() => setMonIA(false)}>
+              <Icone nom="x" />
+            </button>
+          </div>
+          <iframe title="Mon IA" src={`${HUB}/ia/chat?app=prospection&tenant=${encodeURIComponent(organisationHub)}`} allow="clipboard-write" />
+        </aside>
+      )}
       {dialogueIA && <DialogueIA liens={liensIA} pageHub={HUB_IA} onFermer={fermerDialogueIA} />}
       {accueil && !dialogueIA && !creation && (
         <Accueil

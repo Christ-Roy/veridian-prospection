@@ -141,6 +141,7 @@ export async function POST(
     // Données Atlas de l'espace (l'ancienne app et ses tables sont retirées le 15/11) :
     // épingles, segments (leurs versions et scorings suivent par clé étrangère), dossiers.
     await tx.atlasExtraction.deleteMany({ where: { tenantId } });
+    await tx.iaFil.deleteMany({ where: { tenantId } }); // §5.24 : les fils « Mon IA » suivent l'espace
     await tx.atlasExport.deleteMany({ where: { tenantId } });
     const r1 = await tx.atlasEpingle.deleteMany({ where: { tenantId } });
     rows.atlas_epingles = r1.count;
