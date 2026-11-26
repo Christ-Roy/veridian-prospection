@@ -50,7 +50,7 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
   l'acquittement, 403 `no_workspace` dit ; données gardées. **Membre gelé** (§5.21) : `ctx.lectureSeule`, 402, ni extraction, export, envoi.
 - **Portes locales fermées en production** : mot de passe et invitation locaux répondent non (`LOCAL_AUTH_ENABLED=1` : staging seul). Réouvrir en prod : décision de Robert.
 - **Sans tenant, pas d'accès** : 403 `no_workspace` (sinon tenant factice `00000000-…`). `/api/atlas/*` par session : même site et JSON, sinon 403.
-- **Pas de provider OAuth local** : Google et Microsoft passent par le Hub. **CSP à nonce** (VER-265) : `src/lib/csp.ts`, `APPLIQUEE`.
+- **Pas de provider OAuth local** : Google et Microsoft passent par le Hub. **CSP à nonce imposée** (VER-265) : `src/lib/csp.ts`.
 - `GET /api/users/by-email` expose `workspaces[].tenant_id`, cible de `update-plan` côté Hub.
 
 ## MCP (contrat `veridian-hub/docs/CONTRAT-MCP.md`, 09/11)

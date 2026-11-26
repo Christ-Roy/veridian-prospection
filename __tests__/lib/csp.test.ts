@@ -14,10 +14,15 @@ vi.mock("@/lib/auth/middleware", async () => {
   };
 });
 
-import { ENTETE, nonce, politique, resumerRapport } from "@/lib/csp";
+import { APPLIQUEE, ENTETE, nonce, politique, resumerRapport } from "@/lib/csp";
 import { middleware } from "@/middleware";
 
 const directive = (csp: string, nom: string) => csp.split("; ").find((d) => d.startsWith(`${nom} `)) ?? "";
+
+test("imposée, plus seulement signalée", () => {
+  expect(APPLIQUEE).toBe(true);
+  expect(ENTETE).toBe("Content-Security-Policy");
+});
 
 describe("politique", () => {
   test("scripts : nonce et strict-dynamic, jamais unsafe-inline ni unsafe-eval en production", () => {

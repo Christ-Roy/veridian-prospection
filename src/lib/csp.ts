@@ -5,11 +5,12 @@
  * Prospection n'appelle rien d'autre qu'elle-même depuis le navigateur (polices servies par next/font, carte calculée au serveur) ;
  * le Hub n'est qu'une destination de lien ou de formulaire.
  *
- * Mode : `Content-Security-Policy-Report-Only` tant que les violations d'un vrai parcours n'ont pas été relues (26/11), puis
- * `APPLIQUEE = true` pour l'imposer.
+ * Imposée le 26/11 après Report-Only : parcours complet relu en prod (SSO, recherche, listes, fiche, export, CRM, Mail,
+ * déconnexion, retrait, pages publiques, connexion) sans aucune violation ; contrôle positif (gestionnaire inline injecté)
+ * signalé. Revenir à `false` remet le seul signalement.
  */
 export const CHEMIN_RAPPORT = "/api/csp";
-export const APPLIQUEE = false;
+export const APPLIQUEE = true;
 export const ENTETE = APPLIQUEE ? "Content-Security-Policy" : "Content-Security-Policy-Report-Only";
 
 const HUB = process.env.NEXT_PUBLIC_HUB_URL || "https://app.veridian.site";
