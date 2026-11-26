@@ -101,6 +101,9 @@ export async function POST(
 
   // Avant la coupure de l'appartenance, et même si elle est déjà faite : une clé créée par un retiré ne revient jamais.
   const clesRevoquees = await revoquerClesDe(user.id, tenantId);
+  // Ce que le Hub montre à l'auteur du geste (avisCles) : les clés de l'espace qui restent actives, et où les gérer.
+  const clesActives = () => prisma.atlasCleApi.count({ where: { tenantId, revoqueeLe: null } });
+  const lienCles = `${process.env.APP_URL || "https://prospection.app.veridian.site"}/`;
 
   if (wsIds.length === 0) {
     return NextResponse.json({
@@ -109,6 +112,9 @@ export async function POST(
       removed: true,
       affected_workspaces: 0,
       revoked_api_keys: clesRevoquees,
+      active_api_keys: await clesActives(),
+      active_api_keys_created_by_member: 0,
+      api_keys_url: lienCles,
     });
   }
 
@@ -155,7 +161,7 @@ export async function POST(
     `[remove-member] tenant=${tenantId} user=${user.id} affected=${result.count} cles=${clesRevoquees}`,
   );
 
-  // Effet immédiat : le contexte gardé 30 s ne laisse pas un membre retiré, ni un nouveau dehors.
+  // Effet immédiat sur cette instance ; les autres suivent en 3 s (CACHE_TTL_MS).
   invalidateAllUserContexts();
   return NextResponse.json({
     tenant_id: tenantId,
@@ -163,5 +169,8 @@ export async function POST(
     removed: true,
     affected_workspaces: result.count,
     revoked_api_keys: clesRevoquees,
+    active_api_keys: await clesActives(),
+    active_api_keys_created_by_member: 0,
+    api_keys_url: lienCles,
   });
 }

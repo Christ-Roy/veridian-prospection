@@ -59,9 +59,10 @@ afterAll(async () => {
 const retrait = async () => (await retirer(signe(`https://x/api/tenants/${T}/remove-member`, { hub_user_id: membre.hub }), { params: Promise.resolve({ id: T }) })).json();
 
 test("retiré : sa clé tombe à la lecture suivante, celle du témoin vit ; le Hub lit combien", async () => {
-  expect(await retrait()).toMatchObject({ removed: true, revoked_api_keys: 1 });
+  // Le Hub dit à l'auteur du geste combien de clés de l'espace restent actives (avisCles) : ici celle du témoin.
+  expect(await retrait()).toMatchObject({ removed: true, revoked_api_keys: 1, active_api_keys: 1, active_api_keys_created_by_member: 0, api_keys_url: expect.stringMatching(/^https?:\/\//) });
   expect([await appel(cle), await appel(temoin)]).toEqual([401, 200]);
-  expect(await retrait()).toMatchObject({ removed: true, revoked_api_keys: 0 });
+  expect(await retrait()).toMatchObject({ removed: true, revoked_api_keys: 0, active_api_keys: 1 });
 });
 test("remis dans l'espace, la clé d'avant ne revient pas", async () => {
   await retrait();

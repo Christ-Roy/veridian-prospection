@@ -36,7 +36,7 @@ vi.mock("@/lib/prisma", () => {
     user: { findUnique: mocks.userFindUnique },
     workspace: { findMany: mocks.workspaceFindMany },
     workspaceMember: { updateMany: mocks.memberUpdateMany },
-    atlasCleApi: { updateMany: async () => ({ count: 2 }) },
+    atlasCleApi: { updateMany: async () => ({ count: 2 }), count: async () => 3 },
   };
   return {
     prisma: {
