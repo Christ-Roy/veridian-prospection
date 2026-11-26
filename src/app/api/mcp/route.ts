@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
     const e = await espaceHub(user.id, identite.tenantId);
     if (e === "tenant_not_linked") return refus(403, "tenant_not_linked : cet espace Hub n'est relié à aucun espace Prospection");
     if (e === "tenant_forbidden") return refus(403, "tenant_forbidden : ce compte n'est pas membre de cet espace Prospection");
+    if (e === "tenant_suspended") return refus(403, "tenant_suspended : cet espace Prospection est suspendu");
     espaceDemande = e.id;
   }
   const ctx = await buildUserContext(user, null, espaceDemande);

@@ -147,16 +147,21 @@ describe("getUserContext — owner direct du tenant", () => {
     expect(ctx!.lectureSeule).toBeNull();
   });
 
-  it("espace suspendu ou membre gelé : lecture seule (contrat Hub §5.4, §5.21)", async () => {
+  it("espace suspendu : fermé, jamais cherché parmi les tenants servis ; membre gelé : lecture seule (§5.21)", async () => {
     mockAuth.mockResolvedValue({ user: { id: "user-s", email: "s@veridian.site" } });
-    mockTenantFindFirst.mockResolvedValueOnce({ id: "tenant-s", userId: "user-s" });
-    mockWorkspaceMemberFindMany.mockResolvedValueOnce([]);
-    mockTenantFindUnique.mockResolvedValueOnce({ status: "suspended" });
-    expect((await getUserContext())!.lectureSeule).toBe("workspace_suspended");
+    mockTenantFindFirst.mockResolvedValueOnce(null); // le tenant suspendu n'est pas rendu par la requête des tenants ouverts
+    mockWorkspaceMemberFindFirst.mockResolvedValueOnce(null);
+    expect(await getUserContext()).toBeNull();
+    expect(mockTenantFindFirst.mock.lastCall?.[0]).toMatchObject({ where: { userId: "user-s", deletedAt: null, status: { not: "suspended" } } });
+    invalidateAllUserContexts();
+    // Membre d'un espace suspendu : le repli par les fiches de membre ne le rend pas non plus.
+    mockTenantFindFirst.mockResolvedValueOnce(null);
+    mockWorkspaceMemberFindFirst.mockResolvedValueOnce({ workspace: { tenantId: "tenant-s" } });
+    mockTenantFindUnique.mockResolvedValueOnce({ id: "tenant-s", userId: "autre", deletedAt: null, status: "suspended" });
+    expect(await getUserContext()).toBeNull();
     invalidateAllUserContexts();
     mockTenantFindFirst.mockResolvedValueOnce({ id: "tenant-s", userId: "user-s" });
     mockWorkspaceMemberFindMany.mockResolvedValueOnce([]);
-    mockTenantFindUnique.mockResolvedValueOnce({ status: "active" });
     mockWorkspaceMemberFindFirst.mockResolvedValueOnce({ workspaceId: "w" });
     expect((await getUserContext())!.lectureSeule).toBe("member_frozen");
   });

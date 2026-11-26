@@ -66,7 +66,7 @@ describe("buildUserContext, espace demandé", () => {
     const ctx = await buildUserContext(u, null, T_HUB);
     expect(ctx?.tenantId).toBe(T_PROPRE);
     expect(tenantFindFirst).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { OR: [{ hubTenantId: T_HUB }, { id: T_HUB }], deletedAt: null } }),
+      expect.objectContaining({ where: { OR: [{ hubTenantId: T_HUB }, { id: T_HUB }], deletedAt: null, status: { not: "suspended" } } }),
     );
   });
 

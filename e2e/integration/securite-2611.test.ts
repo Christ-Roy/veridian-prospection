@@ -2,7 +2,7 @@
  * Chasse sécu du 26/11, rejouée sur vraie base. Exige DATABASE_URL.
  * 1. Rattachement par le Hub (attach-member, sync-member, attach-owner) : jamais le compte d'une autre identité, ni un
  *    compte sans lien dont l'adresse n'est pas prouvée ; aucun lien de connexion rendu dans ces cas.
- * 2. Espace suspendu, membre gelé : lecture seule (402 sur écriture, extraction et export), lecture servie.
+ * 2. Espace suspendu : fermé dès l'acquittement, rouvert à la reprise ; membre gelé : lecture seule (402 sur écriture).
  * 3. Un autre site ne déclenche pas d'outil Atlas par la session.
  * 4. L'ancien jeton en clair du tenant n'ouvre plus de session.
  * 5. L'export d'écran compte dans les 5 000 lignes du jour de l'espace, avec l'extraction et les envois (Robert, 26/11).
@@ -20,6 +20,10 @@ vi.mock("@/lib/auth-config", () => ({ auth: async () => (s.user ? { user: s.user
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => undefined }) }));
 
 import { POST as outil } from "@/app/api/atlas/[outil]/route";
+import { GET as moi } from "@/app/api/me/route";
+import { POST as reprendre } from "@/app/api/tenants/resume/route";
+import { POST as suspendre } from "@/app/api/tenants/suspend/route";
+import { espaceHub, espacesDe } from "@/lib/auth/espaces";
 import { GET as exporter } from "@/app/api/atlas/export/route";
 import { GET as jeton } from "@/app/api/auth/token/route";
 import { POST as attachOwner } from "@/app/api/tenants/attach-owner/route";
@@ -115,20 +119,24 @@ test("un compte neuf se rattache sans preuve d'adresse (personne à usurper)", a
   expect(r.status).toBe(200);
 });
 
-test("espace suspendu : lecture servie, écriture 402, extraction cachée, export 402 ; levé à la reprise", async () => {
+test("espace suspendu : fermé dès l'acquittement (/api/me, outils, MCP), rouvert dès la reprise", async () => {
   s.user = patron;
-  expect((await appelOutil("creer_segment", { nom: "Avant", filtre: { conditions: [] } })).s).toBe(200); // témoin : il écrit
-  await prisma.tenant.update({ where: { id: T }, data: { status: "suspended" } });
-  invalidateAllUserContexts();
-  expect((await appelOutil("lister_segments_atlas")).s).toBe(200);
-  const e = await appelOutil("creer_segment", { nom: "Pendant", filtre: { conditions: [] } });
-  expect(e.s).toBe(402);
-  expect(e.j.error).toBe("workspace_suspended");
-  expect((await appelOutil("extraire_segment", { segment_id: randomUUID() })).s).toBe(402);
+  const me = async () => { const r = await moi(); return r.status === 200 ? ((await r.json()) as { workspaces: { id: string }[] }).workspaces.map((w) => w.id) : []; };
+  expect(await me()).toEqual([W]); // témoin, et le contexte est maintenant en cache
+  expect((await appelOutil("creer_segment", { nom: "Avant", filtre: { conditions: [] } })).s).toBe(200);
+  const r = await suspendre(signe("https://x/api/tenants/suspend", { tenant_id: T, reason: "admin_action" }));
+  expect(r.status).toBe(200);
+  expect(await me()).toEqual([]); // sans attendre l'expiration du cache
+  expect((await appelOutil("lister_segments_atlas")).s).toBe(401);
   const x = await exporter(new NextRequest(`https://x/api/atlas/export?segment_id=${randomUUID()}&format=csv`));
-  expect(x.status).toBe(402);
-  await prisma.tenant.update({ where: { id: T }, data: { status: "active" } });
-  invalidateAllUserContexts();
+  expect(x.status).toBe(401);
+  const hubT = randomUUID();
+  await prisma.tenant.update({ where: { id: T }, data: { hubTenantId: hubT } });
+  expect(await espaceHub(patron.id, hubT)).toBe("tenant_suspended");
+  expect(await espacesDe(patron.id)).toEqual([]);
+  expect((await reprendre(signe("https://x/api/tenants/resume", { tenant_id: T }))).status).toBe(200);
+  expect(await me()).toEqual([W]);
+  expect(await espaceHub(patron.id, hubT)).toEqual({ id: T });
   expect((await appelOutil("creer_segment", { nom: "Après", filtre: { conditions: [] } })).s).toBe(200);
 });
 

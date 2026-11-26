@@ -7,6 +7,12 @@ import { prisma } from "@/lib/prisma";
 
 export const COOKIE_ESPACE = "veridian-espace";
 
+/**
+ * Un tenant servi : ni supprimé, ni suspendu. Un espace suspendu est fermé comme un espace supprimé (recette du Hub,
+ * parente 26/11) : ni listé, ni servi à l'écran ni au MCP ; ses données restent (CONTRAT-HUB §5.4), la reprise rouvre.
+ */
+export const OUVERT = { deletedAt: null, status: { not: "suspended" as const } };
+
 export const cookieEspace = (id: string) =>
   ({ name: COOKIE_ESPACE, value: id, httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 365 }) as const;
 
@@ -20,7 +26,7 @@ export async function espacesDe(userId: string): Promise<Espace[]> {
     select: { role: true, workspace: { select: { tenantId: true } } },
   });
   const tenants = await prisma.tenant.findMany({
-    where: { deletedAt: null, OR: [{ userId }, { id: { in: fiches.map((f) => f.workspace.tenantId) } }] },
+    where: { ...OUVERT, OR: [{ userId }, { id: { in: fiches.map((f) => f.workspace.tenantId) } }] },
     select: { id: true, name: true, userId: true },
     orderBy: { createdAt: "asc" },
   });
@@ -40,17 +46,19 @@ export async function espacesDe(userId: string): Promise<Espace[]> {
 /**
  * Espace désigné par le `tenant_id` signé du Hub (CONTRAT-MCP §2), sans repli silencieux :
  * relié à aucun tenant local = `tenant_not_linked` ; relié mais l'utilisateur n'en est ni
- * propriétaire ni membre = `tenant_forbidden` ; sinon l'id local du tenant.
+ * propriétaire ni membre = `tenant_forbidden` ; suspendu = `tenant_suspended` (dit tel quel, jamais un autre espace à la
+ * place) ; sinon l'id local du tenant.
  */
 export async function espaceHub(
   userId: string,
   hubTenantId: string,
-): Promise<{ id: string } | "tenant_not_linked" | "tenant_forbidden"> {
+): Promise<{ id: string } | "tenant_not_linked" | "tenant_forbidden" | "tenant_suspended"> {
   const t = await prisma.tenant.findFirst({
     where: { hubTenantId, deletedAt: null },
-    select: { id: true, userId: true },
+    select: { id: true, userId: true, status: true },
   });
   if (!t) return "tenant_not_linked";
+  if (t.status === "suspended") return "tenant_suspended";
   if (t.userId === userId) return { id: t.id };
   const m = await prisma.workspaceMember.findFirst({
     where: { userId, deletedAt: null, workspace: { tenantId: t.id, deletedAt: null } },

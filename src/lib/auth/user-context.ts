@@ -8,7 +8,10 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isUserFrozen } from "@/lib/auth/freeze";
 import { contextCache, invalidateAllUserContexts, invalidateUserContext } from "./cache-contexte";
-import { COOKIE_ESPACE, espaceHub } from "./espaces";
+import { COOKIE_ESPACE, espaceHub, OUVERT } from "./espaces";
+
+export { OUVERT };
+
 
 export type WorkspaceMembership = {
   id: string;
@@ -27,7 +30,7 @@ export type UserContext = {
   isAdmin: boolean;
   activeWorkspaceId: string | null;
   /** Contrat Hub §5.4 et §5.21 : espace suspendu ou membre gelé = lecture seule (aucune écriture, aucune sortie de coordonnées). */
-  lectureSeule?: "workspace_suspended" | "member_frozen" | null;
+  lectureSeule?: "member_frozen" | null;
 };
 
 export type AuthFailure = { error: NextResponse };
@@ -71,8 +74,9 @@ export async function buildUserContext(
     ? await tenantOfUser(user.id, preferredTenantId)
     : null;
 
+  // Un espace suspendu est fermé comme un espace supprimé (recette du Hub, parente 26/11) : ni listé, ni servi.
   const directTenant = tenant ?? await prisma.tenant.findFirst({
-    where: { userId: user.id, deletedAt: null },
+    where: { userId: user.id, ...OUVERT },
     select: { id: true, userId: true },
   });
 
@@ -89,9 +93,9 @@ export async function buildUserContext(
     if (membership?.workspace?.tenantId) {
       const memberTenant = await prisma.tenant.findUnique({
         where: { id: membership.workspace.tenantId },
-        select: { id: true, userId: true, deletedAt: true },
+        select: { id: true, userId: true, deletedAt: true, status: true },
       });
-      if (memberTenant && !memberTenant.deletedAt) tenant = memberTenant;
+      if (memberTenant && !memberTenant.deletedAt && memberTenant.status !== "suspended") tenant = memberTenant;
     }
   }
 
@@ -130,11 +134,7 @@ export async function buildUserContext(
       ? activeCookie
       : workspaces[0]?.id ?? null;
 
-  const [statut, gele] = await Promise.all([
-    prisma.tenant.findUnique({ where: { id: tenant.id }, select: { status: true } }),
-    isUserFrozen(user.id, tenant.id),
-  ]);
-  const lectureSeule = statut?.status === "suspended" ? "workspace_suspended" : gele ? "member_frozen" : null;
+  const lectureSeule = (await isUserFrozen(user.id, tenant.id)) ? "member_frozen" : null;
 
   const ctx: UserContext = {
     userId: user.id,
@@ -159,7 +159,7 @@ export async function buildUserContext(
 async function tenantOfUser(userId: string, tenantId: string): Promise<{ id: string; userId: string } | null> {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) return null;
   const t = await prisma.tenant.findFirst({
-    where: { OR: [{ hubTenantId: tenantId }, { id: tenantId }], deletedAt: null },
+    where: { OR: [{ hubTenantId: tenantId }, { id: tenantId }], ...OUVERT },
     select: { id: true, userId: true },
   });
   if (!t) return null;

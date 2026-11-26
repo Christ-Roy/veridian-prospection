@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireHubHmac } from "@/lib/hub/auth";
 import { emitHubWebhookAsync } from "@/lib/hub/webhooks";
+import { invalidateAllUserContexts } from "@/lib/auth/cache-contexte";
 import { prisma } from "@/lib/prisma";
 
 type SuspendBody = {
@@ -64,6 +65,8 @@ export async function POST(request: NextRequest) {
         },
       },
     });
+    // Fermé (ou rouvert) dès l'acquittement : aucun contexte en cache ne sert l'ancien état.
+    invalidateAllUserContexts();
     console.log(`[suspend] tenant=${tenant_id} reason=${reason ?? "admin_action"}`);
 
     // Fire-and-forget webhook Hub. Le contrat §7.1 prévoit cet event pour

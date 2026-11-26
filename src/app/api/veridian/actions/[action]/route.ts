@@ -36,6 +36,7 @@ async function traiter(request: NextRequest, nom: string) {
   const e = await espaceHub(user.id, j.tenantId);
   if (e === "tenant_not_linked") throw new RefusAction("espace_non_relie", 409);
   if (e === "tenant_forbidden") throw new RefusAction("non_membre", 403);
+  if (e === "tenant_suspended") throw new RefusAction("espace_suspendu", 403);
   const tenant = await prisma.tenant.findUnique({ where: { id: e.id }, select: { plan: true, status: true } });
   if (tenant?.status === "suspended" || (await isUserFrozen(user.id, e.id))) throw new RefusAction("espace_suspendu", 403);
   const ctx = await buildUserContext(user, null, e.id);

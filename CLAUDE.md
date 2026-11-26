@@ -46,7 +46,8 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
 - **`users.hub_user_id` contient `hub_app.users.supabase_user_id`**, pas le cuid `users.id`.
 - **`resolveOrCreateUserFromHub` refuse elle-même** (`ConflitIdentite` → 409) : adresse d'une autre identité Hub, ou compte sans lien
   sans `email_proven: true`. `attach-owner` exige `hub_user_id`. Liens de connexion : 60 s (attach-member), 15 min (rebond, provision).
-- **Lecture seule** (`ctx.lectureSeule`, contrat §5.4 et §5.21) : espace suspendu ou membre gelé, écriture 402, ni extraction, ni export, ni envoi.
+- **Suspendu = fermé** (parente 26/11) : `OUVERT` (`auth/espaces.ts`) l'exclut, MCP `tenant_suspended`, cache vidé à
+  l'acquittement ; données gardées. **Membre gelé** (§5.21) : `ctx.lectureSeule`, 402, ni extraction, export, envoi.
 - **Portes locales fermées en production** : mot de passe et invitation locaux répondent non. `LOCAL_AUTH_ENABLED=1` ne les garde qu'au staging, pour les e2e. Réouvrir en prod demande un déploiement et une décision de Robert.
 - **Sans tenant, pas d'accès** : 403 `no_workspace` (sinon tenant factice `00000000-…`). `/api/atlas/*` par session : même site et JSON, sinon 403.
 - **Pas de provider OAuth local** : Google et Microsoft passent par le Hub.
@@ -153,8 +154,7 @@ Tests et builds : `lourd <commande>` (rise), jamais en local.
 
 ## Règles
 
-- JAMAIS de signup en e2e (login comptes existants uniquement).
-- `checkTrialExpired` = `return false` (à recâbler).
+- JAMAIS de signup en e2e. `checkTrialExpired` = `return false` (à recâbler).
 
 ## Dette
 
