@@ -80,8 +80,8 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
   afficher `nb_*_livrable` comme « envoyables », `nb_avec_*` comme « connus ».
 - Carte : `src/atlas/projection.ts`, communes et EPCI de l'API Géo (`communes.ts`). Le cube ne descend pas à la commune.
 - Accès avancé (`requete_sql`, clés `atl_`) et `extraire_segment` : `docs/claude/acces-avance-et-extraction.md`.
-- Quota ou porte de connexion : `src/lib/compteurs.ts` (en base). `isRateLimited` = confort, par instance.
-- Mon IA (VER-203, §5.24) : état lu au Hub (`ia-etat.ts`), cadre si `prete`, carte sinon, fils en `ia_fils` par `/api/hub/ia/fils/[session]` (HMAC, 404 hors triplet), effacés au retrait et à la purge.
+- Quota, porte de connexion : `src/lib/compteurs.ts` (en base) ; `isRateLimited` : confort, par instance.
+- Mon IA (§5.24) : état au Hub (`ia-etat.ts`), cadre si `prete`, carte sinon ; fils `ia_fils` par `/api/hub/ia/fils/[session]` (HMAC, 404 hors triplet), effacés au retrait et à la purge.
 - Journaux : `obs search '\[mcp\] outil='` ; l'écran n'en écrit aucun, sauf `[liaisons]`.
 - Envoi vers le CRM et Mail (VER-246) : `docs/LIAISONS.md`, drapeau `ATLAS_LIAISONS`. Clients, API par marché, pages publiques : `docs/CLIENTS-ET-MARCHES.md`.
 
@@ -97,9 +97,9 @@ par le verbe `veridian-ci-deploy prospection` (put-job, plan, deploy canari, smo
 - `image_tag` n'a AUCUN défaut : un défaut figé a fait reculer la prod (09/11 : c70ba3c servi 0537d22).
   `scripts/ci/check-image-tag-sans-defaut.py` refuse tout défaut, auto-test compris (quality).
 - Ne jamais déployer à la main : `nomad-v deploy` et `nomad job run` ignorent le tag CI.
-- Le job prod est sur `ovh-prod` (contrainte `meta.provider`), pas sur le bastion.
+- Job prod sur `ovh-prod` (contrainte `meta.provider`), pas sur le bastion.
 
-Staging (branche `staging`) : divergé et à l'arrêt, workflows retirés. Ne pas y pousser avant d'avoir tranché.
+Staging (branche `staging`) : divergé, à l'arrêt, sans workflow : n'y rien pousser sans trancher.
 
 | Tier | Exemples | Action agent |
 |---|---|---|
@@ -118,7 +118,7 @@ Staging (branche `staging`) : divergé et à l'arrêt, workflows retirés. Ne pa
   démarrage par `src/instrumentation.ts`). Une requête en cours sur une connexion muette attend sans fin
   dans Prisma 6, `socket_timeout` compris (mesuré) : le filet est `/api/health` (503 en 2 s) + `check_restart`.
   Ne pas allonger ce délai ni retirer `check_restart` (`__tests__/lib/db-bornes.test.ts` le refuse).
-- **Un seul client Prisma** (`src/lib/prisma.ts`), pool de 8 (pg-saas : 100 connexions pour cinq apps).
+- **Un seul client Prisma** (`src/lib/prisma.ts`), pool de 8 (pg-saas : 100 connexions, cinq apps).
   Jamais de `new PrismaClient` ailleurs : un test le refuse.
 - **Rôle `prospection` : `statement_timeout` et `idle_in_transaction_session_timeout` à 60 s** (09/11).
   Une migration longue commence par `SET statement_timeout = 0;`.
