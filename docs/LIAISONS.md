@@ -3,6 +3,8 @@
 Plan : `nomad-veridian/plan/INTEGRATIONS-NATIVES.md` (§2.1 à 2.3, F1, F2). Un humain clique ; jamais par MCP ni par clé API.
 
 - **Drapeau** `ATLAS_LIAISONS` (HCL) : `crm=*;notifuse=<tenant Hub>,<tenant Hub>`. Vide = rien ne s'affiche, les routes répondent 404.
+  En prod depuis le 26/11 : `crm=*;notifuse=*` (le CRM pose Liaisons à chaque nouvel espace, c8e67ad ; les 5 espaces clients
+  exclus par `VERIDIAN_BASE_APPS_EXCLUDE` reçoivent « La liaison n'est pas encore disponible dans votre CRM. », 409).
 - **Poignées** : `delegations: [{hub_tenant_id, grant, expire_le}]` du rebond (Hub, VER-245 b.2), une par organisation. Chiffrées
   (AES-256-GCM, clé dérivée d'`AUTH_SECRET`), d'abord sur le lien de connexion, puis par (session, organisation) dans
   `session_delegations`. Illisibles : on entre quand même, sans liaison. Retirées à la déconnexion, à la suppression du compte, à la
