@@ -18,15 +18,26 @@ import { prisma } from "@/lib/prisma";
  *      où le upsert by id utilisait directement le UUID Hub comme PK locale)
  *      → backfille `hub_user_id` sur cette row
  *   3. Match par email + `hub_user_id` NULL → backfill OK
- *   4. Match par email + `hub_user_id` déjà rempli (différent) → préfère le
- *      local, ne touche pas (cas pathologique : 2 identités Hub pour 1 email
- *      local — laisser le supérieur trancher)
+ *   4. Match par email + `hub_user_id` d'une AUTRE identité → refus `ConflitIdentite("hub_user_conflict")`
  *   5. Pas de match → création avec `hub_user_id` rempli
  *
- * §3.8 : relier un compte existant par email exige une adresse prouvée.
- * `emailProven: false` (provision sans `email_proven`) ne relie rien, et l'appelant
- * reçoit `emailUnproven: true` avec l'id local : il doit refuser, pas l'utiliser.
+ * §3.8 : relier un compte existant sans lien par son adresse exige une adresse prouvée (`emailProven: true`),
+ * sinon refus `ConflitIdentite("email_not_proven")`. Par défaut, l'adresse n'est PAS prouvée.
+ * La fonction refuse elle-même : un drapeau rendu à l'appelant était ignoré par trois routes sur quatre (26/11),
+ * qui rattachaient alors le compte d'une autre personne et rendaient son lien de connexion.
  */
+export class ConflitIdentite extends Error {
+  constructor(readonly code: "hub_user_conflict" | "email_not_proven") {
+    super(code);
+    this.name = "ConflitIdentite";
+  }
+}
+
+/** Réponse 409 d'une route du Hub pour un refus d'identité, sinon null. */
+export function refusIdentite(e: unknown): Response | null {
+  return e instanceof ConflitIdentite ? Response.json({ error: e.code }, { status: 409 }) : null;
+}
+
 export async function resolveOrCreateUserFromHub(params: {
   hubUserId: string;
   email: string;
@@ -34,17 +45,15 @@ export async function resolveOrCreateUserFromHub(params: {
 }, db: Pick<Prisma.TransactionClient, "user"> = prisma): Promise<{
   id: string;
   createdByHub: boolean;
-  hubUserIdConflict: boolean;
-  emailUnproven?: boolean;
 }> {
-  const { hubUserId, email, emailProven = true } = params;
+  const { hubUserId, email, emailProven = false } = params;
 
   const byHubId = await db.user.findUnique({
     where: { hubUserId },
     select: { id: true },
   });
   if (byHubId) {
-    return { id: byHubId.id, createdByHub: false, hubUserIdConflict: false };
+    return { id: byHubId.id, createdByHub: false };
   }
 
   const byLegacyId = await db.user.findUnique({
@@ -52,13 +61,14 @@ export async function resolveOrCreateUserFromHub(params: {
     select: { id: true, hubUserId: true },
   });
   if (byLegacyId) {
+    if (byLegacyId.hubUserId && byLegacyId.hubUserId !== hubUserId) throw new ConflitIdentite("hub_user_conflict");
     if (!byLegacyId.hubUserId) {
       await db.user.update({
         where: { id: byLegacyId.id },
         data: { hubUserId },
       });
     }
-    return { id: byLegacyId.id, createdByHub: false, hubUserIdConflict: false };
+    return { id: byLegacyId.id, createdByHub: false };
   }
 
   const byEmail = await db.user.findUnique({
@@ -66,33 +76,13 @@ export async function resolveOrCreateUserFromHub(params: {
     select: { id: true, hubUserId: true },
   });
   if (byEmail) {
-    if (!byEmail.hubUserId && !emailProven) {
-      return {
-        id: byEmail.id,
-        createdByHub: false,
-        hubUserIdConflict: false,
-        emailUnproven: true,
-      };
-    }
-    if (!byEmail.hubUserId) {
-      await db.user.update({
-        where: { id: byEmail.id },
-        data: { hubUserId },
-      });
-      return {
-        id: byEmail.id,
-        createdByHub: false,
-        hubUserIdConflict: false,
-      };
-    }
-    if (byEmail.hubUserId === hubUserId) {
-      return {
-        id: byEmail.id,
-        createdByHub: false,
-        hubUserIdConflict: false,
-      };
-    }
-    return { id: byEmail.id, createdByHub: false, hubUserIdConflict: true };
+    if (byEmail.hubUserId) throw new ConflitIdentite("hub_user_conflict");
+    if (!emailProven) throw new ConflitIdentite("email_not_proven");
+    await db.user.update({
+      where: { id: byEmail.id },
+      data: { hubUserId },
+    });
+    return { id: byEmail.id, createdByHub: false };
   }
 
   const created = await db.user.create({
@@ -104,5 +94,5 @@ export async function resolveOrCreateUserFromHub(params: {
     },
     select: { id: true },
   });
-  return { id: created.id, createdByHub: true, hubUserIdConflict: false };
+  return { id: created.id, createdByHub: true };
 }

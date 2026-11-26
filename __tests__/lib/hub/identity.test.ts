@@ -16,7 +16,7 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
-import { resolveOrCreateUserFromHub } from "@/lib/hub/identity";
+import { ConflitIdentite, resolveOrCreateUserFromHub } from "@/lib/hub/identity";
 
 const HUB_ID = "11111111-1111-1111-1111-111111111111";
 const OTHER_HUB_ID = "22222222-2222-2222-2222-222222222222";
@@ -41,7 +41,6 @@ describe("resolveOrCreateUserFromHub", () => {
     expect(result).toEqual({
       id: LOCAL_ID,
       createdByHub: false,
-      hubUserIdConflict: false,
     });
     expect(mockFindUnique).toHaveBeenCalledTimes(1);
     expect(mockFindUnique).toHaveBeenCalledWith({
@@ -71,7 +70,7 @@ describe("resolveOrCreateUserFromHub", () => {
     });
   });
 
-  it("match par email avec hub_user_id NULL → backfill", async () => {
+  it("match par email avec hub_user_id NULL et adresse prouvée → backfill", async () => {
     mockFindUnique
       .mockResolvedValueOnce(null) // by hubUserId
       .mockResolvedValueOnce(null) // by id (legacy)
@@ -81,12 +80,12 @@ describe("resolveOrCreateUserFromHub", () => {
     const result = await resolveOrCreateUserFromHub({
       hubUserId: HUB_ID,
       email: EMAIL,
+      emailProven: true,
     });
 
     expect(result).toEqual({
       id: LOCAL_ID,
       createdByHub: false,
-      hubUserIdConflict: false,
     });
     expect(mockUpdate).toHaveBeenCalledWith({
       where: { id: LOCAL_ID },
@@ -94,24 +93,24 @@ describe("resolveOrCreateUserFromHub", () => {
     });
   });
 
-  it("match par email avec hub_user_id différent → conflit, ne touche pas la DB", async () => {
+  it("match par email avec hub_user_id différent → refus hub_user_conflict, ne touche pas la DB", async () => {
     mockFindUnique
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ id: LOCAL_ID, hubUserId: OTHER_HUB_ID });
 
-    const result = await resolveOrCreateUserFromHub({
-      hubUserId: HUB_ID,
-      email: EMAIL,
-    });
-
-    expect(result).toEqual({
-      id: LOCAL_ID,
-      createdByHub: false,
-      hubUserIdConflict: true,
+    await expect(resolveOrCreateUserFromHub({ hubUserId: HUB_ID, email: EMAIL, emailProven: true })).rejects.toMatchObject({
+      name: "ConflitIdentite",
+      code: "hub_user_conflict",
     });
     expect(mockUpdate).not.toHaveBeenCalled();
     expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("legacy id déjà relié à une AUTRE identité → refus", async () => {
+    mockFindUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: HUB_ID, hubUserId: OTHER_HUB_ID });
+    await expect(resolveOrCreateUserFromHub({ hubUserId: HUB_ID, email: EMAIL, emailProven: true })).rejects.toBeInstanceOf(ConflitIdentite);
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 
   it("aucun match → création avec hub_user_id (rétrocompat: users.id = hubUserId)", async () => {
@@ -129,7 +128,6 @@ describe("resolveOrCreateUserFromHub", () => {
     expect(result).toEqual({
       id: HUB_ID,
       createdByHub: true,
-      hubUserIdConflict: false,
     });
     expect(mockCreate).toHaveBeenCalledWith({
       data: {
@@ -184,13 +182,21 @@ describe("resolveOrCreateUserFromHub", () => {
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ id: "local-email", hubUserId: null });
-    const r = await resolveOrCreateUserFromHub({
-      hubUserId: "hub-x",
-      email: "victime@example.com",
-      emailProven: false,
-    });
-    expect(r.emailUnproven).toBe(true);
+    await expect(
+      resolveOrCreateUserFromHub({ hubUserId: "hub-x", email: "victime@example.com", emailProven: false }),
+    ).rejects.toMatchObject({ code: "email_not_proven" });
     expect(mockUpdate).not.toHaveBeenCalled();
     expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("§3.8 : sans emailProven, l'adresse n'est PAS prouvée par défaut", async () => {
+    mockFindUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: "local-email", hubUserId: null });
+    await expect(resolveOrCreateUserFromHub({ hubUserId: "hub-x", email: "victime@example.com" })).rejects.toMatchObject({
+      code: "email_not_proven",
+    });
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 });

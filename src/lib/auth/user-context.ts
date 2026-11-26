@@ -6,6 +6,7 @@ import { auth } from "@/lib/auth-config";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { isUserFrozen } from "@/lib/auth/freeze";
 import { contextCache, invalidateAllUserContexts, invalidateUserContext } from "./cache-contexte";
 import { COOKIE_ESPACE, espaceHub } from "./espaces";
 
@@ -25,6 +26,8 @@ export type UserContext = {
   workspaces: WorkspaceMembership[];
   isAdmin: boolean;
   activeWorkspaceId: string | null;
+  /** Contrat Hub §5.4 et §5.21 : espace suspendu ou membre gelé = lecture seule (aucune écriture, aucune sortie de coordonnées). */
+  lectureSeule?: "workspace_suspended" | "member_frozen" | null;
 };
 
 export type AuthFailure = { error: NextResponse };
@@ -58,7 +61,9 @@ export async function buildUserContext(
   const cle = preferredTenantId ? `${user.id}:${preferredTenantId.toLowerCase()}` : user.id;
   const cached = contextCache.get(cle);
   if (cached && cached.expiresAt > Date.now()) {
-    return { ...cached.ctx, activeWorkspaceId: activeCookie };
+    // Le cookie se revérifie à chaque appel : seul un atelier de ce contexte peut devenir actif.
+    const actif = activeCookie && cached.ctx.workspaces.some((w) => w.id === activeCookie) ? activeCookie : cached.ctx.workspaces[0]?.id ?? null;
+    return { ...cached.ctx, activeWorkspaceId: actif };
   }
 
   // 1) Tenant (local Prisma) — espace demandé s'il est le sien, puis direct ownership, puis membership
@@ -79,6 +84,7 @@ export async function buildUserContext(
     const membership = await prisma.workspaceMember.findFirst({
       where: { userId: user.id, deletedAt: null, workspace: { deletedAt: null } },
       include: { workspace: true },
+      orderBy: [{ joinedAt: "asc" }, { workspaceId: "asc" }],
     });
     if (membership?.workspace?.tenantId) {
       const memberTenant = await prisma.tenant.findUnique({
@@ -124,6 +130,12 @@ export async function buildUserContext(
       ? activeCookie
       : workspaces[0]?.id ?? null;
 
+  const [statut, gele] = await Promise.all([
+    prisma.tenant.findUnique({ where: { id: tenant.id }, select: { status: true } }),
+    isUserFrozen(user.id, tenant.id),
+  ]);
+  const lectureSeule = statut?.status === "suspended" ? "workspace_suspended" : gele ? "member_frozen" : null;
+
   const ctx: UserContext = {
     userId: user.id,
     email: user.email,
@@ -132,6 +144,7 @@ export async function buildUserContext(
     workspaces,
     isAdmin,
     activeWorkspaceId,
+    lectureSeule,
   };
 
   if (contextCache.size > 5000) contextCache.clear(); // la clé vient d'un cookie : bornée

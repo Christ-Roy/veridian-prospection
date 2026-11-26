@@ -42,10 +42,11 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
   `sso_login_tokens` (haché, one-shot, 15 min, lié au user), `GET /api/auth/token` le consomme.
 - **HMAC §6.1 `{ts}.{body}` est le seul mode Hub.** Bearer et `email:ts` sont coupés.
 - **`users.hub_user_id` contient `hub_app.users.supabase_user_id`**, pas le cuid `users.id`.
-- **Le repli par email ne sert qu'à rattacher un compte sans lien.** Un compte lié à une
-  autre identité Hub est refusé.
+- **`resolveOrCreateUserFromHub` refuse elle-même** (`ConflitIdentite` → 409) : adresse d'une autre identité Hub, ou compte sans lien
+  sans `email_proven: true`. `attach-owner` exige `hub_user_id`. Liens de connexion : 60 s (attach-member), 15 min (rebond, provision).
+- **Lecture seule** (`ctx.lectureSeule`, contrat §5.4 et §5.21) : espace suspendu ou membre gelé, écriture 402, ni extraction, ni export, ni envoi.
 - **Portes locales fermées en production** : mot de passe et invitation locaux répondent non. `LOCAL_AUTH_ENABLED=1` ne les garde qu'au staging, pour les e2e. Réouvrir en prod demande un déploiement et une décision de Robert.
-- **Sans tenant, pas d'accès** : `requireAuth` répond 403 `no_workspace`, sinon les requêtes retombent sur le tenant factice `00000000-…`.
+- **Sans tenant, pas d'accès** : 403 `no_workspace` (sinon tenant factice `00000000-…`). `/api/atlas/*` par session : même site et JSON, sinon 403.
 - **Pas de provider OAuth local** : Google et Microsoft passent par le Hub.
 - `GET /api/users/by-email` expose `workspaces[].tenant_id`, cible de `update-plan` côté Hub.
 
@@ -74,15 +75,7 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
   `naf_rev2 = 1`, jamais par intervalle de chaînes ; prévoir « département inconnu » (diffusion partielle) ;
   afficher `nb_*_livrable` comme « envoyables », `nb_avec_*` comme « connus ».
 - Carte : `src/atlas/projection.ts`, communes et EPCI de l'API Géo (`communes.ts`). Le cube ne descend pas à la commune.
-- Accès avancé (16/11, `src/atlas/acces.ts`, `sql.ts`) : par espace (`tenants.acces_avance`), accordé par un administrateur
-  Atlas (`users.atlas_admin`, outil `accorder_acces_avance` ou volet « API et accès avancé »), jamais par le plan. Donne
-  `requete_sql` (garde SELECT, 1 000 lignes) et les clés API
-  (`Bearer atl_…` sur `/api/atlas/[outil]`, empreinte SHA-256 seule). `verifier_entreprises` : 50/jour gratuit, 5 000 payant.
-- `extraire_segment` (VER-242, `src/atlas/extraction.ts`) : liste de SIREN figée en base (curseur stable 7 jours), coordonnées
-  relues à chaque page, quota 5 000 lignes/jour/espace compté dans `atlas_exports` sous verrou. Appel direct : réponse
-  coupée à 15 000 caractères (`SORTIE_MAX`, chez nous), 30 lignes ; en-tête `X-Veridian-MCP-Appel: programme` : 1 Mo, 1 000 lignes.
-  Programme = aucune coordonnée hors `extraire_segment`, plan payant compris, sauf accès avancé (`src/lib/mcp/coordonnees.ts`).
-  Le Hub ne garde que 300 caractères de la 1re ligne des descriptions.
+- Accès avancé (`requete_sql`, clés `atl_`) et `extraire_segment` : `docs/claude/acces-avance-et-extraction.md`.
 - Quota ou porte de connexion : `src/lib/compteurs.ts` (en base). `isRateLimited` = confort, par instance.
 - Journaux : `obs search '\[mcp\] outil='` ; l'écran n'en écrit aucun, sauf `[liaisons]`.
 - Envoi vers le CRM et Mail (VER-246) : `docs/LIAISONS.md`, drapeau `ATLAS_LIAISONS`. Clients, API par marché, pages publiques : `docs/CLIENTS-ET-MARCHES.md`.
@@ -149,14 +142,7 @@ fidèle à `docs/maquette`), `src/app/api/` (atlas, mcp, health, contrat Hub), `
 
 ## Commandes
 
-```bash
-npm ci
-npm run build
-npx tsc --noEmit
-npx vitest run --exclude 'e2e/integration/**'
-npx playwright test e2e/core/ --project=chromium
-```
-
+`npm ci`, `npx tsc --noEmit`, `npx vitest run --exclude 'e2e/integration/**'`, intégration : `e2e/integration/` sur base jetable.
 Tests et builds : `lourd <commande>` (rise), jamais en local.
 
 ## Multi-tenant
@@ -172,5 +158,6 @@ Tests et builds : `lourd <commande>` (rise), jamais en local.
 ## Dette
 
 - `audit_log` absent en prod.
+- HMAC `{ts}.{body}` non lié au chemin ni à la méthode, rejouable 5 min : à changer avec le Hub.
 - `prospection-ci.yml` sur `ubuntu-latest` (dépôt public).
 - `check-test-mapping.sh` ne voit rien sur un push vers `main`, et le pre-push ne le lance pas.

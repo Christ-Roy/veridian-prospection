@@ -35,7 +35,9 @@ import * as seg from "./segments";
 const LECTURE = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 const ECRITURE = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
 const UUID = z.string().uuid();
-const peutEcrire = (c: ContexteOutil) => c.ctx.isAdmin || c.ctx.workspaces.some((w) => w.role !== "viewer");
+// Espace suspendu ou membre gelé (contrat Hub §5.4, §5.21) : lecture seule, quel que soit le rôle.
+const peutEcrire = (c: ContexteOutil) => !c.ctx.lectureSeule && (c.ctx.isAdmin || c.ctx.workspaces.some((w) => w.role !== "viewer"));
+const peutSortir = (c: ContexteOutil) => !c.ctx.lectureSeule;
 const auteur = (c: ContexteOutil): seg.Auteur => (c.client ? { id: `ia:${c.client}`, via: "mcp" } : { id: c.ctx.userId, via: "interface" });
 
 /** Les erreurs métier (filtre invalide, introuvable) remontent telles quelles à l'IA, pour qu'elle corrige. */
@@ -685,6 +687,7 @@ const OUTILS_BRUTS: Outil[] = [
   },
   {
     name: "extraire_segment",
+    visible: peutSortir,
     title: "Extraire un segment, page par page",
     description:
       "Récupérer, extraire, exporter les contacts des prospects d'un segment (emails, entreprise, dirigeant) pour Notifuse, un CRM, un tableur. Sans curseur, puis " +

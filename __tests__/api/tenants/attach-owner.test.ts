@@ -53,9 +53,11 @@ vi.mock("@/lib/prisma", () => ({
 const { resolveOrCreateUserFromHubMock } = vi.hoisted(() => ({
   resolveOrCreateUserFromHubMock: vi.fn(),
 }));
-vi.mock("@/lib/hub/identity", () => ({
+vi.mock("@/lib/hub/identity", async (orig) => ({
+  ...(await orig<typeof import("@/lib/hub/identity")>()),
   resolveOrCreateUserFromHub: resolveOrCreateUserFromHubMock,
 }));
+const HUB = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
 
 import { POST } from "@/app/api/tenants/attach-owner/route";
@@ -177,8 +179,7 @@ describe("POST /api/tenants/attach-owner", () => {
 
   test("200 attached=true sur user nouveau + workspace default créé", async () => {
     mocks.tenantFindUnique.mockResolvedValueOnce({ id: "t-1" });
-    mocks.userFindFirst.mockResolvedValueOnce(null);
-    mocks.userCreate.mockResolvedValueOnce({});
+    resolveOrCreateUserFromHubMock.mockResolvedValueOnce({ id: HUB, createdByHub: true });
     mocks.workspaceFindFirst.mockResolvedValueOnce(null);
     mocks.workspaceCreate.mockResolvedValueOnce({ id: "ws-1" });
     mocks.memberFindUnique.mockResolvedValueOnce(null);
@@ -187,6 +188,7 @@ describe("POST /api/tenants/attach-owner", () => {
     const { raw, headers } = signed({
       tenant_id: "t-1",
       owner_email: "owner@example.com",
+      hub_user_id: HUB,
     });
     const res = await POST(req(raw, headers));
     expect(res.status).toBe(200);
@@ -199,14 +201,14 @@ describe("POST /api/tenants/attach-owner", () => {
     expect(body.already_attached).toBe(false);
     expect(body.role).toBe("owner");
 
-    expect(mocks.userCreate).toHaveBeenCalledOnce();
+    expect(resolveOrCreateUserFromHubMock).toHaveBeenCalledOnce();
     expect(mocks.workspaceCreate).toHaveBeenCalledOnce();
     expect(mocks.memberCreate).toHaveBeenCalledOnce();
   });
 
   test("200 attached=true sur user existant — réutilise user_id", async () => {
     mocks.tenantFindUnique.mockResolvedValueOnce({ id: "t-1" });
-    mocks.userFindFirst.mockResolvedValueOnce({ id: "u-existing" });
+    resolveOrCreateUserFromHubMock.mockResolvedValueOnce({ id: "u-existing", createdByHub: false });
     mocks.workspaceFindFirst.mockResolvedValueOnce({ id: "ws-1" });
     mocks.memberFindUnique.mockResolvedValueOnce(null);
     mocks.memberCreate.mockResolvedValueOnce({});
@@ -214,24 +216,25 @@ describe("POST /api/tenants/attach-owner", () => {
     const { raw, headers } = signed({
       tenant_id: "t-1",
       owner_email: "owner@example.com",
+      hub_user_id: HUB,
     });
     const res = await POST(req(raw, headers));
     expect(res.status).toBe(200);
     const body = (await readJson(res)) as { user_id: string };
     expect(body.user_id).toBe("u-existing");
-    expect(mocks.userCreate).not.toHaveBeenCalled();
     expect(mocks.memberCreate.mock.calls[0][0].data.role).toBe("owner");
   });
 
   test("200 already_attached=true si user déjà owner (additif : pas d'update)", async () => {
     mocks.tenantFindUnique.mockResolvedValueOnce({ id: "t-1" });
-    mocks.userFindFirst.mockResolvedValueOnce({ id: "u-existing" });
+    resolveOrCreateUserFromHubMock.mockResolvedValueOnce({ id: "u-existing", createdByHub: false });
     mocks.workspaceFindFirst.mockResolvedValueOnce({ id: "ws-1" });
     mocks.memberFindUnique.mockResolvedValueOnce({ role: "owner" });
 
     const { raw, headers } = signed({
       tenant_id: "t-1",
       owner_email: "owner@example.com",
+      hub_user_id: HUB,
       role: "owner",
     });
     const res = await POST(req(raw, headers));
@@ -250,7 +253,7 @@ describe("POST /api/tenants/attach-owner", () => {
 
   test("200 upgrade si user existait avec role inférieur (member → owner)", async () => {
     mocks.tenantFindUnique.mockResolvedValueOnce({ id: "t-1" });
-    mocks.userFindFirst.mockResolvedValueOnce({ id: "u-1" });
+    resolveOrCreateUserFromHubMock.mockResolvedValueOnce({ id: "u-1", createdByHub: false });
     mocks.workspaceFindFirst.mockResolvedValueOnce({ id: "ws-1" });
     mocks.memberFindUnique.mockResolvedValueOnce({ role: "member" });
     mocks.memberUpdate.mockResolvedValueOnce({});
@@ -258,6 +261,7 @@ describe("POST /api/tenants/attach-owner", () => {
     const { raw, headers } = signed({
       tenant_id: "t-1",
       owner_email: "owner@example.com",
+      hub_user_id: HUB,
       role: "owner",
     });
     const res = await POST(req(raw, headers));
@@ -272,7 +276,6 @@ describe("POST /api/tenants/attach-owner", () => {
     resolveOrCreateUserFromHubMock.mockResolvedValueOnce({
       id: hubUserId,
       createdByHub: true,
-      hubUserIdConflict: false,
     });
     mocks.workspaceFindFirst.mockResolvedValueOnce({ id: "ws-1" });
     mocks.memberFindUnique.mockResolvedValueOnce(null);
@@ -290,6 +293,7 @@ describe("POST /api/tenants/attach-owner", () => {
     expect(resolveOrCreateUserFromHubMock).toHaveBeenCalledWith({
       hubUserId,
       email: "v15-attach@example.com",
+      emailProven: false,
     });
     // Le path legacy match-by-email n'est PAS pris quand hub_user_id fourni.
     expect(mocks.userFindFirst).not.toHaveBeenCalled();
@@ -298,19 +302,40 @@ describe("POST /api/tenants/attach-owner", () => {
 
   test("additif : ne downgrade pas un owner existant si on demande admin", async () => {
     mocks.tenantFindUnique.mockResolvedValueOnce({ id: "t-1" });
-    mocks.userFindFirst.mockResolvedValueOnce({ id: "u-1" });
+    resolveOrCreateUserFromHubMock.mockResolvedValueOnce({ id: "u-1", createdByHub: false });
     mocks.workspaceFindFirst.mockResolvedValueOnce({ id: "ws-1" });
     mocks.memberFindUnique.mockResolvedValueOnce({ role: "owner" });
 
     const { raw, headers } = signed({
       tenant_id: "t-1",
       owner_email: "owner@example.com",
+      hub_user_id: HUB,
       role: "admin",
     });
     const res = await POST(req(raw, headers));
     expect(res.status).toBe(200);
     const body = (await readJson(res)) as { role: string };
     expect(body.role).toBe("owner");
+    expect(mocks.memberUpdate).not.toHaveBeenCalled();
+  });
+
+  test("26/11 : sans hub_user_id → 400, aucun compte touché (plus de repli par adresse)", async () => {
+    mocks.tenantFindUnique.mockResolvedValueOnce({ id: "t-1" });
+    const { raw, headers } = signed({ tenant_id: "t-1", owner_email: "victime@example.com" });
+    expect((await POST(req(raw, headers))).status).toBe(400);
+    expect(mocks.userFindFirst).not.toHaveBeenCalled();
+    expect(mocks.memberCreate).not.toHaveBeenCalled();
+  });
+
+  test("26/11 : adresse d'une autre identité Hub → 409 hub_user_conflict, personne ne devient propriétaire", async () => {
+    const { ConflitIdentite } = await import("@/lib/hub/identity");
+    mocks.tenantFindUnique.mockResolvedValueOnce({ id: "t-1" });
+    resolveOrCreateUserFromHubMock.mockRejectedValueOnce(new ConflitIdentite("hub_user_conflict"));
+    const { raw, headers } = signed({ tenant_id: "t-1", owner_email: "victime@example.com", hub_user_id: HUB });
+    const res = await POST(req(raw, headers));
+    expect(res.status).toBe(409);
+    expect(((await readJson(res)) as { error: string }).error).toBe("hub_user_conflict");
+    expect(mocks.memberCreate).not.toHaveBeenCalled();
     expect(mocks.memberUpdate).not.toHaveBeenCalled();
   });
 });

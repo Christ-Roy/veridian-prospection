@@ -1,32 +1,11 @@
-// Autologin one-shot Hub→Prospection.
+// GET /api/auth/token?t=<jeton> : ouvre une session Auth.js (JWT) à partir d'un jeton de connexion.
 //
-// Flow :
-//   1. Hub appelle POST /api/tenants/provision (HMAC) → on génère un
-//      loginToken random et on le persiste sur le Tenant Prisma local.
-//   2. Hub renvoie au browser un login_url contenant ?t=<token>.
-//   3. Le browser de l'user ouvre GET /api/auth/token?t=<token>.
-//   4. On valide le token contre la DB Prisma locale (plus de Supabase
-//      depuis 2026-05-20), on marque le token used (one-shot), on crée
-//      une session Auth.js JWT (encodage manuel compatible session
-//      strategy="jwt") et on redirige vers /.
+// Une seule origine de jeton : `sso_login_tokens`, émis par le rebond signé du Hub (/api/sso/issue-magic-link),
+// par provision ou par attach-member. Haché en base (SHA-256), lié à l'utilisateur, à usage unique, borné dans le temps.
+// L'ancien jeton `tenants.prospection_login_token` (en clair, 24 h, sans expiration si sa date manquait, connectait
+// le propriétaire) n'est plus accepté depuis le 26/11 : plus aucun code ne l'émettait.
 //
-// Sécurité :
-//   - Token = 32 bytes random hex (256 bits d'entropie) → unguessable
-//   - Validité 24h (`MAX_AGE_MS`)
-//   - One-shot : `prospectionLoginTokenUsedAt` posé au premier check OK
-//   - Validation via Prisma index `tenants_prospection_login_token_idx`
-//
-// Deux origines de jeton, même sortie (session Auth.js) :
-//   - `sso_login_tokens` (rebond Hub, /api/sso/issue-magic-link) : haché, 15 min,
-//     lié au user, donc valable pour un membre invité.
-//   - `tenants.prospection_login_token` (provision, generateMagicLink) : 24h,
-//     connecte le propriétaire du tenant.
-//
-// Erreurs possibles (toutes → redirect /login?error=...) :
-//   - invalid_token : token absent ou inconnu en DB
-//   - token_used    : déjà consommé une fois
-//   - token_expired : > 24h depuis création
-//   - server_error  : exception interne (loggée)
+// Erreurs (toutes → redirect /login?error=...) : invalid_token, token_used, token_expired, server_error.
 import { NextRequest, NextResponse } from "next/server";
 import { createHash, randomUUID } from "crypto";
 import { encode } from "next-auth/jwt";
@@ -35,7 +14,6 @@ import { AUTO_BOUNCE_COOKIE, LOGGED_OUT_COOKIE, safeReturnPath } from "@/lib/aut
 import { cookieEspace, espacesDe } from "@/lib/auth/espaces";
 import { attacher } from "@/lib/liaisons/poignee";
 
-const MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 heures
 const SESSION_MAX_AGE_S = 60 * 60 * 24 * 90; // 90 jours (cf auth.config.ts)
 
 // Cookie name utilisé par Auth.js v5. Préfixe __Secure- en HTTPS prod/staging,
@@ -64,8 +42,6 @@ export async function GET(request: NextRequest) {
   if (!token) {
     return NextResponse.json({ error: "Token required" }, { status: 400 });
   }
-
-  console.log(`[auth/token] Validating token prefix=${token.slice(0, 8)}...`);
 
   // Jeton de rebond Hub. Le hash permet de ne jamais stocker le jeton en clair.
   const tokenHash = createHash("sha256").update(token).digest("hex");
@@ -97,57 +73,8 @@ export async function GET(request: NextRequest) {
     return reponse;
   }
 
-  let tenant;
-  try {
-    tenant = await prisma.tenant.findFirst({
-      where: { prospectionLoginToken: token },
-      select: {
-        id: true,
-        userId: true,
-        prospectionLoginTokenCreatedAt: true,
-        prospectionLoginTokenUsedAt: true,
-      },
-    });
-  } catch (err) {
-    console.error(`[auth/token] DB lookup failed: ${(err as Error).message}`);
-    return redirectLogin(baseUrl, "server_error");
-  }
-
-  if (!tenant) {
-    console.warn(`[auth/token] Token not found, prefix=${token.slice(0, 8)}...`);
-    return redirectLogin(baseUrl, "invalid_token");
-  }
-
-  if (tenant.prospectionLoginTokenUsedAt) {
-    console.warn(`[auth/token] Token already used for tenant ${tenant.id}`);
-    return redirectLogin(baseUrl, "token_used");
-  }
-
-  if (tenant.prospectionLoginTokenCreatedAt) {
-    const ageMs = Date.now() - tenant.prospectionLoginTokenCreatedAt.getTime();
-    if (ageMs > MAX_AGE_MS) {
-      console.warn(
-        `[auth/token] Token expired for tenant ${tenant.id}, age=${Math.round(ageMs / 3600000)}h`,
-      );
-      return redirectLogin(baseUrl, "token_expired");
-    }
-  }
-
-  // Marque used en premier (anti race condition double-consommation). Si une
-  // 2e tab ouvre le même token en même temps, seule la première qui passe
-  // ici sera authentifiée (l'update est atomique).
-  const updated = await prisma.tenant.updateMany({
-    where: { id: tenant.id, prospectionLoginTokenUsedAt: null },
-    data: { prospectionLoginTokenUsedAt: new Date() },
-  });
-  if (updated.count === 0) {
-    console.warn(
-      `[auth/token] Race condition — another tab already consumed the token for tenant ${tenant.id}`,
-    );
-    return redirectLogin(baseUrl, "token_used");
-  }
-
-  return createSessionResponse(tenant.userId, baseUrl, `tenant=${tenant.id}`, returnPath);
+  console.warn("[auth/token] jeton inconnu");
+  return redirectLogin(baseUrl, "invalid_token");
 }
 
 /** L'organisation où l'on travaillait au Hub (VER-252) : posée seulement si l'utilisateur en est membre, sans jamais empêcher d'entrer. */

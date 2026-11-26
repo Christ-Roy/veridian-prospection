@@ -114,7 +114,6 @@ describe("POST /api/veridian/workspaces/[workspaceId]/attach-member", () => {
     mocks.resolveOrCreateUserFromHub.mockResolvedValue({
       id: LOCAL_USER_ID,
       createdByHub: false,
-      hubUserIdConflict: false,
     });
   });
 

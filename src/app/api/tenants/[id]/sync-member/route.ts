@@ -25,7 +25,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireHubHmac } from "@/lib/hub/auth";
-import { resolveOrCreateUserFromHub } from "@/lib/hub/identity";
+import { refusIdentite, resolveOrCreateUserFromHub } from "@/lib/hub/identity";
 import { resolveTenantByIdOrEmail } from "@/lib/hub/tenant-lookup";
 import { logAudit } from "@/lib/audit";
 import { ROLE_RANK, type WorkspaceRole } from "@/lib/auth/roles";
@@ -35,6 +35,7 @@ import { invalidateAllUserContexts } from "@/lib/auth/cache-contexte";
 const SyncMemberSchema = z.object({
   user_email: z.string().email().max(254),
   hub_user_id: z.string().uuid(),
+  email_proven: z.boolean().optional(),
   role: z.enum(["member", "admin"]).default("member"),
   invited_at: z.string().optional(),
   joined_at: z.string().optional(),
@@ -73,10 +74,18 @@ export async function POST(
   // Toute la suite utilise l'UUID local résolu, JAMAIS `tenantIdParam`.
   const tenantId = tenant.id;
 
-  const { id: localUserId } = await resolveOrCreateUserFromHub({
-    hubUserId: body.hub_user_id,
-    email: body.user_email,
-  });
+  let localUserId: string;
+  try {
+    ({ id: localUserId } = await resolveOrCreateUserFromHub({
+      hubUserId: body.hub_user_id,
+      email: body.user_email.toLowerCase(),
+      emailProven: body.email_proven === true,
+    }));
+  } catch (e) {
+    const r = refusIdentite(e);
+    if (r) return r;
+    throw e;
+  }
 
   // Workspace par défaut = premier workspace créé pour ce tenant.
   // Cas pathologique : aucun workspace → on crée `default` avec ce user.

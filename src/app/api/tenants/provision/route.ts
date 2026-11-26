@@ -48,7 +48,8 @@ export async function POST(request: NextRequest) {
 
   try {
     const o = await ouvrirEspace({ hubUserId, email, emailProven: c.email_proven === true, hubTenantId: lien?.toLowerCase() ?? null, plan: typeof c.plan === "string" ? c.plan : c.plan === undefined || c.plan === null ? undefined : "illisible", nom: texte(c.name) });
-    const { jeton } = await emettreJetonConnexion(o.user_id, 24 * 3600 * 1000);
+    // 15 min, comme le rebond : un lien resté dans un journal n'ouvre plus la session un jour entier (26/11).
+    const { jeton } = await emettreJetonConnexion(o.user_id, 15 * 60 * 1000);
     const { apiKey, cree, ...reste } = o;
     console.log(`[provision] ouvert user=${o.user_id} tenant=${o.tenant_id} hub_tenant=${o.hub_tenant_id ?? "aucun"} plan=${o.plan} cree=${Object.entries(cree).filter(([, x]) => x).map(([k]) => k).join("+") || "rien"}`);
     const app = process.env.APP_URL || process.env.NEXT_PUBLIC_SITE_URL || "";

@@ -189,7 +189,6 @@ describe("POST /api/tenants/[id]/sync-member", () => {
     resolveOrCreateUserFromHubMock.mockResolvedValueOnce({
       id: LOCAL_USER_ID,
       createdByHub: false,
-      hubUserIdConflict: false,
     });
     mocks.workspaceFindFirst.mockResolvedValueOnce({ id: WS_ID });
     mocks.memberFindUnique.mockResolvedValueOnce(null);
@@ -218,7 +217,6 @@ describe("POST /api/tenants/[id]/sync-member", () => {
     resolveOrCreateUserFromHubMock.mockResolvedValueOnce({
       id: LOCAL_USER_ID,
       createdByHub: true,
-      hubUserIdConflict: false,
     });
     mocks.workspaceFindFirst.mockResolvedValueOnce({ id: WS_ID });
     mocks.memberFindUnique.mockResolvedValueOnce(null);
@@ -259,7 +257,6 @@ describe("POST /api/tenants/[id]/sync-member", () => {
     resolveOrCreateUserFromHubMock.mockResolvedValueOnce({
       id: LOCAL_USER_ID,
       createdByHub: false,
-      hubUserIdConflict: false,
     });
     mocks.workspaceFindFirst.mockResolvedValueOnce({ id: WS_ID });
     mocks.memberFindUnique.mockResolvedValueOnce({
@@ -279,7 +276,6 @@ describe("POST /api/tenants/[id]/sync-member", () => {
     resolveOrCreateUserFromHubMock.mockResolvedValueOnce({
       id: LOCAL_USER_ID,
       createdByHub: true,
-      hubUserIdConflict: false,
     });
     mocks.workspaceFindFirst.mockResolvedValueOnce(null);
     mocks.workspaceCreate.mockResolvedValueOnce({ id: WS_ID });
@@ -299,7 +295,6 @@ describe("POST /api/tenants/[id]/sync-member", () => {
     resolveOrCreateUserFromHubMock.mockResolvedValueOnce({
       id: LOCAL_USER_ID,
       createdByHub: false,
-      hubUserIdConflict: false,
     });
     mocks.workspaceFindFirst.mockResolvedValueOnce({ id: WS_ID });
     mocks.memberFindUnique.mockResolvedValueOnce({
@@ -321,7 +316,6 @@ describe("POST /api/tenants/[id]/sync-member", () => {
     resolveOrCreateUserFromHubMock.mockResolvedValueOnce({
       id: LOCAL_USER_ID,
       createdByHub: false,
-      hubUserIdConflict: false,
     });
     mocks.workspaceFindFirst.mockResolvedValueOnce({ id: WS_ID });
     mocks.memberFindUnique.mockResolvedValueOnce({
@@ -344,7 +338,6 @@ describe("POST /api/tenants/[id]/sync-member", () => {
     resolveOrCreateUserFromHubMock.mockResolvedValueOnce({
       id: LOCAL_USER_ID,
       createdByHub: false,
-      hubUserIdConflict: false,
     });
     mocks.workspaceFindFirst.mockResolvedValueOnce({ id: WS_ID });
     mocks.memberFindUnique.mockResolvedValueOnce({
@@ -365,7 +358,6 @@ describe("POST /api/tenants/[id]/sync-member", () => {
     resolveOrCreateUserFromHubMock.mockResolvedValueOnce({
       id: LOCAL_USER_ID,
       createdByHub: false,
-      hubUserIdConflict: false,
     });
     mocks.workspaceFindFirst.mockResolvedValueOnce({ id: WS_ID });
     mocks.memberFindUnique.mockResolvedValueOnce({

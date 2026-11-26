@@ -22,6 +22,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export async function GET(request: NextRequest) {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (ctx.lectureSeule) return NextResponse.json({ error: ctx.lectureSeule, message: "Espace en lecture seule : l'export est suspendu." }, { status: 402 });
 
   const q = request.nextUrl.searchParams;
   const segmentId = q.get("segment_id") ?? "";

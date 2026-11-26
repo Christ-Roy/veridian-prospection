@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUserContext, resolveInsertWorkspaceId } from "@/lib/auth/user-context";
 import { isRateLimited } from "@/lib/rate-limit";
 import { ErreurOutil } from "@/lib/mcp/erreur";
+import { OUTILS_ATLAS } from "@/atlas/outils-mcp";
 import { outilsVisibles } from "@/lib/mcp/outils";
 import { contexteDepuisCle, droits } from "@/atlas/acces";
 import { avecClients } from "@/atlas/clients";
@@ -18,6 +19,13 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ outil: string }> }) {
   const parCle = request.headers.get("authorization");
+  if (!parCle) {
+    // Session du navigateur : un autre site ne déclenche pas d'outil en son nom (en plus du cookie SameSite).
+    const site = request.headers.get("sec-fetch-site");
+    if ((site && site !== "same-origin") || !request.headers.get("content-type")?.startsWith("application/json")) {
+      return NextResponse.json({ error: "origine refusée" }, { status: 403 });
+    }
+  }
   const ctx = parCle ? await contexteDepuisCle(parCle) : await getUserContext();
   if (!ctx) return NextResponse.json({ error: parCle ? "Clé API invalide, révoquée, ou espace sans accès avancé" : "Unauthorized" }, { status: 401 });
   if (isRateLimited(`atlas:${ctx.userId}`, 240, 60_000)) return NextResponse.json({ error: "Trop de requêtes" }, { status: 429 });
@@ -25,7 +33,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { outil: nom } = await params;
   const c = { ctx, workspaceId: await resolveInsertWorkspaceId(ctx), client: parCle ? "clé API" : null, droits: await droits(ctx.userId, ctx.tenantId) };
   const outil = outilsVisibles(c).find((o) => o.name === nom);
-  if (!outil) return NextResponse.json({ error: "outil inconnu ou non permis" }, { status: 404 });
+  if (!outil) {
+    if (c.ctx.lectureSeule && OUTILS_ATLAS.some((o) => o.name === nom)) {
+      return NextResponse.json({ error: c.ctx.lectureSeule, message: "Espace en lecture seule : cet outil est suspendu." }, { status: 402 });
+    }
+    return NextResponse.json({ error: "outil inconnu ou non permis" }, { status: 404 });
+  }
 
   const corps = await request.json().catch(() => ({}));
   const args = outil.input.safeParse(corps);

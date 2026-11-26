@@ -18,8 +18,8 @@ const ctx = (role: "member" | "viewer") => ({
   userId: "u-1", email: "a@b.fr", tenantId: "t-1", tenantOwnerId: "u-0", isAdmin: false, activeWorkspaceId: "w",
   workspaces: [{ id: "w", name: "W", slug: "w", role, visibilityScope: "all" }],
 });
-const appel = (outil: string, corps: unknown) =>
-  POST(new NextRequest(`https://p.test/api/atlas/${outil}`, { method: "POST", body: JSON.stringify(corps) }), { params: Promise.resolve({ outil }) });
+const appel = (outil: string, corps: unknown, entetes: Record<string, string> = { "content-type": "application/json" }) =>
+  POST(new NextRequest(`https://p.test/api/atlas/${outil}`, { method: "POST", body: JSON.stringify(corps), headers: entetes }), { params: Promise.resolve({ outil }) });
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -50,5 +50,20 @@ describe("POST /api/atlas/[outil]", () => {
     expect((await appel("creer_segment", { nom: "x", filtre: {} })).status).toBe(404);
     getCtx.mockResolvedValue(ctx("member"));
     expect((await appel("changer_statut", { siren: "123456789", statut: "interesse" })).status).toBe(404);
+  });
+
+  test("un autre site ne déclenche pas d'outil par la session (403), ni un corps qui n'est pas du JSON", async () => {
+    getCtx.mockResolvedValue(ctx("member"));
+    expect((await appel("explorer_marche", { filtre: {} }, { "content-type": "application/json", "sec-fetch-site": "cross-site" })).status).toBe(403);
+    expect((await appel("explorer_marche", { filtre: {} }, { "content-type": "text/plain" })).status).toBe(403);
+    expect(getCtx).not.toHaveBeenCalled();
+  });
+
+  test("espace en lecture seule : écriture 402, lecture servie", async () => {
+    getCtx.mockResolvedValue({ ...ctx("member"), lectureSeule: "workspace_suspended" });
+    const r = await appel("creer_segment", { nom: "x", filtre: {} });
+    expect(r.status).toBe(402);
+    expect((await r.json()).error).toBe("workspace_suspended");
+    expect((await appel("explorer_marche", { filtre: {}, par_page: 1 })).status).toBe(200);
   });
 });

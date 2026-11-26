@@ -23,7 +23,10 @@
  *   }
  */
 import { NextRequest, NextResponse } from "next/server";
+import { createHash, timingSafeEqual } from "crypto";
 import { processOutbox } from "@/lib/hub-webhook/outbox";
+
+const egal = (a: string, b: string) => timingSafeEqual(createHash("sha256").update(a).digest(), createHash("sha256").update(b).digest());
 
 export const runtime = "nodejs";
 
@@ -42,7 +45,7 @@ export async function POST(req: NextRequest) {
   const token = auth.toLowerCase().startsWith("bearer ")
     ? auth.slice(7).trim()
     : "";
-  if (!token || token !== expected) {
+  if (!token || !egal(token, expected)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

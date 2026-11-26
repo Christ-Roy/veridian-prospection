@@ -49,6 +49,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if ((site && site !== "same-origin") || !request.headers.get("content-type")?.startsWith("application/json")) return rendre({ error: "origine refusée" }, 403);
   const ctx = await getUserContext();
   if (!ctx) return rendre({ error: "Unauthorized", code: "session" }, 401);
+  if (ctx.lectureSeule) return rendre({ error: "Espace en lecture seule : aucun envoi.", code: ctx.lectureSeule }, 402);
   if (isRateLimited(`liaisons:${ctx.userId}`, 60, 60_000)) return rendre({ error: "Trop d'envois, patientez une minute.", code: "plafond", attendre: 60 }, 429, { "Retry-After": "60" });
 
   const e = action.schema.safeParse(await request.json().catch(() => null));

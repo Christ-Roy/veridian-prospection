@@ -15,8 +15,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireHubHmac } from "@/lib/hub/auth";
 import { prisma } from "@/lib/prisma";
-import { resolveOrCreateUserFromHub } from "@/lib/hub/identity";
-import { randomUUID } from "crypto";
+import { refusIdentite, resolveOrCreateUserFromHub } from "@/lib/hub/identity";
 
 type AttachBody = {
   tenant_id?: string;
@@ -64,27 +63,22 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 1) Résolution user — CONTRAT-HUB v1.5 §3.7.
-  //    Si le Hub envoie hub_user_id → helper unifié (backfill + rétrocompat).
-  //    Sinon (Hub legacy) → fallback historique match-by-email + UUID local.
+  // 1) Résolution user — CONTRAT-HUB §3.7. Sans `hub_user_id`, plus de repli par adresse : il rendait owner
+  //    n'importe quel compte portant cette adresse, relié ou non à une autre identité (26/11).
+  if (!hubUserId) {
+    return NextResponse.json({ error: "invalid_payload", message: "hub_user_id is required" }, { status: 400 });
+  }
   let userId: string;
-  if (hubUserId) {
-    const resolved = await resolveOrCreateUserFromHub({
+  try {
+    ({ id: userId } = await resolveOrCreateUserFromHub({
       hubUserId,
-      email: owner_email,
-    });
-    userId = resolved.id;
-  } else {
-    const existing = await prisma.user.findFirst({
-      where: { email: owner_email },
-      select: { id: true },
-    });
-    userId = existing?.id ?? randomUUID();
-    if (!existing) {
-      await prisma.user.create({
-        data: { id: userId, email: owner_email, supabaseUserId: userId },
-      });
-    }
+      email: owner_email.toLowerCase(),
+      emailProven: (auth.body as { email_proven?: unknown }).email_proven === true,
+    }));
+  } catch (e) {
+    const r = refusIdentite(e);
+    if (r) return r;
+    throw e;
   }
 
   // 2) Workspace "default" upsert

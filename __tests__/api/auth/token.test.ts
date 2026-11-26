@@ -4,9 +4,7 @@
  * Couvre (2026-05-20 — refactor Supabase → Prisma + Auth.js JWT) :
  *  - 400 si paramètre `t` manquant
  *  - redirect /login?error=invalid_token si token inconnu en DB
- *  - redirect /login?error=token_used si déjà consommé
- *  - redirect /login?error=token_expired si > 24h
- *  - redirect / + cookie session set + marquage `usedAt` sur token valide
+ *  - l'ancien jeton en clair du tenant est refusé (26/11)
  *  - redirect /login?error=server_error si AUTH_SECRET absent
  *  - jeton de rebond Hub (sso_login_tokens) : session du user, rejeu et expiration refusés
  */
@@ -70,80 +68,15 @@ describe("GET /api/auth/token — autologin Prisma + Auth.js JWT", () => {
     expect(res.headers.get("location")).toContain("/login?error=invalid_token");
   });
 
-  test("redirects to /login?error=token_used when already consumed", async () => {
-    tenantMock.findFirst.mockResolvedValue({
-      id: "t-1",
-      userId: "u-1",
-      prospectionLoginTokenCreatedAt: new Date(),
-      prospectionLoginTokenUsedAt: new Date(),
-    });
-    const res = await GET(makeRequest("/api/auth/token", { searchParams: { t: "used" } }));
-    expect(res.headers.get("location")).toContain("/login?error=token_used");
-  });
-
-  test("redirects to /login?error=token_expired when > 24h", async () => {
-    tenantMock.findFirst.mockResolvedValue({
-      id: "t-1",
-      userId: "u-1",
-      prospectionLoginTokenCreatedAt: new Date(Date.now() - 26 * 60 * 60 * 1000),
-      prospectionLoginTokenUsedAt: null,
-    });
-    const res = await GET(makeRequest("/api/auth/token", { searchParams: { t: "old" } }));
-    expect(res.headers.get("location")).toContain("/login?error=token_expired");
-  });
-
-  test("redirects to / + sets session cookie + marks token used on valid token", async () => {
-    tenantMock.findFirst.mockResolvedValue({
-      id: "t-1",
-      userId: "u-1",
-      prospectionLoginTokenCreatedAt: new Date(),
-      prospectionLoginTokenUsedAt: null,
-    });
+  test("ancien jeton en clair du tenant (24 h, propriétaire) : refusé, aucune session, tenants jamais lu", async () => {
+    tenantMock.findFirst.mockResolvedValue({ id: "t-1", userId: "u-1", prospectionLoginTokenCreatedAt: null, prospectionLoginTokenUsedAt: null });
     tenantMock.updateMany.mockResolvedValue({ count: 1 });
-    userMock.findUnique.mockResolvedValue({
-      id: "u-1",
-      email: "u@v.site",
-      name: "User",
-      image: null,
-    });
-    const res = await GET(makeRequest("/api/auth/token", { searchParams: { t: "good" } }));
-
-    // Redirect vers /
-    expect(res.headers.get("location")).toMatch(/\/$/);
-
-    // Marquage atomique : updateMany avec filter prospectionLoginTokenUsedAt: null
-    expect(tenantMock.updateMany).toHaveBeenCalledWith({
-      where: { id: "t-1", prospectionLoginTokenUsedAt: null },
-      data: { prospectionLoginTokenUsedAt: expect.any(Date) },
-    });
-
-    // JWT encoded via next-auth/jwt avec le bon payload
-    expect(encodeMock).toHaveBeenCalledTimes(1);
-    const encodeArg = encodeMock.mock.calls[0][0];
-    expect(encodeArg.token).toEqual(expect.objectContaining({
-      sub: "u-1",
-      uid: "u-1",
-      email: "u@v.site",
-    }));
-
-    // Cookie session set
-    const setCookie = res.headers.get("set-cookie") ?? "";
-    expect(setCookie).toMatch(/authjs\.session-token=fake\.jwt\.session/);
-    expect(setCookie).toMatch(/HttpOnly/i);
-    expect(setCookie).toMatch(/SameSite=lax/i);
-  });
-
-  test("race condition : si updateMany.count=0 → /login?error=token_used", async () => {
-    tenantMock.findFirst.mockResolvedValue({
-      id: "t-1",
-      userId: "u-1",
-      prospectionLoginTokenCreatedAt: new Date(),
-      prospectionLoginTokenUsedAt: null,
-    });
-    // Une autre tab a consommé entre le findFirst et l'updateMany
-    tenantMock.updateMany.mockResolvedValue({ count: 0 });
-    const res = await GET(makeRequest("/api/auth/token", { searchParams: { t: "race" } }));
-    expect(res.headers.get("location")).toContain("/login?error=token_used");
+    userMock.findUnique.mockResolvedValue({ id: "u-1", email: "u@v.site", name: null, image: null });
+    const res = await GET(makeRequest("/api/auth/token", { searchParams: { t: "ancien-jeton-du-tenant" } }));
+    expect(res.headers.get("location")).toContain("/login?error=invalid_token");
+    expect(tenantMock.findFirst).not.toHaveBeenCalled();
+    expect(encodeMock).not.toHaveBeenCalled();
+    expect(res.headers.get("set-cookie") ?? "").not.toMatch(/session-token/);
   });
 
   test("jeton de rebond valide : session du user du jeton, jamais du propriétaire de tenant", async () => {
@@ -255,13 +188,8 @@ describe("GET /api/auth/token — autologin Prisma + Auth.js JWT", () => {
     const saved = process.env.AUTH_SECRET;
     delete process.env.AUTH_SECRET;
     delete process.env.NEXTAUTH_SECRET;
-    tenantMock.findFirst.mockResolvedValue({
-      id: "t-1",
-      userId: "u-1",
-      prospectionLoginTokenCreatedAt: new Date(),
-      prospectionLoginTokenUsedAt: null,
-    });
-    tenantMock.updateMany.mockResolvedValue({ count: 1 });
+    ssoMock.findUnique.mockResolvedValue({ userId: "u-1", usedAt: null, expiresAt: new Date(Date.now() + 60_000) });
+    ssoMock.updateMany.mockResolvedValue({ count: 1 });
     userMock.findUnique.mockResolvedValue({
       id: "u-1",
       email: "u@v.site",

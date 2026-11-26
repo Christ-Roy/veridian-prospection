@@ -43,13 +43,9 @@ export function verifierRequete(brut: string, limite = LIGNES_MAX_SQL): string {
   // Noms des sous-requêtes nommées (WITH x AS (…)), utilisables comme tables.
   const ctes = new Set([...nu.matchAll(/(?:\bwith|,)\s*([a-z_][\w]*)\s+as\s*\(/gi)].map((m) => m[1].toLowerCase()));
   const tables = new Set<string>(TABLES_SQL);
-  const sources = [
-    ...[...nu.matchAll(/\b(?:from|join)\s+([`"\w.]+)/gi)].map((m) => m[1]),
-    // jointure par virgule : FROM a [AS x], b
-    ...[...nu.matchAll(/\bfrom\s+[`"\w.]+(?:\s+(?:as\s+)?\w+)?\s*,\s*([`"\w.]+)/gi)].map((m) => m[1]),
-  ];
-  for (const s of sources) {
-    const nom = s.replace(/[`"]/g, "").toLowerCase();
+  const sources = sourcesDe(nu);
+  for (const { nom, fonction } of sources) {
+    if (fonction) throw new FiltreInvalide(`fonction de table « ${nom} » refusée : lisez ${TABLES_SQL.join(", ")} (ou une sous-requête)`);
     if (!tables.has(nom) && !ctes.has(nom)) {
       throw new FiltreInvalide(`table « ${nom} » non autorisée : ${TABLES_SQL.join(", ")} (ou une sous-requête)`);
     }
@@ -57,4 +53,52 @@ export function verifierRequete(brut: string, limite = LIGNES_MAX_SQL): string {
   if (!sources.length) throw new FiltreInvalide(`la requête lit une table : ${TABLES_SQL.join(", ")}`);
   const n = Math.min(LIGNES_MAX_SQL, Math.max(1, Math.trunc(limite)));
   return `SELECT * FROM (\n${q}\n) LIMIT ${n}`;
+}
+
+const FIN_SOURCES = /^(where|prewhere|group|order|limit|having|union|join|inner|left|right|full|cross|any|all|asof|semi|anti|array|global|on|using|final|sample|window|qualify|intersect|except|offset|format|settings)$/i;
+
+/**
+ * Toutes les sources d'une requête : chaque élément de chaque liste `FROM a [AS x], b, (…) y`, et chaque `JOIN t`.
+ * Une sous-requête « (… ) » n'est pas une source (son contenu est lu par ailleurs) ; un nom suivi de « ( » est une
+ * fonction de table (url, numbers, remote…). Le 26/11, seule la table suivant la 1re virgule était vue :
+ * `FROM a, b, information_schema.tables` passait, comme une sous-requête nommée `url` puis `FROM url(…)`.
+ */
+function sourcesDe(sql: string): { nom: string; fonction: boolean }[] {
+  const jetons = sql.match(/`[^`]*`|"[^"]*"|[\w.]+|\(|\)|,|\S/g) ?? [];
+  const nomDe = (j: string) => j.replace(/[`"]/g, "").toLowerCase();
+  const sortie: { nom: string; fonction: boolean }[] = [];
+  const lireSource = (i: number): number => {
+    // i pointe sur le premier jeton de la source ; rend l'indice qui suit la source (avant alias).
+    if (jetons[i] === "(") {
+      let p = 0;
+      for (; i < jetons.length; i++) {
+        if (jetons[i] === "(") p++;
+        else if (jetons[i] === ")" && --p === 0) return i + 1;
+      }
+      return i;
+    }
+    if (i < jetons.length) sortie.push({ nom: nomDe(jetons[i]), fonction: jetons[i + 1] === "(" });
+    return i + 1;
+  };
+  for (let i = 0; i < jetons.length; i++) {
+    const m = jetons[i].toLowerCase();
+    if (m === "join") {
+      lireSource(i + 1);
+      continue;
+    }
+    if (m !== "from") continue;
+    // Liste de sources au même niveau de parenthèses, jusqu'à un mot de fin ou la parenthèse qui ferme.
+    let j = lireSource(i + 1);
+    let p = 0;
+    for (; j < jetons.length; j++) {
+      const t = jetons[j];
+      if (t === "(") p++;
+      else if (t === ")") {
+        if (p === 0) break;
+        p--;
+      } else if (p === 0 && t === ",") j = lireSource(j + 1) - 1;
+      else if (p === 0 && FIN_SOURCES.test(t)) break;
+    }
+  }
+  return sortie;
 }

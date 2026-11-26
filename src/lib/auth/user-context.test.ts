@@ -142,8 +142,23 @@ describe("getUserContext — owner direct du tenant", () => {
     expect(ctx!.workspaces).toEqual([]);
     expect(ctx!.activeWorkspaceId).toBeNull();
 
-    // Le fallback membre NE DOIT PAS être appelé quand owner direct trouvé.
-    expect(mockWorkspaceMemberFindFirst).not.toHaveBeenCalled();
+    // Le fallback membre NE DOIT PAS être appelé quand owner direct trouvé (le seul findFirst est le contrôle du gel).
+    expect(mockWorkspaceMemberFindFirst.mock.calls.some((c) => "include" in (c[0] ?? {}))).toBe(false);
+    expect(ctx!.lectureSeule).toBeNull();
+  });
+
+  it("espace suspendu ou membre gelé : lecture seule (contrat Hub §5.4, §5.21)", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "user-s", email: "s@veridian.site" } });
+    mockTenantFindFirst.mockResolvedValueOnce({ id: "tenant-s", userId: "user-s" });
+    mockWorkspaceMemberFindMany.mockResolvedValueOnce([]);
+    mockTenantFindUnique.mockResolvedValueOnce({ status: "suspended" });
+    expect((await getUserContext())!.lectureSeule).toBe("workspace_suspended");
+    invalidateAllUserContexts();
+    mockTenantFindFirst.mockResolvedValueOnce({ id: "tenant-s", userId: "user-s" });
+    mockWorkspaceMemberFindMany.mockResolvedValueOnce([]);
+    mockTenantFindUnique.mockResolvedValueOnce({ status: "active" });
+    mockWorkspaceMemberFindFirst.mockResolvedValueOnce({ workspaceId: "w" });
+    expect((await getUserContext())!.lectureSeule).toBe("member_frozen");
   });
 });
 

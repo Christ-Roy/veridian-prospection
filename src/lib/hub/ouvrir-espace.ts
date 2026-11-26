@@ -12,7 +12,7 @@ import { isCanonicalPlan, mapCanonicalPlanToLocal } from "@/lib/billing/plans";
 import { prisma } from "@/lib/prisma";
 
 import { generateApiKey, hashApiKey } from "./apiKey";
-import { resolveOrCreateUserFromHub } from "./identity";
+import { ConflitIdentite, resolveOrCreateUserFromHub } from "./identity";
 
 export class RefusOuverture extends Error {
   constructor(readonly code: string, readonly statut: number, readonly detail: Record<string, unknown> = {}) {
@@ -54,8 +54,9 @@ export async function ouvrirEspace(e: { hubUserId: string; email: string; emailP
     async (tx) => {
       // Un seul à la fois par personne, et par organisation : deux ouvertures simultanées n'en font qu'une.
       for (const cle of [`ouvrir:${e.hubUserId}`, ...(e.hubTenantId ? [`ouvrir:${e.hubTenantId}`] : [])].sort()) await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${cle}, 0))`;
-      const u = await resolveOrCreateUserFromHub({ hubUserId: e.hubUserId, email, emailProven: e.emailProven }, tx);
-      if (u.hubUserIdConflict || u.emailUnproven) throw new RefusOuverture("email_not_linkable", 409);
+      const u = await resolveOrCreateUserFromHub({ hubUserId: e.hubUserId, email, emailProven: e.emailProven }, tx).catch((x) => {
+        throw x instanceof ConflitIdentite ? new RefusOuverture("email_not_linkable", 409) : x;
+      });
       const compte = await tx.user.findUniqueOrThrow({ where: { id: u.id }, select: { deletedAt: true } });
       if (compte.deletedAt) throw new RefusOuverture("user_deleted", 409);
 

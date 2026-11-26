@@ -61,14 +61,27 @@ describe("garde SQL", () => {
   test("écritures, réglages, tables système, fonctions de table, commentaires et requêtes multiples refusés", () => {
     ko("INSERT INTO odh.company_master_current VALUES (1)", /SELECT ou WITH/);
     ko("SELECT * FROM system.users", /SYSTEM|non autorisée/);
-    ko("SELECT * FROM numbers(10)", /non autorisée/);
-    ko("SELECT * FROM url('http://x', CSV, 'a String')", /non autorisée/);
+    ko("SELECT * FROM numbers(10)", /refusée|non autorisée/);
+    ko("SELECT * FROM url('http://x', CSV, 'a String')", /refusée|non autorisée/);
     ko("SELECT 1 FROM odh.company_master_current SETTINGS max_threads=64", /SETTINGS/);
     ko("SELECT 1 FROM odh.company_master_current FORMAT CSV", /FORMAT/);
     ko("SELECT 1 FROM odh.company_master_current; SELECT 2 FROM odh.company_master_current", /une seule/);
     ko("SELECT 1 FROM odh.company_master_current -- x", /commentaires/);
     ko("SELECT 1 FROM odh.company_master_current, other.secret", /other\.secret/);
     ko("SELECT 1", /lit une table/);
+  });
+
+  test("26/11 : toutes les sources d'une liste FROM sont vues, une sous-requête nommée ne déguise pas une fonction de table", () => {
+    const M = "odh.company_master_current";
+    ko(`SELECT 1 FROM ${M} a, ${M} b, information_schema.tables c`, /information_schema\.tables/);
+    ko(`SELECT 1 FROM ${M} a, ${M} b, numbers(1000000000) c`, /numbers/);
+    ko(`SELECT 1 FROM (SELECT siren FROM ${M}) s, default.secret`, /default\.secret/);
+    ko(`WITH a AS (SELECT 1), url AS (SELECT 1) SELECT * FROM url('http://x', CSV, 'x String')`, /fonction de table « url »/);
+    ko(`SELECT 1 FROM ${M} JOIN remote('h', odh.x) r USING siren`, /remote/);
+    ko(`SELECT 1 FROM ${M} WHERE siren IN (SELECT siren FROM ${M} a, default.secret b)`, /default\.secret/);
+    ok(`SELECT a.siren FROM ${M} AS a, odh.company_prospection_current AS p WHERE a.siren = p.siren`);
+    ok(`SELECT s.n FROM (SELECT count() n FROM ${M}) s, (SELECT 1 x FROM odh.market_cube_current) t`);
+    ok(`SELECT naf, count() c FROM ${M} WHERE siren IN (SELECT siren FROM odh.company_prospection_current) GROUP BY naf ORDER BY c DESC`);
     ko("", /vide/);
   });
 });

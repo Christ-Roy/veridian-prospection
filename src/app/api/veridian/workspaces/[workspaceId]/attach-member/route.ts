@@ -16,7 +16,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { emettreJetonConnexion } from "@/lib/auth/jeton-connexion";
 import { requireHubHmac } from "@/lib/hub/auth";
-import { resolveOrCreateUserFromHub } from "@/lib/hub/identity";
+import { refusIdentite, resolveOrCreateUserFromHub } from "@/lib/hub/identity";
 import { logAudit } from "@/lib/audit";
 import { ROLE_RANK, type WorkspaceRole } from "@/lib/auth/roles";
 
@@ -25,11 +25,13 @@ const AttachMemberSchema = z.object({
   hub_user_email: z.string().email().max(254),
   role: z.enum(["owner", "admin", "member"]),
   invitation_id: z.string().min(1).max(128),
+  email_proven: z.boolean().optional(),
 });
 
 type AttachMemberBody = z.infer<typeof AttachMemberSchema>;
 
-const TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
+// Contrat §5.22.2 : lien de connexion à 60 s (24 h auparavant : un lien resté dans un journal ouvrait la session un jour entier).
+const TOKEN_TTL_MS = 60 * 1000;
 
 function appUrl(): string {
   return (
@@ -83,10 +85,18 @@ export async function POST(
     );
   }
 
-  const { id: localUserId } = await resolveOrCreateUserFromHub({
-    hubUserId: body.hub_user_id,
-    email: body.hub_user_email,
-  });
+  let localUserId: string;
+  try {
+    ({ id: localUserId } = await resolveOrCreateUserFromHub({
+      hubUserId: body.hub_user_id,
+      email: body.hub_user_email.toLowerCase(),
+      emailProven: body.email_proven === true,
+    }));
+  } catch (e) {
+    const r = refusIdentite(e);
+    if (r) return r;
+    throw e;
+  }
 
   const existing = await prisma.workspaceMember.findUnique({
     where: {
