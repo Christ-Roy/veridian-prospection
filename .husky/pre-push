@@ -1,10 +1,37 @@
 #!/bin/sh
-# Garde-fou central Veridian (trivy, secrets, palier « rapide » de
-# scripts/ci/controles.tsv). La mécanique ne vit pas ici :
-# ~/nomad-veridian/standards/controles-portables/ — `gardes --help`.
+# 1. Garde-fou central Veridian (trivy, secrets). La mécanique ne vit pas ici :
+#    ~/nomad-veridian/standards/controles-portables/ — `gardes --help`.
 G="$(command -v gardes 2>/dev/null || echo "$HOME/nomad-veridian/standards/controles-portables/gardes")"
-if [ ! -x "$G" ]; then
-  echo "gardes — NON ABOUTI : introuvable sur cette machine ($G). Push accepté SANS garde." >&2
-  exit 0
+if [ -x "$G" ]; then
+  "$G" pre-push "$@" || exit $?
+else
+  echo "gardes — NON ABOUTI : introuvable sur cette machine ($G). Garde centrale sautée." >&2
 fi
-exec "$G" pre-push "$@"
+
+# 2. Typecheck (tests compris), lint, tests unitaires. Les intégrations (Postgres) restent à la CI.
+#    Sur le bastion, lourd-si-bastion les envoie sur rise ou node02 (nice 19) : le bastion saturait (parente, 26/11).
+#    Ailleurs, ils tournent sur place. Un échec réel est ramené à 1 (tsc sort en 2) : seul lourd-si-bastion dit 2,
+#    pour « NON ABOUTI ». Dans ce cas le crochet ne laisse PAS passer : il relance les mêmes étapes ici, en nice 19.
+#    Husky lance ce fichier en `sh -e` : chaque code se capture par `|| rc=$?`, sinon le repli ne serait jamais atteint.
+cd "$(git rev-parse --show-toplevel)" || exit 1
+ETAPES='{ [ -d node_modules ] || npm ci --no-audit --no-fund --loglevel=error >/dev/null; } \
+  && npx tsc --noEmit \
+  && npx eslint src __tests__ e2e/integration --quiet \
+  && npx vitest run --exclude "e2e/integration/**" --reporter=dot \
+  || exit 1'
+L="$(command -v lourd-si-bastion 2>/dev/null || echo "$HOME/bin/lourd-si-bastion")"
+if [ -x "$L" ]; then
+  echo "[pre-push] typecheck, lint, unitaires par lourd-si-bastion" >&2
+  rc=0
+  "$L" bash -c "$ETAPES" || rc=$?
+else
+  echo "[pre-push] lourd-si-bastion introuvable ($L) : NON ABOUTI" >&2
+  rc=2
+fi
+if [ "$rc" -eq 2 ]; then
+  echo "[pre-push] NON ABOUTI ailleurs : mêmes étapes ici, en nice 19" >&2
+  rc=0
+  nice -n 19 bash -c "$ETAPES" || rc=$?
+fi
+[ "$rc" -eq 0 ] || echo "[pre-push] REFUSÉ : typecheck, lint ou tests unitaires en échec (code $rc)" >&2
+exit "$rc"
