@@ -45,7 +45,8 @@ function bounceToHub(next: string, origin: string): NextResponse {
   return response;
 }
 
-export async function updateSession(request: NextRequest) {
+/** `suite` : la réponse qui laisse passer la requête (le middleware y joint le nonce de la CSP). */
+export async function updateSession(request: NextRequest, suite: () => NextResponse = () => NextResponse.next()) {
   const path = request.nextUrl.pathname;
 
   // Porte locale fermée : /login n'est plus qu'un passage vers le Hub. Reste une page
@@ -76,7 +77,7 @@ export async function updateSession(request: NextRequest) {
     path.startsWith("/api/errors");
 
   if (isPublicRoute) {
-    return NextResponse.next();
+    return suite();
   }
 
   // Vérifier la session via Auth.js edge-safe
@@ -85,7 +86,7 @@ export async function updateSession(request: NextRequest) {
   if (!session) {
     if (path.startsWith("/api/")) {
       // API : laisser la route handler retourner 401 via requireAuth()
-      return NextResponse.next();
+      return suite();
     }
     // Pages : rebond automatique vers le Hub, une fois, sur une vraie navigation et
     // jamais après une déconnexion explicite (CONTRAT-HUB §6bis.8.0).
@@ -99,5 +100,5 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  return NextResponse.next();
+  return suite();
 }

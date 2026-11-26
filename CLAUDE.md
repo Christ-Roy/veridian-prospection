@@ -50,7 +50,7 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
   l'acquittement, 403 `no_workspace` dit ; données gardées. **Membre gelé** (§5.21) : `ctx.lectureSeule`, 402, ni extraction, export, envoi.
 - **Portes locales fermées en production** : mot de passe et invitation locaux répondent non (`LOCAL_AUTH_ENABLED=1` : staging seul). Réouvrir en prod : décision de Robert.
 - **Sans tenant, pas d'accès** : 403 `no_workspace` (sinon tenant factice `00000000-…`). `/api/atlas/*` par session : même site et JSON, sinon 403.
-- **Pas de provider OAuth local** : Google et Microsoft passent par le Hub.
+- **Pas de provider OAuth local** : Google et Microsoft passent par le Hub. **CSP à nonce** (VER-265) : `src/lib/csp.ts`, `APPLIQUEE`.
 - `GET /api/users/by-email` expose `workspaces[].tenant_id`, cible de `update-plan` côté Hub.
 
 ## MCP (contrat `veridian-hub/docs/CONTRAT-MCP.md`, 09/11)
@@ -72,7 +72,7 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
 - ClickHouse (`src/atlas/source.ts`) : compte `prospection_ro`, 12 requêtes simultanées pour toute l'app, aucun
   réglage par requête (profil readonly). File de 3 par conteneur et rejeu du code 202 : ne pas les retirer.
   Champs = liste blanche `src/atlas/champs.ts`, filtres compilés en paramètres typés (`src/atlas/filtres.ts`).
-  Envoyable = adresse valable ET fiche livrable : `email_envoyable = 1 AND deliverable = 1` (base maître : `prospectable`).
+  Envoyable : `email_envoyable = 1 AND deliverable = 1` (base maître : `prospectable`).
 - Cube de marché ODH-0245 (`odh.market_cube_current`, `src/atlas/cube.ts`, outil `analyser_marche`, vue « Taille du
   marché ») : le marché ENTIER, pas que les fiches prospectables. Sélection par LISTE de codes NAF avec
   `naf_rev2 = 1`, jamais par intervalle de chaînes ; prévoir « département inconnu » (diffusion partielle) ;
