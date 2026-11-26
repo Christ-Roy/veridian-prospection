@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/auth/middleware";
-import { CHEMIN_RAPPORT, ENTETE, nonce, politique } from "@/lib/csp";
+import { ENTETE, nonce, politique } from "@/lib/csp";
 
 /**
  * Session (Auth.js, rebond Hub), puis CSP à nonce sur chaque réponse (VER-265) : Next lit le nonce dans l'en-tête
@@ -14,7 +14,6 @@ export async function middleware(request: NextRequest) {
   h.set("content-security-policy", csp);
   const r = await updateSession(request, () => NextResponse.next({ request: { headers: h } }));
   r.headers.set(ENTETE, csp);
-  r.headers.set("Reporting-Endpoints", `csp="${CHEMIN_RAPPORT}"`);
   return r;
 }
 

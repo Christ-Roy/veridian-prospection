@@ -28,6 +28,8 @@ describe("politique", () => {
   test("ni plugin, ni cadre, rien vers l'extérieur, rapport vers /api/csp", () => {
     const p = politique("n", false);
     for (const d of ["object-src 'none'", "frame-ancestors 'none'", "frame-src 'none'", "connect-src 'self'", "base-uri 'self'", "report-uri /api/csp", "upgrade-insecure-requests"]) expect(p).toContain(d);
+    // Pas de report-to : Chrome passerait par la Reporting API, dont aucun rapport n'est arrivé en 90 s (contrôle positif du 26/11).
+    expect(p).not.toContain("report-to");
   });
   test("un nonce neuf, imprévisible, à chaque appel", () => {
     const n = new Set(Array.from({ length: 50 }, nonce));
@@ -41,12 +43,11 @@ describe("middleware", () => {
     const lire = async () => {
       const r = await middleware(new NextRequest("https://prospection.app.veridian.site/"));
       const csp = r.headers.get(ENTETE) ?? "";
-      return { csp, transmis: r.headers.get("x-middleware-request-content-security-policy"), nonce: r.headers.get("x-middleware-request-x-nonce"), rapport: r.headers.get("reporting-endpoints") };
+      return { csp, transmis: r.headers.get("x-middleware-request-content-security-policy"), nonce: r.headers.get("x-middleware-request-x-nonce") };
     };
     const a = await lire(), b = await lire();
     expect(a.csp).toContain(`'nonce-${a.nonce}'`);
     expect(a.transmis).toBe(a.csp);
-    expect(a.rapport).toBe('csp="/api/csp"');
     expect(a.nonce).not.toBe(b.nonce);
   });
   test("redirection du rebond : la politique y est aussi", async () => {

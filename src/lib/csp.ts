@@ -30,8 +30,9 @@ export function politique(nonce: string, dev = process.env.NODE_ENV === "develop
     "base-uri 'self'",
     `form-action 'self' ${HUB}`,
     ...(dev ? [] : ["upgrade-insecure-requests"]),
+    // `report-uri` seul : avec `report-to`, Chrome passe par la Reporting API, groupe et diffère ses envois, et le contrôle
+    // positif du 26/11 n'en a reçu aucun en 90 s ; `report-uri` part tout de suite, et Firefox ne connaît que lui.
     `report-uri ${CHEMIN_RAPPORT}`,
-    "report-to csp",
   ].join("; ");
 }
 
