@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
   const brut = await request.text();
   // La signature d'abord : un inconnu n'apprend rien de ce que la route attend.
   if (!request.headers.get("x-veridian-hub-signature")) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const v = verifierAppelHub(request, brut);
+  const v = await verifierAppelHub(request, brut);
   if (!v.ok) return NextResponse.json({ error: v.reason === "timestamp_drift" || v.reason === "invalid_timestamp" ? "Timestamp expired or invalid" : "Invalid signature" }, { status: 401 });
 
   let c: Record<string, unknown>;

@@ -164,9 +164,13 @@ test("export d'écran : compté dans le quota du jour, deux exports simultanés 
     { tenantId: T, userId: patron.id, canal: "mcp", format: "json", lignes: QUOTA_EXTRACTION_JOUR - 3000 },
     { tenantId: T, userId: patron.id, canal: "liaison", format: "json", lignes: 1000 },
   ] });
-  const [x, y] = await Promise.all([reserverExport(a, 5000), reserverExport(a, 5000).catch((e) => e)]);
+  // Le premier qui prend le verrou de l'espace a le reste du jour ; l'autre, rien.
+  const deux = await Promise.all([reserverExport(a, 5000).catch((e: unknown) => e), reserverExport(a, 5000).catch((e: unknown) => e)]);
+  const servis = deux.filter((r): r is Awaited<ReturnType<typeof reserverExport>> => !(r instanceof Error));
+  expect(servis).toHaveLength(1);
+  expect(deux.filter((r) => r instanceof RefusExtraction)).toHaveLength(1);
+  const x = servis[0];
   expect(x.taille).toBe(2000);
-  expect(y).toBeInstanceOf(RefusExtraction);
   await x.ajuster(1500); // servi moins que réservé : le reste revient
   const z = await reserverExport(a, 5000);
   expect(z.taille).toBe(500);

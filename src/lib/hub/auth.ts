@@ -60,12 +60,16 @@ export async function requireHubHmac<TBody = unknown>(
       response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
     };
   }
-  const v = verifierAppelHub(request, rawBody);
+  const v = await verifierAppelHub(request, rawBody);
   if (!v.ok) {
     const error =
       v.reason === "timestamp_drift" || v.reason === "invalid_timestamp"
         ? "Timestamp expired or invalid"
-        : "Invalid signature";
+        : v.reason === "signature_replayed"
+          ? "Signature already used"
+          : v.reason === "v1_refused"
+            ? "Signature v1 refused (X-Veridian-Sig-Version: 2 required)"
+            : "Invalid signature";
     return {
       ok: false,
       response: NextResponse.json({ error }, { status: 401 }),

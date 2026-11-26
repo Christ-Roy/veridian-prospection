@@ -43,7 +43,7 @@ const ROLE: Record<string, string> = { owner: "admin", admin: "admin", member: "
 const rendre = (corps: unknown, status = 200) => NextResponse.json(corps, { status, headers: { "Cache-Control": "no-store" } });
 
 export async function GET(request: NextRequest) {
-  const v = verifierAppelHub(request, "");
+  const v = await verifierAppelHub(request, "");
   if (!v.ok) return rendre({ error: "Unauthorized" }, 401);
   const id = request.nextUrl.searchParams.get("hub_tenant_id") ?? "";
   if (!z.string().uuid().safeParse(id).success) return rendre({ error: "hub_tenant_id invalide" }, 400);

@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
   const rawBody = await request.text();
   const sig = request.headers.get("x-veridian-hub-signature");
   if (!sig) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const v = verifierAppelHub(request, rawBody);
+  const v = await verifierAppelHub(request, rawBody);
   if (!v.ok) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   let body: { hub_user_id?: unknown; hub_tenant_id?: unknown };

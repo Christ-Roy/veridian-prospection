@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
   }
   // Pour GET, rawBody = "" (pas de body envoyé). Le Hub doit signer
   // exactement `${ts}.` (la chaîne avec point final).
-  const v = verifierAppelHub(request, "");
+  const v = await verifierAppelHub(request, "");
   if (!v.ok) {
     const error =
       v.reason === "timestamp_drift" || v.reason === "invalid_timestamp"

@@ -4,11 +4,11 @@
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { SECOND_MIN, secretCourant, secretSecond, verifierAppelHub, verifierSignature } from "@/lib/hub/secrets";
+import { exigeV2, routeRecue, SECOND_MIN, secretCourant, secretSecond, verifierAppelHub, verifierSignature } from "@/lib/hub/secrets";
 import { HUB_TIMESTAMP_DRIFT_MS } from "@/lib/hub/hmac";
 import { demanderJeton } from "@/lib/liaisons/hub";
 
@@ -19,11 +19,11 @@ const juger = (secret: string, e: Record<string, string | undefined>, ts = Date.
 
 describe("vérification", () => {
   test("le courant, avec ou sans second", () => {
-    expect(juger(COURANT, env())).toEqual({ ok: true, cle: "courant" });
-    expect(juger(COURANT, env({ HUB_API_SECRET_SECOND: SECOND }))).toEqual({ ok: true, cle: "courant" });
+    expect(juger(COURANT, env())).toEqual({ ok: true, cle: "courant", version: "v1" });
+    expect(juger(COURANT, env({ HUB_API_SECRET_SECOND: SECOND }))).toEqual({ ok: true, cle: "courant", version: "v1" });
   });
   test("le second, quand il est posé ; un tiers jamais", () => {
-    expect(juger(SECOND, env({ HUB_API_SECRET_SECOND: SECOND }))).toEqual({ ok: true, cle: "second" });
+    expect(juger(SECOND, env({ HUB_API_SECRET_SECOND: SECOND }))).toEqual({ ok: true, cle: "second", version: "v1" });
     expect(juger(SECOND, env())).toEqual({ ok: false, reason: "invalid_signature" });
     expect(juger(TIERS, env({ HUB_API_SECRET_SECOND: SECOND }))).toEqual({ ok: false, reason: "invalid_signature" });
   });
@@ -31,7 +31,7 @@ describe("vérification", () => {
     const e = env({ HUB_API_SECRET_SECOND: v });
     expect(secretSecond(e)).toBeUndefined();
     for (const s of ["", v ?? "", "undefined"]) expect(juger(s, e)).toEqual({ ok: false, reason: "invalid_signature" });
-    expect(juger(COURANT, e)).toEqual({ ok: true, cle: "courant" });
+    expect(juger(COURANT, e)).toEqual({ ok: true, cle: "courant", version: "v1" });
   });
   test("sans courant, rien ne passe, même signé par le second ou par le vide", () => {
     for (const e of [{ HUB_API_SECRET_SECOND: SECOND }, { TENANT_API_SECRET: "", HUB_API_SECRET: "", HUB_API_SECRET_SECOND: SECOND }]) {
@@ -64,6 +64,29 @@ describe("vérification", () => {
   });
 });
 
+describe("v2 : le vecteur du Hub (veridian-hub __tests__/lib/hmac/signature-hub.test.ts)", () => {
+  const TS = 1_764_150_000_000;
+  const hex = (x: string) => createHash("sha256").update(x).digest("hex");
+  test("chemin et requête encodés tels que sur le fil, corps par son empreinte", () => {
+    const corps = '{"a":1}';
+    const signe = createHmac("sha256", COURANT).update(`${TS}\nPOST\n/api/t%20a/purge\nb=2&a=%C3%A9\n${hex(corps)}`).digest("hex");
+    const req = new NextRequest("https://prospection.app.veridian.site/api/t%20a/purge?b=2&a=%C3%A9", { method: "POST" });
+    expect(routeRecue(req)).toEqual({ methode: "POST", chemin: "/api/t%20a/purge", requete: "b=2&a=%C3%A9" });
+    vi.useFakeTimers({ now: TS });
+    try {
+      expect(verifierSignature(TS, corps, signe, env(), routeRecue(req))).toEqual({ ok: true, cle: "courant", version: "v2" });
+      expect(verifierSignature(TS, corps, signe, env())).toEqual({ ok: false, reason: "invalid_signature" }); // lue en v1 : refus
+      expect(verifierSignature(TS, corps, signe, env(), { ...routeRecue(req), methode: "DELETE" })).toMatchObject({ ok: false });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  test("VERIDIAN_HMAC_REQUIRE_V2 : vrai pour 1, true, yes, on ; faux sinon", () => {
+    for (const x of ["1", "true", " TRUE ", "yes", "on"]) expect(exigeV2({ VERIDIAN_HMAC_REQUIRE_V2: x })).toBe(true);
+    for (const x of [undefined, "", "0", "false", "non"]) expect(exigeV2({ VERIDIAN_HMAC_REQUIRE_V2: x })).toBe(false);
+  });
+});
+
 describe("appel du Hub", () => {
   const traces: string[] = [];
   beforeEach(() => {
@@ -81,18 +104,18 @@ describe("appel du Hub", () => {
     const ts = Date.now();
     return new NextRequest("https://x/api/users/by-email?email=client@exemple.fr", { headers: { "x-veridian-timestamp": String(ts), "x-veridian-hub-signature": signer(secret, ts, ""), "x-forwarded-for": "203.0.113.7, 10.0.0.1", ...h } });
   };
-  test("trace la provenance et le secret employé, sans secret, signature, ni adresse de la requête", () => {
-    expect(verifierAppelHub(req(SECOND), "").ok).toBe(true);
-    expect(verifierAppelHub(req(TIERS), "").ok).toBe(false);
-    expect(traces).toEqual(["[hub-hmac] accepte cle=second chemin=/api/users/by-email ip=203.0.113.7, 10.0.0.1", "[hub-hmac] refus motif=invalid_signature chemin=/api/users/by-email ip=203.0.113.7, 10.0.0.1"]);
+  test("trace la provenance et le secret employé, sans secret, signature, ni adresse de la requête", async () => {
+    expect((await verifierAppelHub(req(SECOND), "")).ok).toBe(true);
+    expect((await verifierAppelHub(req(TIERS), "")).ok).toBe(false);
+    expect(traces).toEqual(["[hub-hmac] accepte cle=second version=v1 chemin=/api/users/by-email ip=203.0.113.7, 10.0.0.1", "[hub-hmac] refus motif=invalid_signature version=v1 chemin=/api/users/by-email ip=203.0.113.7, 10.0.0.1"]);
   });
-  test("une adresse forgée n'écrit pas de fausse ligne au journal", () => {
-    verifierAppelHub(req(TIERS, { "x-forwarded-for": "1.2.3.4 [hub-hmac] accepte cle=courant" }), "");
+  test("une adresse forgée n'écrit pas de fausse ligne au journal", async () => {
+    await verifierAppelHub(req(TIERS, { "x-forwarded-for": "1.2.3.4 [hub-hmac] accepte cle=courant" }), "");
     expect(traces).toHaveLength(1);
     expect(traces[0]).not.toMatch(/ip=.*(accepte|hub-hmac)/);
   });
-  test("sans en-têtes : refus", () => {
-    expect(verifierAppelHub(new NextRequest("https://x/api/y"), "")).toMatchObject({ ok: false });
+  test("sans en-têtes : refus", async () => {
+    expect(await verifierAppelHub(new NextRequest("https://x/api/y"), "")).toMatchObject({ ok: false });
   });
   test("on signe toujours avec le courant, jamais avec le second", async () => {
     let vu: Record<string, string> = {};

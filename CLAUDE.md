@@ -40,7 +40,9 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
 
 - **Entrée** : rebond Hub. `POST /api/sso/issue-magic-link` (HMAC) émet un jeton
   `sso_login_tokens` (haché, one-shot, 15 min, lié au user), `GET /api/auth/token` le consomme.
-- **HMAC §6.1 `{ts}.{body}` est le seul mode Hub.** Bearer et `email:ts` sont coupés.
+- **HMAC §6.1, un seul vérificateur (`src/lib/hub/secrets.ts`, VER-264)** : v1 `{ts}.{body}` et v2 (`X-Veridian-Sig-Version: 2`,
+  méthode, chemin, requête, empreinte du corps, usage unique en table `compteurs`), signataire `veridian-hub/lib/hmac/signature-hub.ts`.
+  `VERIDIAN_HMAC_REQUIRE_V2=1` coupe la v1, à poser seulement à l'annonce du Hub. Bearer et `email:ts` sont coupés.
 - **`users.hub_user_id` contient `hub_app.users.supabase_user_id`**, pas le cuid `users.id`.
 - **`resolveOrCreateUserFromHub` refuse elle-même** (`ConflitIdentite` → 409) : adresse d'une autre identité Hub, ou compte sans lien
   sans `email_proven: true`. `attach-owner` exige `hub_user_id`. Liens de connexion : 60 s (attach-member), 15 min (rebond, provision).
@@ -158,6 +160,6 @@ Tests et builds : `lourd <commande>` (rise), jamais en local.
 ## Dette
 
 - `audit_log` absent en prod.
-- HMAC `{ts}.{body}` non lié au chemin ni à la méthode, rejouable 5 min : à changer avec le Hub.
+- v1 rejouable 5 min sur une autre route tant que le Hub signe en v1 (`HMAC_V2_APPS` côté Hub), puis `VERIDIAN_HMAC_REQUIRE_V2`.
 - `prospection-ci.yml` sur `ubuntu-latest` (dépôt public).
 - `check-test-mapping.sh` ne voit rien sur un push vers `main`, et le pre-push ne le lance pas.

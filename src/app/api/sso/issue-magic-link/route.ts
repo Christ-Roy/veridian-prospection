@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
   if (!sig) {
     return NextResponse.json({ error: "invalid_hmac" }, { status: 401 });
   }
-  const v = verifierAppelHub(request, rawBody);
+  const v = await verifierAppelHub(request, rawBody);
   if (!v.ok) {
     return NextResponse.json({ error: "invalid_hmac" }, { status: 401 });
   }
