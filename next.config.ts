@@ -7,8 +7,20 @@ const withBundleAnalyzer = withBundleAnalyzerInit({
   enabled: process.env.ANALYZE === "true",
 });
 
+/**
+ * Pages de l'ancienne app (retirée les 15-16/11, tag archive/prospection-v1-20261109) : un favori, un lien d'un vieux
+ * mail ou le Hub y menaient vers un 404 nu, sans menu ni déconnexion (mesuré le 26/11). Elles mènent à Atlas.
+ */
+export const ANCIENNES_PAGES = [
+  "/prospects", "/pipeline", "/historique", "/inbox", "/guide", "/dashboard", "/dashboard/:rest*",
+  "/segments", "/segments/:rest*", "/leads/:rest*", "/settings", "/settings/:rest*", "/admin", "/admin/:rest*", "/invite/:rest*",
+];
+
 const nextConfig: NextConfig = {
   output: "standalone",
+  async redirects() {
+    return ANCIENNES_PAGES.map((source) => ({ source, destination: "/", permanent: false }));
+  },
   productionBrowserSourceMaps: true,
   eslint: {
     ignoreDuringBuilds: true,
