@@ -127,9 +127,12 @@ test("espace suspendu : fermé dès l'acquittement (/api/me, outils, MCP), rouve
   const r = await suspendre(signe("https://x/api/tenants/suspend", { tenant_id: T, reason: "admin_action" }));
   expect(r.status).toBe(200);
   expect(await me()).toEqual([]); // sans attendre l'expiration du cache
-  expect((await appelOutil("lister_segments_atlas")).s).toBe(401);
+  const ferme = await appelOutil("lister_segments_atlas");
+  expect(ferme.s).toBe(403); // session valable, aucun espace ouvert : dit, pas « session expirée »
+  expect(ferme.j.error).toBe("no_workspace");
+  expect((await moi()).status).toBe(403);
   const x = await exporter(new NextRequest(`https://x/api/atlas/export?segment_id=${randomUUID()}&format=csv`));
-  expect(x.status).toBe(401);
+  expect(x.status).toBe(403);
   const hubT = randomUUID();
   await prisma.tenant.update({ where: { id: T }, data: { hubTenantId: hubT } });
   expect(await espaceHub(patron.id, hubT)).toBe("tenant_suspended");

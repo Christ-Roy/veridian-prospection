@@ -392,3 +392,15 @@ describe("site d'une grande entreprise", () => {
     expect(f("petite").find((t) => t.id === "web")?.lignes[0].libelle).toBe("Site web");
   });
 });
+
+describe("messages d'erreur de l'écran", () => {
+  test("espace suspendu ou retiré : le message du serveur, jamais « session expirée » ; lecture seule : son message", async () => {
+    const { messageErreur, messageExport } = await import("@/components/atlas/api");
+    const m = messageErreur(403, { error: "no_workspace", message: "Aucun espace Prospection ouvert pour ce compte : il a été suspendu." });
+    expect(m).toMatch(/suspendu/);
+    expect(m).not.toMatch(/Session expirée/);
+    expect(messageErreur(401, { error: "Unauthorized" })).toMatch(/Session expirée/);
+    expect(messageExport(402, { error: "member_frozen", message: "Espace en lecture seule : l'export est suspendu." })).toMatch(/lecture seule/);
+    expect(messageExport(402, { error: "export_reserve_plan_payant" })).toMatch(/plans payants/);
+  });
+});

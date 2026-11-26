@@ -8,7 +8,7 @@ vi.hoisted(() => {
   process.env.ATLAS_SIMULE = "1";
 });
 const { getCtx } = vi.hoisted(() => ({ getCtx: vi.fn() }));
-vi.mock("@/lib/auth/user-context", () => ({ getUserContext: getCtx, resolveInsertWorkspaceId: vi.fn(async () => "w") }));
+vi.mock("@/lib/auth/user-context", () => ({ getUserContext: getCtx, resolveInsertWorkspaceId: vi.fn(async () => "w"), refusSansContexte: async () => new (await import("next/server")).NextResponse(JSON.stringify({ error: "Unauthorized" }), { status: 401 }) }));
 vi.mock("@/lib/rate-limit", () => ({ isRateLimited: vi.fn(() => false) }));
 vi.mock("@/lib/prisma", () => ({ prisma: {} }));
 

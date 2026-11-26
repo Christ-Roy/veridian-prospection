@@ -45,7 +45,7 @@ describe("requireHubHmac", () => {
     const req = makeRequest("/api/tenants/suspend", {
       method: "POST",
       headers: {
-        "x-veridian-timestamp": String(Date.now()),
+        "x-veridian-timestamp": String(ts),
         "x-veridian-hub-signature": "00".repeat(32),
       },
       body: raw,
@@ -82,12 +82,13 @@ describe("requireHubHmac", () => {
 
   test("rejette body JSON invalide en 400", async () => {
     const raw = "not-json-at-all-{";
-    const sig = createHmac("sha256", SECRET).update(`${Date.now()}.${raw}`).digest("hex");
+    const ts = Date.now();
+    const sig = createHmac("sha256", SECRET).update(`${ts}.${raw}`).digest("hex");
     const req = makeRequest("/api/tenants/suspend", {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-veridian-timestamp": String(Date.now()),
+        "x-veridian-timestamp": String(ts),
         "x-veridian-hub-signature": sig,
       },
       body: raw,

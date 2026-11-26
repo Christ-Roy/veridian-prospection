@@ -43,6 +43,18 @@ async function getAuthUser(): Promise<{ id: string; email: string } | null> {
   return { id: session.user.id, email: session.user.email };
 }
 
+export const MESSAGE_SANS_ESPACE =
+  "Aucun espace Prospection ouvert pour ce compte : il a été suspendu ou vous en avez été retiré. Voyez avec son propriétaire depuis le Hub.";
+
+/**
+ * Réponse quand `getUserContext` ne rend rien : session valable mais aucun espace ouvert (suspendu, retiré) = 403
+ * `no_workspace`, dit tel quel ; pas de session = 401. Un « session expirée » mentirait au suspendu.
+ */
+export async function refusSansContexte(): Promise<NextResponse> {
+  if (await getAuthUser()) return NextResponse.json({ error: "no_workspace", message: MESSAGE_SANS_ESPACE, workspaces: [] }, { status: 403 });
+  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+}
+
 export async function getUserContext(): Promise<UserContext | null> {
   const user = await getAuthUser();
   if (!user) return null;

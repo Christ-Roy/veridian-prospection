@@ -6,7 +6,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 
-import { getUserContext, resolveInsertWorkspaceId } from "@/lib/auth/user-context";
+import { getUserContext, refusSansContexte, resolveInsertWorkspaceId } from "@/lib/auth/user-context";
 import { isRateLimited } from "@/lib/rate-limit";
 import { ErreurOutil } from "@/lib/mcp/erreur";
 import { OUTILS_ATLAS } from "@/atlas/outils-mcp";
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
   }
   const ctx = parCle ? await contexteDepuisCle(parCle) : await getUserContext();
-  if (!ctx) return NextResponse.json({ error: parCle ? "Clé API invalide, révoquée, ou espace sans accès avancé" : "Unauthorized" }, { status: 401 });
+  if (!ctx) return parCle ? NextResponse.json({ error: "Clé API invalide, révoquée, ou espace sans accès avancé" }, { status: 401 }) : refusSansContexte();
   if (isRateLimited(`atlas:${ctx.userId}`, 240, 60_000)) return NextResponse.json({ error: "Trop de requêtes" }, { status: 429 });
 
   const { outil: nom } = await params;

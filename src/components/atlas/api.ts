@@ -13,6 +13,7 @@ export class ErreurAtlas extends Error {
 export function messageErreur(status: number, corps: unknown): string {
   const texte = corps && typeof corps === "object" && "error" in corps ? String((corps as { error: unknown }).error) : "";
   if (status === 401) return "Session expirée : reconnectez-vous.";
+  if (status === 403 && texte === "no_workspace") return String((corps as { message?: unknown }).message ?? "Aucun espace Prospection ouvert pour ce compte.");
   if (status === 404) return "Cette action n'est pas permise sur votre espace.";
   if (status === 429) return "Trop de requêtes, patientez quelques secondes.";
   if (status >= 500) return "Erreur du serveur, réessayez.";

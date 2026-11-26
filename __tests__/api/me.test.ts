@@ -7,13 +7,16 @@
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
 
-const { getUserContextMock } = vi.hoisted(() => ({
+const { getUserContextMock, authMock } = vi.hoisted(() => ({
   getUserContextMock: vi.fn(),
+  authMock: vi.fn(async () => null as null | { user: { id: string; email: string } }),
 }));
 
-vi.mock("@/lib/auth/user-context", () => ({
+vi.mock("@/lib/auth/user-context", async (orig) => ({
+  ...(await orig<typeof import("@/lib/auth/user-context")>()),
   getUserContext: getUserContextMock,
 }));
+vi.mock("@/lib/auth-config", () => ({ auth: authMock }));
 
 import { GET } from "@/app/api/me/route";
 import { makeUserContext, readJson } from "./_helpers";
@@ -30,6 +33,16 @@ describe("GET /api/me", () => {
     expect(res.status).toBe(401);
     const body = (await readJson(res)) as { error: string };
     expect(body.error).toBe("Unauthorized");
+  });
+
+  test("session valable sans espace ouvert (suspendu, retiré) : 403 no_workspace, aucun espace, et il le dit", async () => {
+    getUserContextMock.mockResolvedValue(null);
+    authMock.mockResolvedValueOnce({ user: { id: "u-s", email: "s@v.site" } });
+    const res = await GET();
+    expect(res.status).toBe(403);
+    const body = (await readJson(res)) as { error: string; message: string; workspaces: unknown[] };
+    expect(body).toMatchObject({ error: "no_workspace", workspaces: [] });
+    expect(body.message).toMatch(/suspendu/);
   });
 
   test("returns 200 with user context shape when authenticated", async () => {

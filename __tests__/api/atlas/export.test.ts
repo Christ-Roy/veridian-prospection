@@ -12,7 +12,7 @@ const { ctx, tenant, apercu, lire, filtre, scoring } = vi.hoisted(() => ({
   filtre: vi.fn(async () => ({ conditions: [] })),
   scoring: vi.fn(async () => ({ criteres: [{ champ: "email", op: "renseigne", valeur: true, poids: 3 }] })),
 }));
-vi.mock("@/lib/auth/user-context", () => ({ getUserContext: ctx }));
+vi.mock("@/lib/auth/user-context", () => ({ getUserContext: ctx, refusSansContexte: async () => new (await import("next/server")).NextResponse(JSON.stringify({ error: "Unauthorized" }), { status: 401 }) }));
 const { reserver, ajuster, annuler } = vi.hoisted(() => ({ reserver: vi.fn(), ajuster: vi.fn(async (_n: number) => ({})), annuler: vi.fn(async () => ({})) }));
 vi.mock("@/lib/prisma", () => ({ prisma: { tenant: { findUnique: tenant } } }));
 vi.mock("@/atlas/extraction", async (orig) => ({ ...(await orig<typeof import("@/atlas/extraction")>()), reserverExport: reserver }));
