@@ -42,7 +42,7 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
   `sso_login_tokens` (haché, one-shot, 15 min, lié au user), `GET /api/auth/token` le consomme.
 - **HMAC §6.1, un seul vérificateur (`src/lib/hub/secrets.ts`, VER-264)** : v1 `{ts}.{body}` et v2 (`X-Veridian-Sig-Version: 2`,
   méthode, chemin, requête, empreinte du corps, usage unique en table `compteurs`), signataire `veridian-hub/lib/hmac/signature-hub.ts`.
-  `VERIDIAN_HMAC_REQUIRE_V2=1` coupe la v1, à poser seulement à l'annonce du Hub. Bearer et `email:ts` sont coupés.
+  `VERIDIAN_HMAC_REQUIRE_V2=1` coupe la v1, à l'annonce du Hub. Bearer et `email:ts` coupés.
 - **`users.hub_user_id` contient `hub_app.users.supabase_user_id`**, pas le cuid `users.id`.
 - **`resolveOrCreateUserFromHub` refuse elle-même** (`ConflitIdentite` → 409) : adresse d'une autre identité Hub, ou compte sans lien
   sans `email_proven: true`. `attach-owner` exige `hub_user_id`. Liens de connexion : 60 s (attach-member), 15 min (rebond, provision).
@@ -121,9 +121,8 @@ Staging (branche `staging`) : divergé et à l'arrêt, workflows retirés. Ne pa
   Une migration longue commence par `SET statement_timeout = 0;`.
 - **Suppression de colonne en deux temps** : d'abord le code sans la colonne (Prisma lit tout le modèle),
   puis la migration de DROP au déploiement suivant ; la CI migre avant de déployer (fait le 09/11, 0035).
-- **Pas d'invitation locale** (retirée le 09/11) : inviter crée un utilisateur, c'est le Hub (`/dashboard/workspace/members`).
-- **Un déploiement remplace toute l'allocation** (groupe `stack`).
-- **Après déploiement, lire l'image dans le conteneur.**
+- **Pas d'invitation locale** (09/11) : inviter, c'est le Hub.
+- **Un déploiement remplace toute l'allocation** (groupe `stack`) ; ensuite, lire l'image dans le conteneur.
 - **Un compte de test a une adresse prouvée au Hub**, sinon il revient sur `/dashboard` (voulu).
 - **Jamais de test sur le compte d'un vrai client.** Sur le compte de Robert, un parcours ne clique ni filtre
   ni barre d'un marché enregistré : un clic crée une version (16/11, « Marché animalier » réécrit puis restauré).
