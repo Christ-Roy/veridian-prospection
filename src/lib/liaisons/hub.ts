@@ -10,7 +10,7 @@ import { secretCourant } from "@/lib/hub/secrets";
 export const PORTEES: Record<Cible, string> = { crm: "crm:societe.ecrire crm:tache.ecrire", notifuse: "notifuse:contacts.ecrire" };
 
 export type JetonAction = { jeton: string; url: string };
-type Opts = { env?: NodeJS.ProcessEnv; fetchImpl?: typeof fetch; maintenant?: () => number };
+export type Opts = { env?: NodeJS.ProcessEnv; fetchImpl?: typeof fetch; maintenant?: () => number };
 
 const DELAI_MS = 8000;
 
@@ -30,7 +30,7 @@ export function adresseSure(url: unknown, env: NodeJS.ProcessEnv = process.env):
   return u.protocol === "https:" && u.port === "" && u.hostname.endsWith(".veridian.site") ? u.href : null;
 }
 
-async function appelerHub(chemin: string, contenu: object, o: Opts, delaiMs: number): Promise<{ res: Response; r: Record<string, unknown> | null }> {
+export async function appelerHub(chemin: string, contenu: object, o: Opts, delaiMs: number): Promise<{ res: Response; r: Record<string, unknown> | null }> {
   const env = o.env ?? process.env;
   const secret = secretCourant(env);
   const hub = (env.HUB_API_URL || env.NEXT_PUBLIC_HUB_URL || "https://app.veridian.site").replace(/\/+$/, "");

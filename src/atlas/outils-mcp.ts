@@ -27,6 +27,7 @@ import { proposerPriorite } from "./suggestion";
 import { importerVentes, retirerVentes, totaux, VENTES_PAR_APPEL, type VenteEntree } from "./ventes";
 import { sourceMarche } from "./source";
 import { proposerVue } from "./phrase";
+import { affichageMonIA, etatMonIA } from "@/lib/hub/ia-etat";
 import { liensIA } from "@/lib/hub/liens-ia-client";
 
 import { listerPresences } from "./presence-ia";
@@ -221,19 +222,24 @@ const OUTILS_BRUTS: Outil[] = [
     input: z.object({}),
     annotations: LECTURE,
     run: async (_a, c) => {
-      const [connexions, liens, t] = await Promise.all([
+      const [connexions, liens, ids] = await Promise.all([
         listerPresences(c.ctx.userId),
         liensIA(),
         (async () => {
           try {
-            return await prisma.tenant.findUnique({ where: { id: c.ctx.tenantId }, select: { hubTenantId: true } });
+            const [t, u] = await Promise.all([
+              prisma.tenant.findUnique({ where: { id: c.ctx.tenantId }, select: { hubTenantId: true } }),
+              prisma.user.findUnique({ where: { id: c.ctx.userId }, select: { hubUserId: true } }),
+            ]);
+            return { org: t?.hubTenantId ?? null, hub: u?.hubUserId ?? null };
           } catch {
-            return null; // l'indicateur des IA ne tombe pas pour cela
+            return { org: null, hub: null }; // l'indicateur des IA ne tombe pas pour cela
           }
         })(),
       ]);
-      // Organisation du Hub de l'espace : la fenêtre « Mon IA » (servie par le Hub) en a besoin ; null si l'espace n'y est pas relié.
-      return { connexions, liens, organisation_hub: t?.hubTenantId ?? null };
+      // Fenêtre « Mon IA » (CONTRAT-HUB §5.24.1) : l'état du Hub décide, cadre seulement si un moteur répond.
+      const etat = ids.org && ids.hub ? await etatMonIA(ids.hub, ids.org) : null;
+      return { connexions, liens, organisation_hub: ids.org, mon_ia: affichageMonIA(etat) };
     },
   },
   {

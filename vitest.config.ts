@@ -2,6 +2,8 @@ import { defineConfig } from "vitest/config";
 import path from "path";
 
 export default defineConfig({
+  // tsconfig garde jsx « preserve » pour Next : les tests de composants (.tsx) transforment le JSX eux-mêmes.
+  oxc: { jsx: { runtime: "automatic" } },
   test: {
     // e2e/integration: integration tests against a real Postgres (slow)
     // src/**/*.test.ts: unit tests colocated with source files (fast, mocked)

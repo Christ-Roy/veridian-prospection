@@ -81,7 +81,7 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
 - Carte : `src/atlas/projection.ts`, communes et EPCI de l'API Géo (`communes.ts`). Le cube ne descend pas à la commune.
 - Accès avancé (`requete_sql`, clés `atl_`) et `extraire_segment` : `docs/claude/acces-avance-et-extraction.md`.
 - Quota ou porte de connexion : `src/lib/compteurs.ts` (en base). `isRateLimited` = confort, par instance.
-- Mon IA (VER-203, §5.24) : cadre du Hub (`frame-src`), fils en `ia_fils` par `/api/hub/ia/fils/[session]` (HMAC, 404 hors triplet), effacés au retrait et à la purge.
+- Mon IA (VER-203, §5.24) : état lu au Hub (`ia-etat.ts`), cadre si `prete`, carte sinon, fils en `ia_fils` par `/api/hub/ia/fils/[session]` (HMAC, 404 hors triplet), effacés au retrait et à la purge.
 - Journaux : `obs search '\[mcp\] outil='` ; l'écran n'en écrit aucun, sauf `[liaisons]`.
 - Envoi vers le CRM et Mail (VER-246) : `docs/LIAISONS.md`, drapeau `ATLAS_LIAISONS`. Clients, API par marché, pages publiques : `docs/CLIENTS-ET-MARCHES.md`.
 
