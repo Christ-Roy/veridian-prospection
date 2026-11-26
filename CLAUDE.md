@@ -47,8 +47,8 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
 - **`resolveOrCreateUserFromHub` refuse elle-même** (`ConflitIdentite` → 409) : adresse d'une autre identité Hub, ou compte sans lien
   sans `email_proven: true`. `attach-owner` exige `hub_user_id`. Liens de connexion : 60 s (attach-member), 15 min (rebond, provision).
 - **Suspendu = fermé** (parente 26/11) : `OUVERT` (`auth/espaces.ts`) l'exclut, MCP `tenant_suspended`, cache vidé à
-  l'acquittement ; données gardées. **Membre gelé** (§5.21) : `ctx.lectureSeule`, 402, ni extraction, export, envoi.
-- **Portes locales fermées en production** : mot de passe et invitation locaux répondent non. `LOCAL_AUTH_ENABLED=1` ne les garde qu'au staging, pour les e2e. Réouvrir en prod demande un déploiement et une décision de Robert.
+  l'acquittement, 403 `no_workspace` dit ; données gardées. **Membre gelé** (§5.21) : `ctx.lectureSeule`, 402, ni extraction, export, envoi.
+- **Portes locales fermées en production** : mot de passe et invitation locaux répondent non (`LOCAL_AUTH_ENABLED=1` : staging seul). Réouvrir en prod : décision de Robert.
 - **Sans tenant, pas d'accès** : 403 `no_workspace` (sinon tenant factice `00000000-…`). `/api/atlas/*` par session : même site et JSON, sinon 403.
 - **Pas de provider OAuth local** : Google et Microsoft passent par le Hub.
 - `GET /api/users/by-email` expose `workspaces[].tenant_id`, cible de `update-plan` côté Hub.
@@ -123,7 +123,7 @@ Staging (branche `staging`) : divergé et à l'arrêt, workflows retirés. Ne pa
 - **Suppression de colonne en deux temps** : d'abord le code sans la colonne (Prisma lit tout le modèle),
   puis la migration de DROP au déploiement suivant ; la CI migre avant de déployer (fait le 09/11, 0035).
 - **Pas d'invitation locale** (09/11) : inviter, c'est le Hub.
-- **Un déploiement remplace toute l'allocation** (groupe `stack`) ; ensuite, lire l'image dans le conteneur.
+- **Un déploiement remplace l'allocation** (groupe `stack`) ; puis lire l'image dans le conteneur.
 - **Un compte de test a une adresse prouvée au Hub**, sinon il revient sur `/dashboard` (voulu).
 - **Jamais de test sur le compte d'un vrai client.** Sur le compte de Robert, un parcours ne clique ni filtre
   ni barre d'un marché enregistré : un clic crée une version (16/11, « Marché animalier » réécrit puis restauré).
@@ -145,7 +145,7 @@ fidèle à `docs/maquette`), `src/app/api/` (atlas, mcp, health, contrat Hub), `
 ## Commandes
 
 `npm ci`, `npx tsc --noEmit`, `npx vitest run --exclude 'e2e/integration/**'`, intégration : `e2e/integration/` sur base jetable.
-Tests et builds : `lourd <commande>` (rise), jamais en local.
+Tests et builds : `lourd <commande>`, jamais en local.
 
 ## Multi-tenant
 
