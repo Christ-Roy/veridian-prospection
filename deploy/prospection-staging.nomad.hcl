@@ -152,6 +152,8 @@ job "prospection-staging" {
       }
       template {
         destination = "secrets/pg.env"
+        # 0600 : Nomad ecrit 0644 par defaut ; env=true => seul Nomad (root) lit le fichier.
+        perms       = "0600"
         env         = true
         data        = <<EOH
 TZ=UTC
@@ -200,6 +202,8 @@ EOH
       }
       template {
         destination = "secrets/app.env"
+        # 0600 : Nomad ecrit 0644 par defaut ; env=true => seul Nomad (root) lit le fichier.
+        perms       = "0600"
         env         = true
         data        = <<EOH
 NODE_ENV=production
@@ -266,6 +270,8 @@ EOH
       }
       template {
         destination = "secrets/search.env"
+        # 0600 : Nomad ecrit 0644 par defaut ; env=true => seul Nomad (root) lit le fichier.
+        perms       = "0600"
         env         = true
         data        = <<EOH
 NODE_ENV=production
