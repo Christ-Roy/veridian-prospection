@@ -102,6 +102,11 @@ job "prospection" {
         "traefik.http.routers.prospectionprod.entrypoints=websecure",
         "traefik.http.routers.prospectionprod.tls=true",
         "traefik.http.routers.prospectionprod.tls.certresolver=letsencrypt",
+        # Fiche 34 (infra) : rejeu des GET et HEAD sur 502, 503, 504, en dernier de la chaîne ; puis le contrôle actif, superficiel.
+        "traefik.http.routers.prospectionprod.middlewares=retry-idempotent@file",
+        "traefik.http.services.prospection.loadbalancer.healthcheck.path=/api/version",
+        "traefik.http.services.prospection.loadbalancer.healthcheck.interval=5s",
+        "traefik.http.services.prospection.loadbalancer.healthcheck.timeout=2s",
       ]
       check {
         type     = "http"
