@@ -16,6 +16,8 @@ variable "image_tag" {
 job "prospection" {
   meta {
     veridian_domaine = "saas" # domaine affiche par la vue flotte (scripts/vue-flotte/), regle DOMAINE du lint
+    # Fiche 34 (infra) en deux temps : ce marqueur seul d'abord (relance les allocations), puis les tags de santé Traefik en place.
+    veridian_tags_canari_annonce = "2197ba7bc1b91674"
   }
   datacenters = ["veridian-eu"]
   type        = "service"
@@ -103,7 +105,7 @@ job "prospection" {
       ]
       check {
         type     = "http"
-        path     = "/api/health"
+        path     = "/api/version" # superficiel, même chemin que le contrôle Traefik ; la santé profonde est sur prospection-selfheal
         interval = "15s"
         timeout  = "5s"
       }
