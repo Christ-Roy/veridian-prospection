@@ -84,10 +84,11 @@ const bouton = (affichage: "cadre" | "carte" | null) =>
 
 describe("bouton de la barre (marques communes §5.24.1, cas 56 du Hub)", () => {
   test("sans moteur : data-mon-ia=sans_moteur et « Relier mon IA »", () => {
-    expect(bouton("carte")).toMatch(/data-mon-ia="sans_moteur"[^>]*>Relier mon IA<\/button>/);
+    // Le bouton est DANS la marque : le cas 56 du Hub clique `[data-mon-ia] button`.
+    expect(bouton("carte")).toMatch(/^<span [^>]*data-mon-ia="sans_moteur"[^>]*><button [^>]*>Relier mon IA<\/button><\/span>$/);
   });
   test("avec moteur : data-mon-ia=prete et « Mon IA »", () => {
-    expect(bouton("cadre")).toMatch(/data-mon-ia="prete"[^>]*>Mon IA<\/button>/);
+    expect(bouton("cadre")).toMatch(/^<span [^>]*data-mon-ia="prete"[^>]*><button [^>]*>Mon IA<\/button><\/span>$/);
   });
   test("éteinte ou Hub muet : aucune marque", () => {
     expect(bouton(null)).toBe("");

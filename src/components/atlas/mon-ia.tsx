@@ -83,18 +83,20 @@ export function CarteRelierMonIA({ hub, liens }: { hub: string; liens: LiensIA |
 export function BoutonMonIA({ affichage, ouvert, onBasculer }: { affichage: AffichageMonIA; ouvert: boolean; onBasculer: () => void }) {
   if (!affichage) return null;
   const pret = affichage === "cadre";
+  // La marque est le conteneur, le bouton est dedans : le cas 56 du Hub clique `[data-mon-ia] button` (b3ff834, 27/11).
   return (
-    <button
-      type="button"
-      className={ouvert ? "btn ghost on" : "btn ghost"}
-      data-mon-ia={pret ? "prete" : "sans_moteur"}
-      title={pret ? "Discuter avec votre IA, qui agit dans Atlas" : "Relier votre IA à vos apps Veridian"}
-      aria-expanded={ouvert}
-      aria-controls="atlas-mon-ia"
-      onClick={onBasculer}
-    >
-      {pret ? "Mon IA" : "Relier mon IA"}
-    </button>
+    <span className="mon-ia-marque" data-mon-ia={pret ? "prete" : "sans_moteur"}>
+      <button
+        type="button"
+        className={ouvert ? "btn ghost on" : "btn ghost"}
+        title={pret ? "Discuter avec votre IA, qui agit dans Atlas" : "Relier votre IA à vos apps Veridian"}
+        aria-expanded={ouvert}
+        aria-controls="atlas-mon-ia"
+        onClick={onBasculer}
+      >
+        {pret ? "Mon IA" : "Relier mon IA"}
+      </button>
+    </span>
   );
 }
 
