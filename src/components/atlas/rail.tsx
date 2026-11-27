@@ -2,7 +2,7 @@
 
 import { useSession } from "next-auth/react";
 
-import { ciblesDe, marcheDe, sectionsRail, type IAVue } from "./flux";
+import { ciblesDe, marcheDe, sectionsRail } from "./flux";
 import { Icone } from "./icones";
 import type { Arbre, SegmentArbre } from "./types";
 import { ChoixEspace } from "./choix-espace";
@@ -10,7 +10,6 @@ import { seDeconnecter } from "./menu-compte";
 
 export const HUB = process.env.NEXT_PUBLIC_HUB_URL || "https://app.veridian.site";
 /** Page du Hub où l'on branche Claude, ChatGPT, Cursor… (une seule connexion pour toutes les apps). */
-export const HUB_IA = `${HUB}/dashboard/ia`;
 
 export type { IAVue } from "./flux";
 
@@ -20,8 +19,6 @@ type Props = {
   selection: string | null;
   ouvert: boolean;
   peutEcrire: boolean;
-  ias: IAVue[];
-  onBrancherIA: () => void;
   /** Vérifier une liste de SIREN (tout le monde). */
   onVerifier: () => void;
   /** Mes clients : import et taux de pénétration. */
@@ -37,7 +34,7 @@ type Props = {
  * Rail de la maquette : 56 px d'icônes, 268 px au survol ou au focus, libellés en fondu. Les marchés
  * sont rangés par dossier ; le marché actif déploie ses cibles. Sous 720 px, c'est un menu.
  */
-export function Rail({ arbre, erreur, selection, ouvert, peutEcrire, ias, onBrancherIA, onVerifier, onClients, onAcces, clignote, onSelection, onCreer }: Props) {
+export function Rail({ arbre, erreur, selection, ouvert, peutEcrire, onVerifier, onClients, onAcces, clignote, onSelection, onCreer }: Props) {
   const { data: session } = useSession();
   const email = session?.user?.email ?? null;
   const marcheActif = arbre && selection ? marcheDe(arbre, selection) : null;
@@ -145,24 +142,6 @@ export function Rail({ arbre, erreur, selection, ouvert, peutEcrire, ias, onBran
       </div>
 
       <div className="rsec" style={{ marginBottom: 0 }}>
-        <div className="rhead lbl">Connexions IA</div>
-        {ias.length === 0 ? (
-          <div className="conn">
-            <span className="d" style={{ background: "var(--off-line)" }} />
-            <span className="lbl">Aucune IA branchée</span>
-          </div>
-        ) : (
-          ias.map((ia) => (
-            <div className="conn" key={ia.nom}>
-              <span className="d" style={{ background: ia.etat === "active" ? "var(--ok)" : "var(--blue)" }} />
-              <span className="lbl">{ia.etat === "active" ? `${ia.nom} · active à ${ia.heure}` : `${ia.nom} · branchée, dernier échange ${ia.heure}`}</span>
-            </div>
-          ))
-        )}
-        <button type="button" className="conn" style={{ width: "100%", textAlign: "left" }} title="Brancher Claude, ChatGPT ou Cursor" onClick={onBrancherIA}>
-          <Icone nom="plus" />
-          <span className="lbl">{ias.length ? "Brancher une autre IA" : "Brancher une IA"}</span>
-        </button>
         <button type="button" className="conn" style={{ width: "100%", textAlign: "left" }} title={email ? `Se déconnecter (${email})` : "Se déconnecter"} onClick={seDeconnecter}>
           <Icone nom="sortie" />
           <span className="lbl">{email ? `Se déconnecter · ${email}` : "Se déconnecter"}</span>

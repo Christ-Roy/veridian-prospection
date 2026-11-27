@@ -32,7 +32,7 @@ import {
 } from "@/components/atlas/flux";
 import { indexerChamps } from "@/components/atlas/logique";
 import { COLONNES_MARCHE, codesPreselectionnes, etiquetteLigne, evolution, parClasseEffectif, part, serieCreations } from "@/components/atlas/marche";
-import { PREMIERE_DEMANDE, boutonsIA, montrerAccueil } from "@/components/atlas/ia";
+import { montrerAccueil } from "@/components/atlas/ia";
 import { REGLES_SUGGEREES, lignesDepuis, suggestionsRestantes } from "@/components/atlas/lignes";
 import { messageExport } from "@/components/atlas/api";
 import type { Arbre, ChampInfo, SegmentArbre } from "@/components/atlas/types";
@@ -259,20 +259,11 @@ describe("priorité : règles simples", () => {
 });
 
 describe("brancher une IA depuis Atlas", () => {
-  const liens = { url: "https://app.veridian.site/api/mcp", claude: "https://claude.ai/x", chatgpt: "https://chatgpt.com/#settings/Connectors", cursor: null, vscode: "https://vscode.dev/x", claudeCode: null, aideChatgpt: null };
-  test("Claude d'abord, seulement les boutons dont le Hub donne le lien ; aucun sans liens", () => {
-    expect(boutonsIA(liens).map((b) => b.id)).toEqual(["claude", "chatgpt", "vscode"]);
-    expect(boutonsIA(null)).toEqual([]);
-  });
   test("accueil : espace sans marché, une seule fois ; jamais avant d'avoir lu l'arbre", () => {
     expect(montrerAccueil(0, false)).toBe(true);
     expect(montrerAccueil(0, true)).toBe(false);
     expect(montrerAccueil(3, false)).toBe(false);
     expect(montrerAccueil(null, false)).toBe(false);
-  });
-  test("la première demande dit quoi faire dans Atlas", () => {
-    expect(PREMIERE_DEMANDE).toMatch(/Atlas/);
-    expect(PREMIERE_DEMANDE).toMatch(/marché/);
   });
 });
 

@@ -32,8 +32,8 @@ Flux (Robert, 09/11) : **analyse du marché → définition de la cible → prio
 3. **Priorité** : des règles simples « si … alors +N points », suggestions neutres, IA hautement recommandée.
 4. **Export** : Excel ou CSV (`/api/atlas/export`, plans payants, 5 000 lignes, comptées dans le quota du jour), ou `extraire_segment` par l'IA ; tracés.
 4b. **Phrase → vue** (VER-130) : `src/atlas/phrase.ts`, outil `vue_depuis_phrase`, sans LLM (zéro coût).
-5. **IA** : boutons pour brancher son IA dans l'app (liens lus au Hub), accueil « avec l'IA / à la main ».
-Pilotage par IA via le MCP (Claude, ChatGPT en OAuth par le Hub), jamais d'IA payée par l'app.
+5. **IA** : carte « Relier mon IA » (voir Mon IA), accueil « avec l'IA / à la main ».
+Pilotage par le MCP (OAuth par le Hub), jamais d'IA payée par l'app.
 
 ## Identité : le Hub est la source de vérité
 
@@ -81,7 +81,7 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
 - Carte : `src/atlas/projection.ts`, communes et EPCI de l'API Géo (`communes.ts`). Le cube ne descend pas à la commune.
 - Accès avancé (`requete_sql`, clés `atl_`) et `extraire_segment` : `docs/claude/acces-avance-et-extraction.md`.
 - Quota, porte de connexion : `src/lib/compteurs.ts` (en base) ; `isRateLimited` : confort, par instance.
-- Mon IA (§5.24) : état au Hub (`ia-etat.ts`), cadre si `prete`, carte sinon ; fils `ia_fils` par `/api/hub/ia/fils/[session]` (HMAC, 404 hors triplet), effacés au retrait et à la purge.
+- Mon IA (§5.24.1), seule entrée IA : état au Hub (`ia-etat.ts`), cadre si `prete`, sinon carte aux liens du Hub (`liens-ia-client.ts`) ; fils `ia_fils` (`/api/hub/ia/fils/[session]`, HMAC, 404 hors triplet), purgés au retrait.
 - Journaux : `obs search '\[mcp\] outil='` ; l'écran n'en écrit aucun, sauf `[liaisons]`.
 - Envoi vers le CRM et Mail (VER-246) : `docs/LIAISONS.md`, drapeau `ATLAS_LIAISONS`. Clients, API par marché, pages publiques : `docs/CLIENTS-ET-MARCHES.md`.
 

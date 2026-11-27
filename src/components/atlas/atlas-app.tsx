@@ -9,7 +9,7 @@ import { DEPARTMENT_NAMES } from "@/components/dashboard/france-map-data";
 import { appeler, ErreurAtlas, estAnnulation, texteErreur } from "./api";
 import { Carte } from "./carte";
 import { departementsFiltre, titreZone } from "./carte-logique";
-import { Accueil, DialogueIA } from "./brancher-ia";
+import { Accueil } from "./brancher-ia";
 import { DialogueCrm, DialogueMail } from "./envois";
 import { LIAISONS_ETEINTES, lireEtat, lireReprise, type EtatLiaisons } from "./liaisons-logique";
 import { MenuCompte } from "./menu-compte";
@@ -43,7 +43,7 @@ import { cheminDossier, combiner, conditionsHeritees, formaterNombre, indexerCha
 import { part } from "./marche";
 import { PopoverFiltres } from "./popover-filtres";
 import { VueMarche } from "./vue-marche";
-import { HUB, HUB_IA, Rail, type IAVue } from "./rail";
+import { HUB, Rail, type IAVue } from "./rail";
 import type { AnalyseMarche, ApercuMarche, Arbre, ChampInfo, Condition, Epingle, Filtre, Historique, SegmentArbre, SegmentDetail, Vue, ZoneLocale } from "./types";
 import { VoletClients } from "./volet-clients";
 import { pourcent } from "./clients-logique";
@@ -175,7 +175,6 @@ export function AtlasApp() {
   const [organisationHub, setOrganisationHub] = useState<string | null>(null);
   const [monIA, setMonIA] = useState(false);
   const [affichageMonIA, setAffichageMonIA] = useState<AffichageMonIA>(null);
-  const [dialogueIA, setDialogueIA] = useState(false);
   const [accueil, setAccueil] = useState(false);
   const [clignote, setClignote] = useState<string | null>(null);
   const reference = useRef<SegmentArbre[] | null>(null);
@@ -559,7 +558,6 @@ export function AtlasApp() {
     setVolet(null);
   }, []);
   const fermerCreation = useCallback(() => setCreation(null), []);
-  const fermerDialogueIA = useCallback(() => setDialogueIA(false), []);
 
   // Premier passage : un espace sans marché propose de commencer avec l'IA (recommandé) ou à la main,
   // une fois par navigateur.
@@ -689,8 +687,6 @@ export function AtlasApp() {
         selection={selection}
         ouvert={railOuvert}
         peutEcrire={peutEcrire}
-        ias={toutesIAs}
-        onBrancherIA={() => setDialogueIA(true)}
         onClients={() => (setRailOuvert(false), setVolet({ type: "clients" }))}
         onVerifier={() => (setRailOuvert(false), setVolet({ type: "verifier" }))}
         onAcces={droits?.acces_avance || droits?.admin_atlas ? () => (setRailOuvert(false), setVolet({ type: "acces" })) : undefined}
@@ -751,14 +747,7 @@ export function AtlasApp() {
                 {activite ? activite.texte : derniere.etat === "active" ? `${derniere.nom} · actif à ${derniere.heure}` : `${derniere.nom} · branchée, dernier échange ${derniere.heure}`}
               </span>
             </div>
-          ) : (
-            <button type="button" className="presence idle" title="Brancher Claude, ChatGPT ou Cursor" onClick={() => setDialogueIA(true)}>
-              <span className="av" aria-hidden>
-                +
-              </span>
-              <span>Brancher une IA</span>
-            </button>
-          )}
+          ) : null}
           {organisationHub && <BoutonMonIA affichage={affichageMonIA} ouvert={monIA} onBasculer={() => setMonIA((o) => !o)} />}
           {segment && <MenuExport segmentId={segment.id} liaisons={liaisons} onEnvoi={(cible) => setEnvoiSegment({ cible, id: segment.id, nom: segment.nom })} notifier={notifier} />}
           {segment && peutEcrire && (
@@ -1044,15 +1033,18 @@ export function AtlasApp() {
       )}
       {envoiSegment?.cible === "crm" && <DialogueCrm segmentId={envoiSegment.id} nom={envoiSegment.nom} payant={liaisons.payant} onFermer={() => setEnvoiSegment(null)} />}
       {envoiSegment?.cible === "notifuse" && <DialogueMail objet={{ type: "segment", segmentId: envoiSegment.id, nom: envoiSegment.nom, payant: liaisons.payant }} onFermer={() => setEnvoiSegment(null)} />}
-      {monIA && <FenetreMonIA affichage={affichageMonIA} hub={HUB} organisationHub={organisationHub} onFermer={() => setMonIA(false)} />}
-      {dialogueIA && <DialogueIA liens={liensIA} pageHub={HUB_IA} onFermer={fermerDialogueIA} />}
-      {accueil && !dialogueIA && !creation && (
+      {monIA && <FenetreMonIA affichage={affichageMonIA} hub={HUB} organisationHub={organisationHub} liens={liensIA} onFermer={() => setMonIA(false)} />}
+      {accueil && !monIA && !creation && (
         <Accueil
           onFermer={fermerAccueil}
-          onIA={() => {
-            fermerAccueil();
-            setDialogueIA(true);
-          }}
+          onIA={
+            affichageMonIA && organisationHub
+              ? () => {
+                  fermerAccueil();
+                  setMonIA(true);
+                }
+              : null
+          }
           onManuel={() => {
             fermerAccueil();
             if (peutEcrire) setCreation({ type: "marche", filtre: null, colonnes: colonnesLibres });

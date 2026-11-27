@@ -1,18 +1,24 @@
 /**
- * Liens « Ajouter à Claude / ChatGPT / Cursor / VS Code » de la porte MCP, lus au Hub
- * (`GET /api/mcp/liens-installation`, public : les liens ne portent aucun secret). Le Hub reste la seule
- * source de ces liens : Atlas les affiche dans l'app pour qu'on branche son IA sans passer par le Hub.
+ * Liens d'installation du connecteur Veridian, lus au Hub (`GET /api/mcp/liens-installation?app=prospection`, public, sans
+ * secret ; CONTRAT-MCP.md, CONTRAT-HUB §5.24.1 « Contenu de la carte sans moteur »). Le Hub reste la seule source : rien n'est
+ * recopié en dur ici, la carte « Relier mon IA » les affiche tels qu'il les sert.
  *
- * Au mieux : Hub injoignable ou réponse inattendue = `null` (l'écran renvoie alors vers la page IA du
- * Hub). Cache de 10 min, les liens changent rarement.
+ * `assistants[]` donne un bouton par assistant (`libelle`, `installation`, `etape` quand le lien ne préremplit pas, ChatGPT).
+ * Seules les origines garanties par le contrat passent (une réponse piégée ne met pas de `javascript:` dans un bouton) ;
+ * un bouton hors de ces origines est retiré, avec un avertissement.
+ * Au mieux : Hub injoignable ou réponse inattendue = `null` (la carte garde le texte et le lien vers le Hub). Cache 5 min.
  */
-export type LiensIA = { url: string; claude: string | null; chatgpt: string | null; cursor: string | null; vscode: string | null; claudeCode: string | null; aideChatgpt: string | null };
+export type AssistantIA = { cle: string; libelle: string; installation: string; etape: string | null };
+export type LiensIA = { url: string; claudeCode: string | null; assistants: AssistantIA[] };
 
-const CACHE_MS = 10 * 60_000;
+const CACHE_MS = 5 * 60_000;
 let cache: { t: number; v: LiensIA } | null = null;
 
-const lien = (v: unknown) => (typeof v === "string" && /^(https:\/\/|cursor:\/\/|vscode:)/.test(v) ? v : null);
-const texte = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim().slice(0, 600) : null);
+/** Origines garanties des liens `installation` (CONTRAT-MCP.md). */
+const ORIGINES = [/^https:\/\/claude\.ai\//, /^https:\/\/chatgpt\.com\//, /^cursor:\/\//, /^https:\/\/vscode\.dev\//];
+const installation = (v: unknown) => (typeof v === "string" && ORIGINES.some((o) => o.test(v)) ? v : null);
+const texte = (v: unknown, max = 600) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
+const adresse = (v: unknown) => (typeof v === "string" && /^https:\/\/[^\s]+$/.test(v) ? v : null);
 
 export async function liensIA(opts: { env?: NodeJS.ProcessEnv; fetchImpl?: typeof fetch; maintenant?: number } = {}): Promise<LiensIA | null> {
   const env = opts.env ?? process.env;
@@ -23,18 +29,19 @@ export async function liensIA(opts: { env?: NodeJS.ProcessEnv; fetchImpl?: typeo
     const res = await (opts.fetchImpl ?? fetch)(`${hub}/api/mcp/liens-installation?app=prospection`, { signal: AbortSignal.timeout(2000), headers: { Accept: "application/json" } });
     if (!res.ok) return null;
     const c = (await res.json()) as Record<string, unknown>;
-    const url = lien(c.url);
+    const url = adresse(c.url);
     if (!url) return null;
-    const v: LiensIA = {
-      url,
-      claude: lien(c.claude),
-      chatgpt: lien(c.chatgpt),
-      cursor: lien(c.cursor),
-      vscode: lien(c.vscode),
-      claudeCode: texte(c.claudeCode),
-      // Le Hub donne l'étape ChatGPT (pas de lien prérempli) dans instructions.chatgpt (contrat CONTRAT-MCP.md).
-      aideChatgpt: texte((c.instructions as { chatgpt?: unknown } | undefined)?.chatgpt),
-    };
+    const assistants: AssistantIA[] = [];
+    for (const a of Array.isArray(c.assistants) ? (c.assistants as Record<string, unknown>[]) : []) {
+      const lien = installation(a?.installation);
+      const libelle = texte(a?.libelle, 60);
+      if (!lien || !libelle) {
+        console.warn(`[ia][liens] bouton retiré (origine hors contrat ou libellé absent) cle=${String(a?.cle).slice(0, 30)}`);
+        continue;
+      }
+      assistants.push({ cle: texte(a.cle, 30) ?? libelle, libelle, installation: lien, etape: texte(a.etape) });
+    }
+    const v: LiensIA = { url, claudeCode: texte(c.claudeCode, 300), assistants };
     cache = { t: maintenant, v };
     return v;
   } catch {
