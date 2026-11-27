@@ -19,6 +19,7 @@ import { requireHubHmac } from "@/lib/hub/auth";
 import { refusIdentite, resolveOrCreateUserFromHub } from "@/lib/hub/identity";
 import { logAudit } from "@/lib/audit";
 import { ROLE_RANK, type WorkspaceRole } from "@/lib/auth/roles";
+import { adminRetire } from "@/lib/hub/admins-plateforme";
 
 const AttachMemberSchema = z.object({
   hub_user_id: z.string().uuid(),
@@ -96,6 +97,11 @@ export async function POST(
     const r = refusIdentite(e);
     if (r) return r;
     throw e;
+  }
+
+  // §5.23 : un administrateur de plateforme retiré par le client ne revient admin par aucune synchronisation.
+  if (ROLE_RANK[body.role] >= ROLE_RANK.admin && (await adminRetire(workspace.tenantId, localUserId))) {
+    return NextResponse.json({ error: "admin_withdrawn" }, { status: 409 });
   }
 
   const existing = await prisma.workspaceMember.findUnique({

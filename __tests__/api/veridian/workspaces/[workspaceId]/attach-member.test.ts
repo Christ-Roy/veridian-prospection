@@ -38,6 +38,9 @@ const mocks = vi.hoisted(() => ({
   logAudit: vi.fn().mockResolvedValue(undefined),
 }));
 
+const { adminRetireMock } = vi.hoisted(() => ({ adminRetireMock: vi.fn(async () => false) }));
+vi.mock("@/lib/hub/admins-plateforme", () => ({ adminRetire: adminRetireMock }));
+
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     workspace: { findFirst: mocks.workspaceFindFirst },
@@ -303,6 +306,17 @@ describe("POST /api/veridian/workspaces/[workspaceId]/attach-member", () => {
         metadata: expect.objectContaining({ already_member: true, role_changed: false }),
       }),
     );
+  });
+
+  test("409 admin_withdrawn — admin retiré par le client : l'invitation ne le refait pas admin (§5.23)", async () => {
+    mocks.workspaceFindFirst.mockResolvedValueOnce({ id: WORKSPACE_ID, tenantId: TENANT_ID });
+    mocks.tenantFindUnique.mockResolvedValueOnce({ status: "active", deletedAt: null });
+    adminRetireMock.mockResolvedValueOnce(true);
+    const { raw, headers } = signed({ ...validBody, role: "admin" });
+    const res = await POST(req(WORKSPACE_ID, raw, headers), ctx(WORKSPACE_ID));
+    expect(res.status).toBe(409);
+    expect(await readJson(res)).toEqual({ error: "admin_withdrawn" });
+    expect(mocks.memberUpdate).not.toHaveBeenCalled();
   });
 
   test("200 conflit role — UPDATE vers le role Hub + audit role_changed=true", async () => {

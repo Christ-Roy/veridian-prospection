@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
+import { adminRetire } from "@/lib/hub/admins-plateforme";
 
 import { invalidateAllUserContexts } from "@/lib/auth/cache-contexte";
 import { requireHubHmac } from "@/lib/hub/auth";
@@ -96,7 +97,9 @@ async function ajouterMembres(tenantId: string, membres: z.infer<typeof Document
       // Une adresse déjà liée à une autre identité du Hub ne fait entrer personne à sa place.
       const lie = await prisma.user.findUnique({ where: { id }, select: { hubUserId: true, deletedAt: true } });
       if (lie?.hubUserId?.toLowerCase() !== hubUserId || lie.deletedAt) throw new Error("identite_differente");
-      const role = ROLE[m.role] ?? "viewer";
+      // §5.23 : un administrateur de plateforme retiré par le client entre comme membre, jamais admin.
+      const voulu = ROLE[m.role] ?? "viewer";
+      const role = (voulu === "admin" || voulu === "owner") && (await adminRetire(tenantId, id)) ? "member" : voulu;
       const cle = { workspaceId_userId: { workspaceId: w.id, userId: id } };
       const f = await prisma.workspaceMember.findUnique({ where: cle, select: { deletedAt: true } });
       if (!f) await prisma.workspaceMember.create({ data: { workspaceId: w.id, userId: id, role, joinedAt: new Date(m.joined_at) } });

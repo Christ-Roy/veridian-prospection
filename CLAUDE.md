@@ -47,6 +47,7 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
 - **`users.hub_user_id` contient `hub_app.users.supabase_user_id`**, pas le cuid `users.id`.
 - **`resolveOrCreateUserFromHub` refuse elle-même** (`ConflitIdentite` → 409) : adresse d'une autre identité Hub, ou compte sans lien
   sans `email_proven: true`. `attach-owner` exige `hub_user_id`. Liens de connexion : 60 s (attach-member), 15 min (rebond, provision).
+- **Admin de plateforme** (§5.23) : `/api/hub/workspace-admins` (`hub/admins-plateforme.ts`), `admin`, jamais `owner` ; rétrogradé = retiré, 409 `admin_withdrawn` partout sauf `reinstate`.
 - **Suspendu = fermé** (parente 26/11) : `OUVERT` (`auth/espaces.ts`) l'exclut, MCP `tenant_suspended`, cache vidé à
   l'acquittement, 403 `no_workspace` dit ; données gardées. **Membre gelé** (§5.21) : `ctx.lectureSeule`, 402, ni extraction, export, envoi.
 - **Portes locales fermées en production** : mot de passe et invitation locaux répondent non (`LOCAL_AUTH_ENABLED=1` : staging seul). Réouvrir en prod : décision de Robert.

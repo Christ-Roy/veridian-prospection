@@ -36,6 +36,9 @@ const mocks = vi.hoisted(() => ({
   auditLog: vi.fn(),
 }));
 
+const { adminRetireMock } = vi.hoisted(() => ({ adminRetireMock: vi.fn(async () => false) }));
+vi.mock("@/lib/hub/admins-plateforme", () => ({ adminRetire: adminRetireMock }));
+
 vi.mock("@/lib/prisma", () => {
   const txClient = {
     tenant: {
@@ -331,6 +334,19 @@ describe("POST /api/tenants/[id]/sync-member", () => {
     expect(body.app_role).toBe("admin");
     expect(mocks.memberUpdate).toHaveBeenCalledOnce();
     expect(mocks.memberUpdate.mock.calls[0][0].data.role).toBe("admin");
+  });
+
+  test("409 admin_withdrawn — un administrateur de plateforme retiré par le client ne revient pas admin (§5.23)", async () => {
+    mocks.tenantFindUnique.mockResolvedValueOnce({ id: TENANT_ID });
+    resolveOrCreateUserFromHubMock.mockResolvedValueOnce({ id: LOCAL_USER_ID, createdByHub: false });
+    adminRetireMock.mockResolvedValueOnce(true);
+    const { raw, headers } = signed({ ...validBody, role: "admin" });
+    const res = await POST(req(raw, headers), ctx());
+    expect(res.status).toBe(409);
+    expect(await readJson(res)).toEqual({ error: "admin_withdrawn" });
+    expect(adminRetireMock).toHaveBeenCalledWith(TENANT_ID, LOCAL_USER_ID);
+    expect(mocks.memberUpdate).not.toHaveBeenCalled();
+    expect(mocks.memberCreate).not.toHaveBeenCalled();
   });
 
   test("200 JAMAIS downgrade — admin local conservé si Hub envoie member", async () => {

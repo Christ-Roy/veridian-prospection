@@ -11,6 +11,7 @@ import { invalidateAllUserContexts } from "@/lib/auth/cache-contexte";
 import { isCanonicalPlan, mapCanonicalPlanToLocal } from "@/lib/billing/plans";
 import { prisma } from "@/lib/prisma";
 
+import { adminRetire } from "./admins-plateforme";
 import { generateApiKey, hashApiKey } from "./apiKey";
 import { ConflitIdentite, resolveOrCreateUserFromHub } from "./identity";
 
@@ -68,7 +69,9 @@ export async function ouvrirEspace(e: { hubUserId: string; email: string; emailP
       // Rejouer ne change pas le rôle de quelqu'un qui est là.
       const fiche = await tx.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId: w.id, userId: u.id } }, select: { deletedAt: true } });
       const membre = !fiche || !!fiche.deletedAt;
-      if (membre) await tx.workspaceMember.upsert({ where: { workspaceId_userId: { workspaceId: w.id, userId: u.id } }, update: { deletedAt: null, role: "admin" }, create: { workspaceId: w.id, userId: u.id, role: "admin", visibilityScope: "all" } });
+      // §5.23 : un administrateur de plateforme retiré par le client revient membre, jamais admin.
+      const role = membre && (await adminRetire(tenant.id, u.id, tx)) ? "member" : "admin";
+      if (membre) await tx.workspaceMember.upsert({ where: { workspaceId_userId: { workspaceId: w.id, userId: u.id } }, update: { deletedAt: null, role }, create: { workspaceId: w.id, userId: u.id, role, visibilityScope: role === "admin" ? "all" : "own" } });
       let apiKey: string | null = null;
       if (!w.apiKeyHash) {
         apiKey = generateApiKey();

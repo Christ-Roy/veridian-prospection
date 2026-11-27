@@ -31,6 +31,7 @@ import { logAudit } from "@/lib/audit";
 import { ROLE_RANK, type WorkspaceRole } from "@/lib/auth/roles";
 import { enqueueEvent } from "@/lib/hub-webhook/outbox";
 import { invalidateAllUserContexts } from "@/lib/auth/cache-contexte";
+import { adminRetire } from "@/lib/hub/admins-plateforme";
 
 const SyncMemberSchema = z.object({
   user_email: z.string().email().max(254),
@@ -85,6 +86,11 @@ export async function POST(
     const r = refusIdentite(e);
     if (r) return r;
     throw e;
+  }
+
+  // §5.23 : un administrateur de plateforme retiré par le client ne revient admin par aucune synchronisation.
+  if (ROLE_RANK[body.role] >= ROLE_RANK.admin && (await adminRetire(tenantId, localUserId))) {
+    return NextResponse.json({ error: "admin_withdrawn" }, { status: 409 });
   }
 
   // Workspace par défaut = premier workspace créé pour ce tenant.

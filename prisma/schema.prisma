@@ -271,6 +271,7 @@ model User {
   ssoLoginTokens SsoLoginToken[]
   sessionDelegations SessionDelegation[]
   iaFils IaFil[]
+  adminsPlateforme AdminPlateforme[]
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
@@ -452,6 +453,7 @@ model Tenant {
   @@index([deletedAt])
   @@index([purgeEligibleAt])
   iaFils IaFil[]
+  adminsPlateforme AdminPlateforme[]
   @@map("tenants")
 }
 
@@ -771,4 +773,21 @@ model IaFil {
 
   @@index([tenantId, userId])
   @@map("ia_fils")
+}
+
+/// Administrateurs de plateforme désignés par le Hub dans l'espace d'un client (CONTRAT-HUB §5.23, VER-263). Une désignation
+/// dont la personne ne tient plus le rôle admin EST un retrait par le client : aucun chemin ne la remet admin, sauf
+/// `reinstate: true` (geste humain). src/lib/hub/admins-plateforme.ts.
+model AdminPlateforme {
+  tenantId String   @map("tenant_id") @db.Uuid
+  userId   String   @map("user_id") @db.Uuid
+  acteur   String
+  raison   String?
+  accordeLe DateTime @default(now()) @map("accorde_le") @db.Timestamptz
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, userId])
+  @@map("admins_plateforme")
 }
