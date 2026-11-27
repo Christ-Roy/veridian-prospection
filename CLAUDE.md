@@ -47,6 +47,7 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
 - **`users.hub_user_id` contient `hub_app.users.supabase_user_id`**, pas le cuid `users.id`.
 - **`resolveOrCreateUserFromHub` refuse elle-même** (`ConflitIdentite` → 409) : adresse d'une autre identité Hub, ou compte sans lien
   sans `email_proven: true`. `attach-owner` exige `hub_user_id`. Liens de connexion : 60 s (attach-member), 15 min (rebond, provision).
+- **Aucun écho vers le Hub** (27/11) : soft-delete, purge et membres, le Hub note l'issue à sa réponse ; `aucun-echo.test.ts`.
 - **Admin de plateforme** (§5.23) : `/api/hub/workspace-admins`, `admin` jamais `owner` ; rétrogradé = retiré (409 `admin_withdrawn`) sauf `reinstate`.
 - **Suspendu = fermé** (parente 26/11) : `OUVERT` (`auth/espaces.ts`) l'exclut, MCP `tenant_suspended`, cache vidé à
   l'acquittement, 403 `no_workspace` dit ; données gardées. **Membre gelé** (§5.21) : `ctx.lectureSeule`, 402, ni extraction, export, envoi.
@@ -82,8 +83,8 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
 - Carte : `src/atlas/projection.ts`, communes et EPCI de l'API Géo (`communes.ts`) ; le cube s'arrête au département.
 - Accès avancé (`requete_sql`, clés `atl_`) et `extraire_segment` : `docs/claude/acces-avance-et-extraction.md`.
 - Quota, porte de connexion : `src/lib/compteurs.ts` (en base) ; `isRateLimited` : confort, par instance.
-- Mon IA (§5.24.1), seule entrée IA : état au Hub (`ia-etat.ts`), cadre si `prete`, sinon carte aux liens du Hub (`liens-ia-client.ts`) ; fils `ia_fils` (`/api/hub/ia/fils/[session]`, HMAC, 404 hors triplet), purgés au retrait.
-- Journaux : `obs search '\[mcp\] outil='` ; l'écran n'en écrit aucun, sauf `[liaisons]` et `[atlas][coordonnees]` (VER-249, nombres seuls ; relevé : `scripts/ops/coordonnees-releve.py`).
+- Mon IA (§5.24.1), seule entrée IA : état au Hub (`ia-etat.ts`), sinon liens du Hub ; fils `ia_fils` (`/api/hub/ia/fils/[session]`, HMAC), purgés au retrait.
+- Journaux : `obs search '\[mcp\] outil='` ; l'écran : seulement `[liaisons]` et `[atlas][coordonnees]` (VER-249, nombres seuls ; relevé : `scripts/ops/coordonnees-releve.py`).
 - Envoi vers le CRM et Mail (VER-246) : `docs/LIAISONS.md`, drapeau `ATLAS_LIAISONS`. Clients, API par marché, pages publiques : `docs/CLIENTS-ET-MARCHES.md`.
 
 ## Déploiement et promotion
@@ -97,7 +98,8 @@ par le verbe `veridian-ci-deploy prospection` (put-job, plan, deploy canari, smo
 - `image_tag` n'a AUCUN défaut : un défaut figé a fait reculer la prod (09/11 : c70ba3c servi 0537d22).
   `scripts/ci/check-image-tag-sans-defaut.py` refuse tout défaut, auto-test compris (quality).
 - Ne jamais déployer à la main : `nomad-v deploy` et `nomad job run` ignorent le tag CI.
-- Job prod sur `ovh-prod` (contrainte `meta.provider`), pas sur le bastion.
+- Deux allocations (`count = 2`, `spread` sur `meta.zone`), canari `auto_revert`. Tags Traefik (fiche infra 34) : à count ≥ 2,
+  aucun ne se modifie ; on ajoute `<nom>-2`, puis on retire l'ancien au déploiement suivant. Tags seuls : dispatch `image_existante=<sha7>`.
 
 | Tier | Exemples | Action agent |
 |---|---|---|
@@ -110,8 +112,7 @@ par le verbe `veridian-ci-deploy prospection` (put-job, plan, deploy canari, smo
 
 - **Migrations Prisma par la CI** : `deploy-prod` envoie `prisma/` au verbe (`put-migrations prod`)
   puis `migrate prod` joue `prisma migrate deploy` sur pg-saas, avant le déploiement. Une migration
-  destructive (DROP, renommage) reste 💀 : en deux temps, compatible avec le code encore servi.
-- **`prospection-db` est purgée (09/11)** : ce nom ne revient ni dans la CI ni dans les skills.
+  destructive (DROP, renommage) reste 💀 : d'abord le code sans la colonne, puis le DROP au déploiement suivant.
 - **Bascule pg-saas (base muette)** : `src/lib/db-bornes.ts` borne l'ouverture des connexions (posé au
   démarrage par `src/instrumentation.ts`). Une requête en cours sur une connexion muette attend sans fin
   dans Prisma 6, `socket_timeout` compris (mesuré) : le filet est `/api/health` (503 en 2 s) + `check_restart`.
@@ -120,10 +121,6 @@ par le verbe `veridian-ci-deploy prospection` (put-job, plan, deploy canari, smo
   Jamais de `new PrismaClient` ailleurs : un test le refuse.
 - **Rôle `prospection` : `statement_timeout` et `idle_in_transaction_session_timeout` à 60 s** (09/11).
   Une migration longue commence par `SET statement_timeout = 0;`.
-- **Suppression de colonne en deux temps** : d'abord le code sans la colonne (Prisma lit tout le modèle),
-  puis la migration de DROP au déploiement suivant ; la CI migre avant de déployer (fait le 09/11, 0035).
-- **Pas d'invitation locale** (09/11) : inviter, c'est le Hub.
-- **Un déploiement remplace l'allocation** (groupe `stack`) ; puis lire l'image dans le conteneur.
 - **Un compte de test a une adresse prouvée au Hub**, sinon il revient sur `/dashboard` (voulu).
 - **Jamais de test sur le compte d'un vrai client.** Sur le compte de Robert, un parcours ne clique ni filtre
   ni barre d'un marché enregistré : un clic crée une version (16/11, « Marché animalier » réécrit puis restauré).
