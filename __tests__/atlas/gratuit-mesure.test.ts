@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("@/lib/prisma", () => ({ prisma: {} }));
 
-import { selonPlan } from "@/atlas/gratuit";
+import { ORIENTATION_GRATUIT, orientationGratuit, selonPlan } from "@/atlas/gratuit";
 import { compterCoordonnees } from "@/lib/mcp/coordonnees";
 import type { ContexteOutil, Outil } from "@/lib/mcp/outils";
 
@@ -57,5 +57,21 @@ describe("trace [atlas][coordonnees]", () => {
     const t = traces();
     await selonPlan(outil, {}, { ...ctx("pro", true), droits: { accesAvance: true, adminAtlas: false, plan: "pro", payant: true } } as unknown as ContexteOutil);
     expect(t).not.toHaveBeenCalled();
+  });
+});
+
+describe("orientationGratuit", () => {
+  test("fiches:20 : la phrase dit les 20 fiches, pas « réservés » tout court ; masque : réservés", () => {
+    expect(orientationGratuit({ fiches: 20 })).toMatch(/fiche d'une entreprise, 20 fiches par jour.*listes et l'export sont réservés/);
+    expect(orientationGratuit({ fiches: 0 })).toBe(ORIENTATION_GRATUIT);
+    expect(orientationGratuit(null)).toBe(ORIENTATION_GRATUIT);
+  });
+
+  test("une liste d'un gratuit en fiches:20 porte la phrase juste", async () => {
+    vi.stubEnv("ATLAS_GRATUIT_COORDONNEES", "fiches:20");
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const v = (await selonPlan(outil, {}, ctx("freemium", false))) as { coordonnees_retirees?: string };
+    expect(v.coordonnees_retirees).toMatch(/20 fiches par jour/);
+    vi.unstubAllEnvs();
   });
 });

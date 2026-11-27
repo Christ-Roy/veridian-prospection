@@ -3,6 +3,15 @@ import { describe, expect, test } from "vitest";
 
 import { cleDepuisSaisie, formaterDate, libelleAvecCode, libelleValeur, titreValeur, valeurCorrespond } from "@/atlas/libelles";
 
+describe("formaterDate", () => {
+  test("1970-01-01 est la date zéro d'ODH (date absente), pas une création ; les autres dates en jj/mm/aaaa", () => {
+    expect(formaterDate("1970-01-01")).toBe("Inconnue");
+    expect(formaterDate("1970-01-01T00:00:00Z")).toBe("Inconnue");
+    expect(formaterDate("2015-11-25")).toBe("25/11/2015");
+    expect(formaterDate("1970-01-02")).toBe("02/01/1970");
+  });
+});
+
 describe("libelleValeur", () => {
   test("convention collective : les valeurs d'échappement de la DARES sont dites en français (66 639 fiches, 27/11)", () => {
     expect(libelleValeur("idcc", "Sans convention collective ou hors champ conventionnel (valeur d'echappement)")).toBe("Aucune (hors champ conventionnel)");

@@ -11,6 +11,8 @@ type Table = Readonly<Record<string, string>>;
 
 /** AAAA-MM-JJ → JJ/MM/AAAA (autre texte rendu tel quel). */
 export function formaterDate(iso: string): string {
+  // 1970-01-01 : la date zéro qu'ODH rend pour une date absente (vu sur des fédérations, 27/11), pas une création.
+  if (/^1970-01-01/.test(iso)) return "Inconnue";
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
   return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
 }

@@ -16,6 +16,12 @@ import type { ContexteOutil, Outil } from "@/lib/mcp/outils";
 import { enRestreint } from "./restreint";
 
 export const ORIENTATION_GRATUIT = "Emails et téléphones sont réservés aux plans payants Veridian.";
+/** Ce que le client lit au-dessus d'une liste ou dans une fiche : juste selon le réglage (20 fiches par jour ne sont pas « aucune »). */
+export function orientationGratuit(r: { fiches: number } | null = reglageGratuit()): string {
+  return r && r.fiches > 0
+    ? `Plan gratuit : emails et téléphones s'ouvrent dans la fiche d'une entreprise, ${r.fiches} fiches par jour. Les listes et l'export sont réservés aux plans payants Veridian.`
+    : ORIENTATION_GRATUIT;
+}
 const FICHE = "fiche_entreprise_atlas";
 
 export function reglageGratuit(brut: string | undefined = process.env.ATLAS_GRATUIT_COORDONNEES): { fiches: number } | null {
@@ -53,8 +59,8 @@ export async function selonPlan(outil: Outil, a: Record<string, unknown>, c: Con
   }
   const r = reglageGratuit();
   const libre = !r || (outil.name === FICHE && (await ficheOfferte(c.ctx.tenantId, String(a.siren), r.fiches)));
-  const brut = libre ? await outil.run(a, c) : await enRestreint(() => outil.run(a, c), ORIENTATION_GRATUIT);
+  const brut = libre ? await outil.run(a, c) : await enRestreint(() => outil.run(a, c), orientationGratuit(r));
   const demandees = compterCoordonnees(brut);
   tracer(outil, c, r ? (r.fiches ? `fiches:${r.fiches}` : "masque") : "aucun", demandees, libre ? demandees : 0);
-  return libre ? brut : retirerCoordonnees(brut, ORIENTATION_GRATUIT);
+  return libre ? brut : retirerCoordonnees(brut, orientationGratuit(r));
 }

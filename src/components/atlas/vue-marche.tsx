@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { titreValeur } from "@/atlas/libelles";
 
@@ -29,7 +29,12 @@ function RechercheMetier({ onCodes }: { onCodes: (codes: string[]) => void }) {
   const [choisis, setChoisis] = useState<Set<string>>(new Set());
   const [erreur, setErreur] = useState<string | null>(null);
   const [envoi, setEnvoi] = useState(false);
+  const resultats = useRef<HTMLDivElement>(null);
   const court = mots.trim().length > 0 && mots.trim().length < 3;
+  // La recherche est sous les graphiques : ses résultats tombaient hors de l'écran (regard client, 27/11). On les y amène.
+  useEffect(() => {
+    if (codes) resultats.current?.scrollIntoView?.({ behavior: "smooth", block: "end" });
+  }, [codes]);
   const chercher = async () => {
     setEnvoi(true);
     setErreur(null);
@@ -92,6 +97,7 @@ function RechercheMetier({ onCodes }: { onCodes: (codes: string[]) => void }) {
           </button>
         </>
       )}
+      <div ref={resultats} aria-hidden />
     </div>
   );
 }

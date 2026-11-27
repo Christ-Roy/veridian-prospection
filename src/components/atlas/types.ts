@@ -59,6 +59,8 @@ export type ApercuMarche = {
   lignes: LigneMarche[];
   page_suivante?: number | null;
   donnees_simulees?: boolean;
+  /** Plan gratuit : pourquoi les emails et téléphones manquent (src/atlas/gratuit.ts). */
+  coordonnees_retirees?: string;
 };
 
 export type RepartitionMarche = {

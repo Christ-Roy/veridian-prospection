@@ -446,6 +446,7 @@ export function VueTableau({
       {apercu && apercu.lignes.length === 0 && <Vide texte="Aucune entreprise ne répond à ces filtres." onEffacer={filtre.conditions.length ? onEffacerFiltres : undefined} />}
       {apercu && apercu.lignes.length > 0 && (
         <>
+          {apercu.coordonnees_retirees && <p className="hint note-plan" role="note">{apercu.coordonnees_retirees}</p>}
           <Tableau apercu={apercu} index={index} onFiche={onFiche} busy={busy} montrerSiren={colonnes.includes("siren")} colonnesChoisies={base === "maitre" ? colsMaitre : undefined} />
           <Pager page={page} total={apercu.total} parPage={PAR_PAGE} busy={busy} onPage={setPage} />
         </>
@@ -624,6 +625,7 @@ export function VuePriorite({
         {scoring && apercu && apercu.lignes.length === 0 && <Vide texte="Aucune entreprise dans cette cible." />}
         {scoring && apercu && apercu.lignes.length > 0 && (
           <>
+            {apercu.coordonnees_retirees && <p className="hint note-plan" role="note">{apercu.coordonnees_retirees}</p>}
             <Tableau apercu={apercu} index={index} rang={(page - 1) * PAR_PAGE + 1} onFiche={onFiche} busy={busy} />
             <Pager page={page} total={apercu.total} parPage={PAR_PAGE} busy={busy} onPage={setPage} />
           </>
