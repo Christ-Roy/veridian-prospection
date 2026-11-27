@@ -67,7 +67,7 @@ async function espaceToujoursOuvert(userId: string, ctx: UserContext): Promise<b
   if (t.userId === userId) return true;
   const m = await prisma.workspaceMember.findFirst({
     where: { userId, deletedAt: null, workspace: { tenantId: ctx.tenantId, deletedAt: null } },
-    select: { id: true },
+    select: { userId: true },
   });
   return !!m;
 }
