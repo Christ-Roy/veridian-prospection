@@ -131,3 +131,13 @@ Après chaque déplacement, exécuter depuis la racine `veridian-platform/` :
 ```
 
 Met à jour `TODO.md` qui agrège tous les tickets pending+staging+blocked+done de toutes les apps.
+
+## Archivage du 27/11/2026
+
+26 fiches de mai-juin passées dans `done/` sans être faites : elles décrivent l'ancienne app (retirée les 15-16/11, migration 0040 :
+pipeline, calendrier, fiche 360, mail SMTP v1, bandeau d'essai, batterie de staging, import vers le CRM) ou des pistes remplacées
+par Atlas (`ia-search-*` → outils MCP `explorer_marche`, `extraire_segment`, `/api/v1/marches` ; réservoir et ré-enrichissement →
+ODH ; envoi vers Notifuse et le CRM → `docs/LIAISONS.md`). Restent ouvertes : le plan d'affaires (document de Robert), la recherche
+sur la licence de Twenty (session CRM) et l'historique des migrations qui ne se rejoue pas de zéro (vu encore le 27/11 :
+`0002_add_tenant_id` échoue sur une base fantôme). `SEARCH_API_SECRET` est encore lue par le jobspec alors que `/api/search`
+n'existe plus : à retirer.
