@@ -14,6 +14,14 @@ import { NAF_LIBELLES } from "./naf";
 import { TABLES_SQL } from "./sql";
 import { parmiSirens, FiltreInvalide, FiltreSchema, ScoringSchema, colonnesSql, compilerFiltre, type Condition, type SqlParam } from "./filtres";
 
+/**
+ * Codes d'activité proposés à la recherche par métier : forme NAF et libellé officiel. « 0000Z », le code bouche-trou d'ODH
+ * (67 025 entreprises), passait la forme et s'affichait « 0000Z 0000Z » (regard client, 27/11).
+ */
+export function codesActivite(codes: readonly string[]): string[] {
+  return [...new Set(codes)].filter((c) => /^\d{4}[A-Z]$/.test(c) && !!NAF_LIBELLES[c]);
+}
+
 export type Ligne = Record<string, string | number | boolean | null>;
 export type Apercu = { colonnes: string[]; page: number; parPage: number; tri: string; lignes: Ligne[] };
 /** Options d'aperçu ; avec `scoring`, chaque ligne a une colonne `score` (0-100) et le tri se fait dessus. */
@@ -262,7 +270,7 @@ export class SourceClickHouse implements SourceMarche {
       params,
     );
     const parNom = new Map(usage.map((u) => [u.naf, Number(u.n)]));
-    const codes = [...new Set([...codesLibelle, ...parNom.keys()])].filter((c) => /^\d{4}[A-Z]$/.test(c));
+    const codes = codesActivite([...codesLibelle, ...parNom.keys()]);
     if (!codes.length) return [];
     const cube = await this.requete<Record<string, unknown>>(
       `SELECT naf_code AS naf, sum(nb_entreprises) AS entreprises, sum(nb_prospectables) AS contactables, sum(nb_email_livrable) AS email
