@@ -27,7 +27,7 @@ DATABASE_URL="postgresql://postgres:testpass@localhost:5432/prospection_test" \
 CI=1 \
   PROSPECTION_URL="http://100.92.215.42:3000" \
   ROBERT_EMAIL="robert.brunon@veridian.site" \
-  ROBERT_PASSWORD="Mincraft5*55" \
+  ROBERT_PASSWORD="$ROBERT_PASSWORD" \
   npx playwright test e2e/core/global-full-flow.spec.ts --project=chromium
 ```
 

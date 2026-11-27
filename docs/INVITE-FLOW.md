@@ -171,7 +171,7 @@ npx tsx scripts/test-invite-api.ts
 4. Clic « + Nouvelle invitation » → remplir `test-local@yopmail.com` + workspace + role
 5. Copier l'`inviteUrl` depuis le dialog qui s'affiche
 6. Ouvrir une **fenêtre privée** (sinon tu écrases ta session admin), coller le lien
-7. Remplir password `TestLocal2026!` + submit → redirect `/prospects`
+7. Remplir un mot de passe de test (8 caractères au moins, jamais écrit ici) + submit → redirect `/prospects`
 8. Retour sur la fenêtre admin, refresh `/admin/invitations` → badge « Acceptée »
 
 ---

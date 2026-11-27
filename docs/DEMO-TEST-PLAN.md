@@ -43,7 +43,7 @@ Ouvre **deux fenêtres distinctes** pour simuler admin + collègue invité :
 
 1. URL : https://saas-prospection.staging.veridian.site/login
 2. Email : `robert@veridian.site`
-3. Password : **`DevRobert2026!`** (je l'ai reset dans la session)
+3. Password : **`$DEMO_PASSWORD` (coffre, jamais ici)** (je l'ai reset dans la session)
 4. Clic **Se connecter**
 
 **Attendu** : redirect automatique vers `/prospects`, table avec des leads
@@ -127,7 +127,7 @@ que le UI attend. Backend-invite a documenté la shape dans le header de
    - Input **nom complet** (optionnel)
    - Bouton **Accepter l'invitation**
 3. Remplis :
-   - Password : **`DemoCollegue2026!`**
+   - Password : **`$DEMO_PASSWORD` (coffre, jamais ici)**
    - Nom : `Demo Collègue` (optionnel)
 4. Clic **Accepter l'invitation**
 
@@ -303,9 +303,9 @@ type TypeScript foireux. tsc local est vert (je l'ai run), donc c'est louche.
 | Dashboard staging | https://saas-prospection.staging.veridian.site |
 | Hub staging | https://saas-hub.staging.veridian.site |
 | Admin email | `robert@veridian.site` |
-| Admin password | `DevRobert2026!` |
+| Admin password | `$DEMO_PASSWORD` (coffre) |
 | Yopmail collègue | https://yopmail.com/?demo-collegue-1 |
-| Password collègue | `DemoCollegue2026!` |
+| Password collègue | `$DEMO_PASSWORD` (coffre) |
 | `/api/status` public | https://saas-prospection.staging.veridian.site/api/status |
 
 ---
