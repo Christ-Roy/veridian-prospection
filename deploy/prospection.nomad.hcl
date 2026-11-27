@@ -102,10 +102,6 @@ job "prospection" {
         "traefik.http.routers.prospectionprod.entrypoints=websecure",
         "traefik.http.routers.prospectionprod.tls=true",
         "traefik.http.routers.prospectionprod.tls.certresolver=letsencrypt",
-        # Traefik n'écoute pas la santé de Nomad (infra, fiche 34) : contrôle actif, superficiel, même chemin que le check du service.
-        "traefik.http.services.prospection.loadbalancer.healthcheck.path=/api/version",
-        "traefik.http.services.prospection.loadbalancer.healthcheck.interval=5s",
-        "traefik.http.services.prospection.loadbalancer.healthcheck.timeout=2s",
       ]
       check {
         type     = "http"

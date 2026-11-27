@@ -25,6 +25,11 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      image_existante:
+        description: "Redéployer le jobspec de main avec une image DÉJÀ construite (sha7) : changement de tags Traefik en place, sans canari (fiche 34 de l'infra). Vide = rien n'est déployé."
+        required: false
+        default: ""
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -220,16 +225,27 @@ jobs:
   deploy-prod:
     name: Deploy prod (verbe bastion veridian-ci-deploy)
     needs: [docker]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    # Push : l'image qui vient d'être construite. Lancement manuel avec `image_existante` : la même image que la prod
+    # (le jobspec seul change, donc une mise à jour EN PLACE quand seuls les tags bougent ; jamais de canari qui chevauche).
+    if: >-
+      always() && github.ref == 'refs/heads/main' &&
+      ((github.event_name == 'push' && needs.docker.result == 'success') ||
+       (github.event_name == 'workflow_dispatch' && inputs.image_existante != ''))
     runs-on: ubuntu-latest
     concurrency:
       group: deploy-prod
       cancel-in-progress: false
     env:
-      IMAGE_TAG: ${{ needs.docker.outputs.sha7 }}
+      IMAGE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.image_existante || needs.docker.outputs.sha7 }}
       PROD_URL: https://prospection.app.veridian.site
     steps:
       - uses: actions/checkout@v6
+
+      - name: Image demandée (lancement manuel)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          [[ "$IMAGE_TAG" =~ ^[0-9a-f]{7}$ ]] || { echo "::error::image_existante doit être un sha7 (ex. ab363b9), reçu « $IMAGE_TAG »"; exit 1; }
+          echo "Redéploiement du jobspec de main avec l'image existante $IMAGE_TAG (aucune construction)."
 
       - name: Clé de déploiement (bastion)
         run: |
