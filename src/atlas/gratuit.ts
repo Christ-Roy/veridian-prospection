@@ -4,9 +4,13 @@
  *  - `masque` : emails et téléphones retirés de toute sortie, et on ne filtre pas sur leur texte ;
  *  - `fiches:N` : pareil dans les listes, mais N fiches distinctes par jour et par espace montrent les leurs.
  * Un plan payant ou l'accès avancé n'est jamais concerné. Un plan illisible compte pour gratuit.
+ *
+ * Mesure (allumé ou non) : chaque sortie d'un compte gratuit qui porte des coordonnées écrit une ligne
+ * `[atlas][coordonnees]` (outil, espace, réglage, fiches demandées, fiches montrées), des nombres seulement.
+ * C'est l'usage réel d'où se tire le plafond : `obs search '\[atlas\]\[coordonnees\]' --since 720h`.
  */
 import { consommer, minuitParis, rendre } from "@/lib/compteurs";
-import { retirerCoordonnees } from "@/lib/mcp/coordonnees";
+import { compterCoordonnees, retirerCoordonnees } from "@/lib/mcp/coordonnees";
 import type { ContexteOutil, Outil } from "@/lib/mcp/outils";
 
 import { enRestreint } from "./restreint";
@@ -33,8 +37,15 @@ async function ficheOfferte(tenantId: string, siren: string, plafond: number): P
 }
 
 export async function selonPlan(outil: Outil, a: Record<string, unknown>, c: ContexteOutil): Promise<unknown> {
+  if (c.droits?.payant || c.droits?.accesAvance) return outil.run(a, c);
   const r = reglageGratuit();
-  if (!r || c.droits?.payant || c.droits?.accesAvance) return outil.run(a, c);
-  if (outil.name === FICHE && (await ficheOfferte(c.ctx.tenantId, String(a.siren), r.fiches))) return outil.run(a, c);
-  return retirerCoordonnees(await enRestreint(() => outil.run(a, c), ORIENTATION_GRATUIT), ORIENTATION_GRATUIT);
+  const libre = !r || (outil.name === FICHE && (await ficheOfferte(c.ctx.tenantId, String(a.siren), r.fiches)));
+  const brut = libre ? await outil.run(a, c) : await enRestreint(() => outil.run(a, c), ORIENTATION_GRATUIT);
+  const demandees = compterCoordonnees(brut);
+  const v = libre ? brut : retirerCoordonnees(brut, ORIENTATION_GRATUIT);
+  if (demandees) {
+    const reglage = r ? (r.fiches ? `fiches:${r.fiches}` : "masque") : "aucun";
+    console.info(`[atlas][coordonnees] outil=${outil.name} tenant=${c.ctx.tenantId} plan=${c.droits?.plan ?? "aucun"} reglage=${reglage} demandees=${demandees} montrees=${libre ? demandees : 0}`);
+  }
+  return v;
 }

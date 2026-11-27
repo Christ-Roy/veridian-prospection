@@ -82,13 +82,12 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
 - Accès avancé (`requete_sql`, clés `atl_`) et `extraire_segment` : `docs/claude/acces-avance-et-extraction.md`.
 - Quota, porte de connexion : `src/lib/compteurs.ts` (en base) ; `isRateLimited` : confort, par instance.
 - Mon IA (§5.24.1), seule entrée IA : état au Hub (`ia-etat.ts`), cadre si `prete`, sinon carte aux liens du Hub (`liens-ia-client.ts`) ; fils `ia_fils` (`/api/hub/ia/fils/[session]`, HMAC, 404 hors triplet), purgés au retrait.
-- Journaux : `obs search '\[mcp\] outil='` ; l'écran n'en écrit aucun, sauf `[liaisons]`.
+- Journaux : `obs search '\[mcp\] outil='` ; l'écran n'en écrit aucun, sauf `[liaisons]` et `[atlas][coordonnees]` (VER-249, nombres vus par un gratuit).
 - Envoi vers le CRM et Mail (VER-246) : `docs/LIAISONS.md`, drapeau `ATLAS_LIAISONS`. Clients, API par marché, pages publiques : `docs/CLIENTS-ET-MARCHES.md`.
 
 ## Déploiement et promotion
 
-On travaille sur `main`, la branche qui déploie. La branche `staging` a divergé : ne pas y merger
-sans regarder.
+On travaille sur `main`, seule branche (staging retirée le 27/11, tag `archive/staging-20261127`).
 
 Prod : UN SEUL chemin. Un push sur `main` : la CI construit `ghcr.io/christ-roy/prospection:<sha7>`,
 puis le job `deploy-prod` envoie le HCL du commit (`deploy/prospection.nomad.hcl`) et ce tag au bastion
@@ -98,8 +97,6 @@ par le verbe `veridian-ci-deploy prospection` (put-job, plan, deploy canari, smo
   `scripts/ci/check-image-tag-sans-defaut.py` refuse tout défaut, auto-test compris (quality).
 - Ne jamais déployer à la main : `nomad-v deploy` et `nomad job run` ignorent le tag CI.
 - Job prod sur `ovh-prod` (contrainte `meta.provider`), pas sur le bastion.
-
-Staging (branche `staging`) : divergé, à l'arrêt, sans workflow : n'y rien pousser sans trancher.
 
 | Tier | Exemples | Action agent |
 |---|---|---|

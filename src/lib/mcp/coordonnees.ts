@@ -58,3 +58,25 @@ export function retirerCoordonnees(valeur: unknown, orientation = ORIENTATION): 
   const propre = passer(valeur);
   return retire && propre && typeof propre === "object" && !Array.isArray(propre) ? { ...propre, coordonnees_retirees: orientation } : propre;
 }
+
+/**
+ * Nombre d'objets d'une sortie qui portent une coordonnée (email ou téléphone renseigné) : une ligne de liste, une fiche.
+ * Mesure de VER-249 (ce qu'un compte gratuit demande et voit), jamais la valeur elle-même.
+ */
+export function compterCoordonnees(valeur: unknown): number {
+  let n = 0;
+  const pleine = (x: unknown): boolean => (typeof x === "string" ? x.trim() !== "" && x !== RETIRE : Array.isArray(x) && x.some(pleine));
+  const passer = (v: unknown): void => {
+    if (Array.isArray(v)) return v.forEach(passer);
+    if (!v || typeof v !== "object" || typeof (v as { toJSON?: unknown }).toJSON === "function") return;
+    let porte = false;
+    for (const [k, x] of Object.entries(v)) {
+      if (ECRIT_PAR_UTILISATEUR.has(k)) continue;
+      if (CLES.test(k) && pleine(x)) porte = true;
+      else passer(x);
+    }
+    if (porte) n++;
+  };
+  passer(valeur);
+  return n;
+}

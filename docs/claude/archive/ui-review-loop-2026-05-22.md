@@ -1,5 +1,7 @@
 # Boucle de revue UI — veridian-prospection
 
+> **Archivé le 27/11/2026** : la branche `staging`, le conteneur `ui-dev` et `postgres-staging` n'existent plus. On travaille sur `main` ; la preuve visuelle passe par le navigateur distant (`lourd --navigateur`) sur la prod, avec un compte jetable.
+
 > Setup câblé 2026-05-22. Permet à un agent de livrer de l'UI de qualité
 > en autonomie, sans que Robert serve de test runner visuel.
 
