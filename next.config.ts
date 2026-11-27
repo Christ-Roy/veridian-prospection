@@ -16,8 +16,11 @@ export const ANCIENNES_PAGES = [
   "/segments", "/segments/:rest*", "/leads/:rest*", "/settings", "/settings/:rest*", "/admin", "/admin/:rest*", "/invite/:rest*",
 ];
 
+const commit = process.env.COMMIT_SHA;
 const nextConfig: NextConfig = {
   output: "standalone",
+  // Deux versions servies pendant un canari (2 exemplaires, lot C) : chaque build porte son identifiant.
+  ...(commit && commit !== "unknown" ? { deploymentId: commit.slice(0, 12) } : {}),
   async redirects() {
     return ANCIENNES_PAGES.map((source) => ({ source, destination: "/", permanent: false }));
   },

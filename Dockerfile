@@ -25,6 +25,10 @@ RUN if [ -n "$NEXT_PUBLIC_HUB_URL" ]; then echo "NEXT_PUBLIC_HUB_URL=$NEXT_PUBLI
     if [ -n "$NEXT_PUBLIC_SITE_URL" ]; then echo "NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL" >> .env.local; fi && \
     if [ -n "$NEXT_PUBLIC_TRIAL_DAYS" ]; then echo "NEXT_PUBLIC_TRIAL_DAYS=$NEXT_PUBLIC_TRIAL_DAYS" >> .env.local; fi
 
+# Identifiant de déploiement (next.config deploymentId) : pendant un canari, deux versions sont servies ;
+# un client de l'ancienne recharge proprement au lieu de mélanger les fichiers (infra, 27/11, vu chez Academy).
+ARG COMMIT_SHA=unknown
+ENV COMMIT_SHA=$COMMIT_SHA
 RUN npx prisma generate && npm run build
 
 FROM base AS runner

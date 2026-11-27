@@ -14,6 +14,9 @@ variable "image_tag" {
 }
 
 job "prospection" {
+  meta {
+    veridian_domaine = "saas" # domaine affiche par la vue flotte (scripts/vue-flotte/), regle DOMAINE du lint
+  }
   datacenters = ["veridian-eu"]
   type        = "service"
   priority    = 80
@@ -205,7 +208,9 @@ ATLAS_PUBLIC_INDEX=1
 LIAISON_URL_CRM=https://crm.app.veridian.site/mcp
 LIAISON_URL_NOTIFUSE=https://notifuse.app.veridian.site/api/veridian/actions
 # Atlas : ClickHouse ODH en lecture seule (compte prospection_ro, profil borné côté serveur).
-CLICKHOUSE_URL=http://100.96.29.49:28123/
+{{- $ch := "" }}{{ range nomadService "odh-clickhouse" }}{{ $ch = printf "http://%s:%d/" .Address .Port }}{{ end }}
+# Adresse lue au catalogue Nomad (service odh-clickhouse), plus jamais en dur (lint CIBLE-IP, infra 27/11).
+CLICKHOUSE_URL={{ $ch }}
 CLICKHOUSE_USER=prospection_ro
 
 {{ with nomadVar "nomad/jobs/prospection" }}
@@ -213,7 +218,6 @@ AUTH_SECRET={{ .AUTH_SECRET }}
 TENANT_API_SECRET={{ .TENANT_API_SECRET }}
 # Second secret du Hub, facultatif (VER-251) : accepté en vérification seulement, absent = rien.
 {{ with .HUB_API_SECRET_SECOND }}HUB_API_SECRET_SECOND={{ . }}{{ end }}
-SEARCH_API_SECRET={{ .SEARCH_API_SECRET }}
 CRON_SECRET={{ .CRON_SECRET }}
 HUB_WEBHOOK_TOKEN={{ .HUB_WEBHOOK_TOKEN }}
 OPENROUTER_VERIDIAN_KEY={{ .OPENROUTER_VERIDIAN_KEY }}
