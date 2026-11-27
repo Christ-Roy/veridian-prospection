@@ -22,6 +22,7 @@ import {
   etapesEntonnoir,
   fusionnerIAs,
   joursEnvoi,
+  joursEnvoiVisibles,
   kpisDisponibles,
   marcheDe,
   nomAuteur,
@@ -363,6 +364,10 @@ describe("chiffres et entonnoir", () => {
   test("jours d'envoi et descente", () => {
     expect(joursEnvoi(0)).toBe(0);
     expect(joursEnvoi(401)).toBe(2);
+    // Décision du 27/11 : pas de KPI « jours d'envoi » sur « Tout le marché », ni sur un plan gratuit.
+    expect(joursEnvoiVisibles(null, true)).toBe(false);
+    expect(joursEnvoiVisibles("seg-1", false)).toBe(false);
+    expect(joursEnvoiVisibles("seg-1", true)).toBe(true);
     expect(avecDepartement({ conditions: [] }, "69").conditions).toEqual([{ champ: "departement", op: "dans", valeur: ["69"] }]);
     expect(avecDepartement({ conditions: [] }, null).conditions).toEqual([]);
   });

@@ -164,6 +164,12 @@ export const avecCondition = (f: Filtre, c: Condition): Filtre => ({ ...f, condi
 
 export const avecDepartement = (f: Filtre, code: string | null): Filtre => (code ? avecCondition(f, { champ: "departement", op: "dans", valeur: [code] }) : f);
 
+/**
+ * Le KPI « jours d'envoi » ne s'affiche que sur un marché ou un segment choisi (pas sur « Tout le marché »),
+ * et seulement si le plan permet l'envoi (décision du 27/11).
+ */
+export const joursEnvoiVisibles = (selection: string | null, payant: boolean): boolean => !!selection && payant;
+
 /** Jours d'envoi à un rythme donné (400 par jour par défaut, comme la maquette), sur les emails envoyables. */
 export const joursEnvoi = (n: number, parJour = 400) => (n > 0 ? Math.ceil(n / parJour) : 0);
 

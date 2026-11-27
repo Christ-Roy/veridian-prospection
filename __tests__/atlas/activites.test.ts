@@ -5,7 +5,7 @@
 import { describe, expect, test } from "vitest";
 
 import { FiltreInvalide } from "@/atlas/filtres";
-import { codesParLibelle, motifMot, motsCles, normaliser, validerActivites } from "@/atlas/activites";
+import { classerActivites, codesParLibelle, motifMot, motsCles, normaliser, validerActivites } from "@/atlas/activites";
 import { SourceClickHouse, SourceSimulee } from "@/atlas/source";
 
 describe("mots et libellés", () => {
@@ -60,5 +60,22 @@ describe("source", () => {
     const r = await new SourceSimulee(300).activites(["simulee"], [], 5);
     expect(r.length).toBeGreaterThan(0);
     expect(r[0].signaux).toContain("usage");
+  });
+});
+
+describe("classement d'un métier (27/11)", () => {
+  const c = (naf: string, signaux: ("libelle" | "usage")[], par_nom: number, entreprises_actives: number) => ({ naf, signaux, par_nom, entreprises_actives });
+  test("le libellé officiel passe avant tout code porté seulement par le nom, même très fréquent", () => {
+    const r = classerActivites([c("6820B", ["usage"], 900, 50000), c("6420Z", ["usage"], 400, 9000), c("1071C", ["libelle", "usage"], 3, 800), c("1071B", ["libelle"], 0, 120)]);
+    expect(r.map((x) => x.naf)).toEqual(["1071C", "1071B", "6820B", "6420Z"]);
+  });
+  test("dans chaque groupe : par nom d'abord, puis le marché entier", () => {
+    const r = classerActivites([c("A", ["usage"], 5, 10), c("B", ["usage"], 5, 99), c("C", ["usage"], 7, 1)]);
+    expect(r.map((x) => x.naf)).toEqual(["C", "B", "A"]);
+  });
+  test("ne modifie pas la liste reçue", () => {
+    const entree = [c("X", ["usage"], 1, 1), c("Y", ["libelle"], 0, 1)];
+    classerActivites(entree);
+    expect(entree[0].naf).toBe("X");
   });
 });

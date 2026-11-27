@@ -4,7 +4,7 @@
  * compte) : source simulée déterministe, signalée par `simulee: true` dans chaque réponse.
  */
 import { CHAMP, CHAMPS, type Champ } from "./champs";
-import { motifMot, motsCles, type CodeActivite } from "./activites";
+import { classerActivites, motifMot, motsCles, type CodeActivite } from "./activites";
 import type { Arret } from "./parcours";
 import { clientsCourants } from "./clients-portee";
 import { COLONNES_MAITRE, TABLE_MAITRE, compilerMaitre, conditionNom } from "./maitre";
@@ -279,7 +279,7 @@ export class SourceClickHouse implements SourceMarche {
     );
     const parCode = new Map(cube.map((l) => [String(l.naf), l]));
     const libelles = new Set(codesLibelle);
-    return codes
+    return classerActivites(codes
       .map((c) => ({
         naf: c,
         libelle: NAF_LIBELLES[c] ?? c,
@@ -288,8 +288,7 @@ export class SourceClickHouse implements SourceMarche {
         entreprises_actives: Number(parCode.get(c)?.entreprises ?? 0),
         contactables: Number(parCode.get(c)?.contactables ?? 0),
         email_envoyable: Number(parCode.get(c)?.email ?? 0),
-      }))
-      .sort((a, b) => Number(b.signaux.includes("libelle")) - Number(a.signaux.includes("libelle")) || b.par_nom - a.par_nom || b.entreprises_actives - a.entreprises_actives)
+      })))
       .slice(0, limite);
   }
 
@@ -789,7 +788,7 @@ export class SourceSimulee implements SourceMarche {
       if (radicaux.every((m) => new RegExp(motifMot(m)).test(t))) parNom.set(String(l.naf), (parNom.get(String(l.naf)) ?? 0) + 1);
     }
     const libelles = new Set(codesLibelle);
-    return [...new Set([...codesLibelle, ...parNom.keys()])]
+    return classerActivites([...new Set([...codesLibelle, ...parNom.keys()])]
       .map((c) => {
         const ls = this.lignes.filter((l) => l.naf === c);
         return {
@@ -801,8 +800,7 @@ export class SourceSimulee implements SourceMarche {
           contactables: ls.length,
           email_envoyable: ls.filter((l) => l.email_envoyable).length,
         };
-      })
-      .sort((a, b) => Number(b.signaux.includes("libelle")) - Number(a.signaux.includes("libelle")) || b.par_nom - a.par_nom || b.entreprises_actives - a.entreprises_actives)
+      }))
       .slice(0, limite);
   }
 

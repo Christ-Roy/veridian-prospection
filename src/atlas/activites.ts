@@ -76,3 +76,13 @@ export type CodeActivite = {
   contactables: number;
   email_envoyable: number;
 };
+
+/**
+ * Ordre d'affichage d'un métier (décision du 27/11) : d'abord les codes dont le libellé officiel contient les
+ * mots, puis les codes portés seulement par le nom des entreprises. Dans chaque groupe : le nombre d'entreprises
+ * qui portent le code par le nom, puis le marché entier.
+ */
+export function classerActivites<T extends { signaux: readonly string[]; par_nom: number; entreprises_actives: number }>(codes: readonly T[]): T[] {
+  const libelle = (c: T) => (c.signaux.includes("libelle") ? 1 : 0);
+  return [...codes].sort((a, b) => libelle(b) - libelle(a) || b.par_nom - a.par_nom || b.entreprises_actives - a.entreprises_actives);
+}

@@ -31,7 +31,7 @@ function RechercheMetier({ onCodes }: { onCodes: (codes: string[]) => void }) {
   const [envoi, setEnvoi] = useState(false);
   const resultats = useRef<HTMLDivElement>(null);
   const court = mots.trim().length > 0 && mots.trim().length < 3;
-  // La recherche est sous les graphiques : ses résultats tombaient hors de l'écran (regard client, 27/11). On les y amène.
+  // La recherche est en haut de la vue (décision du 27/11) : ses résultats s'affichent juste dessous.
   useEffect(() => {
     if (codes) resultats.current?.scrollIntoView?.({ behavior: "smooth", block: "end" });
   }, [codes]);
@@ -81,6 +81,7 @@ function RechercheMetier({ onCodes }: { onCodes: (codes: string[]) => void }) {
                 />
                 <span>
                   <b>{c.naf}</b> {c.libelle}
+                  {!c.signaux.includes("libelle") && <em className="d-nom"> d&apos;après le nom</em>}
                   <i>
                     {formaterNombre(c.entreprises_actives)} entreprises · {formaterNombre(c.contactables)} contactables
                     {c.par_nom ? ` · ${formaterNombre(c.par_nom)} par le nom` : ""}
@@ -232,8 +233,8 @@ export function VueMarche({
   const max = Math.max(1, ...(donnees?.lignes ?? []).map((l) => l.entreprises));
   return (
     <div className="marche">
-      <Dossier filtre={filtre} onFiltrer={onFiltrer} />
       <RechercheMetier onCodes={onCodes} />
+      <Dossier filtre={filtre} onFiltrer={onFiltrer} />
       <div className="tools">
         <label htmlFor="atlas-axe-marche">Répartir par</label>
         <select id="atlas-axe-marche" className="sel" value={axe} onChange={(e) => setAxe(e.target.value as AxeMarche)}>

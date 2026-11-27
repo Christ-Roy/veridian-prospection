@@ -394,6 +394,7 @@
 .atlas .marche .codes { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 6px 16px; }
 .atlas .marche .codes .ck { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }
 .atlas .marche .codes .ck i { display: block; font-style: normal; color: var(--muted); font-size: 12px; }
+.atlas .marche .codes .ck .d-nom { color: var(--muted); font-size: 12px; }
 .atlas .marche .metier .btn.pri { align-self: flex-start; }
 .atlas .marche td { position: relative; }
 .atlas .marche td .barre, .atlas .marche td .barre-p { position: absolute; left: 0; bottom: 3px; height: 3px; border-radius: 2px; }

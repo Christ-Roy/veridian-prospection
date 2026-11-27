@@ -27,6 +27,7 @@ import {
   etapesEntonnoir,
   initialeAuteur,
   joursEnvoi,
+  joursEnvoiVisibles,
   kpisDisponibles,
   marcheDe,
   nomAuteur,
@@ -924,7 +925,7 @@ export function AtlasApp() {
                 <span>des {formaterNombre(kpis.marche)} entreprises du marché</span>
               </div>
             )}
-            {kpis && (kpis.envoyable ?? kpis.email_envoyable ?? kpis.email) !== undefined && (
+            {joursEnvoiVisibles(selection, !!droits?.payant) && kpis && (kpis.envoyable ?? kpis.email_envoyable ?? kpis.email) !== undefined && (
               <div className="kpi">
                 <b className="num">{formaterNombre(joursEnvoi(kpis.envoyable ?? kpis.email_envoyable ?? kpis.email))} j</b>
                 <span>d&apos;envoi à 400 par jour</span>
