@@ -16,8 +16,8 @@ variable "image_tag" {
 job "prospection" {
   meta {
     veridian_domaine = "saas" # domaine affiche par la vue flotte (scripts/vue-flotte/), regle DOMAINE du lint
-    # Fiche 34 (infra) en deux temps : ce marqueur seul d'abord (relance les allocations), puis les tags de santé Traefik en place.
-    veridian_tags_canari_annonce = "2197ba7bc1b91674"
+    # Fiche 34 (infra) : ce marqueur seul (relance les allocations), puis les tags santé + retry en place, par image_existante.
+    veridian_tags_canari_annonce = "b5ae03e3e41c655f"
   }
   datacenters = ["veridian-eu"]
   type        = "service"
