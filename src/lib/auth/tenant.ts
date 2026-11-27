@@ -2,13 +2,15 @@ import { prisma } from "@/lib/prisma";
 
 // Cache tenant_id lookups per request (user_id → tenant_id)
 const tenantCache = new Map<string, { id: string; expiresAt: number }>();
+// 3 s comme les autres caches de fermeture (27/11) : un retrait de membre se voit sur toutes les instances.
+const TENANT_CACHE_TTL_MS = 3_000;
 
 /**
  * Get the tenant ID for a user.
  * Resolves via Prisma local DB (post-Auth.js v5 migration 2026-05-08).
  * Looks up the user's tenant via the workspace_members → workspaces → tenants chain,
  * with a fallback to the direct tenants.user_id (legacy schema).
- * Caches results for 60 seconds.
+ * Caches results for 3 seconds (27/11, multi-instance).
  */
 export async function getTenantId(userId: string): Promise<string | null> {
   const cached = tenantCache.get(userId);
@@ -37,7 +39,7 @@ export async function getTenantId(userId: string): Promise<string | null> {
     return null;
   }
 
-  tenantCache.set(userId, { id: tenantId, expiresAt: Date.now() + 60_000 });
+  tenantCache.set(userId, { id: tenantId, expiresAt: Date.now() + TENANT_CACHE_TTL_MS });
   return tenantId;
 }
 
@@ -98,7 +100,9 @@ const planCache = new Map<
   string,
   { limit: number; tenantId: string | null; expiresAt: number }
 >();
-const PLAN_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+// 3 s, comme les autres caches de fermeture (27/11) : deux instances ne reçoivent pas le même update-plan, et l'invalidation
+// locale ne touche que celle qui le reçoit. Un downgrade ou un upgrade se voit donc au plus tard 3 s plus tard partout.
+const PLAN_CACHE_TTL_MS = 3_000;
 
 /**
  * Invalide toutes les entrées du cache plan pour un tenant donné.

@@ -19,9 +19,10 @@ export class RefusAcces extends Error {}
 export type Droits = { accesAvance: boolean; adminAtlas: boolean; plan: string | null; payant: boolean };
 
 const cache = new Map<string, { t: number; v: Droits }>();
-const DUREE = 30_000;
+// 3 s (27/11) : un retrait d'accès avancé ou un changement de plan se voit sur toutes les instances au plus tard 3 s après.
+const DUREE = 3_000;
 
-/** Droits Atlas d'un utilisateur dans un espace, gardés 30 s. */
+/** Droits Atlas d'un utilisateur dans un espace, gardés 3 s. */
 export async function droits(userId: string, tenantId: string, frais = false): Promise<Droits> {
   const k = `${userId}:${tenantId}`;
   const c = cache.get(k);

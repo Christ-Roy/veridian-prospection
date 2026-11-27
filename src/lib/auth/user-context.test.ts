@@ -87,6 +87,7 @@ function makeCookieStore(activeWorkspaceId: string | null = null) {
 }
 
 beforeEach(() => {
+  invalidateAllUserContexts();
   mockAuth.mockReset();
   mockCookies.mockReset();
   mockTenantFindFirst.mockReset();
@@ -393,7 +394,7 @@ describe("getUserContext — cache 30s anti-DoS", () => {
     mockAuth.mockResolvedValue({
       user: { id: "user-cache", email: "c@v.site" },
     });
-    mockTenantFindFirst.mockResolvedValueOnce({
+    mockTenantFindFirst.mockResolvedValue({
       id: "tenant-cache",
       userId: "user-cache",
     });
@@ -411,7 +412,7 @@ describe("getUserContext — cache 30s anti-DoS", () => {
 
     expect(c1!.tenantId).toBe("tenant-cache");
     expect(c2!.tenantId).toBe("tenant-cache");
-    expect(mockTenantFindFirst).toHaveBeenCalledTimes(1);
+    // La résolution lourde (workspaces) n'a lieu qu'une fois ; la fermeture est relue en base à chaque appel (27/11).
     expect(mockWorkspaceMemberFindMany).toHaveBeenCalledTimes(1);
   });
 
@@ -718,8 +719,8 @@ describe("getWorkspaceScope — bundle ctx + filtres", () => {
   });
 });
 
-describe("cache court : une instance qui n'a pas reçu l'appel du Hub suit en 3 s", () => {
-  it("retiré sur une autre instance : servi depuis le cache 2,9 s, fermé à 3,1 s", async () => {
+describe("fermeture faite sur une autre instance : vue sans attendre le cache", () => {
+  it("retiré sur une autre instance : refusé aussitôt, même à 2,9 s (contrôle relu en base)", async () => {
     vi.useFakeTimers({ now: 1_000_000, toFake: ["Date"] });
     try {
       mockAuth.mockResolvedValue({ user: { id: "user-c", email: "c@veridian.site" } });
@@ -732,8 +733,6 @@ describe("cache court : une instance qui n'a pas reçu l'appel du Hub suit en 3 
       mockTenantFindFirst.mockResolvedValue(null);
       mockWorkspaceMemberFindFirst.mockResolvedValue(null);
       vi.setSystemTime(1_000_000 + 2_900);
-      expect((await getUserContext())?.workspaces.map((w) => w.id)).toEqual(["w-c"]);
-      vi.setSystemTime(1_000_000 + 3_100);
       expect(await getUserContext()).toBeNull();
     } finally {
       vi.useRealTimers();

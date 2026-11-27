@@ -60,6 +60,18 @@ export async function refusSansContexte(): Promise<NextResponse> {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }
 
+/** Vrai si l'espace du contexte en cache est encore ouvert (ni supprimé, ni suspendu) et l'utilisateur encore dedans. Lu en base. */
+async function espaceToujoursOuvert(userId: string, ctx: UserContext): Promise<boolean> {
+  const t = await prisma.tenant.findFirst({ where: { id: ctx.tenantId, ...OUVERT }, select: { id: true, userId: true } });
+  if (!t) return false;
+  if (t.userId === userId) return true;
+  const m = await prisma.workspaceMember.findFirst({
+    where: { userId, deletedAt: null, workspace: { tenantId: ctx.tenantId, deletedAt: null } },
+    select: { id: true },
+  });
+  return !!m;
+}
+
 export async function getUserContext(): Promise<UserContext | null> {
   const user = await getAuthUser();
   if (!user) return null;
@@ -80,7 +92,13 @@ export async function buildUserContext(
 ): Promise<UserContext | null> {
   const cle = preferredTenantId ? `${user.id}:${preferredTenantId.toLowerCase()}` : user.id;
   const cached = contextCache.get(cle);
-  if (cached && cached.expiresAt > Date.now()) {
+  // Fermeture lue en base à chaque appel (27/11, multi-instance) : le cache mémoire ne peut pas voir une suspension,
+  // un retrait ou une suppression faits sur une AUTRE instance. Le cache ne sert que si l'espace est toujours ouvert et
+  // l'utilisateur toujours propriétaire ou membre actif ; sinon on re-résout (et on refuse) sans rien servir.
+  if (cached && !(await espaceToujoursOuvert(user.id, cached.ctx))) {
+    contextCache.delete(cle);
+  }
+  if (cached && cached.expiresAt > Date.now() && contextCache.has(cle)) {
     // Le cookie se revérifie à chaque appel : seul un atelier de ce contexte peut devenir actif.
     const actif = activeCookie && cached.ctx.workspaces.some((w) => w.id === activeCookie) ? activeCookie : cached.ctx.workspaces[0]?.id ?? null;
     return { ...cached.ctx, activeWorkspaceId: actif };

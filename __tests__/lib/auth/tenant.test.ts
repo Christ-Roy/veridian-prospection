@@ -6,7 +6,7 @@
  *  - lifetime_site_vitrine / lifetime_partner / internal → Infinity
  *  - plan inconnu → fallback freemium
  */
-import { describe, expect, test, vi, beforeEach } from "vitest";
+import { afterEach, describe, expect, test, vi, beforeEach } from "vitest";
 
 const { queryRawUnsafe, tenantFindFirst, workspaceMemberFindFirst } = vi.hoisted(() => ({
   queryRawUnsafe: vi.fn(),
@@ -298,5 +298,31 @@ describe("invalidatePlanCacheForTenant (audit trial résidus 2026-05-24)", () =>
     });
     expect(invalidatePlanCacheForTenant("t-A")).toBe(1);
     expect(invalidatePlanCacheForTenant("t-A")).toBe(0);
+  });
+});
+
+/**
+ * Multi-instance (27/11) : le cache plan vit dans chaque process. Une instance qui ne reçoit pas l'appel
+ * update-plan garde l'ancienne limite. Le retard doit donc rester sous celui des autres caches de fermeture (3 s).
+ */
+describe("cache plan : retard borné entre instances (27/11)", () => {
+  beforeEach(() => {
+    queryRawUnsafe.mockReset();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-27T10:00:00Z"));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("une limite changée ailleurs (downgrade) est relue au plus tard après 3 s", async () => {
+    const userId = `u-multi-${Math.random()}`;
+    queryRawUnsafe.mockResolvedValueOnce([{ plan: "pro", tenant_id: "t-m" }]);
+    expect(await getTenantProspectLimit(userId)).toBe(100000);
+
+    vi.setSystemTime(new Date("2026-11-27T10:00:04Z"));
+    queryRawUnsafe.mockResolvedValueOnce([{ plan: "freemium", tenant_id: "t-m" }]);
+    expect(await getTenantProspectLimit(userId)).toBe(300);
+    expect(queryRawUnsafe).toHaveBeenCalledTimes(2);
   });
 });

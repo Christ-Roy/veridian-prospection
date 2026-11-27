@@ -1,8 +1,8 @@
 # prospection.nomad.hcl — source de vérité GitOps du déploiement PROD.
 #
-# La CI injecte le tag d'image promu avec `-var image_tag=<tag>`. La base
-# Postgres et l'application partagent le même groupe réseau. Le volume DB est
-# local à ovh-prod : ce job stateful ne doit pas être déplacé sans migration.
+# La CI injecte le tag d'image promu avec `-var image_tag=<tag>`. L'application est SANS ÉTAT
+# (base sur pg-saas, Patroni) : deux instances, réparties par zone (ovh, app01), placées par étiquette
+# `role=app` et jamais par machine. Ses caches en mémoire sont bornés à 3 s (27/11, voir src/lib/auth/).
 # Secrets = Nomad Variable `nomad/jobs/prospection`, jamais en clair ici.
 
 variable "image_tag" {
@@ -36,11 +36,18 @@ job "prospection" {
 # veridian-contract:end
 
   group "stack" {
-    count = 1
+    # Deux exemplaires sans coupure (lot C, VER-270, 27/11) : une zone par exemplaire, étiquette `role=app`.
+    count = 2
 
     constraint {
-      attribute = "${meta.provider}"
-      value     = "ovh-prod"
+      attribute = "${meta.role}"
+      operator  = "set_contains"
+      value     = "app"
+    }
+
+    spread {
+      attribute = "${meta.zone}"
+      weight    = 100
     }
 
     restart {
