@@ -1,34 +1,20 @@
 # 🔒 Veille CVE automatique — veridian-prospection
 
 > **Généré par** : `veridian-infra/.github/workflows/cron-trivy.yml`
-> **Dernier run** : 2026-06-30 04:10 UTC
-> **Run URL** : local-cron@mail.mybigserveur.local:2026-06-30
+> **Dernier run** : 2026-11-27 05:10 UTC
+> **Run URL** : local-cron@mail.mybigserveur.local:2026-11-27
 > **Image scannée** : `ghcr.io/christ-roy/prospection:latest`
-> **CVE bruts détectés** : 2 (avant filtrage)
+> **CVE bruts détectés** : 0 (avant filtrage)
 > **Scoring** : `veridian-infra/ci/trivy-scoring.yml`
 
 ## TL;DR
 
 - 🚨 **0 RED** — fix prioritaire
 - 🔴 **0 HIGH** — action recommandée cette semaine
-- 🟡 **1 MEDIUM** — récap, pas urgent
+- 🟡 **0 MEDIUM** — récap, pas urgent
 - 🟢 **0 NOISE** — annexe collapse
 
-✅ **Rien d'urgent.** Quelques items MEDIUM à voir quand t'as 5 min.
-
-
----
-
-## 🟡 MEDIUM — 1 CVE en 1 groupe
-
-### 1. `uuid` — 7.0.3 → **13.0.1**
-
-- **CVE** : `CVE-2026-41907` (MEDIUM/Memory corruption)
-- **Type** : Memory corruption
-- **Score max** : 12
-- **Title** : uuid: uuid: Out-of-bounds write vulnerability impacts data integrity and confidentiality
-- **Source** : `package-lock.json`
-- **Fix** : `pnpm up uuid` (jusqu'à >= `13.0.1`)
+✅ **Aucune action requise.** Rapport régénéré quotidiennement.
 
 
 ---
