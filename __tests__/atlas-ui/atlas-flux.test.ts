@@ -132,6 +132,15 @@ describe("fiche entreprise", () => {
     expect(t.find((x) => x.id === "web")!.lignes[0].lien).toBe("https://martin.fr");
     expect(t.find((x) => x.id === "signaux")!.lignes.map((l) => l.cle)).toEqual(["qualiopi"]);
   });
+  test("activité : NAF en texte courant (code et libellé), convention d'échappement dite en français ; codes seuls en chasse fixe", () => {
+    const t = themesFiche({ identite: { siren: "815181847" }, activite: { naf: "0170Z", idcc: "Valeur d'echappement (convention non codifiee)" } });
+    const act = t.find((x) => x.id === "activite")!;
+    expect(act.lignes.map((l) => [l.cle, l.texte, l.mono])).toEqual([
+      ["naf", "0170Z · Chasse, piégeage et services annexes", false],
+      ["idcc", "Convention non codifiée", false],
+    ]);
+    expect(t.find((x) => x.id === "identite")!.lignes[0].mono).toBe(true);
+  });
   test("vide : null, texte blanc, liste vide ; faux seulement dans les signaux", () => {
     expect(estVide(null)).toBe(true);
     expect(estVide("  ")).toBe(true);

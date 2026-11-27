@@ -308,6 +308,8 @@ export function libelleValeur(champ: string, cle: string | number): string {
     return DIVISIONS_NAF[k] ? `${k} · ${DIVISIONS_NAF[k]}` : String(cle);
   }
   if (c === "forme") return MOTS[k] ?? FORMES_JURIDIQUES[k] ?? k;
+  // Convention collective : ODH rend les « valeurs d'échappement » de la DARES telles quelles, sans accents (66 639 fiches le 27/11).
+  if (c === "idcc" && /valeur d.?[eé]chappement/i.test(k)) return /hors champ|sans convention/i.test(k) ? "Aucune (hors champ conventionnel)" : "Convention non codifiée";
   // Colonne du tableau ou de l'export : plusieurs logiciels joints par des virgules.
   if ((c === "logiciel" || c === "type_logiciel" || c === "signal_90j" || c === "signal_12_mois") && k.includes(",")) return k.split(/,\s*/).map((x) => libelleValeur(c, x)).join(", ");
   if (c === "logiciel" && !LOGICIELS[k]) {

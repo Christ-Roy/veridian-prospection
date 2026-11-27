@@ -193,6 +193,15 @@
 .atlas .tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; font-size: 13px; color: var(--muted); }
 .atlas .tools select, .atlas .sel { height: 30px; border: 1px solid var(--border); border-radius: 8px; padding: 0 8px; background: var(--bg); color: var(--fg); font-size: 13px; max-width: 100%; }
 .atlas .tbl { overflow-x: auto; border-top: 1px solid var(--border); }
+/* Colonnes cachées à droite (la barre de défilement est sous une table haute, hors de l'écran, 27/11) : une ombre au bord qui
+   déborde le dit, et disparaît au bout. Ombres « scroll » sous des caches « local » (technique sans script). */
+.atlas .tbl {
+  background:
+    linear-gradient(to right, var(--bg) 30%, transparent) left center / 48px 100% no-repeat local,
+    linear-gradient(to left, var(--bg) 30%, transparent) right center / 48px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, oklch(0 0 0 / 0.16), transparent) left center / 16px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, oklch(0 0 0 / 0.16), transparent) right center / 16px 100% no-repeat scroll;
+}
 .atlas .tbl table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .atlas .tbl th { text-align: left; font-weight: 500; color: var(--muted); font-size: 12px; padding: 10px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .atlas .tbl td { padding: 11px 12px; border-bottom: 1px solid var(--soft2); white-space: nowrap; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
@@ -423,5 +432,7 @@
 .atlas .mon-ia-carte .ia-boutons { flex-direction: column; align-items: stretch; }
 .atlas .mon-ia-carte .ia-assistant { display: flex; flex-direction: column; gap: 4px; }
 .atlas .mon-ia-carte .ia-assistant .hint { font-size: 12px; line-height: 1.45; }
-.atlas .mon-ia-carte .ia-copie { display: grid; grid-template-columns: 1fr auto; gap: 6px 8px; border-top: 1px solid var(--border); padding-top: 12px; }
+.atlas .mon-ia-carte .ia-copie { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 8px; border-top: 1px solid var(--border); padding-top: 12px; }
+/* Une adresse ou une commande ne se coupe jamais au milieu d'un mot (« --tran / sport » à 375 px, 27/11) : une ligne qui défile. */
+.atlas .mon-ia-carte .ia-copie code { display: block; white-space: nowrap; word-break: normal; overflow-x: auto; min-width: 0; }
 .atlas .mon-ia-carte .ia-copie .lbl { grid-column: 1 / -1; font-size: 12px; font-weight: 600; }

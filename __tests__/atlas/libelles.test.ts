@@ -4,6 +4,11 @@ import { describe, expect, test } from "vitest";
 import { cleDepuisSaisie, formaterDate, libelleAvecCode, libelleValeur, titreValeur, valeurCorrespond } from "@/atlas/libelles";
 
 describe("libelleValeur", () => {
+  test("convention collective : les valeurs d'échappement de la DARES sont dites en français (66 639 fiches, 27/11)", () => {
+    expect(libelleValeur("idcc", "Sans convention collective ou hors champ conventionnel (valeur d'echappement)")).toBe("Aucune (hors champ conventionnel)");
+    expect(libelleValeur("idcc", "Valeur d'echappement (convention non codifiee)")).toBe("Convention non codifiée");
+    expect(libelleValeur("idcc", "Convention collective nationale des hôtels, cafés restaurants (HCR)")).toBe("Convention collective nationale des hôtels, cafés restaurants (HCR)");
+  });
   test("formes juridiques INSEE, clés forme_juridique et forme", () => {
     const attendu: Record<string, string> = { "1000": "Entrepreneur individuel", "5499": "SARL", "5498": "EURL", "5710": "SAS", "5720": "SASU", "5485": "SELARL", "5785": "SELAS", "5202": "SNC", "9220": "Association déclarée", "6540": "SCI" };
     for (const [code, l] of Object.entries(attendu)) expect(libelleValeur("forme_juridique", code), code).toBe(l);
