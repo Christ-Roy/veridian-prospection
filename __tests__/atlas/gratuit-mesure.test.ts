@@ -1,6 +1,6 @@
 /**
  * VER-249, la mesure : ce qu'un compte gratuit demande et voit en coordonnées s'écrit en nombres (jamais l'adresse),
- * réglage éteint ou allumé ; un plan payant n'écrit rien.
+ * réglage éteint ou allumé ; un plan payant est compté sans borne.
  */
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -10,6 +10,7 @@ import { selonPlan } from "@/atlas/gratuit";
 import { compterCoordonnees } from "@/lib/mcp/coordonnees";
 import type { ContexteOutil, Outil } from "@/lib/mcp/outils";
 
+const JOUR = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Paris" }).format(new Date());
 const LIGNES = { total: 3, lignes: [{ nom: "A", email: "a@a.fr", telephone: "04 78 00 00 00" }, { nom: "B", email: "", telephone: null }, { nom: "C", telephone: "0478000001" }] };
 const outil = { name: "explorer_marche", annotations: { readOnlyHint: true }, run: async () => structuredClone(LIGNES) } as unknown as Outil;
 const ctx = (plan: string | null, payant: boolean) =>
@@ -34,7 +35,7 @@ describe("trace [atlas][coordonnees]", () => {
     vi.stubEnv("ATLAS_GRATUIT_COORDONNEES", "");
     const t = traces();
     expect(JSON.stringify(await selonPlan(outil, {}, ctx("freemium", false)))).toContain("a@a.fr");
-    expect(t).toHaveBeenCalledWith("[atlas][coordonnees] outil=explorer_marche tenant=t-1 plan=freemium reglage=aucun demandees=2 montrees=2");
+    expect(t).toHaveBeenCalledWith(`[atlas][coordonnees] jour=${JOUR} outil=explorer_marche tenant=t-1 plan=freemium reglage=aucun demandees=2 montrees=2`);
     expect(String(t.mock.calls[0][0])).not.toMatch(/@|04 78/);
   });
 
@@ -42,13 +43,19 @@ describe("trace [atlas][coordonnees]", () => {
     vi.stubEnv("ATLAS_GRATUIT_COORDONNEES", "masque");
     const t = traces();
     expect(JSON.stringify(await selonPlan(outil, {}, ctx(null, false)))).not.toContain("a@a.fr");
-    expect(t).toHaveBeenCalledWith("[atlas][coordonnees] outil=explorer_marche tenant=t-1 plan=aucun reglage=masque demandees=2 montrees=0");
+    expect(t).toHaveBeenCalledWith(`[atlas][coordonnees] jour=${JOUR} outil=explorer_marche tenant=t-1 plan=aucun reglage=masque demandees=2 montrees=0`);
   });
 
-  test("payant : rien d'écrit", async () => {
+  test("payant : jamais borné, compté (réglage=payant) pour relever son usage réel", async () => {
     vi.stubEnv("ATLAS_GRATUIT_COORDONNEES", "masque");
     const t = traces();
     expect(JSON.stringify(await selonPlan(outil, {}, ctx("pro", true)))).toContain("a@a.fr");
+    expect(t).toHaveBeenCalledWith(`[atlas][coordonnees] jour=${JOUR} outil=explorer_marche tenant=t-1 plan=pro reglage=payant demandees=2 montrees=2`);
+  });
+
+  test("accès avancé : rien d'écrit", async () => {
+    const t = traces();
+    await selonPlan(outil, {}, { ...ctx("pro", true), droits: { accesAvance: true, adminAtlas: false, plan: "pro", payant: true } } as unknown as ContexteOutil);
     expect(t).not.toHaveBeenCalled();
   });
 });

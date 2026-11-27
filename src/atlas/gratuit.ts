@@ -5,7 +5,7 @@
  *  - `fiches:N` : pareil dans les listes, mais N fiches distinctes par jour et par espace montrent les leurs.
  * Un plan payant ou l'accès avancé n'est jamais concerné. Un plan illisible compte pour gratuit.
  *
- * Mesure (allumé ou non) : chaque sortie d'un compte gratuit qui porte des coordonnées écrit une ligne
+ * Mesure (allumé ou non) : chaque sortie d'un compte gratuit ou payant (réglage=payant, jamais borné ici) qui porte des coordonnées écrit une ligne
  * `[atlas][coordonnees]` (outil, espace, réglage, fiches demandées, fiches montrées), des nombres seulement.
  * C'est l'usage réel d'où se tire le plafond : `obs search '\[atlas\]\[coordonnees\]' --since 720h`.
  */
@@ -36,16 +36,25 @@ async function ficheOfferte(tenantId: string, siren: string, plafond: number): P
   return false;
 }
 
+/** Jour de Paris dans la ligne : obs n'affiche que l'heure, le relevé sur 7 jours se fait par jour. */
+const JOUR = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Paris" });
+const tracer = (outil: Outil, c: ContexteOutil, reglage: string, demandees: number, montrees: number) => {
+  if (demandees) console.info(`[atlas][coordonnees] jour=${JOUR.format(new Date())} outil=${outil.name} tenant=${c.ctx.tenantId} plan=${c.droits?.plan ?? "aucun"} reglage=${reglage} demandees=${demandees} montrees=${montrees}`);
+};
+
 export async function selonPlan(outil: Outil, a: Record<string, unknown>, c: ContexteOutil): Promise<unknown> {
-  if (c.droits?.payant || c.droits?.accesAvance) return outil.run(a, c);
+  if (c.droits?.accesAvance) return outil.run(a, c);
+  if (c.droits?.payant) {
+    // Aucune borne (parente, 27/11) : la trace relève 7 jours d'usage réel avant de poser un plafond payant à l'écran.
+    const v = await outil.run(a, c);
+    const n = compterCoordonnees(v);
+    tracer(outil, c, "payant", n, n);
+    return v;
+  }
   const r = reglageGratuit();
   const libre = !r || (outil.name === FICHE && (await ficheOfferte(c.ctx.tenantId, String(a.siren), r.fiches)));
   const brut = libre ? await outil.run(a, c) : await enRestreint(() => outil.run(a, c), ORIENTATION_GRATUIT);
   const demandees = compterCoordonnees(brut);
-  const v = libre ? brut : retirerCoordonnees(brut, ORIENTATION_GRATUIT);
-  if (demandees) {
-    const reglage = r ? (r.fiches ? `fiches:${r.fiches}` : "masque") : "aucun";
-    console.info(`[atlas][coordonnees] outil=${outil.name} tenant=${c.ctx.tenantId} plan=${c.droits?.plan ?? "aucun"} reglage=${reglage} demandees=${demandees} montrees=${libre ? demandees : 0}`);
-  }
-  return v;
+  tracer(outil, c, r ? (r.fiches ? `fiches:${r.fiches}` : "masque") : "aucun", demandees, libre ? demandees : 0);
+  return libre ? brut : retirerCoordonnees(brut, ORIENTATION_GRATUIT);
 }
