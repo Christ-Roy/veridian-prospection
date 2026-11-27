@@ -8,8 +8,6 @@ else
   echo "gardes — NON ABOUTI : introuvable sur cette machine ($G). Garde centrale sautée." >&2
 fi
 
-# 1b. Aucun mot de passe littéral dans l'arbre entier (VER-237 : check-secrets ne lit que le diff). Valeur jamais affichée.
-python3 scripts/ci/check-mots-de-passe.py || exit 1
 
 # 2. Typecheck (tests compris), lint, tests unitaires. Les intégrations (Postgres) restent à la CI.
 #    Sur le bastion, lourd-si-bastion les envoie sur rise ou node02 (nice 19) : le bastion saturait (parente, 26/11).
@@ -17,7 +15,9 @@ python3 scripts/ci/check-mots-de-passe.py || exit 1
 #    pour « NON ABOUTI ». Dans ce cas le crochet ne laisse PAS passer : il relance les mêmes étapes ici, en nice 19.
 #    Husky lance ce fichier en `sh -e` : chaque code se capture par `|| rc=$?`, sinon le repli ne serait jamais atteint.
 cd "$(git rev-parse --show-toplevel)" || exit 1
-ETAPES='{ [ -d node_modules ] || npm ci --no-audit --no-fund --loglevel=error >/dev/null; } \
+# Le scan des mots de passe littéraux (VER-237, arbre entier) part avec les tests : 13 s mesurés sur le bastion saturé, le 27/11.
+ETAPES='python3 scripts/ci/check-mots-de-passe.py \
+  && { [ -d node_modules ] || npm ci --no-audit --no-fund --loglevel=error >/dev/null; } \
   && npx tsc --noEmit \
   && npx eslint src __tests__ e2e/integration --quiet \
   && npx vitest run --exclude "e2e/integration/**" --reporter=dot \

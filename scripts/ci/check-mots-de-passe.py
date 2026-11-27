@@ -47,14 +47,33 @@ def auto_test():
     return len(list(refus_dans(plante))) == 2 and not list(refus_dans(sain))
 
 
+IGNORES = {".git", "node_modules", ".next", "coverage", "test-results", "playwright-report", ".turbo", "dist", "build"}
+
+
+def suivis():
+    """Fichiers suivis par git ; sans dépôt (copie de `lourd` sur rise ou node02), l'arbre entier moins les dossiers générés."""
+    try:
+        return subprocess.run(["git", "ls-files"], capture_output=True, text=True, check=True).stdout.split("\n")
+    except (OSError, subprocess.CalledProcessError):
+        pass
+    # Les sous-modules (.gitmodules) ne sont pas suivis par ce dépôt : git ls-files ne les lit pas non plus.
+    modules = set()
+    if os.path.isfile(".gitmodules"):
+        modules = {m.strip() for m in re.findall(r"^\s*path\s*=\s*(.+)$", open(".gitmodules", encoding="utf-8").read(), re.M)}
+    tous = []
+    for racine, dossiers, noms in os.walk("."):
+        dossiers[:] = [d for d in dossiers if d not in IGNORES and os.path.relpath(os.path.join(racine, d), ".") not in modules]
+        tous += [os.path.relpath(os.path.join(racine, n), ".") for n in noms]
+    return tous or None
+
+
 def main():
     if not auto_test():
         print("NON ABOUTI : l'auto-test ne voit pas le mot de passe planté (ou refuse une référence saine)")
         return 2
-    try:
-        fichiers = subprocess.run(["git", "ls-files"], capture_output=True, text=True, check=True).stdout.split("\n")
-    except (OSError, subprocess.CalledProcessError) as e:
-        print(f"NON ABOUTI : git ls-files ({e})")
+    fichiers = suivis()
+    if fichiers is None:
+        print("NON ABOUTI : ni git ls-files ni parcours de l'arbre")
         return 2
     refus = []
     for f in fichiers:
