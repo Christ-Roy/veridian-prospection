@@ -1,2 +1,3 @@
 /** Pages ouvertes sans compte : des comptes du cube, jamais une entreprise (src/atlas/marches-publics.ts). Edge-safe. */
-export const isPublicPath = (path: string): boolean => path === "/marches" || /^\/marche\/[^/]+$/.test(path);
+export const isPublicPath = (path: string): boolean =>
+  path === "/marches" || path === "/robots.txt" || path === "/sitemap.xml" || /^\/marche\/[^/]+$/.test(path);

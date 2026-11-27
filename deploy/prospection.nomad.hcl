@@ -192,6 +192,8 @@ ATLAS_GRATUIT_COORDONNEES=fiches:20
 # CONTRAT-HUB §6.1 (VER-264) : la signature v1 du Hub est refusée, v2 seule (méthode, chemin, requête, corps, usage unique).
 # Posé le 27/11 à 13:15Z : aucun v1 depuis 10:47Z (Hub et son outillage en v2, 7ea1f77 et 8c729ba).
 VERIDIAN_HMAC_REQUIRE_V2=1
+# Pages publiques des marchés indexables, robots.txt et sitemap ouverts (parente, 27/11, sous la consigne de Robert).
+ATLAS_PUBLIC_INDEX=1
 # Repli tant que le Hub ne rend pas l'adresse d'action dans sa réponse.
 LIAISON_URL_CRM=https://crm.app.veridian.site/mcp
 LIAISON_URL_NOTIFUSE=https://notifuse.app.veridian.site/api/veridian/actions

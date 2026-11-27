@@ -17,7 +17,7 @@
   les chiffres se relisent.
 - **API par marché** : `GET /api/v1/marches[/{marche}[/repartition|/entreprises]]`, `openapi.json` par espace, clé `atl_`. Jamais une coordonnée.
 - **Pages publiques** : `/marches`, `/marche/{naf}`. Que des comptes du cube, une page par code NAF, gardées 24 h. Non indexées tant que
-  `ATLAS_PUBLIC_INDEX=1` n'est pas posé (décision de Robert).
+  `ATLAS_PUBLIC_INDEX=1` posé le 27/11 (parente) : pages indexables, `robots.txt` et `sitemap.xml` ouverts.
 
 ## Brancher un ERP (vision du 15/11, état au 25/11)
 

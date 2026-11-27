@@ -48,6 +48,6 @@ test("une panne se dit, ne se garde pas, et ne martèle pas la base", async () =
   vi.useRealTimers();
 });
 test("seules ces pages s'ouvrent sans compte", () => {
-  for (const p of ["/marches", "/marche/7500z-activites-veterinaires"]) expect([p, isPublicPath(p)]).toEqual([p, true]);
-  for (const p of ["/", "/marche", "/marche/a/b", "/marchesX", "/api/v1/marches", "/api/atlas/rapport", "/atlas"]) expect([p, isPublicPath(p)]).toEqual([p, false]);
+  for (const p of ["/marches", "/marche/7500z-activites-veterinaires", "/robots.txt", "/sitemap.xml"]) expect([p, isPublicPath(p)]).toEqual([p, true]);
+  for (const p of ["/", "/marche", "/marche/a/b", "/marchesX", "/api/v1/marches", "/api/atlas/rapport", "/atlas", "/robots.txtx", "/sitemap.xml/x"]) expect([p, isPublicPath(p)]).toEqual([p, false]);
 });
