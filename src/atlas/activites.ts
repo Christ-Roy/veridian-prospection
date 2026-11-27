@@ -79,10 +79,20 @@ export type CodeActivite = {
 
 /**
  * Ordre d'affichage d'un métier (décision du 27/11) : d'abord les codes dont le libellé officiel contient les
- * mots, puis les codes portés seulement par le nom des entreprises. Dans chaque groupe : le nombre d'entreprises
- * qui portent le code par le nom, puis le marché entier.
+ * mots, puis les codes portés seulement par le nom des entreprises.
+ * Libellé : par nombre d'entreprises qui portent le mot dans leur nom, puis le marché entier.
+ * Nom seul : par PART du code dont le nom porte le mot (« boulangerie » : 186 noms sur 2,16 M pour 6820B, location
+ * de terrains, contre 57 sur 1 112 pour 1071A, pain industriel) ; le nombre brut favorisait les codes géants.
  */
+export function partParNom(c: { par_nom: number; entreprises_actives: number }): number {
+  return c.par_nom / Math.max(c.entreprises_actives, c.par_nom, 1);
+}
+
 export function classerActivites<T extends { signaux: readonly string[]; par_nom: number; entreprises_actives: number }>(codes: readonly T[]): T[] {
   const libelle = (c: T) => (c.signaux.includes("libelle") ? 1 : 0);
-  return [...codes].sort((a, b) => libelle(b) - libelle(a) || b.par_nom - a.par_nom || b.entreprises_actives - a.entreprises_actives);
+  return [...codes].sort((a, b) => {
+    if (libelle(a) !== libelle(b)) return libelle(b) - libelle(a);
+    if (libelle(a)) return b.par_nom - a.par_nom || b.entreprises_actives - a.entreprises_actives;
+    return partParNom(b) - partParNom(a) || b.par_nom - a.par_nom;
+  });
 }

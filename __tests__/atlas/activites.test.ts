@@ -67,11 +67,20 @@ describe("classement d'un métier (27/11)", () => {
   const c = (naf: string, signaux: ("libelle" | "usage")[], par_nom: number, entreprises_actives: number) => ({ naf, signaux, par_nom, entreprises_actives });
   test("le libellé officiel passe avant tout code porté seulement par le nom, même très fréquent", () => {
     const r = classerActivites([c("6820B", ["usage"], 900, 50000), c("6420Z", ["usage"], 400, 9000), c("1071C", ["libelle", "usage"], 3, 800), c("1071B", ["libelle"], 0, 120)]);
-    expect(r.map((x) => x.naf)).toEqual(["1071C", "1071B", "6820B", "6420Z"]);
+    expect(r.map((x) => x.naf)).toEqual(["1071C", "1071B", "6420Z", "6820B"]); // nom seul : 6420Z 4,4 % du code, 6820B 1,8 %
   });
-  test("dans chaque groupe : par nom d'abord, puis le marché entier", () => {
-    const r = classerActivites([c("A", ["usage"], 5, 10), c("B", ["usage"], 5, 99), c("C", ["usage"], 7, 1)]);
+  test("libellé : par nombre d'entreprises par le nom, puis le marché entier", () => {
+    const r = classerActivites([c("A", ["libelle"], 5, 10), c("B", ["libelle"], 5, 99), c("C", ["libelle", "usage"], 7, 1)]);
     expect(r.map((x) => x.naf)).toEqual(["C", "B", "A"]);
+  });
+  test("nom seul : par PART du code, chiffres réels de « boulangerie » (prod, 27/11) : les codes géants en bas", () => {
+    const r = classerActivites([
+      c("1071C", ["libelle", "usage"], 6893, 40572), c("1071B", ["libelle", "usage"], 57, 3122),
+      c("6820B", ["usage"], 186, 2159828), c("5610C", ["usage"], 77, 170333), c("4724Z", ["usage"], 70, 5246),
+      c("1071A", ["usage"], 57, 1112), c("1071D", ["usage"], 31, 11111), c("6420Z", ["usage"], 23, 155162),
+      c("9499Z", ["usage"], 22, 589408), c("6820A", ["usage"], 9, 1231554),
+    ]);
+    expect(r.map((x) => x.naf)).toEqual(["1071C", "1071B", "1071A", "4724Z", "1071D", "5610C", "6420Z", "6820B", "9499Z", "6820A"]);
   });
   test("ne modifie pas la liste reçue", () => {
     const entree = [c("X", ["usage"], 1, 1), c("Y", ["libelle"], 0, 1)];
