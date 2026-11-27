@@ -9,7 +9,6 @@ services:
       APP_URL: https://prospection.app.veridian.site
       AUTH_SECRET: ${AUTH_SECRET}
       AUTH_TRUST_HOST: "true"
-      CRON_SECRET: ${CRON_SECRET:-}
       DATABASE_URL: ${DATABASE_URL}
       DEPLOY_ENV: prod
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}

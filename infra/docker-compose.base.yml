@@ -39,7 +39,6 @@ services:
       TRIAL_DAYS: "7"
       NEXT_PUBLIC_TRIAL_DAYS: "7"
       # Crons OVH → /api/cron/* (notifs push pre-RDV). Sans : 401 = aucune notif.
-      CRON_SECRET: ${CRON_SECRET:-}
       # Google OAuth (Auth.js provider — bouton UI à câbler ultérieurement).
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
