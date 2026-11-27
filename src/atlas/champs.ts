@@ -85,7 +85,8 @@ export const CHAMPS: readonly Champ[] = [
 export const CHAMP = new Map(CHAMPS.map((c) => [c.id, c]));
 
 /** Colonnes affichées par défaut dans une vue neuve. */
-export const COLONNES_DEFAUT = ["nom", "commune", "departement", "naf", "taille", "chiffre_affaires", "site", "email", "telephone"];
+/** Ce qui tient à 1 128 px (parente, 27/11) : le reste au sélecteur. Les segments existants gardent leurs colonnes. */
+export const COLONNES_DEFAUT = ["nom", "commune", "naf", "taille", "email", "telephone"];
 
 /** Opérateurs permis par type de champ. */
 export const OPERATEURS: Record<TypeChamp, readonly string[]> = {

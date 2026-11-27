@@ -291,11 +291,39 @@ const LIBELLES_HORS_CATALOGUE: Record<string, string> = {
   a_telephone: "Téléphone connu",
   a_site: "Site connu",
   prospectable: "Contactable",
+  contact: "Contact",
 };
 
 export function libelleColonne(id: string, champs: ReadonlyMap<string, ChampInfo>): string {
   if (id === "score") return "Score";
   return champs.get(id)?.libelle ?? LIBELLES_HORS_CATALOGUE[id] ?? id;
+}
+
+/**
+ * Base maître (parente, 27/11) : ce qui tient à 1 128 px par défaut ; le reste au sélecteur, choix gardé par navigateur.
+ * « contact » est une colonne composée des drapeaux connus (email, téléphone, site) : la base maître n'a pas de coordonnée.
+ */
+export const COLONNES_MAITRE_DEFAUT = ["nom", "commune", "naf", "effectif", "contact"] as const;
+export const COLONNES_MAITRE_CHOIX = ["siren", "nom", "enseigne", "commune", "departement", "naf", "forme", "effectif", "date_creation", "contact", "prospectable"] as const;
+export const CLE_COLONNES_MAITRE = "atlas:colonnes-maitre";
+
+/** Choix relu (stockage du navigateur, donc non fiable) : colonnes connues seulement, Nom toujours en tête ; illisible = défaut. */
+export function lireColonnesMaitre(brut: string | null): string[] {
+  try {
+    const v = JSON.parse(brut ?? "null") as unknown;
+    if (!Array.isArray(v)) return [...COLONNES_MAITRE_DEFAUT];
+    const ok = COLONNES_MAITRE_CHOIX.filter((c) => v.includes(c));
+    return ok.length ? ["nom", ...ok.filter((c) => c !== "nom")] : [...COLONNES_MAITRE_DEFAUT];
+  } catch {
+    return [...COLONNES_MAITRE_DEFAUT];
+  }
+}
+
+/** « Email · Tél. · Site » d'après les drapeaux d'une ligne de la base maître ; null si rien n'est connu. */
+export function contactConnu(l: Record<string, Cellule>): string | null {
+  const vrai = (x: Cellule | undefined) => x === true || x === 1 || x === "1" || x === "true";
+  const c = [vrai(l.a_email) && "Email", vrai(l.a_telephone) && "Tél.", vrai(l.a_site) && "Site"].filter(Boolean);
+  return c.length ? c.join(" · ") : null;
 }
 
 /** Colonnes affichées : celles de la réponse ; « score » s'ajoute si les lignes en portent un. */

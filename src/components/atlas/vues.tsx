@@ -10,7 +10,7 @@ import { avecCondition, type EtapeEntonnoir } from "./flux";
 import { lienValeur } from "./fiche-logique";
 import { Chargement, Icone } from "./icones";
 import { DEMANDE_PRIORITE, lignesDepuis, suggestionsRestantes, validerCriteres, type LigneEditeur } from "./lignes";
-import { colonnesAffichees, formaterCellule, formaterNombre, grouperChamps, largeurBarre, libellePoints, libelleColonne, phraseCondition, titreCellule } from "./logique";
+import { CLE_COLONNES_MAITRE, COLONNES_MAITRE_CHOIX, colonnesAffichees, contactConnu, formaterCellule, lireColonnesMaitre, formaterNombre, grouperChamps, largeurBarre, libellePoints, libelleColonne, phraseCondition, titreCellule } from "./logique";
 import type { ApercuMarche, ChampInfo, Critere, Filtre, LigneMarche, RepartitionMarche } from "./types";
 
 const PAR_PAGE = 20;
@@ -245,15 +245,22 @@ function Tableau({
   onFiche,
   busy,
   montrerSiren = false,
+  colonnesChoisies,
 }: {
   apercu: ApercuMarche;
   index: ReadonlyMap<string, ChampInfo>;
   rang?: number;
   montrerSiren?: boolean;
+  /** Base maître : colonnes choisies côté navigateur (« contact » composée des drapeaux). */
+  colonnesChoisies?: readonly string[];
   onFiche: (siren: string, nom: string) => void;
   busy: boolean;
 }) {
-  const cols = colonnesAffichees(apercu.colonnes, apercu.lignes).filter((c) => c !== "siren" || montrerSiren);
+  const cols = colonnesChoisies
+    ? colonnesChoisies.filter((c) => c === "contact" || apercu.colonnes.includes(c))
+    : colonnesAffichees(apercu.colonnes, apercu.lignes).filter((c) => c !== "siren" || montrerSiren);
+  // Nom figé à gauche quand le tableau défile (parente, 27/11) ; pas dans un classement, où le rang le précède.
+  const fige = (c: string) => (c === "nom" && rang === undefined ? "fige" : undefined);
   const ouvrir = (l: LigneMarche) => {
     const siren = typeof l.siren === "string" ? l.siren : typeof l.siren === "number" ? String(l.siren).padStart(9, "0") : null;
     if (siren) onFiche(siren, typeof l.nom === "string" ? l.nom : siren);
@@ -272,7 +279,7 @@ function Tableau({
           <tr>
             {rang !== undefined && <th className="r">#</th>}
             {cols.map((c) => (
-              <th key={c} className={c === "score" ? "r" : undefined} scope="col">
+              <th key={c} className={[c === "score" ? "r" : "", fige(c) ?? ""].join(" ").trim() || undefined} scope="col">
                 {libelleColonne(c, index)}
               </th>
             ))}
@@ -283,7 +290,7 @@ function Tableau({
             <tr key={`${String(l.siren ?? "")}-${i}`} tabIndex={0} onClick={() => ouvrir(l)} onKeyDown={(e) => clavier(e, l)} aria-label={`Ouvrir la fiche de ${String(l.nom ?? l.siren ?? "l'entreprise")}`}>
               {rang !== undefined && <td className="r num" style={{ color: "var(--muted)" }}>{rang + i}</td>}
               {cols.map((c) => {
-                const v = l[c];
+                const v = c === "contact" ? contactConnu(l) : l[c];
                 if (c === "score" && typeof v === "number") {
                   return (
                     <td key={c} className="r">
@@ -299,7 +306,7 @@ function Tableau({
                 const texte = formaterCellule(v, index.get(c), c);
                 const href = typeof v === "string" && v !== "" ? lienValeur(c, v) : undefined;
                 return (
-                  <td key={c} className={typeof v === "number" ? "r num" : undefined} title={titreCellule(v, index.get(c), c)}>
+                  <td key={c} className={[typeof v === "number" ? "r num" : "", fige(c) ?? ""].join(" ").trim() || undefined} title={titreCellule(v, index.get(c), c)}>
                     {href ? (
                       <a href={href} onClick={(e) => e.stopPropagation()} {...(c === "site" ? { target: "_blank", rel: "noopener noreferrer" } : {})}>
                         {texte}
@@ -371,6 +378,23 @@ export function VueTableau({
   const [essai, setEssai] = useState(0);
   const cle = JSON.stringify(filtre);
   const cleCols = colonnes.join(",");
+  // Base maître : colonnes choisies dans ce navigateur (pas une version du segment), relues au montage.
+  const [colsMaitre, setColsMaitre] = useState<string[]>(() => lireColonnesMaitre(null));
+  useEffect(() => {
+    try {
+      setColsMaitre(lireColonnesMaitre(localStorage.getItem(CLE_COLONNES_MAITRE)));
+    } catch {
+      /* stockage fermé : défaut */
+    }
+  }, []);
+  const choisirMaitre = (c: string[]) => {
+    setColsMaitre(c);
+    try {
+      localStorage.setItem(CLE_COLONNES_MAITRE, JSON.stringify(c));
+    } catch {
+      /* stockage fermé : le choix vaut pour la visite */
+    }
+  };
 
   useEffect(() => setPage(1), [cle]);
   // Base maître sans critère : 30 M d'entreprises, on demande d'abord un critère (aucune requête).
@@ -398,7 +422,14 @@ export function VueTableau({
     <div>
       <div className="tools">
         {base === "maitre" ? (
-          <span>Toutes les entreprises actives de France (base maître) : identité et lieu. Les coordonnées s&apos;ouvrent dans la fiche des entreprises contactables.</span>
+          <>
+            <span>Toutes les entreprises actives de France (base maître) : identité et lieu. Les coordonnées s&apos;ouvrent dans la fiche des entreprises contactables.</span>
+            <SelecteurColonnes
+              champs={COLONNES_MAITRE_CHOIX.map((id) => ({ ...(index.get(id) ?? {}), id, libelle: libelleColonne(id, index), groupe: "Base maître" }) as ChampInfo)}
+              colonnes={colsMaitre}
+              onChange={choisirMaitre}
+            />
+          </>
         ) : (
           <>
             <span>Entreprises contactables du marché ou de la cible, par ordre du catalogue.</span>
@@ -415,7 +446,7 @@ export function VueTableau({
       {apercu && apercu.lignes.length === 0 && <Vide texte="Aucune entreprise ne répond à ces filtres." onEffacer={filtre.conditions.length ? onEffacerFiltres : undefined} />}
       {apercu && apercu.lignes.length > 0 && (
         <>
-          <Tableau apercu={apercu} index={index} onFiche={onFiche} busy={busy} montrerSiren={colonnes.includes("siren")} />
+          <Tableau apercu={apercu} index={index} onFiche={onFiche} busy={busy} montrerSiren={colonnes.includes("siren")} colonnesChoisies={base === "maitre" ? colsMaitre : undefined} />
           <Pager page={page} total={apercu.total} parPage={PAR_PAGE} busy={busy} onPage={setPage} />
         </>
       )}
