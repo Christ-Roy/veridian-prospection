@@ -9,13 +9,12 @@
  *  - NE SUPPRIME PAS la data. Mode paywall obfusqué activé (§5.9).
  *  - Idempotent : si déjà soft_deleted, retourne 200 no-op avec les
  *    valeurs courantes.
- *  - Émet webhook tenant.deleted en fire-and-forget.
+ *  - N’émet plus d’écho vers le Hub (27/11) : il note l’issue de son propre appel.
  *  - Transition légale §5.7 : `active` ou `suspended` → `soft_deleted`.
  *    Toute autre transition retourne 409 transition_illegal.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { requireHubHmac } from "@/lib/hub/auth";
-import { enqueueEvent } from "@/lib/hub-webhook/outbox";
 import { prisma } from "@/lib/prisma";
 import { resolveTenantByIdOrEmail } from "@/lib/hub/tenant-lookup";
 
@@ -114,8 +113,7 @@ export async function POST(
   const meta = (tenant.metadata as Record<string, unknown> | null) ?? {};
   const now = new Date();
 
-  // Atomicité mutation + outbox : si l'enqueue échoue, la mutation rollback.
-  // Cf src/lib/hub-webhook/outbox.ts — pattern transactional outbox.
+  // Plus d'écho vers le Hub (27/11) : il note lui-même l'issue de cet appel à sa réponse synchrone.
   await prisma.$transaction(async (tx) => {
     await tx.tenant.update({
       where: { id: tenantId },
@@ -129,14 +127,6 @@ export async function POST(
           softDeleteReason: reason,
         },
       },
-    });
-
-    // §7.1 v1.4 — event spécifique au soft-delete (≠ purge). Le Hub
-    // matérialise `prospection_status='deleted'` + `prospection_soft_deleted_at`.
-    await enqueueEvent(tx, "tenant.soft_deleted", tenantId, {
-      soft_deleted_at: now.toISOString(),
-      purge_eligible_at: purgeEligibleDate.toISOString(),
-      reason,
     });
   });
 

@@ -29,7 +29,6 @@ import { refusIdentite, resolveOrCreateUserFromHub } from "@/lib/hub/identity";
 import { resolveTenantByIdOrEmail } from "@/lib/hub/tenant-lookup";
 import { logAudit } from "@/lib/audit";
 import { ROLE_RANK, type WorkspaceRole } from "@/lib/auth/roles";
-import { enqueueEvent } from "@/lib/hub-webhook/outbox";
 import { invalidateAllUserContexts } from "@/lib/auth/cache-contexte";
 import { adminRetire } from "@/lib/hub/admins-plateforme";
 
@@ -172,20 +171,6 @@ export async function POST(
       });
       appRole = body.role;
       roleAction = "created";
-    }
-
-    // §7.1 v1.4 — enqueue dans la MÊME transaction que la mutation. Atomicité
-    // garantie : si l'INSERT outbox échoue (UNIQUE violation idempotency_key
-    // p.ex.), la mutation member rollback aussi → pas de désync Hub ↔ Prosp.
-    if (roleAction === "created" || roleAction === "restored") {
-      await enqueueEvent(tx, "tenant.member_added", tenantId, {
-        workspace_id: workspace.id,
-        user_id: localUserId,
-        hub_user_id: body.hub_user_id,
-        email: body.user_email,
-        role: appRole,
-        action: roleAction,
-      });
     }
   });
 

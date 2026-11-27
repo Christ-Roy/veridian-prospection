@@ -20,7 +20,6 @@ import { prisma } from "@/lib/prisma";
 import { requireHubHmac } from "@/lib/hub/auth";
 import { resolveTenantByIdOrEmail } from "@/lib/hub/tenant-lookup";
 import { logAudit } from "@/lib/audit";
-import { enqueueEvent } from "@/lib/hub-webhook/outbox";
 import { revoquerClesDe } from "@/atlas/acces";
 import { invalidateAllUserContexts } from "@/lib/auth/cache-contexte";
 
@@ -133,16 +132,6 @@ export async function POST(
       },
       data: { deletedAt: new Date() },
     });
-
-    // §7.1 v1.4 — émettre tenant.member_removed si au moins une membership a
-    // bien été soft-deletée (sinon noop : already-removed = pas d'event).
-    if (updated.count > 0) {
-      await enqueueEvent(tx, "tenant.member_removed", tenantId, {
-        user_id: user!.id,
-        email: user!.email,
-        affected_workspaces: updated.count,
-      });
-    }
 
     return updated;
   });

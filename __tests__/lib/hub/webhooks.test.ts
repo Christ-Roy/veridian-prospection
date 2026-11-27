@@ -121,7 +121,7 @@ describe("emitHubWebhook — retry behavior", () => {
 
   test("5xx 3× → retry × 3 puis delivered=false", async () => {
     const fetchMock = mockFetchStatus(503, 503, 503);
-    const p = emitHubWebhook("tenant.deleted", "t-1");
+    const p = emitHubWebhook("tenant.suspended", "t-1");
     await vi.runAllTimersAsync();
     const r = await p;
     expect(r.delivered).toBe(false);
@@ -261,64 +261,5 @@ describe("HubWebhookEvent — §7.1 v1.4 Niveau 2 sync", () => {
     const [, init] = fetchMock.mock.calls[0];
     const body = JSON.parse((init as { body: string }).body);
     expect(body.contract_version).toBe("1.4");
-  });
-
-  test("tenant.soft_deleted accepté + payload data", async () => {
-    const fetchMock = mockFetchOk();
-    const r = await emitHubWebhook("tenant.soft_deleted", "t-1", {
-      soft_deleted_at: "2026-05-23T10:00:00.000Z",
-      purge_eligible_at: "2026-06-22T10:00:00.000Z",
-      reason: "user_requested",
-    });
-    expect(r.delivered).toBe(true);
-    const [, init] = fetchMock.mock.calls[0];
-    const body = JSON.parse((init as { body: string }).body);
-    expect(body.event).toBe("tenant.soft_deleted");
-    expect(body.data.reason).toBe("user_requested");
-  });
-
-  test("tenant.purged accepté + payload rows_deleted", async () => {
-    const fetchMock = mockFetchOk();
-    const r = await emitHubWebhook("tenant.purged", "t-1", {
-      purged_at: "2026-06-22T10:00:00.000Z",
-      rows_deleted: { prospects: 12_400, leads: 3_300 },
-      reason: "grace_period_expired",
-    });
-    expect(r.delivered).toBe(true);
-    const [, init] = fetchMock.mock.calls[0];
-    const body = JSON.parse((init as { body: string }).body);
-    expect(body.event).toBe("tenant.purged");
-    expect(body.data.rows_deleted).toEqual({ prospects: 12_400, leads: 3_300 });
-  });
-
-  test("tenant.member_added accepté", async () => {
-    const fetchMock = mockFetchOk();
-    const r = await emitHubWebhook("tenant.member_added", "t-1", {
-      workspace_id: "ws-1",
-      user_id: "u-1",
-      hub_user_id: "hub-u-1",
-      email: "bob@example.com",
-      role: "member",
-      action: "created",
-    });
-    expect(r.delivered).toBe(true);
-    const [, init] = fetchMock.mock.calls[0];
-    const body = JSON.parse((init as { body: string }).body);
-    expect(body.event).toBe("tenant.member_added");
-    expect(body.data.role).toBe("member");
-  });
-
-  test("tenant.member_removed accepté", async () => {
-    const fetchMock = mockFetchOk();
-    const r = await emitHubWebhook("tenant.member_removed", "t-1", {
-      user_id: "u-1",
-      email: "bob@example.com",
-      affected_workspaces: 2,
-    });
-    expect(r.delivered).toBe(true);
-    const [, init] = fetchMock.mock.calls[0];
-    const body = JSON.parse((init as { body: string }).body);
-    expect(body.event).toBe("tenant.member_removed");
-    expect(body.data.affected_workspaces).toBe(2);
   });
 });

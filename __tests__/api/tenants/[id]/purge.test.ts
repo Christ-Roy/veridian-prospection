@@ -52,9 +52,6 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
-vi.mock("@/lib/hub-webhook/outbox", () => ({
-  enqueueEvent: mocks.emitWebhook,
-}));
 
 import { POST } from "@/app/api/tenants/[id]/purge/route";
 import { makeRequest, readJson } from "../../_helpers";
@@ -341,16 +338,7 @@ describe("POST /api/tenants/{id}/purge — IRRÉVERSIBLE", () => {
       "GDPR client erasure request 2026-05-19",
     );
 
-    // §7.1 v1.4 — event spécifique tenant.purged (≠ tenant.deleted générique).
-    // Le Hub matérialise prospection_purged_at + prospection_purged_rows.
-    expect(mocks.emitWebhook).toHaveBeenCalledOnce();
-    // Pattern outbox v1 : enqueueEvent(tx, event, tenantId, data).
-    const [, event, id, data] = mocks.emitWebhook.mock.calls[0];
-    expect(event).toBe("tenant.purged");
-    expect(id).toBe(TENANT_ID);
-    expect(data.rows_deleted).toEqual(body.rows_deleted);
-    expect(data.reason).toBe("GDPR client erasure request 2026-05-19");
-    expect(data.purged_at).toBeDefined();
+    // Plus d'écho vers le Hub (27/11) : la route n'écrit plus dans webhook_outbox (garde : __tests__/lib/hub-webhook/aucun-echo.test.ts).
   });
 
   // ───────── T13 : lookup par email owner ─────────

@@ -20,7 +20,6 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { requireHubHmac } from "@/lib/hub/auth";
-import { enqueueEvent } from "@/lib/hub-webhook/outbox";
 import { prisma } from "@/lib/prisma";
 import { resolveTenantByIdOrEmail } from "@/lib/hub/tenant-lookup";
 
@@ -185,16 +184,6 @@ export async function POST(
           purgeReason: reason,
         },
       },
-    });
-
-    // §7.1 v1.4 — event spécifique à la purge physique (≠ soft-delete). Le
-    // Hub matérialise `prospection_purged_at` + `prospection_purged_rows`.
-    // Enqueue dans la même transaction : si la cascade DELETE échoue, l'event
-    // ne part pas (zéro désync Hub ↔ Prospection).
-    await enqueueEvent(tx, "tenant.purged", tenantId, {
-      purged_at: now.toISOString(),
-      rows_deleted: rows,
-      reason,
     });
 
     return rows;

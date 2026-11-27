@@ -84,9 +84,6 @@ vi.mock("@/lib/audit", () => ({
 const { emitWebhookMock } = vi.hoisted(() => ({
   emitWebhookMock: vi.fn(),
 }));
-vi.mock("@/lib/hub-webhook/outbox", () => ({
-  enqueueEvent: emitWebhookMock,
-}));
 
 // seedDefaultPipelineStages est best-effort post-création workspace
 // (ticket 2026-05-23 pipeline-stages-customisables) — mock no-op pour
@@ -241,18 +238,7 @@ describe("POST /api/tenants/[id]/sync-member", () => {
     expect(mocks.memberCreate.mock.calls[0][0].data.visibilityScope).toBe("own");
     expect(mocks.workspaceCreate).not.toHaveBeenCalled();
 
-    // §7.1 v1.4 — sur création, tenant.member_added doit être émis.
-    expect(emitWebhookMock).toHaveBeenCalledOnce();
-    // Pattern outbox v1 : enqueueEvent(tx, event, tenantId, data).
-    const [, event, id, data] = emitWebhookMock.mock.calls[0];
-    expect(event).toBe("tenant.member_added");
-    expect(id).toBe(TENANT_ID);
-    expect(data.workspace_id).toBe(WS_ID);
-    expect(data.user_id).toBe(LOCAL_USER_ID);
-    expect(data.hub_user_id).toBe(HUB_USER_ID);
-    expect(data.email).toBe("bob@example.com");
-    expect(data.role).toBe("member");
-    expect(data.action).toBe("created");
+    // Plus d'écho vers le Hub (27/11) : la route n'écrit plus dans webhook_outbox (garde : __tests__/lib/hub-webhook/aucun-echo.test.ts).
   });
 
   test("200 idempotent — déjà membre même role : pas d'event webhook (skip noop)", async () => {

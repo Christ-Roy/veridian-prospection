@@ -57,9 +57,6 @@ vi.mock("@/lib/prisma", () => {
   };
 });
 
-vi.mock("@/lib/hub-webhook/outbox", () => ({
-  enqueueEvent: emitWebhookMock,
-}));
 
 import { POST } from "@/app/api/tenants/[id]/soft-delete/route";
 import { makeRequest, readJson } from "../../_helpers";
@@ -247,16 +244,8 @@ describe("POST /api/tenants/{id}/soft-delete", () => {
     expect(updateCall.data.purgeEligibleAt).toBeInstanceOf(Date);
     expect(updateCall.data.metadata.softDeleteReason).toBe("stripe_canceled");
 
-    expect(emitWebhookMock).toHaveBeenCalledOnce();
-    // Pattern outbox v1 : enqueueEvent(tx, event, tenantId, data).
-    const [, event, id, data] = emitWebhookMock.mock.calls[0];
-    // §7.1 v1.4 — event spécifique soft-delete (≠ tenant.deleted générique).
-    // Le Hub matérialise prospection_soft_deleted_at sur ce signal.
-    expect(event).toBe("tenant.soft_deleted");
-    expect(id).toBe(TENANT_ID);
-    expect(data.reason).toBe("stripe_canceled");
-    expect(data.purge_eligible_at).toBe(futureDate);
-    expect(data.soft_deleted_at).toBeDefined();
+
+    // Plus d'écho vers le Hub (27/11) : la route n'écrit plus dans webhook_outbox (garde : __tests__/lib/hub-webhook/aucun-echo.test.ts).
   });
 
   test("200 soft-delete tenant suspended → previous_status='suspended'", async () => {
@@ -301,8 +290,6 @@ describe("POST /api/tenants/{id}/soft-delete", () => {
     expect(tenantUpdate.mock.calls[0][0].data.metadata.softDeleteReason).toBe(
       "admin_action",
     );
-    // enqueueEvent(tx, event, tenantId, data) → data en index 3.
-    expect(emitWebhookMock.mock.calls[0][3].reason).toBe("admin_action");
   });
 
   // ───────── Idempotence ─────────

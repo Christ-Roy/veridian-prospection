@@ -20,16 +20,12 @@ import { randomUUID } from "crypto";
 export type HubWebhookEvent =
   | "tenant.suspended"
   | "tenant.resumed"
-  | "tenant.deleted" // legacy — préfère tenant.soft_deleted / tenant.purged
-  | "tenant.soft_deleted" // §7.1 v1.4 (Niveau 2 sync) — Tenant marqué deleted en soft
-  | "tenant.purged" // §7.1 v1.4 — purge physique des données
   | "tenant.touched"
   | "tenant.owner_changed"
   | "tenant.quota_exceeded"
   // §5.18.4 — admin Prospection change le rôle ou visibility_scope d'un member
-  | "tenant.member_role_changed"
-  | "tenant.member_added" // §7.1 v1.4 — ajout de membre dans un workspace
-  | "tenant.member_removed"; // §7.1 v1.4 — retrait de membre
+  | "tenant.member_role_changed";
+// Plus d'écho des ordres du Hub (soft-delete, purge, ajout et retrait de membre, 27/11) : il en est la source.
 
 /**
  * Version du contrat webhook §7.1 (CONTRAT-HUB.md). Inclus dans tous les

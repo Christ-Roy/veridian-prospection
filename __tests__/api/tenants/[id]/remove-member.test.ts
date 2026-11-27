@@ -60,9 +60,6 @@ vi.mock("@/lib/audit", () => ({
 const { emitWebhookMock } = vi.hoisted(() => ({
   emitWebhookMock: vi.fn(),
 }));
-vi.mock("@/lib/hub-webhook/outbox", () => ({
-  enqueueEvent: emitWebhookMock,
-}));
 
 import { POST } from "@/app/api/tenants/[id]/remove-member/route";
 import { makeRequest, readJson } from "../../_helpers";
@@ -187,16 +184,7 @@ describe("POST /api/tenants/[id]/remove-member", () => {
     expect(args.where.workspaceId.in).toEqual(["ws-1", "ws-2"]);
     expect(args.data.deletedAt).toBeInstanceOf(Date);
 
-    // §7.1 v1.4 — tenant.member_removed émis seulement si au moins une
-    // membership a bien été retirée (skip si already-removed).
-    expect(emitWebhookMock).toHaveBeenCalledOnce();
-    // Pattern outbox v1 : enqueueEvent(tx, event, tenantId, data).
-    const [, event, id, data] = emitWebhookMock.mock.calls[0];
-    expect(event).toBe("tenant.member_removed");
-    expect(id).toBe(TENANT_ID);
-    expect(data.user_id).toBe(LOCAL_USER_ID);
-    expect(data.email).toBe("bob@example.com");
-    expect(data.affected_workspaces).toBe(2);
+    // Plus d'écho vers le Hub (27/11) : la route n'écrit plus dans webhook_outbox (garde : __tests__/lib/hub-webhook/aucun-echo.test.ts).
   });
 
   test("§7.1 v1.4 — pas d'event si already-removed (count=0)", async () => {
