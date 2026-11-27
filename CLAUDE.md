@@ -78,11 +78,11 @@ Contrat : `veridian-hub/docs/CONTRAT-HUB.md`.
   marché ») : le marché ENTIER, pas que les fiches prospectables. Sélection par LISTE de codes NAF avec
   `naf_rev2 = 1`, jamais par intervalle de chaînes ; prévoir « département inconnu » (diffusion partielle) ;
   afficher `nb_*_livrable` comme « envoyables », `nb_avec_*` comme « connus ».
-- Carte : `src/atlas/projection.ts`, communes et EPCI de l'API Géo (`communes.ts`). Le cube ne descend pas à la commune.
+- Carte : `src/atlas/projection.ts`, communes et EPCI de l'API Géo (`communes.ts`) ; le cube s'arrête au département.
 - Accès avancé (`requete_sql`, clés `atl_`) et `extraire_segment` : `docs/claude/acces-avance-et-extraction.md`.
 - Quota, porte de connexion : `src/lib/compteurs.ts` (en base) ; `isRateLimited` : confort, par instance.
 - Mon IA (§5.24.1), seule entrée IA : état au Hub (`ia-etat.ts`), cadre si `prete`, sinon carte aux liens du Hub (`liens-ia-client.ts`) ; fils `ia_fils` (`/api/hub/ia/fils/[session]`, HMAC, 404 hors triplet), purgés au retrait.
-- Journaux : `obs search '\[mcp\] outil='` ; l'écran n'en écrit aucun, sauf `[liaisons]` et `[atlas][coordonnees]` (VER-249, coordonnées vues par espace, nombres seuls ; relevé payant : `scripts/ops/coordonnees-releve.py`).
+- Journaux : `obs search '\[mcp\] outil='` ; l'écran n'en écrit aucun, sauf `[liaisons]` et `[atlas][coordonnees]` (VER-249, nombres seuls ; relevé : `scripts/ops/coordonnees-releve.py`).
 - Envoi vers le CRM et Mail (VER-246) : `docs/LIAISONS.md`, drapeau `ATLAS_LIAISONS`. Clients, API par marché, pages publiques : `docs/CLIENTS-ET-MARCHES.md`.
 
 ## Déploiement et promotion
